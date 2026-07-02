@@ -18,6 +18,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
 import type { Invoice, Customer } from '../types/api';
 import { customerService } from '../services/customerService';
+import { formatPHP } from '../lib/currency';
 
 const InvoicesPage: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -316,10 +317,10 @@ const InvoicesPage: React.FC = () => {
                     {new Date(invoice.due_date).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    ${invoice.total.toFixed(2)}
+                    {formatPHP(invoice.total)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    ${invoice.balance.toFixed(2)}
+                    {formatPHP(invoice.balance)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(invoice.status)}
@@ -457,7 +458,7 @@ const InvoicesPage: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Discount ($)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Discount (₱)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -574,7 +575,7 @@ const InvoicesPage: React.FC = () => {
                 <div className="text-sm text-gray-600">Invoice: {selectedInvoice.invoice_number}</div>
                 <div className="text-sm text-gray-600">Customer: {selectedInvoice.customer?.full_name}</div>
                 <div className="text-lg font-bold text-gray-900 mt-2">
-                  Balance Due: ${selectedInvoice.balance.toFixed(2)}
+                  Balance Due: {formatPHP(selectedInvoice.balance)}
                 </div>
               </div>
               <form onSubmit={handleRecordPayment}>
@@ -715,35 +716,35 @@ const InvoicesPage: React.FC = () => {
                 </div>
 
                 <div className="border-t pt-4">
-                  <h3 className="font-medium text-gray-900 mb-2">Amount Summary</h3>
+                  <h3 className="font-medium text-gray-900 mb-2">Amount Summary <span className="text-xs font-normal text-gray-500">(VAT-inclusive)</span></h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Subtotal:</span>
-                      <span className="text-gray-900">${selectedInvoice.subtotal.toFixed(2)}</span>
+                      <span className="text-gray-600">VATable Sale:</span>
+                      <span className="text-gray-900">{formatPHP(selectedInvoice.subtotal)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Tax (8% VAT):</span>
-                      <span className="text-gray-900">${selectedInvoice.tax.toFixed(2)}</span>
+                      <span className="text-gray-600">VAT (8%):</span>
+                      <span className="text-gray-900">{formatPHP(selectedInvoice.tax)}</span>
                     </div>
                     {selectedInvoice.discount > 0 && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">Discount:</span>
-                        <span className="text-gray-900">-${selectedInvoice.discount.toFixed(2)}</span>
+                        <span className="text-gray-900">-{formatPHP(selectedInvoice.discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-base border-t pt-2">
                       <span>Total:</span>
-                      <span>${selectedInvoice.total.toFixed(2)}</span>
+                      <span>{formatPHP(selectedInvoice.total)}</span>
                     </div>
                     {selectedInvoice.paid_amount > 0 && (
                       <>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Paid:</span>
-                          <span className="text-green-600">-${selectedInvoice.paid_amount.toFixed(2)}</span>
+                          <span className="text-green-600">-{formatPHP(selectedInvoice.paid_amount)}</span>
                         </div>
                         <div className="flex justify-between font-bold text-base text-blue-600">
                           <span>Balance Due:</span>
-                          <span>${selectedInvoice.balance.toFixed(2)}</span>
+                          <span>{formatPHP(selectedInvoice.balance)}</span>
                         </div>
                       </>
                     )}

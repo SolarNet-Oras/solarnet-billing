@@ -257,8 +257,8 @@
             <tr>
                 <td>{{ $item->description }}</td>
                 <td class="text-center">{{ $item->quantity }}</td>
-                <td class="text-right">${{ number_format($item->unit_price, 2) }}</td>
-                <td class="text-right">${{ number_format($item->total, 2) }}</td>
+                <td class="text-right">₱{{ number_format($item->unit_price, 2) }}</td>
+                <td class="text-right">₱{{ number_format($item->total, 2) }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -268,31 +268,31 @@
         <div class="totals">
             <table>
                 <tr>
-                    <td class="label">Subtotal:</td>
-                    <td class="amount">${{ number_format($invoice->subtotal, 2) }}</td>
+                    <td class="label">VATable Sale:</td>
+                    <td class="amount">₱{{ number_format($invoice->subtotal, 2) }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Tax (8% VAT):</td>
-                    <td class="amount">${{ number_format($invoice->tax, 2) }}</td>
+                    <td class="label">VAT (8%):</td>
+                    <td class="amount">₱{{ number_format($invoice->tax, 2) }}</td>
                 </tr>
                 @if($invoice->discount > 0)
                 <tr>
                     <td class="label">Discount:</td>
-                    <td class="amount">-${{ number_format($invoice->discount, 2) }}</td>
+                    <td class="amount">-₱{{ number_format($invoice->discount, 2) }}</td>
                 </tr>
                 @endif
                 <tr class="total-row">
-                    <td class="label">Total:</td>
-                    <td class="amount">${{ number_format($invoice->total, 2) }}</td>
+                    <td class="label">Total (VAT-inclusive):</td>
+                    <td class="amount">₱{{ number_format($invoice->total, 2) }}</td>
                 </tr>
                 @if($invoice->paid_amount > 0)
                 <tr>
                     <td class="label">Paid:</td>
-                    <td class="amount">-${{ number_format($invoice->paid_amount, 2) }}</td>
+                    <td class="amount">-₱{{ number_format($invoice->paid_amount, 2) }}</td>
                 </tr>
                 <tr class="total-row">
                     <td class="label">Balance Due:</td>
-                    <td class="amount">${{ number_format($invoice->balance, 2) }}</td>
+                    <td class="amount">₱{{ number_format($invoice->balance, 2) }}</td>
                 </tr>
                 @endif
             </table>
@@ -326,7 +326,7 @@
                     <td>{{ $payment->payment_number }}</td>
                     <td>{{ ucwords(str_replace('_', ' ', $payment->payment_method)) }}</td>
                     <td>{{ $payment->reference ?? $payment->transaction_id ?? '-' }}</td>
-                    <td class="text-right">${{ number_format($payment->amount, 2) }}</td>
+                    <td class="text-right">₱{{ number_format($payment->amount, 2) }}</td>
                 </tr>
                 @endforeach
             </tbody>

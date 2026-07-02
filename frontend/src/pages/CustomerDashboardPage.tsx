@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
+import { formatPHP } from '../lib/currency';
 
 const CustomerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -120,7 +121,7 @@ const CustomerDashboardPage: React.FC = () => {
                 <DollarSign className="w-6 h-6 text-red-600" />
               </div>
               <span className="text-2xl font-bold text-gray-900">
-                ${stats?.total_outstanding?.toFixed(2) || '0.00'}
+                {formatPHP(stats?.total_outstanding)}
               </span>
             </div>
             <h3 className="text-sm font-medium text-gray-600">Outstanding Balance</h3>
@@ -132,7 +133,7 @@ const CustomerDashboardPage: React.FC = () => {
                 <CreditCard className="w-6 h-6 text-green-600" />
               </div>
               <span className="text-2xl font-bold text-gray-900">
-                ${stats?.last_payment?.amount?.toFixed(2) || '-'}
+                {stats?.last_payment?.amount != null ? formatPHP(stats.last_payment.amount) : '-'}
               </span>
             </div>
             <h3 className="text-sm font-medium text-gray-600">Last Payment</h3>
@@ -172,7 +173,7 @@ const CustomerDashboardPage: React.FC = () => {
               <div className="flex justify-between py-2">
                 <span className="text-sm text-gray-600">Monthly Fee</span>
                 <span className="text-sm font-bold text-blue-600">
-                  ${customer?.service_plan?.price?.toFixed(2) || '0.00'}
+                  {formatPHP(customer?.service_plan?.price)}
                 </span>
               </div>
             </div>

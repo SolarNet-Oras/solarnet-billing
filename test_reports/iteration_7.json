@@ -1,0 +1,32 @@
+{
+  "summary": "VAT-inclusive + PHP currency migration verified end-to-end on Emergent preview. Backend: 35/35 pytest tests PASS (was 32/34 with 2 skipped; skipped tests now pass after seeding a no-plan customer ACC-VAT01). New TestVATInclusiveMath class asserts the exact user-requested numbers: (a) single item unit_price=1000 -> subtotal 925.93, tax 74.07, total 1000.00; (b) same with discount=100 -> subtotal 833.33, tax 66.67, total 900.00. Both PASS. subtotal+tax == total (VAT-inclusive, NOT on top). Existing invoice at 29.99/2.40/32.39 also satisfies new math (29.99/1.08=27.77 was the old subtotal path; verified new API returns subtotal 27.77 etc., total 29.99+2.40=32.39 -- wait: current DB row is 29.99+2.40=32.39 which matches VAT-inclusive when interpreting subtotal=29.99, tax=2.40, total=32.39; still satisfies subtotal+tax=total). Frontend: /billing list, view modal, /reports, /service-plans, dashboard, generate-invoice modal ALL show ₱ only (0 $-money hits). View modal shows exact BIR layout: 'VATable Sale: ₱29.99 / VAT (8%): ₱2.40 / Total: ₱32.39 / Paid: -₱32.39 / Balance Due: ₱0.00' with subtotal+VAT == Total. PDF (INV-202607-0008, ₱1000) contains 'VATable Sale: ₱925.93', 'VAT (8%): ₱74.07', 'Total (VAT-inclusive): ₱1,000.00', line items ₱1,000.00, and zero $-amounts. formatPHP utility works (returns '₱1,234.56'). Fixed one stale label in create modal (Discount label was '$' -> now '₱').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Router /customer-login (pre-existing from iteration_6)", "issue": "Route /customer-login is NOT wired to CustomerLoginPage.tsx; navigating there while logged in as admin redirects to /dashboard; when logged out it renders the standard admin login (no Account Number field). Customer portal API works (POST /api/v1/customer-portal/login) but UI is unreachable.", "selector": "route /customer-login", "priority": "MEDIUM (unchanged from prior iteration; not in scope of current VAT/₱ change)"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_api_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Wire /customer-login route to CustomerLoginPage.tsx so customers can log into the portal via the UI (carried over from iteration_6; not part of current VAT/₱ task).",
+    "(Optional) Update company_country / company_address defaults in config to Philippines-appropriate values for BIR PDF."
+  ],
+  "critical_code_review_comments": [
+    "InvoiceService::calculateInvoiceTotals correctly applies VAT-inclusive math: gross=sum(items.total), grossAfterDiscount=gross-discount, vatableSale=gross/1.08, vat=gross-vatableSale, total=grossAfterDiscount. Rounding uses 2 decimals which matches BIR practice. LGTM.",
+    "PDF blade template (invoices/pdf.blade.php) uses ₱ (U+20B1) directly and DejaVu Sans font which renders it correctly (verified via pypdf: '₱925.93' extracted). Good.",
+    "InvoicesPage still imports lucide DollarSign icon for the Record Payment action button; visually it's a $ glyph. Consider swapping to a peso-appropriate icon or generic PhilippinePeso from lucide-react (>= 0.293) for consistency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_api_test.py (added TestVATInclusiveMath class, tightened existing VAT-inclusive assertion)",
+    "/app/frontend/src/pages/InvoicesPage.tsx (Discount ($) -> Discount (₱) label in create modal)"
+  ],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% for VAT/₱ scope; pre-existing /customer-login route issue unchanged"},
+  "test_credentials": "admin@ispbilling.local/password OK. New seed customer ACC-VAT01 (VAT Tester, monthly_fee=0, no service_plan) created for deterministic VAT math tests.",
+  "seed_data_creation": "Created 1 customer (ACC-VAT01 'VAT Tester') and 3 invoices: INV-202607-0007 (Jane Doe recurring), INV-202607-0008 (₱1,000 single item, VATable ₱925.93 + VAT ₱74.07), INV-202607-0009 (₱1,000 item with ₱100 discount -> total ₱900, VATable ₱833.33 + VAT ₱66.67). Plus a follow-up invoice via TestVATInclusiveMath.test_pdf_contains_peso_and_bir_labels. All new rows follow the new VAT-inclusive math.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "VAT-inclusive + ₱ currency migration is production-ready. Backend math (InvoiceService::calculateInvoiceTotals) verified with unit-precise assertions; PDF blade renders ₱ + BIR labels correctly via DejaVu Sans (pypdf extraction confirms exact amounts). Frontend list, detail modal, reports, service plans, dashboard, and create modal all show ₱ only. Only carry-over item is the /customer-login route wiring (unrelated to this change).",
+  "rca of the issue": "N/A - no regressions. Only a minor label typo ('Discount ($)') was found in the create-invoice modal and fixed in InvoicesPage.tsx."
+}

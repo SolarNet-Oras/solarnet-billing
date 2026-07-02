@@ -143,21 +143,25 @@ class InvoiceService
 
     /**
      * Calculate and update invoice totals
+     * PH BIR VAT-inclusive: item prices already include 8% VAT.
+     * subtotal = VATable Sale (net), tax = VAT amount, total = gross (customer pays this)
      * 
      * @param Invoice $invoice
      * @return void
      */
     public function calculateInvoiceTotals(Invoice $invoice): void
     {
-        $subtotal = $invoice->items()->sum('total');
-        $tax = $subtotal * 0.08; // 8% VAT
-        $total = $subtotal + $tax - $invoice->discount;
-        $balance = $total - $invoice->paid_amount;
+        $vatRate = 0.08; // 8% VAT (PH BIR)
+        $gross = $invoice->items()->sum('total'); // items are VAT-inclusive
+        $grossAfterDiscount = round($gross - $invoice->discount, 2);
+        $vatableSale = round($grossAfterDiscount / (1 + $vatRate), 2);
+        $vat = round($grossAfterDiscount - $vatableSale, 2);
+        $balance = round($grossAfterDiscount - $invoice->paid_amount, 2);
 
         $invoice->update([
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'total' => $total,
+            'subtotal' => $vatableSale,      // VATable Sale (net)
+            'tax' => $vat,                    // VAT (informational, already included in total)
+            'total' => $grossAfterDiscount,   // Amount customer actually pays
             'balance' => $balance,
         ]);
     }

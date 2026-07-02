@@ -1,5 +1,6 @@
 import { type ServicePlan } from '@/services/servicePlanService';
 import { Edit, Trash2, Users, TrendingUp, TrendingDown, Zap } from 'lucide-react';
+import { formatPHP } from '@/lib/currency';
 
 interface ServicePlansTableProps {
   plans: ServicePlan[];
@@ -77,7 +78,7 @@ export function ServicePlansTable({ plans, onEdit, onDelete }: ServicePlansTable
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-semibold text-foreground">${plan.price}/mo</div>
+                  <div className="text-sm font-semibold text-foreground">{formatPHP(plan.price)}/mo</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
