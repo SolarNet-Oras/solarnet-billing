@@ -9,7 +9,7 @@ RUN apk add --no-cache \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS pcre-dev \
  && docker-php-ext-install \
       pdo pdo_pgsql pgsql \
-      mbstring zip exif pcntl bcmath gd intl soap opcache \
+      mbstring zip exif pcntl bcmath gd intl soap opcache sockets \
  && pecl install redis \
  && docker-php-ext-enable redis \
  && apk del .build-deps
