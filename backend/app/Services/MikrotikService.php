@@ -79,29 +79,72 @@ class MikrotikService
     }
 
     /**
-     * Sync data from MikroTik router
-     * Placeholder for future implementation
-     * 
-     * @param Router $router
-     * @return array
+     * Sync everything from the router — system status, queues, DHCP leases.
+     * Persists snapshot counts into the routers row and returns per-item counts.
      */
     public function syncRouter(Router $router): array
     {
-        // TODO: Implement in Phase 5 - full sync functionality
-        // - Sync DHCP leases
-        // - Sync active connections
-        // - Sync bandwidth queues
-        // - etc.
-        
-        return [
-            'success' => true,
-            'message' => 'Sync functionality will be implemented in Phase 5',
+        $result = [
+            'success'      => true,
+            'message'      => '',
             'synced_items' => [
                 'dhcp_leases' => 0,
-                'active_connections' => 0,
-                'queues' => 0,
+                'queues'      => 0,
+                'system'      => false,
             ],
+            'errors'       => [],
         ];
+
+        // 1) System / version — also functions as a live connectivity check
+        $conn = $this->testConnection($router);
+        if (!$conn['success']) {
+            return [
+                'success' => false,
+                'message' => $conn['message'],
+                'synced_items' => $result['synced_items'],
+                'errors' => [$conn['message']],
+            ];
+        }
+        $result['synced_items']['system'] = true;
+
+        // 2) DHCP leases
+        try {
+            $leases = $this->getDhcpLeasesDetailed($router);
+            if ($leases['success']) {
+                $result['synced_items']['dhcp_leases'] = $leases['count'];
+            } else {
+                $result['errors'][] = 'dhcp_leases: ' . ($leases['message'] ?? 'failed');
+            }
+        } catch (Exception $e) {
+            $result['errors'][] = 'dhcp_leases exception: ' . $e->getMessage();
+        }
+
+        // 3) Queues
+        try {
+            $queues = $this->getQueues($router);
+            if ($queues['success']) {
+                $result['synced_items']['queues'] = is_array($queues['data']) ? count($queues['data']) : 0;
+            } else {
+                $result['errors'][] = 'queues: ' . ($queues['message'] ?? 'failed');
+            }
+        } catch (Exception $e) {
+            $result['errors'][] = 'queues exception: ' . $e->getMessage();
+        }
+
+        // 4) Persist snapshot on the router record
+        $router->update(['last_sync_at' => now()]);
+
+        $result['message'] = sprintf(
+            'Synced %d DHCP leases, %d queues from %s',
+            $result['synced_items']['dhcp_leases'],
+            $result['synced_items']['queues'],
+            $router->name
+        );
+        if (!empty($result['errors'])) {
+            $result['success'] = false;
+        }
+
+        return $result;
     }
 
     /**

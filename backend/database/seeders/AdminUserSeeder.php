@@ -7,49 +7,41 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
+/**
+ * Creates the initial Super Administrator only.
+ * No demo/sample accounts are created.
+ * Uses ADMIN_EMAIL / ADMIN_PASSWORD env vars in production (see .env).
+ */
 class AdminUserSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Create Super Admin user
-        $superAdmin = User::create([
-            'name' => 'Super Administrator',
-            'email' => 'admin@ispbilling.local',
-            'phone' => '+1234567890',
-            'password' => Hash::make('password'), // Change this in production!
-            'is_active' => true,
-            'email_verified_at' => now(),
-        ]);
+        $email    = env('ADMIN_EMAIL', 'admin@ispbilling.local');
+        $password = env('ADMIN_PASSWORD', 'password');
+        $name     = env('ADMIN_NAME', 'Super Administrator');
+        $phone    = env('ADMIN_PHONE', '+000000000');
 
-        // Assign Super Admin role
-        $superAdminRole = Role::where('name', 'super_admin')->first();
-        $superAdmin->roles()->attach($superAdminRole->id);
+        // Idempotent: create-or-update
+        $admin = User::updateOrCreate(
+            ['email' => $email],
+            [
+                'name'              => $name,
+                'phone'             => $phone,
+                'password'          => Hash::make($password),
+                'is_active'         => true,
+                'email_verified_at' => now(),
+            ]
+        );
 
-        $this->command->info('Super Admin user created:');
-        $this->command->info('  Email: admin@ispbilling.local');
-        $this->command->warn('  Password: password (CHANGE THIS IN PRODUCTION!)');
+        // Assign super_admin role (only if not already assigned)
+        $roleId = Role::where('name', 'super_admin')->value('id');
+        if ($roleId && !$admin->roles()->where('roles.id', $roleId)->exists()) {
+            $admin->roles()->attach($roleId);
+        }
 
-        // Create Demo Admin user
-        $admin = User::create([
-            'name' => 'Admin User',
-            'email' => 'demo@ispbilling.local',
-            'phone' => '+1234567891',
-            'password' => Hash::make('password'),
-            'is_active' => true,
-            'email_verified_at' => now(),
-        ]);
-
-        // Assign Admin role
-        $adminRole = Role::where('name', 'admin')->first();
-        $admin->roles()->attach($adminRole->id);
-
-        $this->command->info('Demo Admin user created:');
-        $this->command->info('  Email: demo@ispbilling.local');
-        $this->command->warn('  Password: password');
-
-        $this->command->info('Users seeded successfully!');
+        $this->command->info("Super Administrator ready: {$email}");
+        if ($password === 'password') {
+            $this->command->warn('  ⚠  Default password is in use. Change it in the app immediately, or set ADMIN_PASSWORD in .env before seeding.');
+        }
     }
 }

@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 8 — Real-data conversion (removed all mocks/hardcoded values) verified end-to-end. 14/14 pytest tests PASS. Backend dashboard/metrics + quick-stats return live DB values (total_subscribers=2, monthly_revenue=₱32.39, router_status={online:0,offline:1,error:0,total:1}, open_tickets=5, resolved_today=3, pending_payments=1). Quick-stats cards contain 'X / Y online' string for Router Uptime, real 'vs last month' change labels (+100% because prev month had zero baseline), no '+12%', '+8%', '99.9%', '1.2K' hardcoded strings anywhere. Demo user demo@ispbilling.local login correctly returns {status:'error', message:'Invalid credentials'} — migration removed the row. Admin login still works and returns a bearer token. HSGQ OLT: /hsgq-olt returns real (empty for current DB) list; /hsgq-olt/{uuid}/onts returns {success:true, data:[], notice:'ONT enumeration requires SNMP...'} — no fake John Doe/Jane Smith/AA:BB:CC:DD ONTs; /discover, /authorize (with valid payload), /reboot, /statistics all return HTTP 501 code:NOT_IMPLEMENTED; invalid OLT id returns 404. MikroTik router sync no longer returns 'Phase 5' placeholder — real RouterOS error 'Connection failed: Unable to establish socket session, Connection timed out' is returned with success:false and synced_items={dhcp_leases:0,queues:0,system:false} (expected because the seeded router 104.198.214.223 is unreachable from preview). Frontend /dashboard verified visually: no forbidden strings ('+12% from last month', '+8% from last month', 'Phase 3: Dashboard & Core UI - Complete') present; ₱ prefix present on Monthly Revenue (₱32.39) and Today's Revenue (₱32.39); metric cards populate from real API. Regression endpoints (customers, invoices, service-plans, tickets, payments) all 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/v1/hsgq-olt/{oltId}/onts (& sibling routes)", "issue": "When {oltId} is not a valid UUID string (e.g., 'nonexistent'), PostgreSQL throws 22P02 and Laravel returns HTTP 500 HTML page instead of a JSON 404/400. Real UUIDs work fine (404 when not found). Consider catching QueryException or validating the parameter with Route::pattern('oltId', UUID regex) or Str::isUuid() guard."},
+      {"endpoint": "/api/v1/reports/summary", "issue": "Returns 404 — this route does not exist. Only /reports/{revenue,customer-growth,payment-methods,service-plans,tickets} exist. Not a regression (pre-existing), but flagging in case the UI expects a summary endpoint."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Router /customer-login (carried over from iteration_6/7)", "issue": "Route /customer-login is still not wired to CustomerLoginPage.tsx. Not in scope of this task.", "selector": "route /customer-login", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_real_data_dashboard.py",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "action_items": [
+    "(Minor / defensive) In HsgqOltController::getOnts/discoverOnts/authorizeOnt/rebootOnt/getOntStatistics, wrap Router::find() with a UUID validity check or add Route::pattern('oltId', '[0-9a-fA-F-]{36}') to routes/api.php so non-UUID inputs return a clean 404/400 JSON instead of Laravel's 500 HTML page.",
+    "(Optional) Consider changing percentChange() to return null (instead of 100.0) when prev==0 AND curr==0-only-because-of-first-month, so the UI shows 'No prior data' on greenfield installs. Current +100% is acceptable but could be misleading on brand new deployments."
+  ],
+  "critical_code_review_comments": [
+    "DashboardController real-data rewrite is clean: uses Carbon month boundaries, proper aggregates (whereDate/whereBetween), handles null baseline in percentChange helper. LGTM.",
+    "HsgqOltController correctly returns 501 + code:NOT_IMPLEMENTED for unimplemented actions and empty data with 'notice' string for getOnts — matches spec.",
+    "MikrotikService::syncRouter now returns real testConnection/getDhcpLeases/getQueues output; error surface is the RouterOS client's actual exception message — no placeholder text. Good.",
+    "AdminUserSeeder uses updateOrCreate (idempotent) and creates only Super Administrator. The 2026_07_02_190000_remove_demo_user migration successfully removed demo@ispbilling.local (verified: login returns 'Invalid credentials').",
+    "NewDashboardPage.tsx cleanly reads metrics.subscribers_change_pct / metrics.revenue_change_pct with (X ?? 0) fallbacks and formats ₱ via toLocaleString('en-PH'). No hardcoded strings remain."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_real_data_dashboard.py (new — 14 tests covering auth, metrics, quick-stats, HSGQ OLT, router sync, regressions)"
+  ],
+  "success_rate": {"backend": "100% (14/14 new + prior 35/35 unchanged)", "frontend": "100% for dashboard scope"},
+  "test_credentials": "admin@ispbilling.local / password (only account remaining). demo@ispbilling.local has been removed as expected.",
+  "seed_data_creation": "None — used existing preview DB rows (2 customers, 5 tickets, 1 router, 1 payment ₱32.39). Did not mutate shared preview data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Real-data conversion is production-ready. Only very minor hardening left: (1) HSGQ OLT routes 500 on invalid non-UUID id (harmless in practice but ugly); (2) percentChange returns 100 when prev=0, curr>0 (spec allowed null too). Both are stylistic/defensive. Nothing blocking VPS deploy. Peso currency + VAT-inclusive math from iteration_7 remain intact (not re-verified as instructed)."
+}

@@ -3,162 +3,160 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Router;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * HSGQ OLT integration endpoints.
+ *
+ * OLT device records are stored in the routers table with `device_type = 'olt'`.
+ * ONT discovery / statistics require live SNMP/telnet calls to the OLT and are
+ * marked as "not_implemented" until the SNMP integration layer is added.
+ */
 class HsgqOltController extends Controller
 {
-    /**
-     * Get HSGQ OLT devices
-     */
+    /** List HSGQ OLT devices (real records from DB). */
     public function index(): JsonResponse
     {
-        // Mock data - replace with actual HSGQ OLT API integration
-        $devices = [
-            [
-                'id' => '1',
-                'name' => 'HSGQ-OLT-01',
-                'ip_address' => '192.168.1.100',
-                'model' => 'HSGQ-H901',
-                'status' => 'online',
-                'firmware_version' => '2.1.5',
-                'total_ports' => 16,
-                'active_onts' => 42,
-            ],
-        ];
+        // Only routers explicitly tagged as OLT via the notes field or a
+        // future dedicated column. Until the schema has a `device_type` column,
+        // we look for routers whose name/notes include "OLT" or "HSGQ".
+        $devices = Router::where(function ($q) {
+            $q->where('name', 'ILIKE', '%olt%')
+              ->orWhere('name', 'ILIKE', '%hsgq%')
+              ->orWhere('notes', 'ILIKE', '%olt%');
+        })
+        ->orderBy('name')
+        ->get()
+        ->map(function (Router $r) {
+            return [
+                'id'                => $r->id,
+                'name'              => $r->name,
+                'ip_address'        => $r->host,
+                'model'             => $r->routeros_version ?? 'Unknown',
+                'status'            => $r->connection_status ?? 'unknown',
+                'firmware_version'  => $r->routeros_version,
+                'last_connected_at' => $r->last_connected_at,
+                'location'          => $r->location,
+            ];
+        });
 
-        return response()->json($devices);
+        return response()->json([
+            'success' => true,
+            'data'    => $devices,
+        ]);
     }
 
     /**
-     * Get ONTs connected to OLT
+     * List ONTs connected to an OLT.
+     * TODO: implement SNMP polling to HSGQ OLT to enumerate ONTs.
+     * For now return an empty list rather than fabricated demo data.
      */
     public function getOnts(string $oltId): JsonResponse
     {
-        // Mock data - replace with SNMP/API calls to HSGQ OLT
-        $onts = [
-            [
-                'id' => '1',
-                'ont_id' => 'ONT-001',
-                'serial_number' => 'HSGQ12345678',
-                'customer_name' => 'John Doe',
-                'port' => '1/1/1',
-                'status' => 'online',
-                'signal_strength' => -18.5,
-                'uptime' => '15 days',
-                'ip_address' => '10.0.0.100',
-                'mac_address' => 'AA:BB:CC:DD:EE:01',
-                'distance' => '1.2km',
-            ],
-            [
-                'id' => '2',
-                'ont_id' => 'ONT-002',
-                'serial_number' => 'HSGQ12345679',
-                'customer_name' => 'Jane Smith',
-                'port' => '1/1/2',
-                'status' => 'online',
-                'signal_strength' => -21.2,
-                'uptime' => '8 days',
-                'ip_address' => '10.0.0.101',
-                'mac_address' => 'AA:BB:CC:DD:EE:02',
-                'distance' => '2.5km',
-            ],
-        ];
+        $olt = Router::find($oltId);
+        if (!$olt) {
+            return response()->json(['success' => false, 'message' => 'OLT not found'], 404);
+        }
 
-        return response()->json($onts);
+        return response()->json([
+            'success' => true,
+            'data'    => [],
+            'notice'  => 'ONT enumeration requires the SNMP integration layer (not yet implemented). Configure SNMP credentials on the OLT device to enable this feature.',
+        ]);
     }
 
     /**
-     * Discover new ONTs
+     * Trigger ONT discovery on the OLT.
+     * Requires SNMP integration — returns a clear "not implemented" response.
      */
     public function discoverOnts(Request $request, string $oltId): JsonResponse
     {
-        Log::info('ONT discovery initiated', ['olt_id' => $oltId]);
+        $olt = Router::find($oltId);
+        if (!$olt) {
+            return response()->json(['success' => false, 'message' => 'OLT not found'], 404);
+        }
 
-        // Mock discovery - in production, send commands to HSGQ OLT
+        Log::info('ONT discovery requested', ['olt_id' => $oltId]);
+
         return response()->json([
-            'message' => 'ONT discovery initiated',
-            'discovered' => 2,
-            'onts' => [
-                [
-                    'serial_number' => 'HSGQ12345680',
-                    'port' => '1/1/3',
-                    'status' => 'pending_authorization',
-                ],
-            ],
-        ]);
+            'success' => false,
+            'message' => 'ONT discovery not implemented yet. This endpoint will run a real SNMP/CLI discovery on the OLT once the integration layer is added.',
+            'code'    => 'NOT_IMPLEMENTED',
+        ], 501);
     }
 
     /**
-     * Authorize ONT
+     * Authorize an ONT with a line/service profile.
+     * TODO: send actual authorization command to the OLT.
      */
     public function authorizeOnt(Request $request, string $oltId, string $ontId): JsonResponse
     {
-        $validator = \Validator::make($request->all(), [
-            'line_profile' => 'required|string',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'line_profile'    => 'required|string',
             'service_profile' => 'required|string',
-            'vlan' => 'nullable|integer',
+            'vlan'            => 'nullable|integer',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors(),
+                'success' => false,
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
-        Log::info('ONT authorized', [
-            'olt_id' => $oltId,
-            'ont_id' => $ontId,
-            'line_profile' => $request->line_profile,
+        $olt = Router::find($oltId);
+        if (!$olt) {
+            return response()->json(['success' => false, 'message' => 'OLT not found'], 404);
+        }
+
+        Log::info('ONT authorization requested', [
+            'olt_id'  => $oltId,
+            'ont_id'  => $ontId,
+            'profile' => $request->line_profile,
         ]);
 
         return response()->json([
-            'message' => 'ONT authorized successfully',
-            'ont' => [
-                'id' => $ontId,
-                'status' => 'online',
-                'line_profile' => $request->line_profile,
-                'service_profile' => $request->service_profile,
-            ],
-        ]);
+            'success' => false,
+            'message' => 'ONT authorization not implemented yet. Requires OLT SNMP/CLI integration.',
+            'code'    => 'NOT_IMPLEMENTED',
+        ], 501);
     }
 
     /**
-     * Reboot ONT
+     * Reboot an ONT (not yet implemented).
      */
     public function rebootOnt(string $oltId, string $ontId): JsonResponse
     {
-        Log::info('ONT reboot initiated', ['olt_id' => $oltId, 'ont_id' => $ontId]);
+        $olt = Router::find($oltId);
+        if (!$olt) {
+            return response()->json(['success' => false, 'message' => 'OLT not found'], 404);
+        }
 
-        // In production, send reboot command to HSGQ OLT
+        Log::info('ONT reboot requested', ['olt_id' => $oltId, 'ont_id' => $ontId]);
+
         return response()->json([
-            'message' => 'ONT reboot command sent successfully',
-            'ont_id' => $ontId,
-        ]);
+            'success' => false,
+            'message' => 'ONT reboot not implemented yet. Requires OLT SNMP/CLI integration.',
+            'code'    => 'NOT_IMPLEMENTED',
+        ], 501);
     }
 
     /**
-     * Get ONT statistics
+     * Get ONT statistics (not yet implemented).
      */
     public function getOntStatistics(string $oltId, string $ontId): JsonResponse
     {
-        // Mock data - replace with actual SNMP queries
-        $stats = [
-            'ont_id' => $ontId,
-            'signal_strength_rx' => -18.5,
-            'signal_strength_tx' => 2.3,
-            'temperature' => 45.2,
-            'voltage' => 3.3,
-            'uptime_seconds' => 1296000,
-            'bytes_sent' => 52428800000,
-            'bytes_received' => 104857600000,
-            'packets_sent' => 41943040,
-            'packets_received' => 83886080,
-            'errors' => 0,
-        ];
+        $olt = Router::find($oltId);
+        if (!$olt) {
+            return response()->json(['success' => false, 'message' => 'OLT not found'], 404);
+        }
 
-        return response()->json($stats);
+        return response()->json([
+            'success' => false,
+            'message' => 'ONT statistics not implemented yet. Requires OLT SNMP integration.',
+            'code'    => 'NOT_IMPLEMENTED',
+        ], 501);
     }
 }

@@ -10,10 +10,12 @@ interface DashboardMetrics {
   expired_subscribers: number;
   suspended_subscribers: number;
   total_subscribers: number;
+  subscribers_change_pct: number | null;
   online_users: number;
   offline_users: number;
   today_revenue: number;
   monthly_revenue: number;
+  revenue_change_pct: number | null;
   pending_payments: number;
   overdue_invoices: number;
   open_tickets: number;
@@ -29,6 +31,16 @@ interface DashboardMetrics {
   active_users: number;
   users_online: number;
 }
+
+const fmtPct = (pct: number | null | undefined): string => {
+  if (pct === null || pct === undefined) return 'No prior data';
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${pct}% vs last month`;
+};
+const pctTrend = (pct: number | null | undefined): 'up' | 'down' | 'stable' => {
+  if (pct === null || pct === undefined || Math.abs(pct) < 0.1) return 'stable';
+  return pct > 0 ? 'up' : 'down';
+};
 
 const NewDashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -71,32 +83,38 @@ const NewDashboardPage: React.FC = () => {
           <MetricCard
             title="Total Subscribers"
             value={metrics?.total_subscribers || 0}
-            change="+12% from last month"
-            trend="up"
+            change={fmtPct(metrics?.subscribers_change_pct)}
+            trend={pctTrend(metrics?.subscribers_change_pct)}
             icon="👥"
             loading={loading}
           />
           <MetricCard
             title="Active Subscribers"
             value={metrics?.active_subscribers || 0}
-            change="Stable"
-            trend="stable"
+            change={`${metrics?.suspended_subscribers ?? 0} suspended`}
+            trend={
+              (metrics?.active_subscribers ?? 0) > 0 && (metrics?.suspended_subscribers ?? 0) === 0
+                ? 'up'
+                : (metrics?.suspended_subscribers ?? 0) > 0
+                ? 'down'
+                : 'stable'
+            }
             icon="✅"
             loading={loading}
           />
           <MetricCard
             title="Monthly Revenue"
-            value={`₱${metrics?.monthly_revenue.toLocaleString() || '0.00'}`}
-            change="+8% from last month"
-            trend="up"
+            value={`₱${(metrics?.monthly_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            change={fmtPct(metrics?.revenue_change_pct)}
+            trend={pctTrend(metrics?.revenue_change_pct)}
             icon="💰"
             loading={loading}
           />
           <MetricCard
             title="Online Users"
-            value={metrics?.users_online || 0}
-            change={`${metrics?.active_users || 0} active`}
-            trend="up"
+            value={metrics?.online_users ?? 0}
+            change={`${metrics?.active_subscribers ?? 0} active subs`}
+            trend={(metrics?.online_users ?? 0) > 0 ? 'up' : 'stable'}
             icon="🌐"
             loading={loading}
           />
@@ -177,7 +195,7 @@ const NewDashboardPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <MetricCard
             title="Today's Revenue"
-            value={`₱${metrics?.today_revenue.toLocaleString() || '0.00'}`}
+            value={`₱${(metrics?.today_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             icon="💵"
             loading={loading}
           />
@@ -195,33 +213,6 @@ const NewDashboardPage: React.FC = () => {
             icon="🎫"
             loading={loading}
           />
-        </div>
-
-        {/* System Info */}
-        <div className="bg-secondary border border-border rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            ✅ Phase 3: Dashboard & Core UI - Complete!
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-muted-foreground">
-            <div>
-              <h3 className="font-semibold text-foreground mb-2">Features Implemented:</h3>
-              <ul className="space-y-1">
-                <li>✅ Dashboard layout with sidebar</li>
-                <li>✅ Real-time metrics display</li>
-                <li>✅ Responsive design</li>
-                <li>✅ Dark/Light theme toggle</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground mb-2">Your Access:</h3>
-              <ul className="space-y-1">
-                <li>👤 User: {user?.name}</li>
-                <li>📧 Email: {user?.email}</li>
-                <li>🎭 Role: {user?.roles?.[0]?.display_name}</li>
-                <li>🔐 Permissions: {user?.permissions?.length || 0}</li>
-              </ul>
-            </div>
-          </div>
         </div>
       </div>
     </DashboardLayout>
