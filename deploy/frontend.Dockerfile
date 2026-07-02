@@ -8,8 +8,10 @@ WORKDIR /app
 COPY frontend/package.json frontend/yarn.lock* frontend/package-lock.json* ./
 RUN if [ -f yarn.lock ]; then \
       corepack enable && yarn install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then \
+      npm ci --no-audit --no-fund; \
     else \
-      npm ci; \
+      npm install --no-audit --no-fund; \
     fi
 
 COPY frontend/ ./
