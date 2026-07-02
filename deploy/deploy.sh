@@ -104,7 +104,7 @@ $COMPOSE run --rm backend php artisan db:seed --force || true
 echo "==> Optimising Laravel (cache config/routes/views)"
 $COMPOSE run --rm backend php artisan config:cache
 $COMPOSE run --rm backend php artisan route:cache
-$COMPOSE run --rm backend php artisan view:cache
+$COMPOSE run --rm backend php artisan view:cache 2>/dev/null || echo "    (no blade views to cache - OK for API-only apps)"
 $COMPOSE run --rm backend php artisan storage:link || true
 
 echo "==> Starting all services"
