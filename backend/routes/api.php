@@ -86,8 +86,11 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/{id}/test-connection', [RouterController::class, 'testConnection']);
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);
             Route::get('routers/{id}/setup-script', [RouterController::class, 'generateSetupScript']);
+            Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
         });
+        // Network info: any authenticated user can view (needed to render the "Add Router" wizard)
+        Route::get('system/network-info', [RouterController::class, 'networkInfo']);
         Route::post('routers/{id}/sync-dhcp', [RouterController::class, 'syncDhcpLeases'])->middleware('permission:sync-dhcp');
         Route::get('routers/{id}/unmatched-leases', [RouterController::class, 'getUnmatchedLeases'])->middleware('permission:view-dhcp');
         

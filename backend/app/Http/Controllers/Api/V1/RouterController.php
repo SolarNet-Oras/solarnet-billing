@@ -207,13 +207,14 @@ class RouterController extends Controller
             ], 404);
         }
 
-        $billingSystemIp = $request->input('billing_system_ip');
+        $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
         $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'script' => $script,
+                'billing_system_ip' => $billingSystemIp,
                 'router' => [
                     'name' => $router->name,
                     'host' => $router->host,
@@ -221,6 +222,89 @@ class RouterController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Preview a setup script WITHOUT persisting a router record.
+     * Used by the "Add Router" wizard so the user can paste the script
+     * on MikroTik before saving the router in the app.
+     */
+    public function previewSetupScript(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'name'     => 'required|string|max:100',
+            'host'     => 'nullable|string|max:255',
+            'port'     => 'nullable|integer|min:1|max:65535',
+            'username' => 'required|string|max:64',
+            'password' => 'required|string|min:6|max:128',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        // Build an in-memory Router (unsaved) purely for the script generator
+        $router = new Router([
+            'name'     => $request->input('name'),
+            'host'     => $request->input('host') ?: '0.0.0.0',
+            'port'     => (int) ($request->input('port') ?: 8728),
+            'username' => $request->input('username'),
+            'password' => $request->input('password'),
+        ]);
+
+        $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
+        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'script' => $script,
+                'billing_system_ip' => $billingSystemIp,
+            ],
+        ]);
+    }
+
+    /**
+     * Return network info the frontend needs for MikroTik setup:
+     * - Public IP of this billing server (to whitelist on the MikroTik firewall)
+     * - Recommended API port defaults
+     */
+    public function networkInfo(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'billing_system_ip' => $this->detectPublicIp(),
+                'default_api_port'  => 8728,
+                'default_ssl_port'  => 8729,
+            ],
+        ]);
+    }
+
+    /**
+     * Best-effort detection of this server's outbound public IP.
+     * Results are cached for 1 hour to avoid hammering the external services.
+     */
+    protected function detectPublicIp(): ?string
+    {
+        return \Illuminate\Support\Facades\Cache::remember('billing.public_ip', 3600, function () {
+            foreach (['https://api.ipify.org', 'https://ifconfig.me/ip', 'https://ipinfo.io/ip'] as $endpoint) {
+                try {
+                    $ctx = stream_context_create(['http' => ['timeout' => 3]]);
+                    $ip  = @file_get_contents($endpoint, false, $ctx);
+                    $ip  = trim((string) $ip);
+                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                        return $ip;
+                    }
+                } catch (\Throwable $e) {
+                    // try next endpoint
+                }
+            }
+            return null;
+        });
     }
 
     /**

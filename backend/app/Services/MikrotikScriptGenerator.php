@@ -21,102 +21,98 @@ class MikrotikScriptGenerator
         
         $script = <<<SCRIPT
 # ============================================================
-# MikroTik RouterOS API Setup Script
-# Generated for: {$router->name}
-# Router: {$router->host}
-# Generated: {{date}}
+# MikroTik Setup Script - {$router->name}
+# ------------------------------------------------------------
+# Generated : {{date}}
+# Router    : {$router->host}
+# API Port  : {$apiPort}
+# API User  : {$username}
 # ============================================================
-#
-# INSTRUCTIONS:
-# 1. Connect to your MikroTik router via Winbox or SSH
-# 2. Open "New Terminal" window
-# 3. Copy and paste this entire script
-# 4. Press Enter to execute
-#
+# HOW TO USE
+#   1. Winbox  ->  connect to router  ->  New Terminal
+#      (or SSH into the router)
+#   2. Paste this ENTIRE block and press Enter
+#   3. Wait for the line "=== Setup Complete ==="
 # ============================================================
 
-:log info "Starting ISP Billing System API Setup..."
+:log info "[BILLING] Starting setup..."
+:put "[BILLING] Starting setup..."
 
-# Step 1: Create API user for billing system
+# --- 1/4  Create dedicated API user group (safe if it already exists)
 /user group
 :if ([:len [find name="billing_api_group"]] = 0) do={
     add name="billing_api_group" \\
         policy=api,read,write,policy,test,password,web,!local,!telnet,!ssh,!ftp,!reboot,!sensitive
-    :log info "Created user group: billing_api_group"
+    :put "  [+] Created group billing_api_group"
 } else={
-    :log info "User group 'billing_api_group' already exists"
+    :put "  [=] Group billing_api_group already present"
 }
 
+# --- 2/4  Create or update the API user
 /user
 :if ([:len [find name="{$username}"]] = 0) do={
-    add name="{$username}" \\
-        password="{$password}" \\
-        group=billing_api_group \\
-        comment="ISP Billing System API Access"
-    :log info "Created API user: {$username}"
+    add name="{$username}" password="{$password}" group=billing_api_group \\
+        comment="Solarnet Billing API"
+    :put "  [+] Created user {$username}"
 } else={
     set [find name="{$username}"] password="{$password}" group=billing_api_group
-    :log info "Updated existing user: {$username}"
+    :put "  [=] Updated existing user {$username}"
 }
 
-# Step 2: Enable API service on port {$apiPort}
+# --- 3/4  Enable RouterOS API service on port {$apiPort}
 /ip service
-set api address="" port={$apiPort} disabled=no
-:log info "Enabled API service on port {$apiPort}"
+set api disabled=no port={$apiPort}
+:put "  [+] API service enabled on port {$apiPort}"
 
 SCRIPT;
 
-        // Add firewall rules if billing system IP is provided
         if ($billingSystemIp) {
             $script .= <<<FIREWALL
 
-# Step 3: Configure firewall to allow API access from billing system
+# --- 4/4  Firewall: allow API traffic ONLY from the billing server
 /ip firewall filter
-:if ([:len [find comment="Allow Billing System API"]] = 0) do={
-    add chain=input \\
-        protocol=tcp \\
-        dst-port={$apiPort} \\
-        src-address={$billingSystemIp} \\
-        action=accept \\
-        comment="Allow Billing System API" \\
-        place-before=0
-    :log info "Added firewall rule to allow API from {$billingSystemIp}"
+:if ([:len [find comment="Solarnet Billing API"]] = 0) do={
+    add chain=input protocol=tcp dst-port={$apiPort} \\
+        src-address={$billingSystemIp} action=accept \\
+        comment="Solarnet Billing API" place-before=0
+    :put "  [+] Firewall rule added for {$billingSystemIp}"
 } else={
-    :log info "Firewall rule for billing API already exists"
+    :put "  [=] Firewall rule already present"
 }
+# Restrict the API service itself to the billing IP (defense-in-depth)
+/ip service set api address={$billingSystemIp}/32
 
 FIREWALL;
+        } else {
+            $script .= <<<NOFW
+
+# --- 4/4  Firewall step skipped (billing system IP unknown).
+#         Add manually:  /ip firewall filter add chain=input protocol=tcp \\
+#                        dst-port={$apiPort} src-address=<YOUR_BILLING_IP> action=accept
+
+NOFW;
         }
 
-        $script .= <<<SETUP
+        $script .= <<<TAIL
 
-# Step 4: Create address list for suspended customers (optional)
+# --- 5/5  Address list used by the billing system to throttle suspended customers
 /ip firewall address-list
 :if ([:len [find list="suspended_customers"]] = 0) do={
-    :log info "Created address list: suspended_customers"
-} else={
-    :log info "Address list 'suspended_customers' exists"
+    :put "  [i] Address list suspended_customers will be populated by the billing system"
 }
 
-# Step 5: Test API connectivity
-:log info "Testing API service status..."
+# Verify
+:put ""
+:put "--- Verification ---"
 /ip service print where name=api
+/user print where name={$username}
 
-# Setup Complete!
-:log info "=== ISP Billing System API Setup Complete ==="
-:log info "API User: {$username}"
-:log info "API Port: {$apiPort}"
-:log info ""
-:log info "Next steps:"
-:log info "1. Test connection from billing system"
-:log info "2. Click 'Test Connection' button in billing dashboard"
-:log info ""
-:log info "If connection fails, check:"
-:log info "- Firewall rules (IP > Firewall > Filter Rules)"
-:log info "- API service enabled (IP > Services)"
-:log info "- User permissions (System > Users)"
+:put ""
+:put "=== Setup Complete ==="
+:put "Now go back to the billing app and click 'Save Router'."
+:log info "[BILLING] Setup complete."
 
-SETUP;
+TAIL;
 
         return str_replace('{{date}}', now()->format('Y-m-d H:i:s'), $script);
     }

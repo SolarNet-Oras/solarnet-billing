@@ -80,9 +80,31 @@ export const routerService = {
     return response.data;
   },
 
-  async generateSetupScript(id: string, billingSystemIp?: string): Promise<{ script: string }> {
+  async generateSetupScript(id: string, billingSystemIp?: string): Promise<{ script: string; billing_system_ip?: string | null }> {
     const params = billingSystemIp ? { billing_system_ip: billingSystemIp } : {};
-    const response = await api.get<{ success: boolean; data: { script: string } }>(`/routers/${id}/setup-script`, { params });
+    const response = await api.get<{ success: boolean; data: { script: string; billing_system_ip?: string | null } }>(`/routers/${id}/setup-script`, { params });
+    return response.data.data;
+  },
+
+  async previewSetupScript(data: {
+    name: string;
+    host?: string;
+    port?: number;
+    username: string;
+    password: string;
+    billing_system_ip?: string;
+  }): Promise<{ script: string; billing_system_ip: string | null }> {
+    const response = await api.post<{ success: boolean; data: { script: string; billing_system_ip: string | null } }>(
+      '/routers/preview-script',
+      data
+    );
+    return response.data.data;
+  },
+
+  async getNetworkInfo(): Promise<{ billing_system_ip: string | null; default_api_port: number; default_ssl_port: number }> {
+    const response = await api.get<{ success: boolean; data: { billing_system_ip: string | null; default_api_port: number; default_ssl_port: number } }>(
+      '/system/network-info'
+    );
     return response.data.data;
   },
 
