@@ -29,6 +29,12 @@ const CreateCustomerPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [servicePlans, setServicePlans] = useState<ServicePlan[]>([]);
+  const [portalCredentials, setPortalCredentials] = useState<{
+    email: string;
+    password: string;
+    portal_url: string;
+    welcome_email_sent: boolean;
+  } | null>(null);
   
   const [formData, setFormData] = useState<CustomerFormData>({
     account_number: `ACC${Date.now().toString().slice(-8)}`,
@@ -65,8 +71,23 @@ const CreateCustomerPage: React.FC = () => {
     setLoading(true);
 
     try {
-      await api.post('/customers', formData);
-      navigate('/customers');
+      const response = await api.post('/customers', {
+        ...formData,
+        send_welcome_email: true,
+        sync_queue: !!formData.router_id && !!formData.service_plan_id,
+      });
+      const creds = response.data?.portal_credentials;
+      const queueMsg = response.data?.queue_sync;
+      if (creds?.password) {
+        setPortalCredentials(creds);
+      } else {
+        // Nothing to show — go straight to the list
+        navigate('/customers');
+      }
+      if (queueMsg && !queueMsg.startsWith('synced')) {
+        // Non-fatal: show a soft warning under the success card
+        setError(`Customer created, but MikroTik queue sync said: ${queueMsg}`);
+      }
     } catch (err: any) {
       const message = err.response?.data?.message || 'Failed to create customer';
       setError(message);
@@ -88,6 +109,64 @@ const CreateCustomerPage: React.FC = () => {
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4">
             <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          </div>
+        )}
+
+        {/* Success: show one-time portal credentials */}
+        {portalCredentials && (
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-6" data-testid="portal-credentials-card">
+            <h2 className="text-lg font-bold text-emerald-900 dark:text-emerald-100 mb-2">
+              Customer created — portal credentials
+            </h2>
+            <p className="text-sm text-emerald-800 dark:text-emerald-200 mb-4">
+              Share these credentials with the customer. This password is shown <strong>once</strong> and is not recoverable.
+              {portalCredentials.welcome_email_sent && ' A welcome email was also queued.'}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Email</div>
+                <div className="font-mono text-emerald-900 dark:text-emerald-100 break-all">{portalCredentials.email}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Password</div>
+                <div className="flex items-center gap-2">
+                  <code className="font-mono font-bold text-emerald-900 dark:text-emerald-100 bg-white dark:bg-black/40 px-2 py-1 rounded" data-testid="portal-password">
+                    {portalCredentials.password}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(portalCredentials.password)}
+                    className="text-xs text-emerald-700 dark:text-emerald-300 hover:underline"
+                    data-testid="copy-portal-password"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Portal URL</div>
+                <a href={portalCredentials.portal_url} className="font-mono text-emerald-900 dark:text-emerald-100 hover:underline break-all">
+                  {portalCredentials.portal_url}
+                </a>
+              </div>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/customers')}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700"
+                data-testid="portal-creds-go-list"
+              >
+                Go to Customers
+              </button>
+              <button
+                type="button"
+                onClick={() => setPortalCredentials(null)}
+                className="px-4 py-2 border border-emerald-300 text-emerald-800 dark:text-emerald-200 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
+              >
+                Add Another Customer
+              </button>
+            </div>
           </div>
         )}
 

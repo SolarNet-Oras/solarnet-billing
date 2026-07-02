@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Services\CustomerAccountService;
 use App\Services\QueueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,10 +13,12 @@ use Illuminate\Support\Facades\Validator;
 class CustomerController extends Controller
 {
     protected QueueService $queueService;
+    protected CustomerAccountService $accountService;
 
-    public function __construct(QueueService $queueService)
+    public function __construct(QueueService $queueService, CustomerAccountService $accountService)
     {
         $this->queueService = $queueService;
+        $this->accountService = $accountService;
     }
 
     /**
@@ -94,12 +97,44 @@ class CustomerController extends Controller
             ], 422);
         }
 
-        $customer = Customer::create($request->all());
+        $customer = Customer::create($request->except(['send_welcome_email', 'sync_queue']));
+
+        // If an email is present, provision a portal password so they can log in
+        $plainPassword = null;
+        if (!empty($customer->email)) {
+            $plainPassword = $this->accountService->provisionPortalCredentials($customer);
+        }
+
+        // Optionally send a welcome email (defaults to true when email is set)
+        $emailSent = false;
+        $shouldEmail = $request->boolean('send_welcome_email', !empty($customer->email));
+        if ($plainPassword && $shouldEmail) {
+            $emailSent = $this->accountService->sendWelcomeEmail($customer, $plainPassword);
+        }
+
+        // Optionally push the queue to MikroTik in the background
+        $queueSyncStatus = null;
+        if ($request->boolean('sync_queue', false) && $customer->router_id && $customer->service_plan_id) {
+            try {
+                $syncResult = $this->queueService->syncCustomerQueue($customer);
+                $queueSyncStatus = $syncResult['success'] ? 'synced' : ('failed: ' . ($syncResult['message'] ?? 'unknown'));
+            } catch (\Throwable $e) {
+                $queueSyncStatus = 'failed: ' . $e->getMessage();
+            }
+        }
 
         return response()->json([
             'status' => 'success',
             'message' => 'Customer created successfully',
             'data' => $customer->load(['technician', 'servicePlan']),
+            // These extras are shown once by the frontend and never returned again.
+            'portal_credentials' => $plainPassword ? [
+                'email'    => $customer->email,
+                'password' => $plainPassword,
+                'portal_url' => rtrim(config('app.url'), '/') . '/customer/login',
+                'welcome_email_sent' => $emailSent,
+            ] : null,
+            'queue_sync' => $queueSyncStatus,
         ], 201);
     }
 

@@ -14,33 +14,51 @@ use Illuminate\Support\Facades\Validator;
 class CustomerPortalController extends Controller
 {
     /**
-     * Customer login with proper authentication
+     * Customer login. Two supported flows:
+     *   (a) NEW: email + password  (checked against Customer.portal_password)
+     *   (b) LEGACY: email + account_number  (backward compatible for customers
+     *       created before portal passwords existed and who have no password set)
      */
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
-            'account_number' => 'required|string',
-            'password' => 'nullable|string', // Optional for backward compatibility
+            'email'          => 'required|email',
+            'password'       => 'nullable|string',
+            'account_number' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => 'Validation failed',
-                'errors' => $validator->errors(),
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
-        $customer = Customer::where('email', $request->email)
-                           ->where('account_number', $request->account_number)
-                           ->first();
+        $customer = Customer::where('email', $request->email)->first();
 
         if (!$customer) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid credentials',
-            ], 401);
+            return response()->json(['status' => 'error', 'message' => 'Invalid credentials'], 401);
+        }
+
+        $authenticated = false;
+
+        // Password auth path (preferred)
+        if ($request->filled('password')) {
+            if ($customer->portal_password && Hash::check($request->password, $customer->portal_password)) {
+                $authenticated = true;
+            }
+        }
+
+        // Legacy account-number fallback (only if the customer has no password yet)
+        if (!$authenticated && $request->filled('account_number') && !$customer->portal_password) {
+            if ($customer->account_number === $request->account_number) {
+                $authenticated = true;
+            }
+        }
+
+        if (!$authenticated) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid credentials'], 401);
         }
 
         // Generate a secure token using Laravel's password_hash as signing mechanism
@@ -75,6 +93,68 @@ class CustomerPortalController extends Controller
                 'expires_at' => now()->addDays(7)->toIso8601String(),
             ],
         ]);
+    }
+
+    /**
+     * Public self-signup for prospective customers.
+     * Creates a customer with status=pending awaiting admin approval.
+     * Provisions a portal password so they can log in and track their application.
+     */
+    public function signup(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'full_name'       => 'required|string|max:255',
+            'email'           => 'required|email|max:255|unique:customers,email',
+            'contact_number'  => 'required|string|max:20',
+            'address'         => 'required|string|max:1000',
+            'service_plan_id' => 'nullable|exists:service_plans,id',
+            'notes'           => 'nullable|string|max:2000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please fix the errors below and try again.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Generate a unique pending account number
+        $accountNumber = 'PENDING-' . strtoupper(bin2hex(random_bytes(4)));
+
+        // Look up default monthly fee from the selected plan (if any)
+        $monthlyFee = 0;
+        if ($request->filled('service_plan_id')) {
+            $plan = \App\Models\ServicePlan::find($request->service_plan_id);
+            if ($plan) $monthlyFee = $plan->price;
+        }
+
+        $customer = Customer::create([
+            'account_number'    => $accountNumber,
+            'full_name'         => $request->full_name,
+            'email'             => strtolower($request->email),
+            'contact_number'    => $request->contact_number,
+            'address'           => $request->address,
+            'service_plan_id'   => $request->service_plan_id,
+            'monthly_fee'       => $monthlyFee,
+            'installation_date' => now(),
+            'status'            => 'pending',
+            'notes'             => $request->notes,
+        ]);
+
+        $accountService = app(\App\Services\CustomerAccountService::class);
+        $plain = $accountService->provisionPortalCredentials($customer);
+        $accountService->sendWelcomeEmail($customer, $plain);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Signup received. We\'ll be in touch shortly to confirm your installation.',
+            'data'    => [
+                'account_number' => $customer->account_number,
+                'email'          => $customer->email,
+                'password'       => $plain, // shown once on success page
+                'portal_url'     => rtrim(config('app.url'), '/') . '/customer/login',
+            ],
+        ], 201);
     }
 
     /**

@@ -158,8 +158,11 @@ Route::prefix('v1')->group(function () {
 
     // Customer Portal Routes (separate auth)
     Route::prefix('customer-portal')->group(function () {
-        // Public customer login
-        Route::post('login', [CustomerPortalController::class, 'login']);
+        // Public customer login + self-signup
+        Route::post('login',  [CustomerPortalController::class, 'login']);
+        Route::post('signup', [CustomerPortalController::class, 'signup']);
+        // Public list of active plans (for the signup page dropdown)
+        Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
 
         // Protected customer routes
         Route::middleware('api')->group(function () {

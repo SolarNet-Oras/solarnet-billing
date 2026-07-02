@@ -15,6 +15,8 @@ import TicketsPage from '@/pages/TicketsPage';
 import ReportsPage from '@/pages/ReportsPage';
 import CustomerLoginPage from '@/pages/CustomerLoginPage';
 import CustomerDashboardPage from '@/pages/CustomerDashboardPage';
+import SignupPage from '@/pages/SignupPage';
+import UsersPage from '@/pages/UsersPage';
 
 // ============================================================================
 // Main App Component
@@ -101,7 +103,18 @@ const App: React.FC = (): JSX.Element => {
               {/* Customer Portal Routes */}
               <Route path="/customer/login" element={<CustomerLoginPage />} />
               <Route path="/customer/dashboard" element={<CustomerDashboardPage />} />
-              
+              <Route path="/signup" element={<SignupPage />} />
+
+              {/* Staff user management */}
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute>
+                    <UsersPage />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Default Route */}
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               

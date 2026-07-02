@@ -26,6 +26,21 @@ class ServicePlanController extends Controller
     }
 
     /**
+     * Public listing used by the self-signup page.
+     * Returns only active plans and only the fields safe to expose publicly.
+     */
+    public function publicIndex(): JsonResponse
+    {
+        $plans = ServicePlan::where('is_active', true)
+            ->orderBy('price')
+            ->get(['id', 'name', 'description', 'download_speed', 'upload_speed', 'price']);
+        return response()->json([
+            'success' => true,
+            'data' => $plans,
+        ]);
+    }
+
+    /**
      * Store a newly created service plan
      */
     public function store(Request $request): JsonResponse

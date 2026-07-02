@@ -103,7 +103,13 @@ const CustomerLoginPage: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
+            <p className="text-center text-sm text-gray-600">
+              New to Solarnet?{' '}
+              <a href="/signup" className="text-blue-600 hover:text-blue-700 font-medium" data-testid="customer-login-signup-link">
+                Sign up for service
+              </a>
+            </p>
             <p className="text-center text-sm text-gray-600">
               Need help? Contact support at{' '}
               <a href="mailto:support@solarnetinternet.com" className="text-blue-600 hover:text-blue-700">
@@ -111,15 +117,6 @@ const CustomerLoginPage: React.FC = () => {
               </a>
             </p>
           </div>
-        </div>
-
-        {/* Test Credentials Info */}
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-900 font-medium mb-2">Test Credentials:</p>
-          <p className="text-xs text-blue-700">
-            Email: john.doe@example.com<br />
-            Account: CUST-001
-          </p>
         </div>
       </div>
     </div>

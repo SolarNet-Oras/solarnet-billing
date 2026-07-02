@@ -4,6 +4,7 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
+import { Users, UserCheck, CircleDollarSign, Globe, Wallet, Hourglass, LifeBuoy } from 'lucide-react';
 
 interface DashboardMetrics {
   active_subscribers: number;
@@ -85,7 +86,8 @@ const NewDashboardPage: React.FC = () => {
             value={metrics?.total_subscribers || 0}
             change={fmtPct(metrics?.subscribers_change_pct)}
             trend={pctTrend(metrics?.subscribers_change_pct)}
-            icon="👥"
+            icon={Users}
+            accentClass="bg-blue-500/10 text-blue-600 dark:text-blue-400"
             loading={loading}
           />
           <MetricCard
@@ -99,7 +101,8 @@ const NewDashboardPage: React.FC = () => {
                 ? 'down'
                 : 'stable'
             }
-            icon="✅"
+            icon={UserCheck}
+            accentClass="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
             loading={loading}
           />
           <MetricCard
@@ -107,7 +110,8 @@ const NewDashboardPage: React.FC = () => {
             value={`₱${(metrics?.monthly_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             change={fmtPct(metrics?.revenue_change_pct)}
             trend={pctTrend(metrics?.revenue_change_pct)}
-            icon="💰"
+            icon={CircleDollarSign}
+            accentClass="bg-amber-500/10 text-amber-600 dark:text-amber-400"
             loading={loading}
           />
           <MetricCard
@@ -115,7 +119,8 @@ const NewDashboardPage: React.FC = () => {
             value={metrics?.online_users ?? 0}
             change={`${metrics?.active_subscribers ?? 0} active subs`}
             trend={(metrics?.online_users ?? 0) > 0 ? 'up' : 'stable'}
-            icon="🌐"
+            icon={Globe}
+            accentClass="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
             loading={loading}
           />
         </div>
@@ -196,21 +201,24 @@ const NewDashboardPage: React.FC = () => {
           <MetricCard
             title="Today's Revenue"
             value={`₱${(metrics?.today_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon="💵"
+            icon={Wallet}
+            accentClass="bg-green-500/10 text-green-600 dark:text-green-400"
             loading={loading}
           />
           <MetricCard
             title="Pending Payments"
             value={metrics?.pending_payments || 0}
-            icon="⏳"
+            icon={Hourglass}
+            accentClass="bg-orange-500/10 text-orange-600 dark:text-orange-400"
             loading={loading}
           />
           <MetricCard
             title="Open Tickets"
             value={metrics?.open_tickets || 0}
             change={`${metrics?.resolved_today || 0} resolved today`}
-            trend="down"
-            icon="🎫"
+            trend={(metrics?.resolved_today ?? 0) > 0 ? 'up' : 'stable'}
+            icon={LifeBuoy}
+            accentClass="bg-rose-500/10 text-rose-600 dark:text-rose-400"
             loading={loading}
           />
         </div>
