@@ -6,7 +6,8 @@
   "scripts": {
     "start": "vite --host 0.0.0.0 --port 3000",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "typecheck": "tsc -b",
     "lint": "oxlint",
     "preview": "vite preview"
   },
