@@ -214,6 +214,35 @@ class CustomerController extends Controller
     }
 
     /**
+     * Bulk soft-delete multiple customers in a single request.
+     *
+     * Body: { "customer_ids": ["uuid1", "uuid2", ...] }
+     */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'customer_ids'   => 'required|array|min:1',
+            'customer_ids.*' => 'string|exists:customers,id',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $ids     = $request->input('customer_ids');
+        $deleted = Customer::whereIn('id', $ids)->delete();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => "Deleted {$deleted} customer(s)",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    /**
      * Get customer statistics
      */
     public function statistics(): JsonResponse

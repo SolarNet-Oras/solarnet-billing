@@ -230,67 +230,72 @@ const StaticLeasesTable: React.FC<{
   }
 
   return (
-    <div className="overflow-x-auto bg-card border border-border rounded-lg">
-      <table className="w-full text-sm">
-        <thead className="bg-secondary/50 text-muted-foreground uppercase text-xs tracking-wider">
-          <tr>
-            <th className="px-4 py-3 text-left">Client (comment)</th>
-            <th className="px-4 py-3 text-left">MAC / IP</th>
-            <th className="px-4 py-3 text-left">Rate limit → Plan</th>
-            <th className="px-4 py-3 text-left">Router</th>
-            <th className="px-4 py-3 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leases.map((lease) => (
-            <tr key={lease.id} className="border-t border-border" data-testid={`static-lease-row-${lease.id}`}>
-              <td className="px-4 py-3">
-                <div className="font-medium text-foreground">{lease.comment || '(no comment)'}</div>
-                {lease.hostname && (
-                  <div className="text-xs text-muted-foreground">host: {lease.hostname}</div>
-                )}
-              </td>
-              <td className="px-4 py-3 font-mono text-xs">
-                <div>{lease.mac_address}</div>
-                <div className="text-muted-foreground">{lease.ip_address}</div>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Gauge className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-mono text-xs">{lease.rate_limit || '—'}</span>
-                </div>
-                {lease.suggested_plan ? (
-                  <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
-                    Matched: {lease.suggested_plan.name} (₱{Number(lease.suggested_plan.price).toFixed(2)}/mo)
-                  </div>
-                ) : (
-                  <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                    No matching plan — will save with no plan.
-                  </div>
-                )}
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <RouterIcon className="w-4 h-4" />
-                  <span>{routerName(lease.router_id)}</span>
-                </div>
-              </td>
-              <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  onClick={() => onRegister(lease)}
-                  disabled={registeringId === lease.id}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
-                  data-testid={`register-lease-btn-${lease.id}`}
-                >
-                  <UserPlus className="w-4 h-4" />
-                  {registeringId === lease.id ? 'Registering…' : 'Register'}
-                </button>
-              </td>
+    <div className="bg-card border border-border rounded-lg" data-testid="static-leases-container">
+      <div className="px-4 py-2.5 border-b border-border text-xs text-muted-foreground">
+        Showing <strong className="text-foreground">{leases.length}</strong> lease{leases.length === 1 ? '' : 's'} · scroll to view all
+      </div>
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-360px)]">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary/50 text-muted-foreground uppercase text-xs tracking-wider sticky top-0 z-10">
+            <tr>
+              <th className="px-4 py-3 text-left">Client (comment)</th>
+              <th className="px-4 py-3 text-left">MAC / IP</th>
+              <th className="px-4 py-3 text-left">Rate limit → Plan</th>
+              <th className="px-4 py-3 text-left">Router</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {leases.map((lease) => (
+              <tr key={lease.id} className="border-t border-border" data-testid={`static-lease-row-${lease.id}`}>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-foreground">{lease.comment || '(no comment)'}</div>
+                  {lease.hostname && (
+                    <div className="text-xs text-muted-foreground">host: {lease.hostname}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">
+                  <div>{lease.mac_address}</div>
+                  <div className="text-muted-foreground">{lease.ip_address}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Gauge className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-mono text-xs">{lease.rate_limit || '—'}</span>
+                  </div>
+                  {lease.suggested_plan ? (
+                    <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                      Matched: {lease.suggested_plan.name} (₱{Number(lease.suggested_plan.price).toFixed(2)}/mo)
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      No matching plan — will save with no plan.
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <RouterIcon className="w-4 h-4" />
+                    <span>{routerName(lease.router_id)}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onRegister(lease)}
+                    disabled={registeringId === lease.id}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
+                    data-testid={`register-lease-btn-${lease.id}`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {registeringId === lease.id ? 'Registering…' : 'Register'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -314,66 +319,71 @@ const DynamicLeasesTable: React.FC<{
   }
 
   return (
-    <div className="overflow-x-auto bg-card border border-border rounded-lg">
-      <table className="w-full text-sm">
-        <thead className="bg-secondary/50 text-muted-foreground uppercase text-xs tracking-wider">
-          <tr>
-            <th className="px-4 py-3 text-left">Hostname</th>
-            <th className="px-4 py-3 text-left">MAC / IP</th>
-            <th className="px-4 py-3 text-left">Type</th>
-            <th className="px-4 py-3 text-left">Router</th>
-            <th className="px-4 py-3 text-left">Last seen</th>
-            <th className="px-4 py-3 text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leases.map((lease) => (
-            <tr key={lease.id} className="border-t border-border" data-testid={`dynamic-lease-row-${lease.id}`}>
-              <td className="px-4 py-3 font-medium text-foreground">
-                {lease.hostname || <span className="text-muted-foreground">(no hostname)</span>}
-                {lease.comment && (
-                  <div className="text-xs text-muted-foreground">note: {lease.comment}</div>
-                )}
-              </td>
-              <td className="px-4 py-3 font-mono text-xs">
-                <div>{lease.mac_address}</div>
-                <div className="text-muted-foreground">{lease.ip_address}</div>
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    lease.is_dynamic
-                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                      : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
-                  }`}
-                >
-                  {lease.is_dynamic ? 'dynamic' : 'static (no comment)'}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <RouterIcon className="w-4 h-4" />
-                  <span>{routerName(lease.router_id)}</span>
-                </div>
-              </td>
-              <td className="px-4 py-3 text-muted-foreground">
-                {new Date(lease.last_seen_at).toLocaleString()}
-              </td>
-              <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  onClick={() => onAdd(lease)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
-                  data-testid={`manual-add-btn-${lease.id}`}
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Add as Client
-                </button>
-              </td>
+    <div className="bg-card border border-border rounded-lg" data-testid="dynamic-leases-container">
+      <div className="px-4 py-2.5 border-b border-border text-xs text-muted-foreground">
+        Showing <strong className="text-foreground">{leases.length}</strong> lease{leases.length === 1 ? '' : 's'} · scroll to view all
+      </div>
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-360px)]">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary/50 text-muted-foreground uppercase text-xs tracking-wider sticky top-0 z-10">
+            <tr>
+              <th className="px-4 py-3 text-left">Hostname</th>
+              <th className="px-4 py-3 text-left">MAC / IP</th>
+              <th className="px-4 py-3 text-left">Type</th>
+              <th className="px-4 py-3 text-left">Router</th>
+              <th className="px-4 py-3 text-left">Last seen</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {leases.map((lease) => (
+              <tr key={lease.id} className="border-t border-border" data-testid={`dynamic-lease-row-${lease.id}`}>
+                <td className="px-4 py-3 font-medium text-foreground">
+                  {lease.hostname || <span className="text-muted-foreground">(no hostname)</span>}
+                  {lease.comment && (
+                    <div className="text-xs text-muted-foreground">note: {lease.comment}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">
+                  <div>{lease.mac_address}</div>
+                  <div className="text-muted-foreground">{lease.ip_address}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      lease.is_dynamic
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                        : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
+                    }`}
+                  >
+                    {lease.is_dynamic ? 'dynamic' : 'static (no comment)'}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <RouterIcon className="w-4 h-4" />
+                    <span>{routerName(lease.router_id)}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {new Date(lease.last_seen_at).toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onAdd(lease)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
+                    data-testid={`manual-add-btn-${lease.id}`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Add as Client
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

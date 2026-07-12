@@ -77,6 +77,7 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('customers', CustomerController::class)->only(['destroy'])->middleware('permission:delete-customers');
         Route::post('customers/{id}/sync-queue', [CustomerController::class, 'syncQueue'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
+        Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
         
         // Router routes (MikroTik) - require permission
         Route::apiResource('routers', RouterController::class)->only(['index', 'show'])->middleware('permission:view-routers');

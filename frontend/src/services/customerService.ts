@@ -32,6 +32,15 @@ export const customerService = {
     const response = await api.delete<{ status: string; message: string }>(`/customers/${id}`);
     return response.data;
   },
+
+  /** Bulk soft-delete customers. */
+  bulkDeleteCustomers: async (ids: string[]): Promise<{ status: string; message: string; deleted: number }> => {
+    const response = await api.post<{ status: string; message: string; deleted: number }>(
+      '/customers/bulk-delete',
+      { customer_ids: ids }
+    );
+    return response.data;
+  },
 };
 
 export default customerService;

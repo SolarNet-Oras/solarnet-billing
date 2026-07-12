@@ -12,6 +12,8 @@ const CustomersPage: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<boolean>(false);
   const [notice, setNotice] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -44,6 +46,11 @@ const CustomersPage: React.FC = () => {
       await customerService.deleteCustomer(deleteTarget.id);
       setNotice(`Customer "${deleteTarget.full_name}" deleted.`);
       setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteTarget.id);
+        return next;
+      });
       setDeleteTarget(null);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to delete customer');
@@ -52,6 +59,44 @@ const CustomersPage: React.FC = () => {
       setDeleting(false);
     }
   };
+
+  const handleBulkDelete = async (): Promise<void> => {
+    if (selectedIds.size === 0) return;
+    setDeleting(true);
+    setError('');
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await customerService.bulkDeleteCustomers(ids);
+      setNotice(`${res.deleted} customer(s) deleted.`);
+      setCustomers((prev) => prev.filter((c) => !selectedIds.has(c.id)));
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to delete customers');
+      logger.error('Failed to bulk-delete customers', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleOne = (id: string): void => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (): void => {
+    setSelectedIds((prev) => {
+      if (prev.size === customers.length && customers.length > 0) return new Set();
+      return new Set(customers.map((c) => c.id));
+    });
+  };
+
+  const allSelected = customers.length > 0 && selectedIds.size === customers.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < customers.length;
 
   const getStatusBadge = (status: string): JSX.Element => {
     const colors = {
@@ -126,6 +171,36 @@ const CustomersPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div
+            className="flex items-center justify-between bg-primary/10 border border-primary/30 rounded-lg px-4 py-3"
+            data-testid="bulk-action-bar"
+          >
+            <div className="text-sm text-foreground">
+              <strong data-testid="bulk-selected-count">{selectedIds.size}</strong> customer{selectedIds.size === 1 ? '' : 's'} selected
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="px-3 py-1.5 text-sm bg-secondary text-secondary-foreground rounded-md hover:opacity-90"
+                data-testid="bulk-clear-selection"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBulkDeleteOpen(true); setError(''); }}
+                className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+                data-testid="bulk-delete-btn"
+              >
+                Delete selected
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Customer Table */}
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           {loading ? (
@@ -135,10 +210,23 @@ const CustomersPage: React.FC = () => {
               No customers found. Click &quot;Add Customer&quot; to create one.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[calc(100vh-360px)] overflow-y-auto">
               <table className="w-full">
-                <thead className="bg-secondary">
+                <thead className="bg-secondary sticky top-0 z-10">
                   <tr>
+                    <th className="px-4 py-3 text-left w-10">
+                      <input
+                        ref={(el) => {
+                          if (el) el.indeterminate = someSelected;
+                        }}
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        className="w-4 h-4 rounded border-input cursor-pointer accent-primary"
+                        data-testid="select-all-customers"
+                        aria-label="Select all customers"
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
                       Account Number
                     </th>
@@ -164,7 +252,21 @@ const CustomersPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {customers.map((customer) => (
-                    <tr key={customer.id} className="hover:bg-secondary/50 transition-colors">
+                    <tr
+                      key={customer.id}
+                      className={`hover:bg-secondary/50 transition-colors ${selectedIds.has(customer.id) ? 'bg-primary/5' : ''}`}
+                      data-testid={`customer-row-${customer.id}`}
+                    >
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(customer.id)}
+                          onChange={() => toggleOne(customer.id)}
+                          className="w-4 h-4 rounded border-input cursor-pointer accent-primary"
+                          data-testid={`select-customer-${customer.id}`}
+                          aria-label={`Select ${customer.full_name}`}
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                         {customer.account_number}
                       </td>
@@ -256,6 +358,41 @@ const CustomersPage: React.FC = () => {
                 data-testid="delete-confirm-btn"
               >
                 {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete confirmation modal */}
+      {bulkDeleteOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          data-testid="bulk-delete-modal"
+        >
+          <div className="bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-foreground mb-2">Delete {selectedIds.size} customer{selectedIds.size === 1 ? '' : 's'}?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              This will archive <strong className="text-foreground">{selectedIds.size}</strong> customer{selectedIds.size === 1 ? '' : 's'} (soft delete) and remove their MikroTik queues on next sync. This action cannot be quickly undone from the UI.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={deleting}
+                className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
+                data-testid="bulk-delete-cancel-btn"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                data-testid="bulk-delete-confirm-btn"
+              >
+                {deleting ? 'Deleting…' : `Yes, delete ${selectedIds.size}`}
               </button>
             </div>
           </div>

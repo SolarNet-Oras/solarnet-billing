@@ -1,0 +1,42 @@
+{
+  "summary": "Verified bulk-delete customers backend + full frontend E2E, plus Unregistered Leases sticky headers and Showing-N counts. 8/9 assertions PASS. One backend bug found: bulk-delete with invalid UUID returns 500 instead of 422.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/v1/customers/bulk-delete",
+        "issue": "Body { customer_ids: ['not-a-valid-uuid'] } returns 500 Server Error instead of 422. Root cause: validation rule is `customer_ids.* => string|exists:customers,id`; when the input is not a valid UUID, Postgres raises SQLSTATE 22P02 (invalid input syntax for type uuid) during the `exists` lookup before Laravel can format a 422. Fix: add the `uuid` rule before `exists`, i.e. `customer_ids.* => 'required|uuid|exists:customers,id'`. All other cases (200 with deleted:3+404s, 422 for empty array, 401 unauth, 403 lowpriv) pass."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_customer_bulk_delete.py",
+    "/app/test_reports/pytest/bulk_delete.xml"
+  ],
+  "action_items": [
+    "Fix POST /api/v1/customers/bulk-delete to add `uuid` validation rule before `exists` so non-UUID input returns 422 instead of 500. (CustomerController.php ~line 225.)"
+  ],
+  "critical_code_review_comments": [
+    "CustomerController::bulkDestroy uses `exists:customers,id` without first casting/validating UUID → causes 500 on malformed input. Add `uuid` rule.",
+    "bulkDestroy does not enforce that the calling admin actually owns/scopes these customers (no tenant check). If multi-tenancy is a concern this should scope to the auth user's tenant.",
+    "Response shape mixes `status:'success'`/`deleted:N` at root; the rest of the API uses `data` wrappers. Consider harmonizing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_customer_bulk_delete.py"
+  ],
+  "success_rate": {
+    "backend": "80% (4/5 pytest cases pass; 1 assertion fails due to real 500 bug on invalid-uuid input)",
+    "frontend": "100% (E2E verified: select-all, per-row select, bulk-action-bar count, modal open/confirm, rows removed, green 3 customer(s) deleted notice, API returns 404 for deleted ids; sticky top-0 thead on both static-leases-container and dynamic-leases-container; Showing N leases present on both; tab labels also show counts 13/9; edit-customer-<id> navigates to /customers/:id/edit with 7/11 inputs pre-populated; delete-customer-modal opens on single-row delete)"
+  },
+  "test_credentials": "admin@ispbilling.local / password (super admin), lowpriv@test.com / password123 (customer role for 403 check) — both from /app/memory/test_credentials.md",
+  "seed_data_creation": "3 QA-UI-<random> customers created via POST /customers during E2E; all 3 bulk-deleted (soft-delete) during the test itself. Additionally 3 QA-<random> customers created for backend pytest and bulk-deleted. Backend also creates+deletes 1 auxiliary customer per invalid-uuid test path (none). No leftover QA-* customers.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Frontend auth token lives in sessionStorage (not localStorage) — key is unnamed but the only value >40 chars that doesn't start with '{'. Use that to script API calls from the browser. Bulk-delete backend contract: root-level {status:'success', message, deleted:N}. Sticky header thead classes: 'sticky top-0 z-10'. Unregistered clients page conditionally renders only the active tab's container in the DOM — you must click the Dynamic / Manual tab before probing dynamic-leases-container.",
+  "rca of the issue": "Bulk-delete 500 on invalid UUID: The 'exists:customers,id' validator issues a SELECT ... WHERE id = ? against a UUID column with a non-UUID string, and Postgres rejects the cast with SQLSTATE 22P02 before Laravel returns a validation error. Precede the exists rule with `uuid` so validation short-circuits with a 422 for malformed IDs."
+}
