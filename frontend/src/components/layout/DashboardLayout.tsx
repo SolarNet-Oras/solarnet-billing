@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import FloatingAiAssistant from '@/components/ai/FloatingAiAssistant';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -24,6 +25,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
           {children}
         </main>
       </div>
+
+      {/* Floating AI Assistant — appears on every authenticated page */}
+      <FloatingAiAssistant />
     </div>
   );
 };

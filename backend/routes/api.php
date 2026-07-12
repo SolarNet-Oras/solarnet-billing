@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
@@ -102,6 +103,14 @@ Route::prefix('v1')->group(function () {
             Route::get('static-commented',          [UnregisteredLeaseController::class, 'staticCommented']);
             Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic']);
             Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister']);
+        });
+
+        // AI Assistant (floating chat)
+        Route::prefix('ai')->group(function () {
+            Route::post('chat',                              [AiController::class, 'chat']);
+            Route::get('conversations',                      [AiController::class, 'listConversations']);
+            Route::get('conversations/{id}/messages',        [AiController::class, 'messages']);
+            Route::delete('conversations/{id}',              [AiController::class, 'destroyConversation']);
         });
         
         // Service Plans routes (require permission)

@@ -1,0 +1,113 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Http\Controllers\Controller;
+use App\Models\AiConversation;
+use App\Services\Ai\AiService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+
+class AiController extends Controller
+{
+    public function __construct(protected AiService $ai) {}
+
+    /**
+     * POST /api/v1/ai/chat
+     * Body: { message: string, conversation_id?: string }
+     */
+    public function chat(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'message'         => 'required|string|min:1|max:8000',
+            'conversation_id' => 'nullable|uuid',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        if (!$this->ai->isConfigured()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'AI is not configured. Set OPENAI_API_KEY in backend .env and restart the API.',
+            ], 503);
+        }
+
+        try {
+            $result = $this->ai->handleUserMessage(
+                $request->user(),
+                $request->input('conversation_id'),
+                $request->input('message')
+            );
+        } catch (\Throwable $e) {
+            Log::error('AI chat failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'AI request failed: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data'    => $result,
+        ]);
+    }
+
+    /**
+     * GET /api/v1/ai/conversations — list this user's conversations.
+     */
+    public function listConversations(Request $request): JsonResponse
+    {
+        $rows = AiConversation::where('user_id', $request->user()->id)
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get(['id', 'title', 'created_at', 'updated_at']);
+
+        return response()->json(['success' => true, 'data' => $rows]);
+    }
+
+    /**
+     * GET /api/v1/ai/conversations/{id}/messages
+     */
+    public function messages(Request $request, string $id): JsonResponse
+    {
+        $conversation = AiConversation::where('user_id', $request->user()->id)->find($id);
+        if (!$conversation) {
+            return response()->json(['success' => false, 'message' => 'Conversation not found'], 404);
+        }
+
+        $messages = $conversation->messages()
+            ->orderBy('created_at')
+            ->get(['id', 'role', 'content', 'tool_calls', 'tool_name', 'tool_call_id', 'created_at']);
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'conversation' => [
+                    'id'    => $conversation->id,
+                    'title' => $conversation->title,
+                ],
+                'messages' => $messages,
+            ],
+        ]);
+    }
+
+    /**
+     * DELETE /api/v1/ai/conversations/{id}
+     */
+    public function destroyConversation(Request $request, string $id): JsonResponse
+    {
+        $conversation = AiConversation::where('user_id', $request->user()->id)->find($id);
+        if (!$conversation) {
+            return response()->json(['success' => false, 'message' => 'Conversation not found'], 404);
+        }
+        $conversation->delete();
+        return response()->json(['success' => true, 'message' => 'Deleted']);
+    }
+}
