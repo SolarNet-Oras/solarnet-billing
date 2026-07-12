@@ -25,7 +25,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             // Create client and connect
             $client = new Client($config);
@@ -161,7 +165,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
@@ -196,7 +204,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
@@ -274,7 +286,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
@@ -341,7 +357,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
@@ -402,7 +422,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
@@ -434,7 +458,11 @@ class MikrotikService
                 ->set('host', $router->host)
                 ->set('user', $router->username)
                 ->set('pass', $router->password)
-                ->set('port', $router->port);
+                ->set('port', $router->port)
+                ->set('timeout', 3)          // TCP connect timeout (s) — dead routers no longer hang requests
+                ->set('socket_timeout', 5)   // Read timeout (s)
+                ->set('attempts', 1)         // No retry storms
+                ->set('delay', 1);
 
             $client = new Client($config);
             
