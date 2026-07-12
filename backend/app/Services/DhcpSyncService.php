@@ -27,7 +27,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = true): array
+    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = false): array
     {
         $result = [
             'router' => $router->name,
@@ -108,7 +108,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncAllRouters(bool $autoCreateCustomers = true): array
+    public function syncAllRouters(bool $autoCreateCustomers = false): array
     {
         $routers = Router::where('is_active', true)
                         ->where('connection_status', 'online')

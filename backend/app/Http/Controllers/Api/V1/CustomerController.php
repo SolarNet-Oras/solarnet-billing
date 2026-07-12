@@ -67,7 +67,7 @@ class CustomerController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'account_number' => 'required|string|unique:customers,account_number',
+            'account_number' => ['required', 'string', 'regex:/^\d{10}$/', 'unique:customers,account_number'],
             'full_name' => 'required|string|max:255',
             'address' => 'required|string',
             'gps_coordinates' => 'nullable|array',
@@ -160,7 +160,7 @@ class CustomerController extends Controller
         $customer = Customer::findOrFail($id);
         
         $validator = Validator::make($request->all(), [
-            'account_number' => 'sometimes|required|string|unique:customers,account_number,' . $id,
+            'account_number' => ['sometimes', 'required', 'string', 'regex:/^\d{10}$/', 'unique:customers,account_number,' . $id],
             'full_name' => 'sometimes|required|string|max:255',
             'address' => 'sometimes|required|string',
             'gps_coordinates' => 'nullable|array',
@@ -222,7 +222,7 @@ class CustomerController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'customer_ids'   => 'required|array|min:1',
-            'customer_ids.*' => 'string|exists:customers,id',
+            'customer_ids.*' => 'required|uuid|exists:customers,id',
         ]);
         if ($validator->fails()) {
             return response()->json([

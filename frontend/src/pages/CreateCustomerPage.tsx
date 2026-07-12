@@ -42,7 +42,8 @@ const CreateCustomerPage: React.FC = () => {
   } | null>(null);
 
   const [formData, setFormData] = useState<CustomerFormData>({
-    account_number: `ACC${Date.now().toString().slice(-8)}`,
+    // Business rule: account number is exactly 10 digits, no letters.
+    account_number: generateAccountNumber(),
     full_name: '',
     address: '',
     contact_number: '',
@@ -237,9 +238,14 @@ const CreateCustomerPage: React.FC = () => {
                   value={formData.account_number}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  pattern="\d{10}"
+                  maxLength={10}
+                  inputMode="numeric"
+                  title="Account number must be exactly 10 digits (no letters)"
+                  className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono"
                   data-testid="input-account-number"
                 />
+                <p className="text-xs text-muted-foreground mt-1">Exactly 10 digits, no letters.</p>
               </div>
 
               <div>

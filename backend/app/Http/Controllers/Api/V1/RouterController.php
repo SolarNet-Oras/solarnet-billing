@@ -337,8 +337,10 @@ class RouterController extends Controller
         }
 
         $dhcpSyncService = app(\App\Services\DhcpSyncService::class);
-        $autoCreate = $request->input('auto_create_customers', true);
-        
+        // Business rule: MikroTik DHCP sync NEVER auto-creates customers.
+        // Leases land on the Unregistered page; admin must click "Register".
+        $autoCreate = false;
+
         $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate);
 
         return response()->json([

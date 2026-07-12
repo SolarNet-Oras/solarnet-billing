@@ -241,10 +241,15 @@ class UnregisteredLeaseController extends Controller
         }
     }
 
+    /**
+     * Generate a unique 10-digit numeric account number.
+     * Business rule: account numbers are 10 digits, no letters.
+     */
     protected function generateAccountNumber(): string
     {
         do {
-            $candidate = 'ACC' . strtoupper(substr(str_replace(['+', '/', '='], '', base64_encode(random_bytes(6))), 0, 8));
+            // 10 random digits (no leading zero to keep it a nice 10-digit number)
+            $candidate = (string) random_int(1000000000, 9999999999);
         } while (Customer::where('account_number', $candidate)->exists());
         return $candidate;
     }

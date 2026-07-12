@@ -165,7 +165,23 @@ const EditCustomerPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Basic Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Account Number *" name="account_number" value={formData.account_number} onChange={handleChange} required testId="edit-account-number" />
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Account Number *</label>
+                <input
+                  type="text"
+                  name="account_number"
+                  value={formData.account_number}
+                  onChange={handleChange}
+                  required
+                  pattern="\d{10}"
+                  maxLength={10}
+                  inputMode="numeric"
+                  title="Account number must be exactly 10 digits (no letters)"
+                  className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                  data-testid="edit-account-number"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Exactly 10 digits, no letters.</p>
+              </div>
               <Field label="Full Name *" name="full_name" value={formData.full_name} onChange={handleChange} required testId="edit-full-name" />
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-foreground mb-2">Address *</label>

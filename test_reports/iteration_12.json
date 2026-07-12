@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 12: verified RULE 1 (sync never auto-creates customers), RULE 2 (account_number = /^\\d{10}$/ enforced on POST/PUT/quick-register), and bulk-delete regression (invalid-uuid -> 422). 11/11 pytest cases PASS. Frontend Edit page PASSES. Frontend Create page FAILS: /customers/create is a blank/crashed screen because `generateAccountNumber()` is referenced at CreateCustomerPage.tsx line 46 but never defined/imported (ReferenceError caught by React error boundary).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CreateCustomerPage", "issue": "Page renders blank. Console: 'PAGE ERROR: generateAccountNumber is not defined'. The initial useState calls generateAccountNumber() (line 46) but the helper is not declared/imported anywhere in the file. This crashes the entire Create Customer flow — users cannot create customers via UI.", "selector": "/customers/create", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_account_number_and_sync_rules.py",
+    "/app/test_reports/pytest/iter12.xml"
+  ],
+  "action_items": [
+    "Add the missing generateAccountNumber() helper to /app/frontend/src/pages/CreateCustomerPage.tsx (e.g. `const generateAccountNumber = () => String(Math.floor(1000000000 + Math.random() * 9000000000));`) so the Create Customer page renders. This is a hard crash blocking the Create flow."
+  ],
+  "critical_code_review_comments": [
+    "CreateCustomerPage.tsx uses generateAccountNumber() at line 46 with no declaration — TypeScript should have caught this; likely tsconfig `noUndeclared`/`noImplicitAny` is off, or the file was saved mid-edit. Add lint/type-check gate in CI.",
+    "The 10-digit account_number regex is enforced on POST and PUT but the quick-register flow generates via random_int(1e9, 1e10-1). No uniqueness retry loop is visible — under high volume, collisions with the 10-digit space will surface as 500s from unique constraint. Ensure generateAccountNumber() in UnregisteredLeaseController re-rolls on collision (playbook uniquenes check).",
+    "DhcpSyncService default `$autoCreateCustomers = false` is correct, but the flag is still plumbed through — recommend removing the parameter entirely so it's impossible to accidentally re-enable auto-create from anywhere in code."
+  ],
+  "updated_files": ["/app/backend/tests/test_account_number_and_sync_rules.py"],
+  "success_rate": {"backend": "100% (11/11 pytest cases pass)", "frontend": "50% (Edit page pass; Create page crashes)"},
+  "test_credentials": "admin@ispbilling.local / password",
+  "seed_data_creation": "Created ~2 QA customers via API (auto-cleaned in pytest teardown) and 1 dhcp_lease row for quick-register test (auto-deleted). One dhcp_lease row may remain if teardown was interrupted — search table for hostname='QA-QUICKREG-HOST'. Also seeded a router only if none existed (host=127.0.0.1, name=qa-router) — safe to leave.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Frontend uses Vite (VITE_API_URL), not CRA (REACT_APP_BACKEND_URL); backend .env has both. Auth response is at .data.access_token (NOT .data.token). CreateCustomerPage crashes with 'generateAccountNumber is not defined' at line 46 — verify fix by hitting /customers/create and confirming input[name=account_number] renders with 10-digit value. All backend rules for account_number+sync are verified good.",
+  "rca of the issue": "CreateCustomerPage.tsx line 46: `account_number: generateAccountNumber()` invokes a function that is not defined or imported in the file. Runtime throws ReferenceError, React error boundary swallows it, leaving a blank <body>. Fix: add `const generateAccountNumber = (): string => { const n = Math.floor(1000000000 + Math.random() * 9000000000); return String(n); };` (or equivalent) before the component, or import from a util. After adding, /customers/create should show the 10-digit input with pattern='\\d{10}' maxLength=10 and the helper text (Edit page already works this way)."
+}
