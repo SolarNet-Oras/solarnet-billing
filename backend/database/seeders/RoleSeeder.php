@@ -121,23 +121,25 @@ class RoleSeeder extends Seeder
         ];
 
         foreach ($roles as $roleData) {
-            // Create role
-            $role = Role::create([
-                'name' => $roleData['name'],
-                'display_name' => $roleData['display_name'],
-                'description' => $roleData['description'],
-                'is_active' => true,
-            ]);
+            // Idempotent: safe to re-run after initial seed on production.
+            $role = Role::updateOrCreate(
+                ['name' => $roleData['name']],
+                [
+                    'display_name' => $roleData['display_name'],
+                    'description'  => $roleData['description'],
+                    'is_active'    => true,
+                ]
+            );
 
-            // Assign permissions
+            // Assign permissions (sync = replace, so idempotent)
             if ($roleData['permissions'] === 'all') {
                 // Super Admin gets all permissions
                 $allPermissions = Permission::all();
-                $role->permissions()->attach($allPermissions->pluck('id'));
+                $role->permissions()->sync($allPermissions->pluck('id'));
             } else {
                 // Assign specific permissions
                 $permissions = Permission::whereIn('name', $roleData['permissions'])->get();
-                $role->permissions()->attach($permissions->pluck('id'));
+                $role->permissions()->sync($permissions->pluck('id'));
             }
 
             $this->command->info("Role '{$role->display_name}' created with " . $role->permissions()->count() . " permissions.");

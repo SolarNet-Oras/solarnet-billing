@@ -97,7 +97,12 @@ class PermissionSeeder extends Seeder
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create($permission);
+            // Idempotent: safe to re-run after initial seed on production.
+            // Using name as the unique key + full attribute set as the update payload.
+            Permission::updateOrCreate(
+                ['name' => $permission['name']],
+                $permission
+            );
         }
 
         $this->command->info('Permissions seeded successfully!');
