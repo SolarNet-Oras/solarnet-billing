@@ -26,6 +26,22 @@ interface CustomerFormData {
   notes?: string;
 }
 
+/**
+ * Business rule: account numbers are exactly 10 digits, no letters.
+ * Uses window.crypto when available for uniqueness quality.
+ */
+function generateAccountNumber(): string {
+  const buf = new Uint32Array(2);
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(buf);
+  } else {
+    buf[0] = Math.floor(Math.random() * 0xffffffff);
+    buf[1] = Math.floor(Math.random() * 0xffffffff);
+  }
+  const combined = ((buf[0] >>> 0) * 4294967296 + (buf[1] >>> 0)) % 9_000_000_000 + 1_000_000_000;
+  return String(combined);
+}
+
 const CreateCustomerPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
