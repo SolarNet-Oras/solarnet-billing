@@ -45,6 +45,12 @@ class AiController extends Controller
                 $request->input('conversation_id'),
                 $request->input('message')
             );
+        } catch (\App\Services\Ai\OpenAiRateLimitException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code'    => 'rate_limited',
+            ], 429);
         } catch (\Throwable $e) {
             Log::error('AI chat failed', ['error' => $e->getMessage()]);
             return response()->json([

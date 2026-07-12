@@ -17,6 +17,44 @@ Design and build a production-ready **Enterprise ISP Billing & Network Managemen
 
 ---
 
+## What's implemented — 2026-02-12 (Wave 2: Super-admin AI Code Assistant)
+
+### AI code exploration (super-admin only, READ-ONLY)
+- ✅ **3 new AI tools** locked to `super_admin` role (verified in AiToolRegistry::schemasFor — non-super users literally don't see them in OpenAI schemas):
+  - `list_source_files` — enumerate a directory (allow-listed)
+  - `read_source_file` — read a single file (max 64 KB, extension allow-list)
+  - `search_code` — grep across allow-listed roots (Symfony Process, argv, no shell, 15s timeout)
+- ✅ **`CodeToolGuards`** hardened:
+  - ALLOWED_ROOTS: `/app/backend/app`, `/app/backend/config`, `/app/backend/database/migrations`, `/app/backend/routes`, `/app/backend/tests`, `/app/frontend/src`
+  - ALLOWED_EXTS: php, ts, tsx, js, jsx, json, md, yml, yaml, css, scss, html, blade.php
+  - MAX_FILE_BYTES = 64_000
+  - Rejects `..`, rejects paths outside allowed roots, rejects binaries
+- ✅ **NO file writes, NO code execution** — AI only echoes code as fenced markdown blocks; user reviews and applies manually
+- ✅ **System prompt upgraded** — when talking to a super_admin, AI is instructed to:
+  - Use unified diff or full-file format for changes
+  - Warn about breaking changes / migrations / new deps
+  - Never suggest destructive commands (`rm -rf`, `truncate`, `DROP TABLE`, `chmod 777`, editing protected `.env` vars)
+  - Add tests for non-trivial logic
+- ✅ **Frontend upgraded**:
+  - `react-markdown` + `remark-gfm` render assistant replies
+  - Custom `CodeBlock` component with copy-to-clipboard button (`data-testid="ai-copy-code-btn"`)
+  - Chat drawer widened (520px) to fit code
+  - 4 additional super-admin-only suggestion chips (total 8 for super_admin, 4 for others)
+- ✅ **OpenAI 429 handling** — new `OpenAiRateLimitException` translates provider throttling into a friendly HTTP 429 with `code=rate_limited` so the UI can back off vs treat it as a bug
+
+### Verified (iteration_15)
+- All security guards verified via direct PHP (traversal blocked, ext whitelist enforced, root whitelist enforced, 64 KB cap enforced)
+- Non-super_admin `authorize()` returns false for all 3 code tools — verified with a customer-role user
+- Super_admin sees 8 suggestion chips in the drawer — verified via Playwright
+- LLM round-trip: 6/7 tests passed before OpenAI daily quota (50/day tier) exhausted; guard tests are quota-free and 100% pass
+- No critical or UI bugs found; minor demo user login issue is unrelated pre-existing
+
+### Known constraints
+- **OpenAI account is on a low tier** (RPD 50/day, RPM 10/min for gpt-5.4-mini). Recommend upgrading OpenAI plan for production usage.
+- Non-super_admins in a Customer role don't see the AI drawer at all (they use CustomerLayout, not DashboardLayout) — safer than exposing it there anyway.
+
+---
+
 ## What's implemented — 2026-02-12 (Wave 1: Floating AI Assistant)
 
 ### AI Assistant Wave 1

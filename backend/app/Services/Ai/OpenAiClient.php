@@ -72,8 +72,18 @@ class OpenAiClient
         try {
             $response = $this->http->post('chat/completions', ['json' => $payload]);
         } catch (RequestException $e) {
-            $body = $e->hasResponse() ? (string) $e->getResponse()->getBody() : $e->getMessage();
-            throw new \RuntimeException('OpenAI API error: ' . $body, $e->getCode(), $e);
+            $body   = $e->hasResponse() ? (string) $e->getResponse()->getBody() : $e->getMessage();
+            $status = $e->hasResponse() ? $e->getResponse()->getStatusCode() : 0;
+
+            // OpenAI rate limit / quota — mark distinctly so the controller can return 429
+            if ($status === 429) {
+                throw new OpenAiRateLimitException(
+                    'OpenAI rate limit or quota reached. Please try again shortly or upgrade your plan.',
+                    429,
+                    $e
+                );
+            }
+            throw new \RuntimeException('OpenAI API error: ' . $body, $status, $e);
         }
 
         $body = json_decode((string) $response->getBody(), true);
