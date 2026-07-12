@@ -158,11 +158,14 @@ class DhcpSyncService
                     'mac_address' => $leaseData['mac_address'],
                 ],
                 [
-                    'ip_address' => $leaseData['ip_address'],
-                    'hostname' => $leaseData['hostname'],
-                    'status' => $leaseData['status'],
-                    'server' => $leaseData['server'],
-                    'expires_at' => $expiresAt,
+                    'ip_address'   => $leaseData['ip_address'],
+                    'hostname'     => $leaseData['hostname'] ?? null,
+                    'comment'      => $leaseData['comment'] ?? null,
+                    'rate_limit'   => $leaseData['rate_limit'] ?? null,
+                    'is_dynamic'   => $leaseData['is_dynamic'] ?? true,
+                    'status'       => $leaseData['status'] ?? 'unknown',
+                    'server'       => $leaseData['server'] ?? 'default',
+                    'expires_at'   => $expiresAt,
                     'last_seen_at' => now(),
                 ]
             );

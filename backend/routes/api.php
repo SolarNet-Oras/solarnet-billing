@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
 use App\Http\Controllers\Api\V1\TicketController;
+use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -93,6 +94,14 @@ Route::prefix('v1')->group(function () {
         Route::get('system/network-info', [RouterController::class, 'networkInfo']);
         Route::post('routers/{id}/sync-dhcp', [RouterController::class, 'syncDhcpLeases'])->middleware('permission:sync-dhcp');
         Route::get('routers/{id}/unmatched-leases', [RouterController::class, 'getUnmatchedLeases'])->middleware('permission:view-dhcp');
+
+        // Unregistered DHCP leases (converts leases into customers)
+        Route::prefix('unregistered-leases')->group(function () {
+            Route::post('sync-all',                 [UnregisteredLeaseController::class, 'syncAll']);
+            Route::get('static-commented',          [UnregisteredLeaseController::class, 'staticCommented']);
+            Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic']);
+            Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister']);
+        });
         
         // Service Plans routes (require permission)
         Route::apiResource('service-plans', ServicePlanController::class)->only(['index', 'show'])->middleware('permission:view-service-plans');

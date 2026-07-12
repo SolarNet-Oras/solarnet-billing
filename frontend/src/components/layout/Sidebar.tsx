@@ -24,6 +24,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'Dashboard', path: '/dashboard', icon: '📊' },
     { name: 'Users', path: '/users', icon: '👥', permission: 'view-users' },
     { name: 'Customers', path: '/customers', icon: '👤', permission: 'view-customers' },
+    { name: 'Unregistered', path: '/unregistered-clients', icon: '📶', permission: 'view-customers' },
     { name: 'Network Devices', path: '/network-devices', icon: '🌐', permission: 'view-routers' },
     { name: 'Service Plans', path: '/service-plans', icon: '📦', permission: 'view-service-plans' },
     { name: 'Billing', path: '/billing', icon: '💰', permission: 'view-invoices' },

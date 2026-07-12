@@ -17,6 +17,7 @@ import CustomerLoginPage from '@/pages/CustomerLoginPage';
 import CustomerDashboardPage from '@/pages/CustomerDashboardPage';
 import SignupPage from '@/pages/SignupPage';
 import UsersPage from '@/pages/UsersPage';
+import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
 
 // ============================================================================
 // Main App Component
@@ -54,6 +55,23 @@ const App: React.FC = (): JSX.Element => {
                 element={
                   <ProtectedRoute>
                     <CreateCustomerPage />
+                  </ProtectedRoute>
+                }
+              />
+              {/* Alias for /customers/new so links from the Unregistered Leases page work */}
+              <Route
+                path="/customers/new"
+                element={
+                  <ProtectedRoute>
+                    <CreateCustomerPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/unregistered-clients"
+                element={
+                  <ProtectedRoute>
+                    <UnregisteredLeasesPage />
                   </ProtectedRoute>
                 }
               />

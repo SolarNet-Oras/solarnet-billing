@@ -17,6 +17,9 @@ class DhcpLease extends Model
         'mac_address',
         'ip_address',
         'hostname',
+        'comment',
+        'rate_limit',
+        'is_dynamic',
         'status',
         'server',
         'expires_at',
@@ -28,6 +31,7 @@ class DhcpLease extends Model
         'expires_at' => 'datetime',
         'last_seen_at' => 'datetime',
         'is_matched' => 'boolean',
+        'is_dynamic' => 'boolean',
     ];
 
     /**

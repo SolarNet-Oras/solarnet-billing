@@ -444,14 +444,22 @@ class MikrotikService
             // Parse and format leases
             $formattedLeases = [];
             foreach ($leases as $lease) {
+                // MikroTik returns booleans as "true"/"false" strings
+                $isDynamic = isset($lease['dynamic'])
+                    ? filter_var($lease['dynamic'], FILTER_VALIDATE_BOOLEAN)
+                    : true;
+
                 $formattedLeases[] = [
-                    'mac_address' => $lease['mac-address'] ?? $lease['active-mac-address'] ?? null,
-                    'ip_address' => $lease['address'] ?? $lease['active-address'] ?? null,
-                    'hostname' => $lease['host-name'] ?? null,
-                    'status' => $lease['status'] ?? 'unknown',
-                    'server' => $lease['server'] ?? 'default',
+                    'mac_address'   => $lease['mac-address'] ?? $lease['active-mac-address'] ?? null,
+                    'ip_address'    => $lease['address'] ?? $lease['active-address'] ?? null,
+                    'hostname'      => $lease['host-name'] ?? null,
+                    'comment'       => $lease['comment'] ?? null,
+                    'rate_limit'    => $lease['rate-limit'] ?? null,
+                    'is_dynamic'    => $isDynamic,
+                    'status'        => $lease['status'] ?? 'unknown',
+                    'server'        => $lease['server'] ?? 'default',
                     'expires_after' => $lease['expires-after'] ?? null,
-                    'last_seen' => $lease['last-seen'] ?? null,
+                    'last_seen'     => $lease['last-seen'] ?? null,
                 ];
             }
             

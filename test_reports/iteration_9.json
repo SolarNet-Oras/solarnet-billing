@@ -1,0 +1,39 @@
+{
+  "summary": "Backend-only pytest suite (16 tests) for the new Unregistered DHCP Leases feature + Add Client regression. 15/16 passed. Auth guards, DB schema (comment/rate_limit/is_dynamic), sync-all, static-commented (incl. suggested_plan), dynamic listing, quick-register 404/422 edge cases, and Add Client (with/without plan+router, portal_credentials) all pass. One CRITICAL bug found: quick-register returns 500 when the CustomerObserver's queue sync writes to non-existent DB columns inside a DB::transaction, aborting the PG transaction.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/v1/unregistered-leases/{id}/quick-register",
+        "issue": "Returns 500 'SQLSTATE[25P02]: In failed sql transaction'. Root cause: Customer::create fires CustomerObserver->created -> QueueService::syncCustomerQueue which UPDATEs customers.queue_synced / queue_last_synced_at / queue_sync_status. Those columns do NOT exist in the customers table (migration 2026_07_01_170617_add_queue_fields_to_customers_table.php is empty - up() is a no-op). Under normal Add Client flow the exception is swallowed by the observer's try/catch, but quick-register wraps Customer::create in DB::transaction, so the failed statement poisons the PG transaction and the subsequent $lease->update() aborts.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_unregistered_leases.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix the empty migration 2026_07_01_170617_add_queue_fields_to_customers_table.php to actually add columns: queue_synced (boolean, default false), queue_last_synced_at (timestamp, nullable), queue_sync_status (string, nullable). Then run `php artisan migrate --force`.",
+    "OR: temporarily remove those field writes from QueueService::syncCustomerQueue and remove them from Customer $fillable/$casts until the migration is fixed.",
+    "Additionally consider moving the DB::transaction in UnregisteredLeaseController::quickRegister to NOT enclose the observer's DB writes, or execute queue sync AFTER the transaction commits (e.g., via afterCommit dispatch) so a MikroTik/DB failure never aborts a customer creation."
+  ],
+  "critical_code_review_comments": [
+    "CustomerObserver::syncQueue runs synchronously on every Customer create/update. Any observer that touches DB should never assume it runs outside a transaction. Prefer Model::created() with afterCommit() or a queued job for MikroTik I/O.",
+    "UnregisteredLeaseController::quickRegister leaks the raw exception message via 'Failed to register client: ' . $e->getMessage() - fine for dev, but consider hiding SQL/host details in production.",
+    "matchPlanByRateLimit picks the first active plan when multiple plans have the same download/upload speed - deterministic but returns oldest plan. Consider order-by created_at desc or price asc for predictability.",
+    "generateAccountNumber uses base64_encode(random_bytes(6)) - fine for uniqueness but format ('ACC' + 8 chars) is inconsistent with the seeded 'ACC-0002' style used elsewhere. Minor UX inconsistency in account numbers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_unregistered_leases.py (new)"
+  ],
+  "success_rate": {"backend": "93.75% (15/16)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@ispbilling.local / password (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test fixtures create one TEST_Router_* row, one TEST_Plan_10_5_* ServicePlan, and several DhcpLease rows per session (session-scoped fixtures). All prefixed TEST_ where applicable.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run: cd /app/backend && python -m pytest tests/test_unregistered_leases.py -v. After main agent fixes migration/observer, only test_quick_register_success_with_plan_match should flip green. Note: tests use localhost:8001. The fixture creates real router+plan rows each session; don't be alarmed by TEST_ rows accumulating.",
+  "rca of the issue": "PG error 42703 (undefined column queue_synced) fired inside a DB::transaction aborts the transaction. Reproduction: POST /api/v1/unregistered-leases/{id}/quick-register on any static+commented unmatched lease -> 500 with 25P02. Mitigation: fix the empty migration to add the 3 queue-tracking columns, OR remove those writes from QueueService, OR wrap observer logic in DB::afterCommit."
+}
