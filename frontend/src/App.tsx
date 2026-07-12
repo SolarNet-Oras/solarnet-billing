@@ -8,6 +8,7 @@ import LoginPage from '@/pages/LoginPage';
 import NewDashboardPage from '@/pages/NewDashboardPage';
 import CustomersPage from '@/pages/CustomersPage';
 import CreateCustomerPage from '@/pages/CreateCustomerPage';
+import EditCustomerPage from '@/pages/EditCustomerPage';
 import { NetworkDevicesPage } from '@/pages/NetworkDevicesPage';
 import { ServicePlansPage } from '@/pages/ServicePlansPage';
 import InvoicesPage from '@/pages/InvoicesPage';
@@ -64,6 +65,14 @@ const App: React.FC = (): JSX.Element => {
                 element={
                   <ProtectedRoute>
                     <CreateCustomerPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/customers/:id/edit"
+                element={
+                  <ProtectedRoute>
+                    <EditCustomerPage />
                   </ProtectedRoute>
                 }
               />

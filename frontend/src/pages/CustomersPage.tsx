@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
+import { customerService } from '@/services/customerService';
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
 
@@ -10,6 +11,10 @@ const CustomersPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState<boolean>(false);
+  const [notice, setNotice] = useState<string>('');
+  const [error, setError] = useState<string>('');
 
   const fetchCustomers = useCallback(async (): Promise<void> => {
     try {
@@ -31,6 +36,23 @@ const CustomersPage: React.FC = () => {
     fetchCustomers();
   }, [fetchCustomers]);
 
+  const handleConfirmDelete = async (): Promise<void> => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await customerService.deleteCustomer(deleteTarget.id);
+      setNotice(`Customer "${deleteTarget.full_name}" deleted.`);
+      setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to delete customer');
+      logger.error('Failed to delete customer', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const getStatusBadge = (status: string): JSX.Element => {
     const colors = {
       active: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -49,6 +71,18 @@ const CustomersPage: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Alerts */}
+        {notice && (
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-md p-3 text-sm text-emerald-800 dark:text-emerald-200 flex justify-between items-center" data-testid="customer-notice">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} className="text-xs text-emerald-700 dark:text-emerald-300 hover:underline">dismiss</button>
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 text-sm text-red-800 dark:text-red-200" data-testid="customer-error">
+            {error}
+          </div>
+        )}
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
@@ -98,7 +132,7 @@ const CustomersPage: React.FC = () => {
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
           ) : customers.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              No customers found. Click "Add Customer" to create one.
+              No customers found. Click &quot;Add Customer&quot; to create one.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -163,15 +197,25 @@ const CustomersPage: React.FC = () => {
                         <Link
                           to={`/customers/${customer.id}`}
                           className="text-primary hover:underline mr-3"
+                          data-testid={`view-customer-${customer.id}`}
                         >
                           View
                         </Link>
                         <Link
                           to={`/customers/${customer.id}/edit`}
-                          className="text-primary hover:underline"
+                          className="text-primary hover:underline mr-3"
+                          data-testid={`edit-customer-${customer.id}`}
                         >
                           Edit
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => { setDeleteTarget(customer); setError(''); }}
+                          className="text-red-600 hover:underline dark:text-red-400"
+                          data-testid={`delete-customer-${customer.id}`}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -181,6 +225,42 @@ const CustomersPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          data-testid="delete-customer-modal"
+        >
+          <div className="bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-foreground mb-2">Delete customer?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              You are about to delete <strong className="text-foreground">{deleteTarget.full_name}</strong> ({deleteTarget.account_number}).
+              This will archive the customer (soft delete) and remove their MikroTik queue on next sync.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
+                data-testid="delete-cancel-btn"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                data-testid="delete-confirm-btn"
+              >
+                {deleting ? 'Deleting…' : 'Yes, delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };
