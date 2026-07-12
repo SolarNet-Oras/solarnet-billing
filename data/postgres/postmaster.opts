@@ -1,1 +1,0 @@
-/usr/lib/postgresql/15/bin/postgres "-D" "/app/data/postgres" "-c" "listen_addresses=127.0.0.1" "-c" "port=5432"
