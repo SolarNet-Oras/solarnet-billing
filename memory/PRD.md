@@ -17,7 +17,49 @@ Design and build a production-ready **Enterprise ISP Billing & Network Managemen
 
 ---
 
-## What's implemented — 2026-02-12 (this session)
+## What's implemented — 2026-02-12 (Wave 1: Floating AI Assistant)
+
+### AI Assistant Wave 1
+- ✅ **Backend AI stack** (Laravel 12, guzzle to OpenAI REST — no extra composer deps)
+  - Config `/app/backend/config/openai.php` (model=gpt-5.4-mini, key from `.env`, timeout, max tool iterations)
+  - Migrations: `ai_conversations`, `ai_messages`, `ai_audit_logs`
+  - Models: `AiConversation`, `AiMessage`, `AiAuditLog`
+  - `OpenAiClient` (Guzzle wrapper for `/chat/completions` with tool-calling support)
+  - `AiToolRegistry` + `AiTool` interface + 5 read-only tools:
+    - `get_network_status` (customers/invoices/routers/leases snapshot)
+    - `list_customers` (filter by status/plan/router/search)
+    - `get_customer_details` (by id/account_number/search)
+    - `search_by_mac_or_ip`
+    - `list_unregistered_leases` (variant: static_commented|dynamic|all)
+  - `AiService` orchestrator (multi-turn conversation loop, up to 5 tool iterations, per-call audit log)
+  - `AiController` with endpoints:
+    - `POST /api/v1/ai/chat`
+    - `GET /api/v1/ai/conversations`
+    - `GET /api/v1/ai/conversations/{id}/messages`
+    - `DELETE /api/v1/ai/conversations/{id}`
+- ✅ **Frontend floating chat drawer** at `/app/frontend/src/components/ai/FloatingAiAssistant.tsx`
+  - Mounted in `DashboardLayout` → visible on every authenticated page
+  - Purple/violet gradient floating button (bottom-right)
+  - Chat drawer with: header, message list, tool-call visualization (`🔧 tool_name · ok`), input, suggestion chips
+  - History sidebar (list past conversations, load, delete, "New chat")
+  - Multi-turn context maintained via `conversation_id` echoed by backend
+  - Enter to send, Shift+Enter for newline
+- ✅ **Security**: OPENAI_API_KEY stored in `/app/backend/.env`, never sent to the browser (verified — testing agent grep'd HTML/JS for `sk-` string)
+- ✅ **RBAC**: 4/5 tools require `view-customers` permission OR `super-admin` role; `get_network_status` open to all
+- ✅ **Audit**: every tool call writes an `ai_audit_logs` row (user, args, result, latency_ms, status)
+
+### Verified
+- Testing agent iteration_14: 13/13 backend + full frontend E2E all PASSED, zero critical or minor issues
+- End-to-end demo working: user question → GPT-5.4-mini → tool call → live PG data → formatted reply, ~2.4s
+
+### Model / Key
+- Model: **gpt-5.4-mini** (user's choice)
+- Key: user's own OpenAI project key (stored server-side only)
+- Est. cost per Wave 1 conversation: ~$0.005 (1600 in + 100 out tokens)
+
+---
+
+## What's implemented — 2026-02-12 (Earlier session)
 
 ### Wave 1 completion
 - ✅ **Add Client** page (`/customers/create`) was previously broken due to missing imports; fully rewritten:
