@@ -5,8 +5,11 @@ namespace App\Services\Ai;
 use App\Services\Ai\Tools\GetCustomerDetailsTool;
 use App\Services\Ai\Tools\GetNetworkStatusTool;
 use App\Services\Ai\Tools\ListCustomersTool;
+use App\Services\Ai\Tools\ListSourceFilesTool;
 use App\Services\Ai\Tools\ListUnregisteredLeasesTool;
+use App\Services\Ai\Tools\ReadSourceFileTool;
 use App\Services\Ai\Tools\SearchByMacOrIpTool;
+use App\Services\Ai\Tools\SearchCodeTool;
 
 /**
  * Registry of all AI-callable tools.
@@ -24,6 +27,13 @@ class AiToolRegistry
         $this->register(new GetCustomerDetailsTool());
         $this->register(new SearchByMacOrIpTool());
         $this->register(new ListUnregisteredLeasesTool());
+
+        // Super-admin-only code exploration tools (read-only, guarded).
+        // Their authorize() rejects non-super-admins so they simply won't
+        // appear in the tool list for other roles.
+        $this->register(new ReadSourceFileTool());
+        $this->register(new ListSourceFilesTool());
+        $this->register(new SearchCodeTool());
     }
 
     public function register(AiTool $tool): void

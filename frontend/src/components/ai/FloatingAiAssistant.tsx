@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Sparkles, X, Send, Loader2, Wrench, Trash2, MessageSquarePlus } from 'lucide-react';
+import { Sparkles, X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { aiService, type AiChatResponse, type AiConversationSummary } from '@/services/aiService';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -17,9 +19,78 @@ const SUGGESTIONS: string[] = [
   'How many unregistered leases are ready to register?',
 ];
 
+const SUPER_ADMIN_SUGGESTIONS: string[] = [
+  'Review /app/backend/app/Services/Ai/AiService.php and suggest 2 improvements',
+  'Where do we validate account_number? Show the code and suggest a cleaner regex.',
+  'Add a new read-only tool that returns today\'s collection total. Show me the full new file.',
+  'Refactor the Sidebar nav items into a config array — show the diff.',
+];
+
+/**
+ * Copyable code block for markdown fenced blocks.
+ */
+const CodeBlock: React.FC<{ language?: string; children: string }> = ({ language, children }) => {
+  const [copied, setCopied] = useState<boolean>(false);
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
+  return (
+    <div className="my-2 rounded-md overflow-hidden border border-border bg-zinc-950 text-zinc-100" data-testid="ai-code-block">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 text-xs text-zinc-400 border-b border-zinc-800">
+        <span className="font-mono">{language || 'code'}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1 hover:text-zinc-100"
+          data-testid="ai-copy-code-btn"
+        >
+          {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+        </button>
+      </div>
+      <pre className="px-3 py-2 text-[12px] leading-snug overflow-x-auto font-mono whitespace-pre">
+        <code>{children}</code>
+      </pre>
+    </div>
+  );
+};
+
+/**
+ * Markdown renderer used for assistant messages.
+ * Defined outside the parent to keep component identity stable across renders.
+ */
+const InlineCode: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
+  <code className="px-1 py-0.5 rounded bg-secondary text-foreground font-mono text-[12px]">{children}</code>
+);
+
+const MarkdownLink: React.FC<{ children?: React.ReactNode; href?: string }> = ({ children, href }) => (
+  <a className="text-primary underline" target="_blank" rel="noopener noreferrer" href={href}>{children}</a>
+);
+
+const MARKDOWN_COMPONENTS: any = {
+  code({ inline, className, children }: any) {
+    const raw = String(children).replace(/\n$/, '');
+    if (inline) return <InlineCode>{children}</InlineCode>;
+    const match = /language-(\w+)/.exec(className || '');
+    return <CodeBlock language={match?.[1]}>{raw}</CodeBlock>;
+  },
+  a: MarkdownLink,
+};
+
+const AssistantMarkdown: React.FC<{ content: string }> = ({ content }) => (
+  <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-pre:my-0 prose-headings:mt-3 prose-headings:mb-1.5 prose-ul:my-1.5 prose-li:my-0">
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+      {content}
+    </ReactMarkdown>
+  </div>
+);
+
 /**
  * Floating AI assistant. Appears bottom-right on every authenticated page.
- * Wave 1: read-only tools, non-streaming JSON reply.
+ * Wave 1: read-only tools + super-admin code exploration, non-streaming JSON reply.
  */
 const FloatingAiAssistant: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
@@ -124,6 +195,9 @@ const FloatingAiAssistant: React.FC = () => {
 
   if (!isAuthenticated) return null;
 
+  const isSuperAdmin = Boolean((user as any)?.roles?.some?.((r: any) => (typeof r === 'string' ? r : r?.name) === 'super_admin'));
+  const suggestions = isSuperAdmin ? [...SUGGESTIONS, ...SUPER_ADMIN_SUGGESTIONS] : SUGGESTIONS;
+
   return (
     <>
       {/* Floating button */}
@@ -143,7 +217,7 @@ const FloatingAiAssistant: React.FC = () => {
       {/* Drawer */}
       {open && (
         <div
-          className="fixed bottom-6 right-6 z-40 w-[420px] max-w-[calc(100vw-24px)] h-[640px] max-h-[calc(100vh-48px)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          className="fixed bottom-6 right-6 z-40 w-[520px] max-w-[calc(100vw-24px)] h-[680px] max-h-[calc(100vh-48px)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           data-testid="ai-assistant-drawer"
         >
           {/* Header */}
@@ -237,13 +311,13 @@ const FloatingAiAssistant: React.FC = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {SUGGESTIONS.map((s) => (
+                  {suggestions.map((s, idx) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => void sendMessage(s)}
                       className="text-left px-3 py-2 rounded-lg border border-border hover:bg-secondary text-sm text-foreground transition-colors"
-                      data-testid={`ai-suggestion-${SUGGESTIONS.indexOf(s)}`}
+                      data-testid={`ai-suggestion-${idx}`}
                     >
                       {s}
                     </button>
@@ -254,9 +328,9 @@ const FloatingAiAssistant: React.FC = () => {
             {messages.map((m, i) => (
               <div key={m.ts + '-' + i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
+                  className={`max-w-[92%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
                     m.role === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-br-sm'
+                      ? 'bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap'
                       : 'bg-secondary text-foreground rounded-bl-sm border border-border'
                   }`}
                   data-testid={`ai-msg-${m.role}-${i}`}
@@ -276,7 +350,11 @@ const FloatingAiAssistant: React.FC = () => {
                       ))}
                     </div>
                   )}
-                  {m.content}
+                  {m.role === 'assistant' ? (
+                    <AssistantMarkdown content={m.content} />
+                  ) : (
+                    m.content
+                  )}
                 </div>
               </div>
             ))}

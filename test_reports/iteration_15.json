@@ -1,0 +1,42 @@
+{
+  "summary": "Wave 2 AI code tools (super-admin read-only code exploration). Verified guards + RBAC via direct PHP + one full pytest run before OpenAI daily quota (RPD 50/50 for gpt-5.4-mini) exhausted. Frontend chip counts verified via Playwright.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "auth/login", "issue": "demo@ispbilling.local / password returns 401 Invalid credentials — the credential documented in /app/memory/test_credentials.md does not authenticate. Blocks testing the 'admin' role (non-super_admin, non-customer) scenario. Used lowpriv@test.com (customer role) instead for negative RBAC coverage."},
+      {"endpoint": "/api/v1/ai/chat", "issue": "OpenAI account is on a very low tier: RPD=50/day, RPM=10/min for gpt-5.4-mini. During this test session RPD hit 50/50 (~28 min recovery). Not a code bug, but AI-integration flows are essentially untestable at scale until quota resets or plan is upgraded. Backend surfaces the raw OpenAI 429 as HTTP 500 with success:false — consider catching rate_limit_exceeded and returning 429 with a friendlier message."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Customer portal (lowpriv@test.com)", "issues": ["ai-assistant-open-btn is not rendered at all for the customer role. The review request expected '4 chips visible' for non-super_admin; instead the whole AI drawer is hidden. This is actually SAFER than requested but differs from the spec — main agent should confirm intended behavior. Testing an actual 'admin' role user is blocked by the demo login 401."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/qa_ai_code_tools_test.py", "/app/test_reports/pytest/wave2_ai.xml"],
+  "action_items": [
+    "Fix demo@ispbilling.local login (currently 401) OR re-seed the demo admin user so a non-super_admin/non-customer role can be tested.",
+    "OPTIONAL: In AiService/AiController, catch OpenAI rate_limit_exceeded and return 429 with { retry_after } instead of the current 500.",
+    "OPTIONAL: Consider showing the 4 base AI suggestion chips (or a message) to non-super_admin roles that currently see the drawer; today only super_admin sees the drawer.",
+    "Re-run /app/backend/tests/qa_ai_code_tools_test.py once OpenAI daily quota resets (or plan is upgraded) to hit the LLM-driven paths that were rate-limited (list+read+diff functional, non-super RBAC via /ai/chat, wave-1 regression). Note: guards themselves were already validated directly via php artisan tinker, so this is only re-validating the OpenAI round-trip."
+  ],
+  "critical_code_review_comments": [
+    "CodeToolGuards.php: solid — no traversal, root-prefix whitelist, extension whitelist, size cap, no-write ever. Verified all four rejection paths directly.",
+    "AiToolRegistry::schemasFor() correctly filters by authorize(), so non-super_admins literally do not see the code tools in the OpenAI function schemas (verified: low-priv user got only get_network_status in schemas).",
+    "SearchCodeTool: uses Symfony Process with an argv array (no shell injection), 15s timeout, -I to skip binaries, exclude-dir for node_modules/vendor/.git. Good.",
+    "AiController returns success:false with 500 for OpenAI 4xx (rate_limit_exceeded). Client-side loses distinction between server bug and provider throttling. Recommend a dedicated 429 path.",
+    "ReadSourceFileTool caps at 64KB but the OpenAI response includes the *entire file content* inline — consider trimming to a max-token slice or line range to protect the model context window on borderline files close to 64KB."
+  ],
+  "updated_files": ["/app/backend/tests/qa_ai_code_tools_test.py"],
+  "success_rate": {"backend": "6/7 executed passed on the LLM path (1 test-assertion-bug fixed pre-quota-exhaustion, could not re-run); 6/6 guard paths verified directly via php artisan — 100%", "frontend": "3/4 frontend expectations verified (8 chips ✓, code-block/copy component present in code ✓, super-admin drawer opens ✓; non-super chip-count spec deviated — drawer hidden)"},
+  "test_credentials": "admin@ispbilling.local / password (super_admin) works. demo@ispbilling.local / password is BROKEN — 401. lowpriv@test.com / password123 (customer) works.",
+  "seed_data_creation": "None persisted. Temporary /app/backend/tests/qa_fake.log and /app/backend/tests/qa_large.php were created and deleted inside the tinker script to prove extension + size guards.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Direct PHP verification of CodeToolGuards is deterministic and does not consume OpenAI quota — re-use qa_ai_code_tools_test.py + the tinker approach. LLM-round-trip tests (functional list+read+diff, RBAC through /ai/chat, wave-1 regression) need OpenAI quota — wait ~30 min after last run or upgrade the OpenAI plan. Non-super_admin ROLE (not customer) can only be tested once demo@ispbilling.local is fixed or another admin-role user is seeded.",
+  "rca of the issue": {
+    "quota_exhaustion": "OpenAI org-4bwAKc06DQ01SyQWGdOSFIy1 is on tier with RPD=50/day for gpt-5.4-mini. Previous iterations (Wave 1 testing already burned 40+/50) + this iteration's LLM calls tipped it over. Mitigation: (a) upgrade OpenAI plan, (b) enable response cache on ai/chat for identical prompts during automated testing, or (c) surface 429 vs 500 so retries can back off correctly.",
+    "demo_login_401": "Symptom only observed; not investigated in-depth. Likely: demo user seeder was not re-run in this fork OR the password hash was set with a different bcrypt cost/prefix. Recommend `php artisan db:seed --class=DemoUserSeeder` (or equivalent) and re-verifying."
+  }
+}

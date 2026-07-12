@@ -32,7 +32,7 @@ class GetCustomerDetailsTool implements AiTool
 
     public function authorize(User $user): bool
     {
-        return $user->hasPermission('view-customers') || $user->hasRole('super-admin');
+        return $user->hasPermission('view-customers') || $user->hasRole('super_admin');
     }
 
     public function execute(User $user, array $arguments): array
