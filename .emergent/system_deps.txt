@@ -1,0 +1,13 @@
+debsuryorg-archive-keyring=2025.11.18
+php8.4-bcmath=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-cli=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-curl=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-gd=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-intl=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-mbstring=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-pgsql=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-redis=6.3.0-2+0~20260711.69+debian12~1.gbpd148c3
+php8.4-xml=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+php8.4-zip=8.4.23-1+0~20260703.52+debian12~1.gbp817a0c
+postgresql-15=15.18-0+deb12u1
+redis-server=5:7.0.15-1~deb12u8

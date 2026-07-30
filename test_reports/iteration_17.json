@@ -1,0 +1,25 @@
+{
+  "summary": "Tested Settings API + UI and Mikrotik auto-comment/rate-limit on quick-register. 7/7 backend pytest cases pass; full Playwright frontend flow (sidebar routing, section rendering, save, persistence-after-reload, restore) passes. Cleaned up all TEST_ routers/plans/leases/customers.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_settings_and_mikrotik_autocomment.py",
+    "/app/test_reports/pytest/settings_mikrotik.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SettingsController::update returns HTTP 200 but the JSON envelope key is 'status' (='success'), not 'success'; the rest of the API standardizes on {'success': true, ...}. Consider aligning for consistency (non-blocking; UI works because it inspects res.data.keys directly).",
+    "MikrotikService::updateOrMakeStaticLease correctly early-exits when connection_status in ['offline','unknown',null] with skipped=true — verified: no TCP attempt, request returns in ms. Also correctly re-looks up '.id' after make-static (RouterOS resets the id on that op).",
+    "UnregisteredLeaseController::quickRegister writes local dhcp_leases.comment/rate_limit/is_dynamic after DB commit, so UI stays consistent even when router is unreachable — verified in DB.",
+    "Setting model uses Cache::rememberForever; write path calls Cache::forget both in put() and again in controller — belt-and-braces, no cache-staleness bug observed under PUT then GET."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_settings_and_mikrotik_autocomment.py (new)"
+  ],
+  "success_rate": { "backend": "100% (7/7)", "frontend": "100%" },
+  "test_credentials": "admin@ispbilling.local / password",
+  "seed_data_creation": "Per-test TEST_ prefixed router+plan+lease created via direct SQL, cleaned up in fixture teardown; also company.name & billing.vat_percent PUT-then-restored to defaults 'Solarnet Internet' / 12.0.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login response shape is {status:'success', data:{access_token, token_type, expires_in, user}} — NOT 'token'. dhcp_leases table requires non-null 'server' column ('default' is fine). All Settings PUT writes must go through /api/v1/settings so the Setting model can bust its cache; do not INSERT into settings directly. MikroTik in this preview is always offline (guard path validated) — do not attempt to bring up a real router."
+}

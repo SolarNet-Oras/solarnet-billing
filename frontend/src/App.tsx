@@ -19,6 +19,7 @@ import CustomerDashboardPage from '@/pages/CustomerDashboardPage';
 import SignupPage from '@/pages/SignupPage';
 import UsersPage from '@/pages/UsersPage';
 import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
+import SettingsPage from '@/pages/SettingsPage';
 
 // ============================================================================
 // Main App Component
@@ -81,6 +82,14 @@ const App: React.FC = (): JSX.Element => {
                 element={
                   <ProtectedRoute>
                     <UnregisteredLeasesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <SettingsPage />
                   </ProtectedRoute>
                 }
               />

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
+use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\TicketController;
 use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -112,6 +113,10 @@ Route::prefix('v1')->group(function () {
             Route::get('conversations/{id}/messages',        [AiController::class, 'messages']);
             Route::delete('conversations/{id}',              [AiController::class, 'destroyConversation']);
         });
+
+        // General settings (super_admin or view-settings/edit-settings permissions)
+        Route::get('settings',  [SettingsController::class, 'index'])->middleware('permission:view-settings');
+        Route::put('settings',  [SettingsController::class, 'update'])->middleware('permission:edit-settings');
         
         // Service Plans routes (require permission)
         Route::apiResource('service-plans', ServicePlanController::class)->only(['index', 'show'])->middleware('permission:view-service-plans');

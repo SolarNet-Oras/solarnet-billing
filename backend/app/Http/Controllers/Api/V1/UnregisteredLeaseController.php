@@ -9,6 +9,7 @@ use App\Models\Router;
 use App\Models\ServicePlan;
 use App\Services\CustomerAccountService;
 use App\Services\DhcpSyncService;
+use App\Services\MikrotikService;
 use App\Services\QueueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -188,11 +189,40 @@ class UnregisteredLeaseController extends Controller
             ];
         }
 
+        // Business rule: after registration, PUSH the customer's name (comment)
+        // and their subscription's rate-limit down to MikroTik and make the lease static.
+        // Falls back cleanly if the router is offline — we never fail the registration
+        // just because MikroTik is unreachable.
+        $mikrotikResult = null;
+        if ($lease->router && $lease->mac_address) {
+            $rateLimit = $lease->rate_limit;
+            if (!$rateLimit && $plan) {
+                // Derive from plan speeds — MikroTik format e.g. "10M/5M"
+                $rateLimit = $plan->download_speed . 'M/' . $plan->upload_speed . 'M';
+            }
+
+            $mikrotikResult = app(MikrotikService::class)->updateOrMakeStaticLease(
+                $lease->router,
+                $lease->mac_address,
+                $customer->full_name,
+                $rateLimit,
+                $lease->ip_address
+            );
+
+            // Reflect the outcome in our local DhcpLease row so the UI stays consistent
+            $lease->update([
+                'comment'    => $customer->full_name,
+                'rate_limit' => $rateLimit,
+                'is_dynamic' => false,
+            ]);
+        }
+
         return response()->json([
             'success'            => true,
             'message'            => 'Client registered from DHCP lease',
             'data'               => $customer->load(['servicePlan', 'router']),
             'portal_credentials' => $portalCreds,
+            'mikrotik_sync'      => $mikrotikResult,
         ], 201);
     }
 

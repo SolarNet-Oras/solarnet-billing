@@ -511,4 +511,133 @@ class MikrotikService
             ];
         }
     }
+
+
+    /**
+     * Ensure a DHCP lease is STATIC on MikroTik with the given comment + rate-limit.
+     *
+     * Business rule (Solarnet): when a client is registered from the Unregistered
+     * page, their MikroTik lease must automatically become static, receive their
+     * name as the comment, and get their subscription's rate-limit applied — so
+     * bandwidth is enforced immediately, no follow-up manual step needed.
+     *
+     * Behaviour:
+     *  - If a lease with the given MAC exists AND is dynamic → make it static, then set fields.
+     *  - If it exists and is already static → just set fields.
+     *  - If no lease exists (rare — customer added manually with only a MAC) → add a static one.
+     *
+     * Returns { success: bool, message: string, lease_id?: string } — never throws.
+     */
+    public function updateOrMakeStaticLease(
+        Router $router,
+        string $macAddress,
+        string $comment,
+        ?string $rateLimit = null,
+        ?string $ipAddress = null,
+        string $server = 'default'
+    ): array {
+        // Refuse to reach an unreachable router — same guard as QueueService.
+        if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
+            return [
+                'success' => false,
+                'message' => 'Router is not online (connection_status=' . ($router->connection_status ?? 'null') . '). Skipped MikroTik lease sync.',
+                'skipped' => true,
+            ];
+        }
+
+        try {
+            $config = (new Config())
+                ->set('host', $router->host)
+                ->set('user', $router->username)
+                ->set('pass', $router->password)
+                ->set('port', $router->port)
+                ->set('timeout', 3)
+                ->set('socket_timeout', 5)
+                ->set('attempts', 1)
+                ->set('delay', 1);
+
+            $client = new Client($config);
+            $macNorm = strtoupper(trim($macAddress));
+
+            // 1) Look up existing lease by MAC
+            $find = (new Query('/ip/dhcp-server/lease/print'))
+                ->where('mac-address', $macNorm);
+            $existing = $client->query($find)->read();
+            $lease    = $existing[0] ?? null;
+
+            $updates = [
+                'comment' => $comment,
+            ];
+            if ($rateLimit) {
+                $updates['rate-limit'] = $rateLimit;
+            }
+
+            if ($lease) {
+                $leaseId   = $lease['.id'];
+                $isDynamic = isset($lease['dynamic'])
+                    ? filter_var($lease['dynamic'], FILTER_VALIDATE_BOOLEAN)
+                    : false;
+
+                // Dynamic → convert to static first (MikroTik dedicated command)
+                if ($isDynamic) {
+                    $mk = (new Query('/ip/dhcp-server/lease/make-static'))
+                        ->equal('.id', $leaseId);
+                    $client->query($mk)->read();
+                    // After make-static, the .id may change — re-lookup
+                    $existing = $client->query($find)->read();
+                    $lease    = $existing[0] ?? null;
+                    $leaseId  = $lease['.id'] ?? $leaseId;
+                }
+
+                // 2) Apply comment + rate-limit
+                $set = (new Query('/ip/dhcp-server/lease/set'))
+                    ->equal('.id', $leaseId);
+                foreach ($updates as $k => $v) {
+                    $set->equal($k, $v);
+                }
+                $client->query($set)->read();
+
+                return [
+                    'success'  => true,
+                    'message'  => 'Lease updated (comment + rate-limit applied)',
+                    'lease_id' => $leaseId,
+                    'was_dynamic' => $isDynamic,
+                ];
+            }
+
+            // 3) No existing lease — add a fresh static one (requires IP)
+            if (!$ipAddress) {
+                return [
+                    'success' => false,
+                    'message' => 'No existing lease for MAC ' . $macNorm . ' and no IP provided to create a new static lease.',
+                ];
+            }
+            $add = (new Query('/ip/dhcp-server/lease/add'))
+                ->equal('mac-address', $macNorm)
+                ->equal('address', $ipAddress)
+                ->equal('server', $server)
+                ->equal('comment', $comment);
+            if ($rateLimit) {
+                $add->equal('rate-limit', $rateLimit);
+            }
+            $result = $client->query($add)->read();
+
+            return [
+                'success'  => true,
+                'message'  => 'Static lease added',
+                'lease_id' => $result[0]['ret'] ?? null,
+                'created'  => true,
+            ];
+        } catch (Exception $e) {
+            Log::warning('updateOrMakeStaticLease failed', [
+                'router_id' => $router->id,
+                'mac'       => $macAddress,
+                'error'     => $e->getMessage(),
+            ]);
+            return [
+                'success' => false,
+                'message' => 'MikroTik error: ' . $e->getMessage(),
+            ];
+        }
+    }
 }
