@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AiController;
+use App\Http\Controllers\Api\V1\AutomationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
@@ -117,6 +118,13 @@ Route::prefix('v1')->group(function () {
         // General settings (super_admin or view-settings/edit-settings permissions)
         Route::get('settings',  [SettingsController::class, 'index'])->middleware('permission:view-settings');
         Route::put('settings',  [SettingsController::class, 'update'])->middleware('permission:edit-settings');
+
+        // Scheduled Automations (view logs = view-settings, manual trigger = super_admin only)
+        Route::prefix('automation')->group(function () {
+            Route::get('jobs',      [AutomationController::class, 'jobs'])->middleware('permission:view-settings');
+            Route::get('logs',      [AutomationController::class, 'index'])->middleware('permission:view-settings');
+            Route::post('run/{job}',[AutomationController::class, 'run'])->middleware('role:super_admin');
+        });
         
         // Service Plans routes (require permission)
         Route::apiResource('service-plans', ServicePlanController::class)->only(['index', 'show'])->middleware('permission:view-service-plans');

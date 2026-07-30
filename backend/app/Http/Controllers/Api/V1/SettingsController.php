@@ -36,6 +36,13 @@ class SettingsController extends Controller
         'ai.enabled'          => ['cast' => 'bool',   'group' => 'ai', 'label' => 'AI Assistant enabled', 'default' => true],
         'ai.model'            => ['cast' => 'string', 'group' => 'ai', 'label' => 'OpenAI model',        'default' => 'gpt-5.4-mini'],
         'ai.system_hint'      => ['cast' => 'string', 'group' => 'ai', 'label' => 'Extra system instructions (optional)', 'default' => ''],
+
+        // Automation (scheduled jobs)
+        'automation.enabled'                => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Automations enabled (master switch)',           'default' => true],
+        'automation.auto_suspend_enabled'   => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Auto-suspend overdue customers',                'default' => true],
+        'automation.reminder_days_before'   => ['cast' => 'int',    'group' => 'automation', 'label' => 'Send reminder N days before due',               'default' => 3],
+        'automation.overdue_reminder_days'  => ['cast' => 'string', 'group' => 'automation', 'label' => 'Overdue follow-up days (comma-separated)',      'default' => '1,7,14'],
+        'automation.backup_retention_days'  => ['cast' => 'int',    'group' => 'automation', 'label' => 'DB backup retention (days)',                    'default' => 7],
     ];
 
     public function index(Request $request): JsonResponse

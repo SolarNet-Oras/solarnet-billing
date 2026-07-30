@@ -17,12 +17,33 @@ Design and build a production-ready **Enterprise ISP Billing & Network Managemen
 
 ---
 
-## What's implemented — 2026-02-13 (Wave 3: MikroTik VPN-safe script port)
+## What's implemented — 2026-02-13 (Wave 3: MikroTik VPN-safe port + Scheduled Automations)
 
 ### MikroTik Setup Script — Hardcoded API Port 8728
 - ✅ `MikrotikScriptGenerator::generateSetupScript` now **hardcodes** `$apiPort = 8728` regardless of what `$router->port` is. Rationale: even when the MikroTik is reached by the billing app through a VPN tunnel (where `router.port` might be a mapped port like 18728), the router's own `/ip service` must always listen on the RouterOS default 8728 for consistency.
 - ✅ Verified via curl on `POST /api/v1/routers/preview-script` with `port=18728` — output script contains `port=8728` and does NOT contain `18728`.
 - Both `previewSetupScript` (unsaved router wizard) and `generateSetupScript` (persisted routers) share the same generator, so both endpoints are fixed.
+
+### AI Phase 3 — Scheduled Automations
+- ✅ **4 Artisan commands** (all record to `automation_logs`, all honour `automation.enabled` master switch):
+  - `automation:update-overdue` (daily 02:00 Manila) — flips past-due `sent` invoices to `overdue`
+  - `automation:db-backup` (daily 02:15) — gzipped `pg_dump` to `storage/app/backups/`, prunes files older than `automation.backup_retention_days` (default 7)
+  - `automation:invoice-reminders` (daily 08:00) — mails reminders X days before due (`automation.reminder_days_before`, default 3) and N days after due (`automation.overdue_reminder_days`, default `1,7,14`). Uses `MAIL_MAILER=log` in dev; SMTP in prod when configured.
+  - `automation:auto-suspend` (daily 09:00) — flips `status='suspended'` on active customers whose oldest unpaid invoice is older than `billing.auto_suspend_days` (default 15). CustomerObserver then automatically throttles the MikroTik queue via QueueService.
+- ✅ `AutomationRunner` service wraps every command: times it, captures errors, writes an `automation_logs` row with `success` / `partial` / `error` status.
+- ✅ **API**:
+  - `GET  /api/v1/automation/jobs`  — jobs + last run summary (permission: view-settings)
+  - `GET  /api/v1/automation/logs`  — paginated run history (permission: view-settings)
+  - `POST /api/v1/automation/run/{job}` — manual trigger (role: super_admin only)
+- ✅ **Frontend** — new `AutomationPanel` component embedded in `SettingsPage`:
+  - 4 job cards (label, cron, "Run now" button, last-run status pill, summary chips)
+  - Recent runs table (job, status, when, duration, trigger)
+- ✅ **Settings keys** added: `automation.enabled`, `automation.auto_suspend_enabled`, `automation.reminder_days_before`, `automation.overdue_reminder_days`, `automation.backup_retention_days`.
+- ✅ Verified end-to-end via curl and screenshot — manual `run/update_overdue` recorded with `triggered_by=manual`, `pg_dump` produced a 33.4 KB backup, master switch short-circuits jobs correctly.
+
+**Prod requirement**: The Docker prod image must include `postgresql-client` in the backend container (needed for `pg_dump`). And `MAIL_MAILER` should be set to `smtp` with the SMTP creds for real reminder emails; the code already uses the mail facade so no code change needed.
+
+**Cron requirement**: `deploy.sh` / prod cron must include `* * * * * cd /var/www && php artisan schedule:run >> /dev/null 2>&1` so Laravel's scheduler fires.
 
 ---
 

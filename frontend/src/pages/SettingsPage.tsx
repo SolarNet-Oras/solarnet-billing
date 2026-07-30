@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { settingsService, type SettingItem } from '@/services/settingsService';
+import { AutomationPanel } from '@/components/automation/AutomationPanel';
 import { Settings as SettingsIcon, Save, CheckCircle2 } from 'lucide-react';
 
 const GROUP_META: Record<string, { label: string; description: string }> = {
-  company: { label: 'Company', description: 'Business branding shown on invoices, welcome emails, and the customer portal.' },
-  billing: { label: 'Billing', description: 'Defaults for invoice generation, VAT, and suspension.' },
-  ai:      { label: 'AI Assistant', description: 'Controls the floating AI chat. The OpenAI API key stays on the server — you never enter it here.' },
+  company:    { label: 'Company',     description: 'Business branding shown on invoices, welcome emails, and the customer portal.' },
+  billing:    { label: 'Billing',     description: 'Defaults for invoice generation, VAT, and suspension.' },
+  ai:         { label: 'AI Assistant',description: 'Controls the floating AI chat. The OpenAI API key stays on the server — you never enter it here.' },
+  automation: { label: 'Automation',  description: 'Toggles for the nightly scheduled jobs. When the master switch is off, no jobs run.' },
 };
 
 const SettingsPage: React.FC = () => {
@@ -108,6 +110,8 @@ const SettingsPage: React.FC = () => {
             </section>
           ))
         )}
+
+        {!loading && <AutomationPanel />}
 
         <div className="sticky bottom-4 flex justify-end">
           <button
