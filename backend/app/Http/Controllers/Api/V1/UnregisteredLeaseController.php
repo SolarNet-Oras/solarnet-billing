@@ -102,6 +102,15 @@ class UnregisteredLeaseController extends Controller
     /**
      * One-click convert a static+commented lease into a Customer.
      * Uses lease comment as full_name and rate_limit to match a ServicePlan.
+     *
+     * MikroTik update rules (applied AFTER the customer is safely persisted):
+     *   - Static + commented lease  -> keep the existing MikroTik comment as-is,
+     *                                  but force the rate-limit to match the nearest plan
+     *   - Dynamic / uncommented lease -> convert to static, set comment = customer name,
+     *                                  and apply the plan's rate-limit
+     *
+     * MikroTik failures NEVER cause the registration to fail — the customer is
+     * already committed by then. We surface the sync result in the response.
      */
     public function quickRegister(Request $request, string $id): JsonResponse
     {
@@ -130,7 +139,13 @@ class UnregisteredLeaseController extends Controller
             ], 422);
         }
 
-        $fullName = $request->input('full_name') ?: ($lease->comment ?: ('Client ' . substr($lease->mac_address, -5)));
+        // Snapshot lease's ORIGINAL MikroTik state BEFORE we mutate anything.
+        // A "static + commented" lease keeps its MikroTik comment. A dynamic or
+        // uncommented lease gets the customer's name pushed to MikroTik as comment.
+        $originalComment    = trim((string) ($lease->comment ?? ''));
+        $wasStaticCommented = !$lease->is_dynamic && $originalComment !== '';
+
+        $fullName = $request->input('full_name') ?: ($originalComment !== '' ? $originalComment : ('Client ' . substr($lease->mac_address, -5)));
         $plans    = ServicePlan::where('is_active', true)->get();
         $planId   = $request->input('service_plan_id');
         if (!$planId) {
@@ -140,8 +155,14 @@ class UnregisteredLeaseController extends Controller
         $plan       = $planId ? ServicePlan::find($planId) : null;
         $monthlyFee = $request->input('monthly_fee', $plan?->price ?? 0);
 
+        // Business rule: rate-limit is ALWAYS derived from the plan (nearest match).
+        // Only falls back to the lease's existing rate-limit if no plan is picked.
+        $rateLimit = $plan
+            ? $plan->download_speed . 'M/' . $plan->upload_speed . 'M'
+            : ($lease->rate_limit ?: null);
+
         try {
-            $customer = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee) {
+            $customer = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment) {
                 $customer = Customer::create([
                     'account_number'    => $this->generateAccountNumber(),
                     'full_name'         => $fullName,
@@ -155,7 +176,7 @@ class UnregisteredLeaseController extends Controller
                     'mac_address'       => $lease->mac_address,
                     'ip_address'        => $lease->ip_address,
                     'status'            => 'active',
-                    'notes'             => "Auto-registered from DHCP lease. MikroTik comment: {$lease->comment}. Rate limit: {$lease->rate_limit}.",
+                    'notes'             => "Auto-registered from DHCP lease. Original MikroTik comment: {$originalComment}. Lease rate limit was: {$lease->rate_limit}.",
                 ]);
 
                 $lease->update([
@@ -168,7 +189,9 @@ class UnregisteredLeaseController extends Controller
         } catch (\Throwable $e) {
             Log::error('Failed to convert lease to customer', [
                 'lease_id' => $lease->id,
+                'mac'      => $lease->mac_address,
                 'error'    => $e->getMessage(),
+                'trace'    => collect(explode("\n", $e->getTraceAsString()))->take(3)->all(),
             ]);
             return response()->json([
                 'success' => false,
@@ -179,39 +202,57 @@ class UnregisteredLeaseController extends Controller
         // Optional: provision portal credentials + welcome email if email present
         $portalCreds = null;
         if (!empty($customer->email)) {
-            $plain = $this->accountService->provisionPortalCredentials($customer);
-            $sent  = $this->accountService->sendWelcomeEmail($customer, $plain);
-            $portalCreds = [
-                'email'              => $customer->email,
-                'password'           => $plain,
-                'portal_url'         => rtrim(config('app.url'), '/') . '/customer/login',
-                'welcome_email_sent' => $sent,
-            ];
+            try {
+                $plain = $this->accountService->provisionPortalCredentials($customer);
+                $sent  = $this->accountService->sendWelcomeEmail($customer, $plain);
+                $portalCreds = [
+                    'email'              => $customer->email,
+                    'password'           => $plain,
+                    'portal_url'         => rtrim(config('app.url'), '/') . '/customer/login',
+                    'welcome_email_sent' => $sent,
+                ];
+            } catch (\Throwable $e) {
+                Log::warning('Portal credentials/welcome email failed (non-fatal)', [
+                    'customer_id' => $customer->id,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
         }
 
-        // Business rule: after registration, PUSH the customer's name (comment)
-        // and their subscription's rate-limit down to MikroTik and make the lease static.
-        // Falls back cleanly if the router is offline — we never fail the registration
-        // just because MikroTik is unreachable.
+        // Push comment (only for dynamic/uncommented) and rate-limit to MikroTik.
+        // Wrap in a broad try/catch so ANY MikroTik hiccup is surfaced but does
+        // not fail the already-committed registration.
         $mikrotikResult = null;
         if ($lease->router && $lease->mac_address) {
-            $rateLimit = $lease->rate_limit;
-            if (!$rateLimit && $plan) {
-                // Derive from plan speeds — MikroTik format e.g. "10M/5M"
-                $rateLimit = $plan->download_speed . 'M/' . $plan->upload_speed . 'M';
+            try {
+                // Commented static leases keep their MikroTik comment intact.
+                // Dynamic/uncommented leases receive the customer's name.
+                $mikrotikComment  = $wasStaticCommented ? $originalComment : $customer->full_name;
+                $preserveComment  = $wasStaticCommented;
+
+                $mikrotikResult = app(MikrotikService::class)->updateOrMakeStaticLease(
+                    $lease->router,
+                    $lease->mac_address,
+                    $mikrotikComment,
+                    $rateLimit,
+                    $lease->ip_address,
+                    'default',
+                    $preserveComment
+                );
+            } catch (\Throwable $e) {
+                Log::warning('MikroTik lease sync raised an exception after register', [
+                    'lease_id' => $lease->id, 'error' => $e->getMessage(),
+                ]);
+                $mikrotikResult = [
+                    'success' => false,
+                    'message' => 'MikroTik sync exception: ' . $e->getMessage(),
+                ];
             }
 
-            $mikrotikResult = app(MikrotikService::class)->updateOrMakeStaticLease(
-                $lease->router,
-                $lease->mac_address,
-                $customer->full_name,
-                $rateLimit,
-                $lease->ip_address
-            );
-
-            // Reflect the outcome in our local DhcpLease row so the UI stays consistent
+            // Reflect the FINAL state locally: is_dynamic=false, rate_limit=plan-forced,
+            // and comment reflects whichever comment we settled on (kept vs pushed).
             $lease->update([
-                'comment'    => $customer->full_name,
+                'comment'    => $wasStaticCommented ? $originalComment : $customer->full_name,
                 'rate_limit' => $rateLimit,
                 'is_dynamic' => false,
             ]);
@@ -223,15 +264,26 @@ class UnregisteredLeaseController extends Controller
             'data'               => $customer->load(['servicePlan', 'router']),
             'portal_credentials' => $portalCreds,
             'mikrotik_sync'      => $mikrotikResult,
+            'business_rule'      => [
+                'was_static_commented'   => $wasStaticCommented,
+                'mikrotik_comment_kept'  => $wasStaticCommented,
+                'rate_limit_pushed'      => $rateLimit,
+                'plan_used'              => $plan?->name,
+            ],
         ], 201);
     }
 
     /**
-     * Simple heuristic: parse "10M/5M" from rate_limit and pick the plan
-     * whose download_speed matches. Returns array shape or null.
+     * Best-match a plan for a MikroTik rate-limit string.
+     * Priority:
+     *   1. Exact download AND upload match
+     *   2. Exact download match
+     *   3. Nearest download speed (business rule: "force to nearest plan")
+     * Returns array shape or null.
      */
     protected function matchPlanByRateLimit(?string $rateLimit, $plans): ?array
     {
+        if ($plans->isEmpty()) return null;
         if (!$rateLimit) {
             return null;
         }
@@ -242,13 +294,18 @@ class UnregisteredLeaseController extends Controller
         $dl = $this->toMbps((float) $m[1], strtoupper($m[2] ?: 'M'));
         $ul = $this->toMbps((float) $m[3], strtoupper($m[4] ?: 'M'));
 
+        // 1. Exact dl + ul
         $match = $plans->first(function ($p) use ($dl, $ul) {
             return (int) $p->download_speed === (int) round($dl)
                 && (int) $p->upload_speed   === (int) round($ul);
         });
+        // 2. Exact dl only
         if (!$match) {
-            // Fallback: match download only
             $match = $plans->first(fn ($p) => (int) $p->download_speed === (int) round($dl));
+        }
+        // 3. Nearest by download (business rule: "force to nearest plan")
+        if (!$match) {
+            $match = $plans->sortBy(fn ($p) => abs((int) $p->download_speed - (int) round($dl)))->first();
         }
         if (!$match) return null;
 

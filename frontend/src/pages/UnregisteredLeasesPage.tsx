@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
-import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin } from 'lucide-react';
+import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
+import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, X } from 'lucide-react';
 
 type Tab = 'static' | 'dynamic';
 
@@ -13,11 +14,13 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [staticLeases, setStaticLeases] = useState<UnregisteredLease[]>([]);
   const [dynamicLeases, setDynamicLeases] = useState<UnregisteredLease[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
+  const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
+  const [modalLease, setModalLease] = useState<UnregisteredLease | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -27,14 +30,16 @@ const UnregisteredLeasesPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [s, d, r] = await Promise.all([
+      const [s, d, r, p] = await Promise.all([
         unregisteredLeaseService.listStaticCommented(),
         unregisteredLeaseService.listDynamic(),
         routerService.getAll().catch(() => [] as Router[]),
+        servicePlanService.getAll().catch(() => [] as ServicePlan[]),
       ]);
       setStaticLeases(s);
       setDynamicLeases(d);
       setRouters(r);
+      setPlans(p.filter((pl) => pl.is_active));
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load DHCP leases');
     } finally {
@@ -59,20 +64,48 @@ const UnregisteredLeasesPage: React.FC = () => {
     }
   };
 
-  const handleQuickRegister = async (lease: UnregisteredLease): Promise<void> => {
+  const handleQuickRegister = async (
+    lease: UnregisteredLease,
+    overrides?: { full_name?: string; service_plan_id?: string; monthly_fee?: number },
+  ): Promise<void> => {
     setRegisteringId(lease.id);
     setError('');
     setNotice('');
     try {
       const res = await unregisteredLeaseService.quickRegister(lease.id, {
-        full_name: lease.comment || undefined,
-        service_plan_id: lease.suggested_plan?.id,
-        monthly_fee: lease.suggested_plan?.price,
+        full_name: overrides?.full_name ?? (lease.comment || undefined),
+        service_plan_id: overrides?.service_plan_id ?? lease.suggested_plan?.id,
+        monthly_fee: overrides?.monthly_fee ?? lease.suggested_plan?.price,
       });
-      setNotice(res.message || 'Client registered.');
+
+      // Compose a status line that ALSO surfaces the MikroTik sync outcome —
+      // registration can succeed while MikroTik push fails (offline router,
+      // API error, etc.) and the admin needs to know.
+      const parts: string[] = [res.message || 'Client registered.'];
+      const mk = (res as any).mikrotik_sync;
+      if (mk) {
+        if (mk.success) {
+          parts.push(`MikroTik: ${mk.message}`);
+        } else if (mk.skipped) {
+          parts.push(`MikroTik skipped (${mk.message})`);
+        } else {
+          // Non-fatal failure — show as a warning inline
+          setError(`Registered, but MikroTik sync failed: ${mk.message}`);
+        }
+      }
+      setNotice(parts.join(' · '));
       setStaticLeases((prev) => prev.filter((l) => l.id !== lease.id));
+      setDynamicLeases((prev) => prev.filter((l) => l.id !== lease.id));
+      setModalLease(null);
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to register client');
+      // Prefer the backend's structured error over a generic message.
+      const payload = err?.response?.data;
+      const msg =
+        payload?.message ||
+        (payload?.errors && Object.values(payload.errors).flat().join(' ')) ||
+        err?.message ||
+        'Failed to register client';
+      setError(msg);
     } finally {
       setRegisteringId(null);
     }
@@ -171,7 +204,19 @@ const UnregisteredLeasesPage: React.FC = () => {
           <DynamicLeasesTable
             leases={dynamicLeases}
             routerName={routerName}
+            onRegister={(l) => setModalLease(l)}
             onAdd={handleManualAdd}
+          />
+        )}
+
+        {/* Quick-register modal for dynamic / uncommented leases */}
+        {modalLease && (
+          <QuickRegisterModal
+            lease={modalLease}
+            plans={plans}
+            busy={registeringId === modalLease.id}
+            onClose={() => setModalLease(null)}
+            onSubmit={(payload) => handleQuickRegister(modalLease, payload)}
           />
         )}
       </div>
@@ -306,8 +351,9 @@ const StaticLeasesTable: React.FC<{
 const DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
+  onRegister: (lease: UnregisteredLease) => void;
   onAdd: (lease: UnregisteredLease) => void;
-}> = ({ leases, routerName, onAdd }) => {
+}> = ({ leases, routerName, onRegister, onAdd }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -369,15 +415,25 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onAdd(lease)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
-                    data-testid={`manual-add-btn-${lease.id}`}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Add as Client
-                  </button>
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onRegister(lease)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
+                      data-testid={`quick-register-dynamic-btn-${lease.id}`}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Register
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAdd(lease)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
+                      data-testid={`manual-add-btn-${lease.id}`}
+                    >
+                      Full form
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -404,5 +460,119 @@ const EmptyState: React.FC<{ icon: React.ReactNode; title: string; subtitle: str
     <p className="text-sm text-muted-foreground max-w-md mx-auto">{subtitle}</p>
   </div>
 );
+
+// -----------------------------------------------------------------------------
+// Quick Register modal (used for dynamic / uncommented leases where we need
+// the admin to pick a plan and confirm the client name before pushing to MikroTik).
+// -----------------------------------------------------------------------------
+const QuickRegisterModal: React.FC<{
+  lease: UnregisteredLease;
+  plans: ServicePlan[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (payload: { full_name: string; service_plan_id?: string; monthly_fee?: number }) => void;
+}> = ({ lease, plans, busy, onClose, onSubmit }) => {
+  const [fullName, setFullName] = useState<string>(
+    lease.comment || lease.hostname || `Client ${lease.mac_address.slice(-5)}`
+  );
+  const [planId, setPlanId] = useState<string>(plans[0]?.id ?? '');
+  const chosenPlan = plans.find((p) => p.id === planId);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+      data-testid="quick-register-modal"
+    >
+      <div
+        className="bg-card border border-border rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Register client</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Pick a plan — MikroTik will be updated with comment, made static, and rate-limited to the plan.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground"
+            data-testid="quick-register-modal-close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="text-xs text-muted-foreground bg-secondary/50 rounded p-3 font-mono">
+          <div>MAC: {lease.mac_address}</div>
+          <div>IP: {lease.ip_address}</div>
+          <div>Hostname: {lease.hostname || '(none)'}</div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Full name</label>
+          <input
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid="quick-register-full-name"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Service plan</label>
+          <select
+            value={planId}
+            onChange={(e) => setPlanId(e.target.value)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid="quick-register-plan"
+          >
+            <option value="">— No plan (skip rate-limit) —</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {p.download_speed}/{p.upload_speed} Mbps · ₱{Number(p.price).toFixed(2)}
+              </option>
+            ))}
+          </select>
+          {chosenPlan && (
+            <p className="text-xs text-muted-foreground mt-1">
+              MikroTik rate-limit will be set to <span className="font-mono">{chosenPlan.download_speed}M/{chosenPlan.upload_speed}M</span>
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-md border border-border hover:bg-secondary"
+            data-testid="quick-register-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy || !fullName.trim()}
+            onClick={() =>
+              onSubmit({
+                full_name: fullName.trim(),
+                service_plan_id: planId || undefined,
+                monthly_fee: chosenPlan?.price,
+              })
+            }
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
+            data-testid="quick-register-submit"
+          >
+            <UserPlus className="w-4 h-4" />
+            {busy ? 'Registering…' : 'Register + Push to MikroTik'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default UnregisteredLeasesPage;

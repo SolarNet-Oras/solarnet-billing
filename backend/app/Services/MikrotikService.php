@@ -534,7 +534,8 @@ class MikrotikService
         string $comment,
         ?string $rateLimit = null,
         ?string $ipAddress = null,
-        string $server = 'default'
+        string $server = 'default',
+        bool $preserveComment = false
     ): array {
         // Refuse to reach an unreachable router — same guard as QueueService.
         if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
@@ -565,10 +566,14 @@ class MikrotikService
             $existing = $client->query($find)->read();
             $lease    = $existing[0] ?? null;
 
-            $updates = [
-                'comment' => $comment,
-            ];
+            // Only overwrite the MikroTik comment when we're explicitly allowed to.
+            // For static+commented leases the technician's original comment must survive.
+            $updates = [];
+            if (!$preserveComment) {
+                $updates['comment'] = $comment;
+            }
             if ($rateLimit) {
+                // Force the plan's rate-limit — even if lease already had one.
                 $updates['rate-limit'] = $rateLimit;
             }
 
@@ -583,13 +588,23 @@ class MikrotikService
                     $mk = (new Query('/ip/dhcp-server/lease/make-static'))
                         ->equal('.id', $leaseId);
                     $client->query($mk)->read();
-                    // After make-static, the .id may change — re-lookup
+                    // After make-static, the .id may change — re-lookup by MAC
                     $existing = $client->query($find)->read();
-                    $lease    = $existing[0] ?? null;
+                    $lease    = $existing[0] ?? $lease;
                     $leaseId  = $lease['.id'] ?? $leaseId;
                 }
 
-                // 2) Apply comment + rate-limit
+                // 2) Apply updates (comment optionally + rate-limit)
+                if (empty($updates)) {
+                    return [
+                        'success'         => true,
+                        'message'         => 'Made static; comment preserved and no rate-limit to apply.',
+                        'lease_id'        => $leaseId,
+                        'was_dynamic'     => $isDynamic,
+                        'comment_kept'    => $preserveComment,
+                    ];
+                }
+
                 $set = (new Query('/ip/dhcp-server/lease/set'))
                     ->equal('.id', $leaseId);
                 foreach ($updates as $k => $v) {
@@ -598,14 +613,19 @@ class MikrotikService
                 $client->query($set)->read();
 
                 return [
-                    'success'  => true,
-                    'message'  => 'Lease updated (comment + rate-limit applied)',
-                    'lease_id' => $leaseId,
-                    'was_dynamic' => $isDynamic,
+                    'success'      => true,
+                    'message'      => $preserveComment
+                        ? 'Static lease kept its comment; rate-limit forced to plan.'
+                        : 'Lease updated (comment + rate-limit applied).',
+                    'lease_id'     => $leaseId,
+                    'was_dynamic'  => $isDynamic,
+                    'comment_kept' => $preserveComment,
+                    'applied'      => array_keys($updates),
                 ];
             }
 
-            // 3) No existing lease — add a fresh static one (requires IP)
+            // 3) No existing lease — add a fresh static one (requires IP).
+            //    When there's no lease on MikroTik we always set the comment.
             if (!$ipAddress) {
                 return [
                     'success' => false,
@@ -628,11 +648,13 @@ class MikrotikService
                 'lease_id' => $result[0]['ret'] ?? null,
                 'created'  => true,
             ];
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             Log::warning('updateOrMakeStaticLease failed', [
-                'router_id' => $router->id,
-                'mac'       => $macAddress,
-                'error'     => $e->getMessage(),
+                'router_id'         => $router->id,
+                'mac'               => $macAddress,
+                'preserve_comment'  => $preserveComment,
+                'rate_limit'        => $rateLimit,
+                'error'             => $e->getMessage(),
             ]);
             return [
                 'success' => false,
