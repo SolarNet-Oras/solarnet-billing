@@ -17,15 +17,21 @@ class MikrotikScriptGenerator
     {
         $username = $router->username;
         $password = $router->password;
-        $apiPort = $router->port;
-        
+
+        // API port on the MikroTik itself is ALWAYS hardcoded to the RouterOS
+        // default 8728. This is intentional: even when the router is reached
+        // by the billing app through a VPN (where $router->port may be a
+        // tunneled/mapped port like 18728), the /ip service on the router
+        // must still listen on 8728 for consistency and predictability.
+        $apiPort = 8728;
+
         $script = <<<SCRIPT
 # ============================================================
 # MikroTik Setup Script - {$router->name}
 # ------------------------------------------------------------
 # Generated : {{date}}
 # Router    : {$router->host}
-# API Port  : {$apiPort}
+# API Port  : {$apiPort}  (hardcoded - do not change, VPN-safe)
 # API User  : {$username}
 # ============================================================
 # HOW TO USE

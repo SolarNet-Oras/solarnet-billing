@@ -17,6 +17,15 @@ Design and build a production-ready **Enterprise ISP Billing & Network Managemen
 
 ---
 
+## What's implemented — 2026-02-13 (Wave 3: MikroTik VPN-safe script port)
+
+### MikroTik Setup Script — Hardcoded API Port 8728
+- ✅ `MikrotikScriptGenerator::generateSetupScript` now **hardcodes** `$apiPort = 8728` regardless of what `$router->port` is. Rationale: even when the MikroTik is reached by the billing app through a VPN tunnel (where `router.port` might be a mapped port like 18728), the router's own `/ip service` must always listen on the RouterOS default 8728 for consistency.
+- ✅ Verified via curl on `POST /api/v1/routers/preview-script` with `port=18728` — output script contains `port=8728` and does NOT contain `18728`.
+- Both `previewSetupScript` (unsaved router wizard) and `generateSetupScript` (persisted routers) share the same generator, so both endpoints are fixed.
+
+---
+
 ## What's implemented — 2026-02-12 (Wave 2: Super-admin AI Code Assistant)
 
 ### AI code exploration (super-admin only, READ-ONLY)
