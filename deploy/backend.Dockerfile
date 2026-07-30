@@ -4,7 +4,7 @@ FROM php:8.4-fpm-alpine
 RUN apk add --no-cache \
     git curl bash zip unzip \
     libpng-dev libzip-dev libxml2-dev \
-    postgresql-dev oniguruma-dev icu-dev \
+    postgresql-dev postgresql-client oniguruma-dev icu-dev \
     linux-headers \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS pcre-dev \
  && docker-php-ext-install \
