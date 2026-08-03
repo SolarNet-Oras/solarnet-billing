@@ -12,6 +12,13 @@ class Customer extends Model
 {
     use HasFactory, HasUuids, SoftDeletes;
 
+    /** Never expose portal credentials or delivery metadata in API responses. */
+    protected $hidden = [
+        'portal_password',
+        'portal_password_set_at',
+        'welcome_email_sent_at',
+    ];
+
     /**
      * The attributes that are mass assignable.
      *
@@ -57,6 +64,8 @@ class Customer extends Model
             'documents' => 'array',
             'monthly_fee' => 'float',
             'installation_date' => 'date',
+            'portal_password_set_at' => 'datetime',
+            'welcome_email_sent_at' => 'datetime',
             'queue_synced' => 'boolean',
             'queue_last_synced_at' => 'datetime',
         ];

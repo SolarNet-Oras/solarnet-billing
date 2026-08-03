@@ -42,8 +42,9 @@ Route::prefix('v1')->group(function () {
 
     // Authentication routes (public)
     Route::prefix('auth')->group(function () {
-        Route::post('/register', [AuthController::class, 'register']);
-        Route::post('/login', [AuthController::class, 'login']);
+        // Staff accounts are created by an administrator; customer self-service
+        // signup lives under the customer-portal routes below.
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
         
         // Protected auth routes
         Route::middleware('auth:api')->group(function () {
@@ -51,13 +52,17 @@ Route::prefix('v1')->group(function () {
             Route::post('/refresh', [AuthController::class, 'refresh']);
             Route::get('/me', [AuthController::class, 'me']);
         });
+
+        Route::middleware(['auth:api', 'role:admin|super_admin'])->group(function () {
+            Route::post('/register', [AuthController::class, 'register']);
+        });
     });
 
     // Protected routes (require authentication)
     Route::middleware('auth:api')->group(function () {
         // Dashboard routes
-        Route::get('dashboard/metrics', [DashboardController::class, 'metrics']);
-        Route::get('dashboard/quick-stats', [DashboardController::class, 'quickStats']);
+        Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
+        Route::get('dashboard/quick-stats', [DashboardController::class, 'quickStats'])->middleware('permission:view-dashboard');
         
         // User routes (admin only)
         Route::middleware(['role:admin|super_admin'])->group(function () {
@@ -94,21 +99,20 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
         });
-        // Network info: any authenticated user can view (needed to render the "Add Router" wizard)
-        Route::get('system/network-info', [RouterController::class, 'networkInfo']);
+        Route::get('system/network-info', [RouterController::class, 'networkInfo'])->middleware('permission:view-routers');
         Route::post('routers/{id}/sync-dhcp', [RouterController::class, 'syncDhcpLeases'])->middleware('permission:sync-dhcp');
         Route::get('routers/{id}/unmatched-leases', [RouterController::class, 'getUnmatchedLeases'])->middleware('permission:view-dhcp');
 
         // Unregistered DHCP leases (converts leases into customers)
         Route::prefix('unregistered-leases')->group(function () {
-            Route::post('sync-all',                 [UnregisteredLeaseController::class, 'syncAll']);
-            Route::get('static-commented',          [UnregisteredLeaseController::class, 'staticCommented']);
-            Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic']);
-            Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister']);
+            Route::post('sync-all',                 [UnregisteredLeaseController::class, 'syncAll'])->middleware('permission:sync-dhcp');
+            Route::get('static-commented',          [UnregisteredLeaseController::class, 'staticCommented'])->middleware('permission:view-dhcp');
+            Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic'])->middleware('permission:view-dhcp');
+            Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister'])->middleware('permission:create-customers|manage-dhcp');
         });
 
         // AI Assistant (floating chat)
-        Route::prefix('ai')->group(function () {
+        Route::prefix('ai')->middleware('permission:view-dashboard')->group(function () {
             Route::post('chat',                              [AiController::class, 'chat']);
             Route::get('conversations',                      [AiController::class, 'listConversations']);
             Route::get('conversations/{id}/messages',        [AiController::class, 'messages']);
@@ -191,8 +195,8 @@ Route::prefix('v1')->group(function () {
     // Customer Portal Routes (separate auth)
     Route::prefix('customer-portal')->group(function () {
         // Public customer login + self-signup
-        Route::post('login',  [CustomerPortalController::class, 'login']);
-        Route::post('signup', [CustomerPortalController::class, 'signup']);
+        Route::post('login',  [CustomerPortalController::class, 'login'])->middleware('throttle:5,1');
+        Route::post('signup', [CustomerPortalController::class, 'signup'])->middleware('throttle:3,1');
         // Public list of active plans (for the signup page dropdown)
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
 

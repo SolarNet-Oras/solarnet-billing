@@ -4,21 +4,31 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\DhcpLease;
 use App\Services\CustomerAccountService;
+use App\Services\MikrotikService;
 use App\Services\QueueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class CustomerController extends Controller
 {
     protected QueueService $queueService;
     protected CustomerAccountService $accountService;
+    protected MikrotikService $mikrotikService;
 
-    public function __construct(QueueService $queueService, CustomerAccountService $accountService)
+    public function __construct(
+        QueueService $queueService,
+        CustomerAccountService $accountService,
+        MikrotikService $mikrotikService,
+    )
     {
         $this->queueService = $queueService;
         $this->accountService = $accountService;
+        $this->mikrotikService = $mikrotikService;
     }
 
     /**
@@ -26,7 +36,7 @@ class CustomerController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage = $request->input('per_page', 15);
+        $perPage = min(max((int) $request->input('per_page', 15), 1), 100);
         $search = $request->input('search');
         $status = $request->input('status');
         
@@ -87,6 +97,11 @@ class CustomerController extends Controller
             'olt_port' => 'nullable|string|max:50',
             'technician_id' => 'nullable|exists:users,id',
             'notes' => 'nullable|string',
+            // Present only when the full customer form was opened from an
+            // unregistered DHCP lease. It is never mass-assigned.
+            'dhcp_lease_id' => 'nullable|uuid|exists:dhcp_leases,id',
+            'send_welcome_email' => 'sometimes|boolean',
+            'sync_queue' => 'sometimes|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -97,7 +112,55 @@ class CustomerController extends Controller
             ], 422);
         }
 
-        $customer = Customer::create($request->except(['send_welcome_email', 'sync_queue']));
+        $validated = $validator->validated();
+        $lease = null;
+
+        if (!empty($validated['dhcp_lease_id'])) {
+            $lease = DhcpLease::with('router')->findOrFail($validated['dhcp_lease_id']);
+            if ($lease->is_matched || $lease->customer_id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'This DHCP lease is already linked to a customer.',
+                ], 422);
+            }
+            if (!$lease->router) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The selected DHCP lease has no configured MikroTik router.',
+                ], 422);
+            }
+
+            // Network identity comes from the synced lease, never from a
+            // browser query string. A service plan is required so MikroTik
+            // receives a deterministic rate limit.
+            if (empty($validated['service_plan_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Select a service plan when registering an unregistered DHCP lease.',
+                ], 422);
+            }
+            $validated['router_id'] = $lease->router_id;
+            $validated['mac_address'] = $lease->mac_address;
+            $validated['ip_address'] = $lease->ip_address;
+        }
+
+        $customer = DB::transaction(function () use ($validated, $lease) {
+            $customerData = Arr::except($validated, [
+                'dhcp_lease_id',
+                'send_welcome_email',
+                'sync_queue',
+            ]);
+            $customer = Customer::create($customerData);
+
+            if ($lease) {
+                $lease->update([
+                    'customer_id' => $customer->id,
+                    'is_matched' => true,
+                ]);
+            }
+
+            return $customer;
+        });
 
         // If an email is present, provision a portal password so they can log in
         $plainPassword = null;
@@ -123,6 +186,26 @@ class CustomerController extends Controller
             }
         }
 
+        // The full-form path for an unregistered lease must produce the same
+        // MikroTik state as one-click registration: static lease, customer
+        // name as comment, and the selected plan's rate limit.
+        $mikrotikSync = null;
+        if ($lease) {
+            $customer->load(['servicePlan', 'router']);
+            $mikrotikSync = $this->syncLeaseToMikrotik($lease->fresh('router'), $customer);
+
+            // Keep the local lease as a faithful mirror. If the router could
+            // not be reached, its next DHCP sync will still show its actual
+            // dynamic/static state instead of a falsely-successful update.
+            if ($mikrotikSync['success']) {
+                $lease->update([
+                    'comment' => $customer->full_name,
+                    'rate_limit' => $this->rateLimitFor($customer),
+                    'is_dynamic' => false,
+                ]);
+            }
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Customer created successfully',
@@ -135,6 +218,7 @@ class CustomerController extends Controller
                 'welcome_email_sent' => $emailSent,
             ] : null,
             'queue_sync' => $queueSyncStatus,
+            'mikrotik_sync' => $mikrotikSync,
         ], 201);
     }
 
@@ -190,7 +274,7 @@ class CustomerController extends Controller
             ], 422);
         }
 
-        $customer->update($request->all());
+        $customer->update($validator->validated());
 
         return response()->json([
             'status' => 'success',
@@ -301,5 +385,42 @@ class CustomerController extends Controller
             'success' => true,
             'data' => $result,
         ]);
+    }
+
+    /** Apply the customer name and plan bandwidth to the DHCP lease. */
+    protected function syncLeaseToMikrotik(DhcpLease $lease, Customer $customer): array
+    {
+        if (!$lease->router || !$lease->mac_address) {
+            return [
+                'success' => false,
+                'message' => 'The DHCP lease is missing its router or MAC address.',
+            ];
+        }
+
+        $rateLimit = $this->rateLimitFor($customer);
+        if (!$rateLimit) {
+            return [
+                'success' => false,
+                'message' => 'A service plan is required before a DHCP rate limit can be applied.',
+            ];
+        }
+
+        return $this->mikrotikService->updateOrMakeStaticLease(
+            $lease->router,
+            $lease->mac_address,
+            $customer->full_name,
+            $rateLimit,
+            $lease->ip_address,
+            $lease->server ?: 'default',
+        );
+    }
+
+    protected function rateLimitFor(Customer $customer): ?string
+    {
+        if (!$customer->servicePlan) {
+            return null;
+        }
+
+        return $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
     }
 }

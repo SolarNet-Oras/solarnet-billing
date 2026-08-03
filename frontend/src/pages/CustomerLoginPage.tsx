@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, User, CreditCard } from 'lucide-react';
+import { LogIn, CreditCard } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
@@ -38,9 +38,7 @@ const CustomerLoginPage: React.FC = () => {
       <div className="max-w-md w-full">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <User className="w-8 h-8 text-white" />
-          </div>
+          <img src="/solarnet-mark.svg" alt="Solarnet" className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-gray-900">Solarnet Internet</h1>
           <p className="text-gray-600 mt-2">Customer Portal</p>
         </div>
