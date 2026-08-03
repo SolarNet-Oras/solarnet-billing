@@ -6,7 +6,7 @@ use App\Models\Router;
 use RouterOS\Client;
 use RouterOS\Config;
 use RouterOS\Query;
-use Exception;
+use Throwable;
 use Illuminate\Support\Facades\Log;
 
 class MikrotikService
@@ -62,7 +62,7 @@ class MikrotikService
                 'data' => $data,
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Log::error('MikroTik connection failed', [
                 'router_id' => $router->id,
                 'host' => $router->host,
@@ -119,7 +119,7 @@ class MikrotikService
             } else {
                 $result['errors'][] = 'dhcp_leases: ' . ($leases['message'] ?? 'failed');
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $result['errors'][] = 'dhcp_leases exception: ' . $e->getMessage();
         }
 
@@ -131,7 +131,7 @@ class MikrotikService
             } else {
                 $result['errors'][] = 'queues: ' . ($queues['message'] ?? 'failed');
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $result['errors'][] = 'queues exception: ' . $e->getMessage();
         }
 
@@ -181,7 +181,7 @@ class MikrotikService
                 'data' => $leases,
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return [
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -256,7 +256,7 @@ class MikrotikService
                 'queue_id' => $queueId,
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Failed to create queue on MikroTik', [
                 'router' => $router->name,
                 'error' => $e->getMessage(),
@@ -329,7 +329,7 @@ class MikrotikService
                 'message' => 'Queue updated successfully',
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Failed to update queue on MikroTik', [
                 'router' => $router->name,
                 'queue_name' => $queueName,
@@ -395,7 +395,7 @@ class MikrotikService
                 'message' => 'Queue removed successfully',
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Failed to remove queue from MikroTik', [
                 'router' => $router->name,
                 'queue_name' => $queueName,
@@ -438,7 +438,7 @@ class MikrotikService
                 'data' => $queues,
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return [
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -497,7 +497,7 @@ class MikrotikService
                 'count' => count($formattedLeases),
             ];
             
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Log::error('Failed to fetch DHCP leases', [
                 'router' => $router->name,
                 'error' => $e->getMessage(),
