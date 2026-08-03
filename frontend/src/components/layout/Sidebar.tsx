@@ -63,7 +63,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <h1 className="text-lg font-bold text-foreground">ISP Billing</h1>
+          <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
+            <img src="/solarnet-mark.svg" alt="" className="h-9 w-9 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold tracking-tight text-foreground">SOLARNET</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Billing</p>
+            </div>
+          </Link>
           <button
             onClick={onClose}
             className="md:hidden p-2 hover:bg-secondary rounded-md"

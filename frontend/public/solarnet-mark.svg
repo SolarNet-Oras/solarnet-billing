@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>Solarnet</title>
+  <defs>
+    <linearGradient id="surface" x1="8" y1="6" x2="57" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102A43"/>
+      <stop offset="1" stop-color="#071A2B"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="24" y1="20" x2="43" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9D77E"/>
+      <stop offset="1" stop-color="#D9A441"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#surface)"/>
+  <path d="M18 41.5C21.8 35.35 26.58 32.25 32.35 32.25C38.03 32.25 42.8 35.35 46.65 41.5" stroke="url(#sun)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M20 46.75H44" stroke="#F7FAFC" stroke-opacity=".78" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="32" cy="22" r="4.25" fill="url(#sun)"/>
+  <path d="M32 13V11M21.6 17.4L20.2 16M42.4 17.4L43.8 16" stroke="#F9D77E" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="47" cy="27" r="3" fill="#5EEAD4"/>
+  <path d="M43.8 28.25L38.9 30.2" stroke="#5EEAD4" stroke-width="2" stroke-linecap="round"/>
+</svg>
