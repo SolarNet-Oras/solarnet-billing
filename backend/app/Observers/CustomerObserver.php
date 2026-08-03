@@ -39,7 +39,7 @@ class CustomerObserver
 
         $changed = false;
         foreach ($relevantFields as $field) {
-            if ($customer->isDirty($field)) {
+            if ($customer->wasChanged($field)) {
                 $changed = true;
                 break;
             }

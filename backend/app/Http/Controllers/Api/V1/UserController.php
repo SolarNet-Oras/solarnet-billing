@@ -207,7 +207,7 @@ class UserController extends Controller
         }
 
         // Verify the authenticated user has permission to assign roles
-        if (!$request->user()->hasRole(['admin', 'super_admin'])) {
+        if (!$request->user()->hasAnyRole(['admin', 'super_admin'])) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized. Only administrators can assign roles.',

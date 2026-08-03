@@ -111,12 +111,9 @@ class RoleSeeder extends Seeder
             [
                 'name' => 'customer',
                 'display_name' => 'Customer',
-                'description' => 'Customer portal access',
-                'permissions' => [
-                    'view-invoices',
-                    'view-payments',
-                    'create-tickets',
-                ],
+                'description' => 'Reserved legacy role. Customer-portal access uses the Customer model and its separate token flow.',
+                // Do not grant staff API permissions to a public/legacy role.
+                'permissions' => [],
             ],
         ];
 
