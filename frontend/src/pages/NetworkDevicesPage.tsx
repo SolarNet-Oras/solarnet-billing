@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MikroTikRouters } from '@/components/network/MikroTikRouters';
+import { OltCloudAccess } from '@/components/network/OltCloudAccess';
 
 export function NetworkDevicesPage() {
   const [activeTab, setActiveTab] = useState<'mikrotik' | 'olt'>('mikrotik');
@@ -35,11 +36,9 @@ export function NetworkDevicesPage() {
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
-              disabled
-              title="OLT management will be available in Phase 13"
             >
               OLT Devices
-              <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded">Coming Soon</span>
+              <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Cloud access</span>
             </button>
           </div>
         </div>
@@ -47,18 +46,7 @@ export function NetworkDevicesPage() {
         {/* Tab Content */}
         <div className="mt-6">
           {activeTab === 'mikrotik' && <MikroTikRouters />}
-          {activeTab === 'olt' && (
-            <div className="bg-card p-8 rounded-lg border border-border text-center">
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                OLT Management Coming Soon
-              </h3>
-              <p className="text-muted-foreground">
-                OLT device management will be available in Phase 13.
-                <br />
-                Focus on MikroTik integration first.
-              </p>
-            </div>
-          )}
+          {activeTab === 'olt' && <OltCloudAccess />}
         </div>
       </div>
     </DashboardLayout>

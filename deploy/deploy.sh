@@ -93,6 +93,12 @@ chmod -R 777 ../backend/storage ../backend/bootstrap/cache 2>/dev/null || true
 # that volume before config:view caching runs.
 $COMPOSE run --rm --no-deps backend sh -lc 'mkdir -p storage/framework/views bootstrap/cache && chmod -R 777 storage bootstrap/cache'
 
+echo "==> Ensuring PHP can read deployed application source"
+# The PHP-FPM process runs as a non-root user. Keep source directories
+# traversable and PHP/config/routes files readable after every git pull.
+find ../backend/app ../backend/config ../backend/routes -type d -exec chmod 755 {} +
+find ../backend/app ../backend/config ../backend/routes -type f -exec chmod 644 {} +
+
 echo "==> Installing composer dependencies (first run only, or if vendor/ missing)"
 if [ ! -f ../backend/vendor/autoload.php ]; then
   $COMPOSE run --rm --no-deps backend composer install \
