@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Customer;
+use App\Jobs\SyncCustomerQueue;
 use App\Services\QueueService;
 use Illuminate\Support\Facades\Log;
 
@@ -84,25 +85,14 @@ class CustomerObserver
     protected function syncQueue(Customer $customer, string $event): void
     {
         try {
-            $result = $this->queueService->syncCustomerQueue($customer);
-            
-            if ($result['success']) {
-                Log::info("Customer queue synced on {$event}", [
-                    'customer_id' => $customer->id,
-                    'account_number' => $customer->account_number,
-                    'status' => $customer->status,
-                    'service_plan_id' => $customer->service_plan_id,
-                    'ip_address' => $customer->ip_address,
-                ]);
-            } else {
-                Log::warning("Customer queue sync failed on {$event}", [
-                    'customer_id' => $customer->id,
-                    'account_number' => $customer->account_number,
-                    'error' => $result['message'] ?? 'Unknown error',
-                ]);
-            }
+            SyncCustomerQueue::dispatch($customer->id)->afterCommit();
+
+            Log::info("Customer queue sync queued on {$event}", [
+                'customer_id' => $customer->id,
+                'account_number' => $customer->account_number,
+            ]);
         } catch (\Throwable $e) {
-            Log::error("Exception during queue sync on {$event}", [
+            Log::error("Unable to queue customer sync on {$event}", [
                 'customer_id' => $customer->id,
                 'account_number' => $customer->account_number,
                 'error' => $e->getMessage(),
