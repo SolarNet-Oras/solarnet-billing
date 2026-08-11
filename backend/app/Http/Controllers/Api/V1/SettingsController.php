@@ -34,7 +34,7 @@ class SettingsController extends Controller
 
         // AI
         'ai.enabled'          => ['cast' => 'bool',   'group' => 'ai', 'label' => 'AI Assistant enabled', 'default' => true],
-        'ai.model'            => ['cast' => 'string', 'group' => 'ai', 'label' => 'OpenAI model',        'default' => 'gpt-5.4-mini'],
+        'ai.model'            => ['cast' => 'string', 'group' => 'ai', 'label' => 'OpenAI model (server setting)', 'default' => 'gpt-5.4-mini'],
         'ai.system_hint'      => ['cast' => 'string', 'group' => 'ai', 'label' => 'Extra system instructions (optional)', 'default' => ''],
 
         // Automation (scheduled jobs)
@@ -52,11 +52,11 @@ class SettingsController extends Controller
         foreach (self::SCHEMA as $key => $meta) {
             $data[] = [
                 'key'         => $key,
-                'value'       => Setting::get($key, $meta['default']),
+                'value'       => $key === 'ai.model' ? config('openai.model') : Setting::get($key, $meta['default']),
                 'cast'        => $meta['cast'],
                 'group'       => $meta['group'],
                 'label'       => $meta['label'],
-                'is_readonly' => false,
+                'is_readonly' => $key === 'ai.model',
             ];
         }
 
@@ -95,6 +95,12 @@ class SettingsController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => "Unknown setting key: {$key}",
+                ], 422);
+            }
+            if ($key === 'ai.model') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'OpenAI model is configured only through the server OPENAI_MODEL environment variable.',
                 ], 422);
             }
             $meta = self::SCHEMA[$key];

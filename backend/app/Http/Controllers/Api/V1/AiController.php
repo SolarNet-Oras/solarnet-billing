@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiConversation;
+use App\Models\Setting;
 use App\Services\Ai\AiService;
+use App\Services\Ai\OpenAiProviderException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -35,7 +37,16 @@ class AiController extends Controller
         if (!$this->ai->isConfigured()) {
             return response()->json([
                 'success' => false,
-                'message' => 'AI is not configured. Set OPENAI_API_KEY in backend .env and restart the API.',
+                'code' => 'OPENAI_NOT_CONFIGURED',
+                'message' => 'AI Assistant is not configured on the server. Set OPENAI_API_KEY and restart the backend.',
+            ], 503);
+        }
+
+        if (!(bool) Setting::get('ai.enabled', true)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'AI_DISABLED',
+                'message' => 'AI Assistant is disabled in Settings.',
             ], 503);
         }
 
@@ -45,17 +56,18 @@ class AiController extends Controller
                 $request->input('conversation_id'),
                 $request->input('message')
             );
-        } catch (\App\Services\Ai\OpenAiRateLimitException $e) {
+        } catch (OpenAiProviderException $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
-                'code'    => 'rate_limited',
-            ], 429);
+                'code'    => $e->errorCode,
+            ], $e->httpStatus);
         } catch (\Throwable $e) {
             Log::error('AI chat failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'message' => 'AI request failed: ' . $e->getMessage(),
+                'code' => 'INTERNAL_SERVER_ERROR',
+                'message' => 'AI Assistant encountered an internal error. Please try again later.',
             ], 500);
         }
 
