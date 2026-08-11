@@ -172,6 +172,7 @@ Route::prefix('v1')->group(function () {
         
         // Report routes (require permission)
         Route::middleware(['permission:view-reports'])->group(function () {
+            Route::get('reports/logs', [ReportController::class, 'operationsLog']);
             Route::get('reports/revenue', [ReportController::class, 'revenue']);
             Route::get('reports/customer-growth', [ReportController::class, 'customerGrowth']);
             Route::get('reports/payment-methods', [ReportController::class, 'paymentMethods']);

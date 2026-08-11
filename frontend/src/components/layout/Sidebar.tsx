@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  BarChart3,
+  ClipboardList,
   LayoutDashboard,
   Moon,
   Network,
@@ -40,7 +40,7 @@ const navItems: NavItem[] = [
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Billing', path: '/billing', icon: Receipt, permission: 'view-invoices' },
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
-  { name: 'Reports', path: '/reports', icon: BarChart3, permission: 'view-reports' },
+  { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
 ];
 
