@@ -86,7 +86,7 @@ EOF
 fi
 
 echo "==> Ensuring writable Laravel storage & cache dirs"
-mkdir -p ../backend/storage ../backend/bootstrap/cache
+mkdir -p ../backend/storage/framework/views ../backend/bootstrap/cache
 chmod -R 777 ../backend/storage ../backend/bootstrap/cache 2>/dev/null || true
 
 echo "==> Installing composer dependencies (first run only, or if vendor/ missing)"
