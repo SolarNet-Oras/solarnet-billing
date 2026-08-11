@@ -134,7 +134,11 @@ NOFW;
 
 :put ""
 :put "=== Setup Complete ==="
-:put "Now go back to the billing app and click 'Save Router'."
+:put "Configure the billing application with these separate fields:"
+:put "  Host: {$router->host}"
+:put "  Port: {$router->port}"
+:put "  RouterOS API port on this router: {$apiPort}"
+:put "Do not include :{$router->port} in the Host field."
 :log info "[BILLING] Setup complete."
 
 TAIL;
