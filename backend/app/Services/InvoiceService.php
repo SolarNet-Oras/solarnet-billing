@@ -10,6 +10,7 @@ use App\Models\Setting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\QueryException;
 
 class InvoiceService
 {
@@ -29,8 +30,20 @@ class InvoiceService
         array $additionalItems = [],
         ?Carbon $issueDate = null,
         ?Carbon $dueDate = null,
+        ?Carbon $recurringCycleDate = null,
     ): Invoice {
-        return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems) {
+        try {
+            return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate) {
+            if ($recurringCycleDate) {
+                $existing = Invoice::query()
+                    ->where('customer_id', $customer->id)
+                    ->whereDate('recurring_cycle_date', $recurringCycleDate)
+                    ->first();
+                if ($existing) {
+                    return $existing->fresh(['items', 'customer']);
+                }
+            }
+
             // Create invoice
             $invoice = Invoice::create([
                 'invoice_number' => $this->generateInvoiceNumber(),
@@ -39,6 +52,7 @@ class InvoiceService
                 'due_date' => $dueDate ?? now()->addDays((int) Setting::get('billing.due_days', 7)),
                 'billing_period_start' => $billingPeriodStart,
                 'billing_period_end' => $billingPeriodEnd,
+                'recurring_cycle_date' => $recurringCycleDate,
                 'status' => 'draft',
             ]);
 
@@ -90,7 +104,21 @@ class InvoiceService
             ]);
 
             return $invoice->fresh(['items', 'customer']);
-        });
+            });
+        } catch (QueryException $e) {
+            // The partial unique index is the final protection when two
+            // scheduler/manual requests arrive at exactly the same time.
+            if ($recurringCycleDate) {
+                $existing = Invoice::query()
+                    ->where('customer_id', $customer->id)
+                    ->whereDate('recurring_cycle_date', $recurringCycleDate)
+                    ->first();
+                if ($existing) {
+                    return $existing->loadMissing(['items', 'customer']);
+                }
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -130,7 +158,7 @@ class InvoiceService
                     continue;
                 }
 
-                $this->generateInvoice($customer, $billingPeriodStart, $billingPeriodEnd);
+                $this->generateInvoice($customer, $billingPeriodStart, $billingPeriodEnd, [], null, null, $billingDate->copy()->startOfDay());
                 $results['generated']++;
 
             } catch (\Exception $e) {
