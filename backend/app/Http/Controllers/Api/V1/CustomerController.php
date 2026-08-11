@@ -175,15 +175,11 @@ class CustomerController extends Controller
             $emailSent = $this->accountService->sendWelcomeEmail($customer, $plainPassword);
         }
 
-        // Optionally push the queue to MikroTik in the background
+        // CustomerObserver queues the MikroTik work after the transaction.
+        // Never wait for a router/VPN connection in this HTTP request.
         $queueSyncStatus = null;
         if ($request->boolean('sync_queue', false) && $customer->router_id && $customer->service_plan_id) {
-            try {
-                $syncResult = $this->queueService->syncCustomerQueue($customer);
-                $queueSyncStatus = $syncResult['success'] ? 'synced' : ('failed: ' . ($syncResult['message'] ?? 'unknown'));
-            } catch (\Throwable $e) {
-                $queueSyncStatus = 'failed: ' . $e->getMessage();
-            }
+            $queueSyncStatus = 'queued';
         }
 
         // The full-form path for an unregistered lease must produce the same
