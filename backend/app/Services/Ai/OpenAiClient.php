@@ -107,7 +107,25 @@ class OpenAiClient
                 );
             }
 
-            if ($status === 404 && ($providerCode === 'model_not_found' || $providerType === 'invalid_request_error')) {
+            if ($status === 403 && $this->isModelAccessError($providerError)) {
+                throw new OpenAiProviderException(
+                    'OPENAI_MODEL_ACCESS_ERROR',
+                    'The OpenAI API key is valid, but this OpenAI project does not have access to the configured model. Enable access to that model in the project or change OPENAI_MODEL on the server.',
+                    503,
+                    $e,
+                );
+            }
+
+            if ($status === 403) {
+                throw new OpenAiProviderException(
+                    'OPENAI_PERMISSION_ERROR',
+                    'The OpenAI project denied this AI request. Check the project permissions and model access settings.',
+                    503,
+                    $e,
+                );
+            }
+
+            if ($status === 404 && $providerCode === 'model_not_found') {
                 throw new OpenAiProviderException(
                     'OPENAI_MODEL_ERROR',
                     'The configured OpenAI model is unavailable to this API project. Check OPENAI_MODEL on the server.',
@@ -147,5 +165,14 @@ class OpenAiClient
             ],
             'raw' => $body,
         ];
+    }
+
+    /** @param array<string, mixed> $providerError */
+    protected function isModelAccessError(array $providerError): bool
+    {
+        $message = strtolower((string) ($providerError['message'] ?? ''));
+
+        return str_contains($message, 'does not have access to model')
+            || (str_contains($message, 'model') && str_contains($message, 'access'));
     }
 }
