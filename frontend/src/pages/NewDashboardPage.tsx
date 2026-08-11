@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Banknote,
@@ -127,17 +127,37 @@ const NewDashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [clientMonitor, setClientMonitor] = useState<ClientMonitor[]>([]);
+  const [monitorUpdatedAt, setMonitorUpdatedAt] = useState<string | null>(null);
+  const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
     if (manual) setRefreshing(true);
     try {
       const response = await api.get<{ data: DashboardMetrics }>('/dashboard/metrics');
       setMetrics(response.data.data);
+      setClientMonitor(response.data.data.client_monitor ?? []);
     } catch (error) {
       logger.error('Failed to fetch dashboard metrics', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  }, []);
+
+  const fetchClientMonitor = useCallback(async (): Promise<void> => {
+    if (monitorRequestInFlight.current) return;
+
+    monitorRequestInFlight.current = true;
+    try {
+      const response = await api.get<{ data: ClientMonitor[]; refreshed_at: string }>('/dashboard/client-monitor');
+      setClientMonitor(response.data.data ?? []);
+      setMonitorUpdatedAt(response.data.refreshed_at ?? new Date().toISOString());
+    } catch (error) {
+      // Preserve the last good counters when a router is temporarily offline.
+      logger.error('Failed to refresh client queue monitor', error);
+    } finally {
+      monitorRequestInFlight.current = false;
     }
   }, []);
 
@@ -147,15 +167,21 @@ const NewDashboardPage: React.FC = () => {
     return () => window.clearInterval(interval);
   }, [fetchMetrics]);
 
+  useEffect(() => {
+    fetchClientMonitor();
+    const interval = window.setInterval(fetchClientMonitor, 5000);
+    return () => window.clearInterval(interval);
+  }, [fetchClientMonitor]);
+
   const customers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return metrics?.client_monitor ?? [];
-    return (metrics?.client_monitor ?? []).filter((customer) =>
+    if (!normalizedQuery) return clientMonitor;
+    return clientMonitor.filter((customer) =>
       [customer.full_name, customer.ip_address, customer.queue_name, customer.service_plan?.name]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
     );
-  }, [metrics?.client_monitor, query]);
+  }, [clientMonitor, query]);
 
   const collectionRate = Math.min(100, Math.max(0, metrics?.collection_rate ?? 0));
 
@@ -258,7 +284,7 @@ const NewDashboardPage: React.FC = () => {
           <div className="flex flex-col gap-4 border-b border-border/70 p-5 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live queue & lease monitor</h2></div>
-              <p className="mt-1 text-sm text-muted-foreground">Matched DHCP leases with Simple Queue traffic snapshots. Run Router Sync to refresh queue data.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Matched DHCP leases with Simple Queue traffic. Refreshes every 5 seconds{monitorUpdatedAt ? ` · updated ${new Date(monitorUpdatedAt).toLocaleTimeString()}` : ''}.</p>
             </div>
             <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent clients" className="h-10 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
