@@ -107,8 +107,14 @@ $COMPOSE run --rm backend php artisan route:cache
 $COMPOSE run --rm backend php artisan view:cache 2>/dev/null || echo "    (no blade views to cache - OK for API-only apps)"
 $COMPOSE run --rm backend php artisan storage:link || true
 
-echo "==> Starting all services"
-$COMPOSE up -d
+echo "==> Restarting PHP services to load the deployed source"
+# The backend code is bind-mounted and production OPcache intentionally does
+# not check file timestamps. Recreating these long-running processes is
+# therefore required after every deploy; otherwise they can serve old PHP.
+$COMPOSE up -d --force-recreate backend backend-nginx worker cron
+
+echo "==> Starting web services"
+$COMPOSE up -d frontend caddy
 
 echo "==> Cleaning up dangling images"
 docker image prune -f
