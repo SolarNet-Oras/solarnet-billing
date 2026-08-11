@@ -88,6 +88,10 @@ fi
 echo "==> Ensuring writable Laravel storage & cache dirs"
 mkdir -p ../backend/storage/framework/views ../backend/bootstrap/cache
 chmod -R 777 ../backend/storage ../backend/bootstrap/cache 2>/dev/null || true
+# storage is a named Docker volume in production, so host-side directories are
+# not visible at /var/www/storage inside PHP. Create the compiled-view path in
+# that volume before config:view caching runs.
+$COMPOSE run --rm --no-deps backend sh -lc 'mkdir -p storage/framework/views bootstrap/cache && chmod -R 777 storage bootstrap/cache'
 
 echo "==> Installing composer dependencies (first run only, or if vendor/ missing)"
 if [ ! -f ../backend/vendor/autoload.php ]; then
