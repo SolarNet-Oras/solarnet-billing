@@ -3,11 +3,13 @@
 namespace App\Services\Ai;
 
 use GuzzleHttp\Client as HttpClient;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Log;
 
 /**
- * Thin OpenAI Chat Completions client.
- * We use Guzzle instead of the openai-php SDK to keep composer deps light.
+ * Central server-side OpenAI Chat Completions client.
+ * The API key is loaded once from OPENAI_API_KEY and is never returned or logged.
  */
 class OpenAiClient
 {
@@ -18,15 +20,16 @@ class OpenAiClient
 
     public function __construct()
     {
-        $this->apiKey  = (string) config('openai.api_key');
-        $this->model   = (string) config('openai.model', 'gpt-5.4-mini');
+        $this->apiKey = (string) config('openai.api_key');
+        $this->model = (string) config('openai.model', 'gpt-5.4-mini');
         $this->baseUrl = rtrim((string) config('openai.base_url', 'https://api.openai.com/v1'), '/');
-        $this->http    = new HttpClient([
+        $this->http = new HttpClient([
             'base_uri' => $this->baseUrl . '/',
-            'timeout'  => (int) config('openai.timeout', 60),
-            'headers'  => [
+            'timeout' => (int) config('openai.timeout', 60),
+            'connect_timeout' => 10,
+            'headers' => [
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type'  => 'application/json',
+                'Content-Type' => 'application/json',
             ],
         ]);
     }
@@ -42,76 +45,104 @@ class OpenAiClient
     }
 
     /**
-     * POST /chat/completions with tool-calling support.
-     *
-     * @param  array  $messages  OpenAI message array
-     * @param  array  $tools     OpenAI tool schemas (empty array = no tools)
-     * @return array{
-     *     content: ?string,
-     *     tool_calls: array<int, array{id: string, name: string, arguments: array}>,
-     *     usage: array{prompt_tokens: ?int, completion_tokens: ?int},
-     *     raw: array
-     * }
-     * @throws \RuntimeException
+     * @return array{content: ?string, tool_calls: array<int, array{id: string, name: string, arguments: array, arguments_raw: string}>, usage: array{prompt_tokens: ?int, completion_tokens: ?int}, raw: array}
      */
     public function chatCompletion(array $messages, array $tools = []): array
     {
         if (!$this->isConfigured()) {
-            throw new \RuntimeException('OPENAI_API_KEY is not configured on the server.');
+            throw new OpenAiProviderException(
+                'OPENAI_NOT_CONFIGURED',
+                'AI Assistant is not configured on the server.',
+            );
         }
 
-        $payload = [
-            'model'    => $this->model,
-            'messages' => $messages,
-        ];
+        $payload = ['model' => $this->model, 'messages' => $messages];
         if (!empty($tools)) {
-            $payload['tools']       = $tools;
+            $payload['tools'] = $tools;
             $payload['tool_choice'] = 'auto';
         }
 
         try {
             $response = $this->http->post('chat/completions', ['json' => $payload]);
+        } catch (ConnectException $e) {
+            Log::warning('OpenAI connection failed', ['model' => $this->model, 'error' => $e->getMessage()]);
+            throw new OpenAiProviderException(
+                'OPENAI_TIMEOUT',
+                'AI Assistant could not reach OpenAI. Please try again shortly.',
+                503,
+                $e,
+            );
         } catch (RequestException $e) {
-            $body   = $e->hasResponse() ? (string) $e->getResponse()->getBody() : $e->getMessage();
+            $body = $e->hasResponse() ? (string) $e->getResponse()->getBody() : $e->getMessage();
             $status = $e->hasResponse() ? $e->getResponse()->getStatusCode() : 0;
+            $providerError = json_decode($body, true)['error'] ?? [];
+            $providerCode = (string) ($providerError['code'] ?? '');
+            $providerType = (string) ($providerError['type'] ?? '');
 
-            // OpenAI rate limit / quota — mark distinctly so the controller can return 429
+            Log::warning('OpenAI request failed', [
+                'http_status' => $status,
+                'provider_code' => $providerCode,
+                'provider_type' => $providerType,
+                'model' => $this->model,
+            ]);
+
             if ($status === 429) {
-                $providerError = json_decode($body, true)['error'] ?? [];
-                $providerCode = (string) ($providerError['code'] ?? '');
-                $providerType = (string) ($providerError['type'] ?? '');
-                $message = ($providerCode === 'insufficient_quota' || $providerType === 'insufficient_quota')
-                    ? 'OpenAI API billing quota is unavailable for this project. Add API billing or credits in the OpenAI Platform project that owns this key, then try again.'
-                    : 'OpenAI is temporarily rate-limiting this project. Wait a minute and try again.';
-
-                throw new OpenAiRateLimitException(
-                    $message,
-                    429,
-                    $e
+                $quota = $providerCode === 'insufficient_quota' || $providerType === 'insufficient_quota';
+                throw new OpenAiProviderException(
+                    $quota ? 'OPENAI_BILLING_ERROR' : 'OPENAI_RATE_LIMIT',
+                    $quota
+                        ? 'AI Assistant is unavailable because this OpenAI API project has no available billing or credits. Check OpenAI Platform billing for the project that owns this key.'
+                        : 'OpenAI is temporarily rate-limiting this project. Wait a minute and try again.',
+                    $quota ? 503 : 429,
+                    $e,
                 );
             }
-            throw new \RuntimeException('OpenAI API error: ' . $body, $status, $e);
+
+            if ($status === 401) {
+                throw new OpenAiProviderException(
+                    'OPENAI_AUTH_ERROR',
+                    'AI Assistant credentials were rejected by OpenAI. Update the server-side OPENAI_API_KEY and restart the backend.',
+                    503,
+                    $e,
+                );
+            }
+
+            if ($status === 404 && ($providerCode === 'model_not_found' || $providerType === 'invalid_request_error')) {
+                throw new OpenAiProviderException(
+                    'OPENAI_MODEL_ERROR',
+                    'The configured OpenAI model is unavailable to this API project. Check OPENAI_MODEL on the server.',
+                    503,
+                    $e,
+                );
+            }
+
+            throw new OpenAiProviderException(
+                $status >= 500 ? 'OPENAI_SERVER_ERROR' : 'OPENAI_REQUEST_ERROR',
+                $status >= 500
+                    ? 'OpenAI is temporarily unavailable. Please try again shortly.'
+                    : 'AI Assistant could not complete this request. Check the server AI configuration.',
+                503,
+                $e,
+            );
         }
 
         $body = json_decode((string) $response->getBody(), true);
         $choice = $body['choices'][0]['message'] ?? [];
-
         $toolCalls = [];
-        foreach (($choice['tool_calls'] ?? []) as $tc) {
+        foreach (($choice['tool_calls'] ?? []) as $toolCall) {
             $toolCalls[] = [
-                'id'        => $tc['id'] ?? uniqid('call_'),
-                'name'      => $tc['function']['name'] ?? '',
-                'arguments' => json_decode($tc['function']['arguments'] ?? '{}', true) ?: [],
-                // Keep raw args string so we can echo it back exactly in the next turn
-                'arguments_raw' => $tc['function']['arguments'] ?? '{}',
+                'id' => $toolCall['id'] ?? uniqid('call_'),
+                'name' => $toolCall['function']['name'] ?? '',
+                'arguments' => json_decode($toolCall['function']['arguments'] ?? '{}', true) ?: [],
+                'arguments_raw' => $toolCall['function']['arguments'] ?? '{}',
             ];
         }
 
         return [
-            'content'    => $choice['content'] ?? null,
+            'content' => $choice['content'] ?? null,
             'tool_calls' => $toolCalls,
-            'usage'      => [
-                'prompt_tokens'     => $body['usage']['prompt_tokens']     ?? null,
+            'usage' => [
+                'prompt_tokens' => $body['usage']['prompt_tokens'] ?? null,
                 'completion_tokens' => $body['usage']['completion_tokens'] ?? null,
             ],
             'raw' => $body,
