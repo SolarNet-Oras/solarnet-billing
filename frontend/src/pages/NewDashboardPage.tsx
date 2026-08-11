@@ -1,227 +1,234 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  Banknote,
+  CheckCircle2,
+  CircleAlert,
+  CircleDollarSign,
+  CircleOff,
+  Clock3,
+  CreditCard,
+  Gauge,
+  Radio,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Signal,
+  Users,
+  Wifi,
+  type LucideIcon,
+} from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { MetricCard } from '@/components/ui/MetricCard';
-import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
-import { Users, UserCheck, CircleDollarSign, Globe, Wallet, Hourglass, LifeBuoy } from 'lucide-react';
+
+interface RecentCustomer {
+  id: string;
+  full_name: string;
+  status: string;
+  onu_information: string | null;
+  updated_at: string;
+  service_plan: {
+    name: string;
+    download_speed: number;
+    upload_speed: number;
+  } | null;
+}
 
 interface DashboardMetrics {
   active_subscribers: number;
   expired_subscribers: number;
   suspended_subscribers: number;
   total_subscribers: number;
-  subscribers_change_pct: number | null;
-  online_users: number;
-  offline_users: number;
   today_revenue: number;
   monthly_revenue: number;
-  revenue_change_pct: number | null;
   pending_payments: number;
   overdue_invoices: number;
-  open_tickets: number;
-  pending_tickets: number;
-  resolved_today: number;
-  router_status: {
-    online: number;
-    offline: number;
-    error: number;
-    total: number;
-  };
-  total_users: number;
-  active_users: number;
-  users_online: number;
+  paid_invoices: number;
+  partial_invoices: number;
+  unpaid_invoices: number;
+  total_billed: number;
+  total_paid: number;
+  partial_paid: number;
+  collectible: number;
+  collection_rate: number;
+  online_users: number;
+  offline_users: number;
+  router_status: { online: number; offline: number; error: number; total: number };
+  recent_customers: RecentCustomer[];
 }
 
-const fmtPct = (pct: number | null | undefined): string => {
-  if (pct === null || pct === undefined) return 'No prior data';
-  const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct}% vs last month`;
+const peso = (value: number): string =>
+  new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value);
+
+const titleCase = (value: string): string => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const statusTheme = (status: string): { label: string; className: string; Icon: LucideIcon } => {
+  switch (status) {
+    case 'active':
+      return { label: 'Active', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', Icon: CheckCircle2 };
+    case 'suspended':
+      return { label: 'Suspended', className: 'bg-rose-500/10 text-rose-700 dark:text-rose-300', Icon: CircleOff };
+    case 'expired':
+      return { label: 'Disconnected', className: 'bg-slate-500/10 text-slate-700 dark:text-slate-300', Icon: CircleOff };
+    default:
+      return { label: titleCase(status || 'pending'), className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300', Icon: Clock3 };
+  }
 };
-const pctTrend = (pct: number | null | undefined): 'up' | 'down' | 'stable' => {
-  if (pct === null || pct === undefined || Math.abs(pct) < 0.1) return 'stable';
-  return pct > 0 ? 'up' : 'down';
-};
+
+const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string | number; Icon: LucideIcon; tone: string }) => (
+  <div className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5">
+    <div className={`absolute -right-5 -top-5 h-24 w-24 rounded-full opacity-20 blur-2xl ${tone}`} />
+    <div className="relative flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+        <p className="mt-2 text-2xl font-bold tracking-tight text-foreground tabular-nums">{value}</p>
+      </div>
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-lg ${tone}`}>
+        <Icon className="h-5 w-5" strokeWidth={2.25} />
+      </div>
+    </div>
+  </div>
+);
 
 const NewDashboardPage: React.FC = () => {
-  const { user } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
 
-  const fetchMetrics = useCallback(async (): Promise<void> => {
+  const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
+    if (manual) setRefreshing(true);
     try {
       const response = await api.get<{ data: DashboardMetrics }>('/dashboard/metrics');
       setMetrics(response.data.data);
     } catch (error) {
-      logger.error('Failed to fetch metrics', error);
+      logger.error('Failed to fetch dashboard metrics', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     fetchMetrics();
-    // Refresh metrics every 30 seconds
-    const interval = setInterval(fetchMetrics, 30000);
-    return () => clearInterval(interval);
+    const interval = window.setInterval(() => fetchMetrics(), 30000);
+    return () => window.clearInterval(interval);
   }, [fetchMetrics]);
+
+  const customers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return metrics?.recent_customers ?? [];
+    return (metrics?.recent_customers ?? []).filter((customer) =>
+      [customer.full_name, customer.onu_information, customer.service_plan?.name]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+    );
+  }, [metrics?.recent_customers, query]);
+
+  const collectionRate = Math.min(100, Math.max(0, metrics?.collection_rate ?? 0));
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Welcome Section */}
-        <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            Welcome back, {user?.name}! 👋
-          </h1>
-          <p className="text-muted-foreground">
-            Here's what's happening with your ISP network today.
-          </p>
-        </div>
+      <div className="mx-auto max-w-7xl space-y-6 pb-10">
+        <section className="relative overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-slate-950 via-slate-900 to-primary/90 px-6 py-7 text-white shadow-2xl shadow-primary/15 md:px-8">
+          <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:22px_22px]" />
+          <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-400/30 blur-3xl" />
+          <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/20"><Activity className="h-3.5 w-3.5 text-emerald-300" /></span>
+                Operations command center
+              </div>
+              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Client & billing overview</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-300">A real-time view of your subscribers, collections, and network readiness.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchMetrics(true)}
+              disabled={refreshing}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh data
+            </button>
+          </div>
+        </section>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard
-            title="Total Subscribers"
-            value={metrics?.total_subscribers || 0}
-            change={fmtPct(metrics?.subscribers_change_pct)}
-            trend={pctTrend(metrics?.subscribers_change_pct)}
-            icon={Users}
-            accentClass="bg-blue-500/10 text-blue-600 dark:text-blue-400"
-            loading={loading}
-          />
-          <MetricCard
-            title="Active Subscribers"
-            value={metrics?.active_subscribers || 0}
-            change={`${metrics?.suspended_subscribers ?? 0} suspended`}
-            trend={
-              (metrics?.active_subscribers ?? 0) > 0 && (metrics?.suspended_subscribers ?? 0) === 0
-                ? 'up'
-                : (metrics?.suspended_subscribers ?? 0) > 0
-                ? 'down'
-                : 'stable'
-            }
-            icon={UserCheck}
-            accentClass="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-            loading={loading}
-          />
-          <MetricCard
-            title="Monthly Revenue"
-            value={`₱${(metrics?.monthly_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            change={fmtPct(metrics?.revenue_change_pct)}
-            trend={pctTrend(metrics?.revenue_change_pct)}
-            icon={CircleDollarSign}
-            accentClass="bg-amber-500/10 text-amber-600 dark:text-amber-400"
-            loading={loading}
-          />
-          <MetricCard
-            title="Online Users"
-            value={metrics?.online_users ?? 0}
-            change={`${metrics?.active_subscribers ?? 0} active subs`}
-            trend={(metrics?.online_users ?? 0) > 0 ? 'up' : 'stable'}
-            icon={Globe}
-            accentClass="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-            loading={loading}
-          />
-        </div>
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-[0.14em] text-foreground">Client & billing overview</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <MetricTile label="All clients" value={metrics?.total_subscribers ?? 0} Icon={Users} tone="bg-primary" />
+            <MetricTile label="Paid" value={metrics?.paid_invoices ?? 0} Icon={CheckCircle2} tone="bg-emerald-500" />
+            <MetricTile label="Unpaid" value={metrics?.unpaid_invoices ?? 0} Icon={CircleAlert} tone="bg-rose-500" />
+            <MetricTile label="Partial" value={metrics?.partial_invoices ?? 0} Icon={CreditCard} tone="bg-amber-500" />
+            <MetricTile label="Active" value={metrics?.active_subscribers ?? 0} Icon={Wifi} tone="bg-cyan-500" />
+            <MetricTile label="Suspended" value={metrics?.suspended_subscribers ?? 0} Icon={ShieldCheck} tone="bg-orange-500" />
+            <MetricTile label="Disconnected" value={metrics?.expired_subscribers ?? 0} Icon={CircleOff} tone="bg-slate-600" />
+            <MetricTile label="Collectible" value={peso(metrics?.collectible ?? 0)} Icon={Banknote} tone="bg-violet-600" />
+          </div>
+        </section>
 
-        {/* Network Status */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Subscriber Status */}
-          <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-foreground mb-4">
-              Subscriber Status
-            </h2>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Active</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">
-                  {metrics?.active_subscribers || 0}
-                </span>
+        <section className="grid gap-5 lg:grid-cols-2">
+          <div className="rounded-2xl border border-border/70 bg-card p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Collection</p>
+                <h2 className="mt-1 text-xl font-semibold text-foreground">Revenue pulse</h2>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Suspended</span>
-                <span className="font-semibold text-yellow-600 dark:text-yellow-400">
-                  {metrics?.suspended_subscribers || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Expired</span>
-                <span className="font-semibold text-red-600 dark:text-red-400">
-                  {metrics?.expired_subscribers || 0}
-                </span>
-              </div>
-              <hr className="border-border" />
-              <div className="flex justify-between items-center font-semibold">
-                <span className="text-foreground">Total</span>
-                <span className="text-foreground">
-                  {metrics?.total_subscribers || 0}
-                </span>
-              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CircleDollarSign className="h-5 w-5" /></div>
+            </div>
+            <div className="mt-6 grid grid-cols-3 gap-3">
+              <div><p className="text-xs text-muted-foreground">Today</p><p className="mt-1 font-semibold tabular-nums">{peso(metrics?.today_revenue ?? 0)}</p></div>
+              <div><p className="text-xs text-muted-foreground">This month</p><p className="mt-1 font-semibold tabular-nums">{peso(metrics?.monthly_revenue ?? 0)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Overdue</p><p className="mt-1 font-semibold tabular-nums text-rose-600 dark:text-rose-400">{metrics?.overdue_invoices ?? 0}</p></div>
+            </div>
+            <div className="mt-7">
+              <div className="mb-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">Collection rate</span><span className="font-bold tabular-nums">{collectionRate}%</span></div>
+              <div className="h-2.5 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-700" style={{ width: `${collectionRate}%` }} /></div>
             </div>
           </div>
 
-          {/* Router Status */}
-          <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-foreground mb-4">
-              Router Status
-            </h2>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Online</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">
-                  {metrics?.router_status.online || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Offline</span>
-                <span className="font-semibold text-red-600 dark:text-red-400">
-                  {metrics?.router_status.offline || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Error</span>
-                <span className="font-semibold text-yellow-600 dark:text-yellow-400">
-                  {metrics?.router_status.error || 0}
-                </span>
-              </div>
-              <hr className="border-border" />
-              <div className="flex justify-between items-center font-semibold">
-                <span className="text-foreground">Total</span>
-                <span className="text-foreground">
-                  {metrics?.router_status.total || 0}
-                </span>
-              </div>
+          <div className="rounded-2xl border border-border/70 bg-card p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Billing summary</p><h2 className="mt-1 text-xl font-semibold text-foreground">Account position</h2></div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Gauge className="h-5 w-5" /></div>
+            </div>
+            <div className="mt-5 divide-y divide-border/70">
+              {[
+                ['Total billed', peso(metrics?.total_billed ?? 0)],
+                ['Paid', peso(metrics?.total_paid ?? 0)],
+                ['Partial', peso(metrics?.partial_paid ?? 0)],
+                ['Outstanding', peso(metrics?.collectible ?? 0)],
+              ].map(([label, value]) => <div key={label} className="flex items-center justify-between py-3 text-sm"><span className="text-muted-foreground">{label}</span><span className="font-semibold tabular-nums text-foreground">{value}</span></div>)}
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Financial & Support */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <MetricCard
-            title="Today's Revenue"
-            value={`₱${(metrics?.today_revenue ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon={Wallet}
-            accentClass="bg-green-500/10 text-green-600 dark:text-green-400"
-            loading={loading}
-          />
-          <MetricCard
-            title="Pending Payments"
-            value={metrics?.pending_payments || 0}
-            icon={Hourglass}
-            accentClass="bg-orange-500/10 text-orange-600 dark:text-orange-400"
-            loading={loading}
-          />
-          <MetricCard
-            title="Open Tickets"
-            value={metrics?.open_tickets || 0}
-            change={`${metrics?.resolved_today || 0} resolved today`}
-            trend={(metrics?.resolved_today ?? 0) > 0 ? 'up' : 'stable'}
-            icon={LifeBuoy}
-            accentClass="bg-rose-500/10 text-rose-600 dark:text-rose-400"
-            loading={loading}
-          />
-        </div>
+        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-border/70 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live client monitor</h2></div>
+              <p className="mt-1 text-sm text-muted-foreground">Subscriber records are live. ONU traffic and optical readings will appear when OLT monitoring is enabled.</p>
+            </div>
+            <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent clients" className="h-10 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-muted/45 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-3">Client</th><th className="px-5 py-3">ONU</th><th className="px-5 py-3">Plan</th><th className="px-5 py-3">Provisioned</th><th className="px-5 py-3">Telemetry</th><th className="px-5 py-3">Status</th></tr></thead>
+              <tbody className="divide-y divide-border/70">
+                {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading live dashboard data…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matching recent clients.</td></tr> : customers.map((customer) => {
+                  const theme = statusTheme(customer.status);
+                  const StatusIcon = theme.Icon;
+                  return <tr key={customer.id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground">{customer.onu_information || 'Not paired'}</td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan?.name || 'No plan'}</td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.download_speed} / ${customer.service_plan.upload_speed} Mbps` : '—'}</td><td className="px-5 py-4"><span className="inline-flex items-center gap-1.5 text-muted-foreground"><Signal className="h-4 w-4" /> Awaiting OLT</span></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </DashboardLayout>
   );
