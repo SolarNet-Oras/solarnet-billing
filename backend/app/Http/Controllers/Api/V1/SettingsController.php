@@ -39,6 +39,7 @@ class SettingsController extends Controller
 
         // Automation (scheduled jobs)
         'automation.enabled'                => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Automations enabled (master switch)',           'default' => true],
+        'automation.recurring_billing_enabled' => ['cast' => 'bool', 'group' => 'automation', 'label' => 'Generate monthly billing invoices',             'default' => true],
         'automation.auto_suspend_enabled'   => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Auto-suspend overdue customers',                'default' => true],
         'automation.reminder_days_before'   => ['cast' => 'int',    'group' => 'automation', 'label' => 'Send reminder N days before due',               'default' => 3],
         'automation.overdue_reminder_days'  => ['cast' => 'string', 'group' => 'automation', 'label' => 'Overdue follow-up days (comma-separated)',      'default' => '1,7,14'],

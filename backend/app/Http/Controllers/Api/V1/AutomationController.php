@@ -16,6 +16,7 @@ class AutomationController extends Controller
         AutomationLog::JOB_AUTO_SUSPEND      => 'automation:auto-suspend',
         AutomationLog::JOB_DB_BACKUP         => 'automation:db-backup',
         AutomationLog::JOB_UPDATE_OVERDUE    => 'automation:update-overdue',
+        AutomationLog::JOB_RECURRING_INVOICES => 'automation:generate-recurring-invoices',
     ];
 
     /**
@@ -46,6 +47,7 @@ class AutomationController extends Controller
     {
         $schedule = [
             AutomationLog::JOB_UPDATE_OVERDUE    => 'daily 02:00',
+            AutomationLog::JOB_RECURRING_INVOICES => 'daily 00:05',
             AutomationLog::JOB_DB_BACKUP         => 'daily 02:15',
             AutomationLog::JOB_INVOICE_REMINDERS => 'daily 08:00',
             AutomationLog::JOB_AUTO_SUSPEND      => 'daily 09:00',
@@ -53,6 +55,7 @@ class AutomationController extends Controller
 
         $labels = [
             AutomationLog::JOB_UPDATE_OVERDUE    => 'Update overdue invoice statuses',
+            AutomationLog::JOB_RECURRING_INVOICES => 'Generate monthly invoices on billing date',
             AutomationLog::JOB_DB_BACKUP         => 'PostgreSQL backup (gzipped)',
             AutomationLog::JOB_INVOICE_REMINDERS => 'Send payment reminders',
             AutomationLog::JOB_AUTO_SUSPEND      => 'Auto-suspend overdue customers',

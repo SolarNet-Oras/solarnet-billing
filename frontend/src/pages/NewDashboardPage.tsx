@@ -55,6 +55,7 @@ interface DashboardMetrics {
   online_users: number;
   offline_users: number;
   router_status: { online: number; offline: number; error: number; total: number };
+  automation_activity: Array<{ id: string; job: string; status: 'success' | 'partial' | 'error'; summary: Record<string, unknown> | null; finished_at: string | null }>;
   recent_customers: RecentCustomer[];
 }
 
@@ -75,6 +76,14 @@ const statusTheme = (status: string): { label: string; className: string; Icon: 
       return { label: titleCase(status || 'pending'), className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300', Icon: Clock3 };
   }
 };
+
+const activityLabel = (job: string): string => ({
+  recurring_invoices: 'Monthly billing run',
+  update_overdue: 'Overdue invoice update',
+  invoice_reminders: 'Payment reminders',
+  auto_suspend: 'Automatic suspension',
+  db_backup: 'Database backup',
+}[job] ?? titleCase(job));
 
 const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string | number; Icon: LucideIcon; tone: string }) => (
   <div className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5">
@@ -205,6 +214,21 @@ const NewDashboardPage: React.FC = () => {
                 ['Outstanding', peso(metrics?.collectible ?? 0)],
               ].map(([label, value]) => <div key={label} className="flex items-center justify-between py-3 text-sm"><span className="text-muted-foreground">{label}</span><span className="font-semibold tabular-nums text-foreground">{value}</span></div>)}
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operations log</p><h2 className="mt-1 text-xl font-semibold text-foreground">Billing updates & warnings</h2></div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Activity className="h-5 w-5" /></div>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {(metrics?.automation_activity ?? []).length === 0 && !loading && <p className="text-sm text-muted-foreground">No billing automation logs yet. Scheduled runs and manual actions will appear here.</p>}
+            {(metrics?.automation_activity ?? []).map((activity) => {
+              const hasWarning = activity.status !== 'success' || Boolean(activity.summary?.errors) || Boolean(activity.summary?.error);
+              const detail = activity.status === 'error' ? String(activity.summary?.error ?? 'The job needs attention') : activity.status === 'partial' ? 'Completed with warnings' : 'Completed successfully';
+              return <div key={activity.id} className="rounded-xl border border-border/70 bg-muted/25 p-4"><div className="flex items-start gap-3"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${hasWarning ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>{hasWarning ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</div><div className="min-w-0"><p className="font-semibold text-foreground">{activityLabel(activity.job)}</p><p className="mt-1 text-sm text-muted-foreground">{detail}</p><p className="mt-2 text-xs text-muted-foreground">{activity.finished_at ? new Date(activity.finished_at).toLocaleString() : 'In progress'}</p></div></div></div>;
+            })}
           </div>
         </section>
 
