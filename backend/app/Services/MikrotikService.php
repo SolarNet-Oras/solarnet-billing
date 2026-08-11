@@ -8,6 +8,7 @@ use RouterOS\Config;
 use RouterOS\Query;
 use Throwable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class MikrotikService
 {
@@ -432,6 +433,14 @@ class MikrotikService
             
             $query = new Query('/queue/simple/print');
             $queues = $client->query($query)->read();
+
+            // The dashboard reads this snapshot rather than making its own
+            // router connection on every page refresh. A failed VPN/API link
+            // therefore never turns the dashboard into a slow or failing page.
+            Cache::put("router:queues:{$router->id}", [
+                'captured_at' => now()->toIso8601String(),
+                'data' => $queues,
+            ], now()->addMinutes(15));
             
             return [
                 'success' => true,

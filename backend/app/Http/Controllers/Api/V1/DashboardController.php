@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\AutomationLog;
+use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Router;
@@ -12,6 +13,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -135,13 +137,94 @@ class DashboardController extends Controller
                 'automation_activity' => AutomationLog::orderByDesc('created_at')
                     ->limit(6)
                     ->get(['id', 'job', 'status', 'summary', 'finished_at']),
-                'recent_customers' => Customer::with('servicePlan:id,name,download_speed,upload_speed')
-                    ->orderBy('updated_at', 'desc')
-                    ->limit(6)
-                    ->get(['id', 'full_name', 'status', 'onu_information', 'service_plan_id', 'updated_at']),
+                // Client monitor is based on matched DHCP leases and simple
+                // queue snapshots, not OLT/ONU data. Queue snapshots are
+                // updated during Router Sync and remain safe to display while
+                // a router VPN/API connection is temporarily unavailable.
+                'client_monitor' => $this->matchedLeaseMonitor(),
             ],
             'timestamp' => now()->toIso8601String(),
         ]);
+    }
+
+    /** Build a compact dashboard monitor from matched DHCP leases and queue snapshots. */
+    protected function matchedLeaseMonitor(): array
+    {
+        $leases = DhcpLease::query()
+            ->where('is_matched', true)
+            ->whereNotNull('customer_id')
+            ->with([
+                'customer:id,full_name,status,service_plan_id',
+                'customer.servicePlan:id,name,download_speed,upload_speed',
+                'router:id,name',
+            ])
+            ->orderByDesc('last_seen_at')
+            ->limit(50)
+            ->get();
+
+        $queueSnapshots = [];
+        $monitor = [];
+        foreach ($leases as $lease) {
+            if (!$lease->customer || isset($monitor[$lease->customer_id])) {
+                continue;
+            }
+
+            $routerId = (string) $lease->router_id;
+            if (!array_key_exists($routerId, $queueSnapshots)) {
+                $queueSnapshots[$routerId] = Cache::get("router:queues:{$routerId}", ['data' => [], 'captured_at' => null]);
+            }
+            $snapshot = $queueSnapshots[$routerId];
+            $queueName = 'customer-' . $lease->customer_id;
+            $queue = collect($snapshot['data'] ?? [])->firstWhere('name', $queueName);
+            $rate = $this->trafficPair($queue['rate'] ?? null);
+            $bytes = $this->trafficPair($queue['bytes'] ?? null);
+
+            $monitor[$lease->customer_id] = [
+                'customer_id' => $lease->customer_id,
+                'full_name' => $lease->customer->full_name,
+                'customer_status' => $lease->customer->status,
+                'ip_address' => $lease->ip_address,
+                'lease_status' => $lease->status,
+                'last_seen_at' => $lease->last_seen_at?->toIso8601String(),
+                'router_name' => $lease->router?->name,
+                'queue_name' => $queueName,
+                'queue_found' => $queue !== null,
+                'queue_snapshot_at' => $snapshot['captured_at'] ?? null,
+                'traffic' => [
+                    // RouterOS may provide live rate; counters are retained
+                    // even on RouterOS versions that omit that field.
+                    'download_bps' => $rate[0],
+                    'upload_bps' => $rate[1],
+                    'download_bytes' => $bytes[0],
+                    'upload_bytes' => $bytes[1],
+                ],
+                'service_plan' => $lease->customer->servicePlan ? [
+                    'name' => $lease->customer->servicePlan->name,
+                    'download_speed' => $lease->customer->servicePlan->download_speed,
+                    'upload_speed' => $lease->customer->servicePlan->upload_speed,
+                ] : null,
+            ];
+
+            if (count($monitor) >= 6) {
+                break;
+            }
+        }
+
+        return array_values($monitor);
+    }
+
+    /** Parse RouterOS traffic pairs such as "12345/67890". */
+    protected function trafficPair(?string $value): array
+    {
+        if (!$value || !str_contains($value, '/')) {
+            return [null, null];
+        }
+
+        [$first, $second] = array_pad(explode('/', $value, 2), 2, null);
+        return [
+            is_numeric($first) ? (int) $first : null,
+            is_numeric($second) ? (int) $second : null,
+        ];
     }
 
     /**

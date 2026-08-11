@@ -22,12 +22,18 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
 
-interface RecentCustomer {
-  id: string;
+interface ClientMonitor {
+  customer_id: string;
   full_name: string;
-  status: string;
-  onu_information: string | null;
-  updated_at: string;
+  customer_status: string;
+  ip_address: string;
+  lease_status: string;
+  last_seen_at: string | null;
+  router_name: string | null;
+  queue_name: string;
+  queue_found: boolean;
+  queue_snapshot_at: string | null;
+  traffic: { download_bps: number | null; upload_bps: number | null; download_bytes: number | null; upload_bytes: number | null };
   service_plan: {
     name: string;
     download_speed: number;
@@ -56,7 +62,7 @@ interface DashboardMetrics {
   offline_users: number;
   router_status: { online: number; offline: number; error: number; total: number };
   automation_activity: Array<{ id: string; job: string; status: 'success' | 'partial' | 'error'; summary: Record<string, unknown> | null; finished_at: string | null }>;
-  recent_customers: RecentCustomer[];
+  client_monitor: ClientMonitor[];
 }
 
 const peso = (value: number): string =>
@@ -84,6 +90,22 @@ const activityLabel = (job: string): string => ({
   auto_suspend: 'Automatic suspension',
   db_backup: 'Database backup',
 }[job] ?? titleCase(job));
+
+const formatRate = (bitsPerSecond: number | null): string => {
+  if (bitsPerSecond === null) return '—';
+  if (bitsPerSecond >= 1_000_000) return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`;
+  if (bitsPerSecond >= 1_000) return `${(bitsPerSecond / 1_000).toFixed(1)} Kbps`;
+  return `${bitsPerSecond} bps`;
+};
+
+const formatBytes = (bytes: number | null): string => {
+  if (bytes === null) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) { value /= 1024; index += 1; }
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
 
 const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string | number; Icon: LucideIcon; tone: string }) => (
   <div className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5">
@@ -127,13 +149,13 @@ const NewDashboardPage: React.FC = () => {
 
   const customers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return metrics?.recent_customers ?? [];
-    return (metrics?.recent_customers ?? []).filter((customer) =>
-      [customer.full_name, customer.onu_information, customer.service_plan?.name]
+    if (!normalizedQuery) return metrics?.client_monitor ?? [];
+    return (metrics?.client_monitor ?? []).filter((customer) =>
+      [customer.full_name, customer.ip_address, customer.queue_name, customer.service_plan?.name]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
     );
-  }, [metrics?.recent_customers, query]);
+  }, [metrics?.client_monitor, query]);
 
   const collectionRate = Math.min(100, Math.max(0, metrics?.collection_rate ?? 0));
 
@@ -235,19 +257,20 @@ const NewDashboardPage: React.FC = () => {
         <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
           <div className="flex flex-col gap-4 border-b border-border/70 p-5 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live client monitor</h2></div>
-              <p className="mt-1 text-sm text-muted-foreground">Subscriber records are live. ONU traffic and optical readings will appear when OLT monitoring is enabled.</p>
+              <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live queue & lease monitor</h2></div>
+              <p className="mt-1 text-sm text-muted-foreground">Matched DHCP leases with Simple Queue traffic snapshots. Run Router Sync to refresh queue data.</p>
             </div>
             <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent clients" className="h-10 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-muted/45 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-3">Client</th><th className="px-5 py-3">ONU</th><th className="px-5 py-3">Plan</th><th className="px-5 py-3">Provisioned</th><th className="px-5 py-3">Telemetry</th><th className="px-5 py-3">Status</th></tr></thead>
+              <thead className="bg-muted/45 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-3">Client</th><th className="px-5 py-3">Lease</th><th className="px-5 py-3">Queue</th><th className="px-5 py-3">Plan</th><th className="px-5 py-3">Traffic</th><th className="px-5 py-3">Status</th></tr></thead>
               <tbody className="divide-y divide-border/70">
-                {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading live dashboard data…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matching recent clients.</td></tr> : customers.map((customer) => {
-                  const theme = statusTheme(customer.status);
+                {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading client monitor…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matched DHCP client leases yet. Sync a router to populate this monitor.</td></tr> : customers.map((customer) => {
+                  const theme = statusTheme(customer.customer_status);
                   const StatusIcon = theme.Icon;
-                  return <tr key={customer.id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground">{customer.onu_information || 'Not paired'}</td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan?.name || 'No plan'}</td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.download_speed} / ${customer.service_plan.upload_speed} Mbps` : '—'}</td><td className="px-5 py-4"><span className="inline-flex items-center gap-1.5 text-muted-foreground"><Signal className="h-4 w-4" /> Awaiting OLT</span></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
+                  const hasLiveRate = customer.traffic.download_bps !== null || customer.traffic.upload_bps !== null;
+                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-1 text-xs capitalize">{customer.lease_status}</p></td><td className="px-5 py-4 text-muted-foreground"><p className="font-mono text-xs">{customer.queue_name}</p><p className={`mt-1 text-xs ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-5 py-4 text-muted-foreground">{hasLiveRate ? <span className="inline-flex items-center gap-1.5"><Signal className="h-4 w-4 text-primary" />↓ {formatRate(customer.traffic.download_bps)} · ↑ {formatRate(customer.traffic.upload_bps)}</span> : <span className="text-xs">↓ {formatBytes(customer.traffic.download_bytes)} · ↑ {formatBytes(customer.traffic.upload_bytes)}</span>}</td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
                 })}
               </tbody>
             </table>
