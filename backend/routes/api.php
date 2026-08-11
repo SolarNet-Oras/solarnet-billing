@@ -62,6 +62,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:api')->group(function () {
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
+        Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
         Route::get('dashboard/quick-stats', [DashboardController::class, 'quickStats'])->middleware('permission:view-dashboard');
         
         // User routes (admin only)

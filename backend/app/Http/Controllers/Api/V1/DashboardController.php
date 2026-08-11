@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\Router;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\MikrotikService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -144,6 +145,57 @@ class DashboardController extends Controller
                 'client_monitor' => $this->matchedLeaseMonitor(),
             ],
             'timestamp' => now()->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Refresh and return only the compact client traffic monitor.
+     *
+     * This deliberately avoids recalculating the rest of the dashboard every
+     * five seconds. A short backoff keeps a broken VPN/API link from being
+     * retried by every browser refresh.
+     */
+    public function clientMonitor(MikrotikService $mikrotikService): JsonResponse
+    {
+        $routerIds = DhcpLease::query()
+            ->where('is_matched', true)
+            ->whereNotNull('customer_id')
+            ->whereNotNull('router_id')
+            ->distinct()
+            ->pluck('router_id');
+
+        Router::query()
+            ->whereIn('id', $routerIds)
+            ->where('is_active', true)
+            ->where('connection_status', 'online')
+            ->get()
+            ->each(function (Router $router) use ($mikrotikService): void {
+                $backoffKey = "router:queues:retry-after:{$router->id}";
+                $lockKey = "router:queues:refresh-lock:{$router->id}";
+
+                if (Cache::has($backoffKey) || !Cache::add($lockKey, true, now()->addSeconds(10))) {
+                    return;
+                }
+
+                try {
+                    $result = $mikrotikService->getQueues($router);
+                    if ($result['success']) {
+                        Cache::forget($backoffKey);
+                    } else {
+                        // Keep the most recent good queue counters visible while
+                        // preventing repeated socket timeouts from overwhelming
+                        // the dashboard or the router.
+                        Cache::put($backoffKey, true, now()->addSeconds(30));
+                    }
+                } finally {
+                    Cache::forget($lockKey);
+                }
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $this->matchedLeaseMonitor(),
+            'refreshed_at' => now()->toIso8601String(),
         ]);
     }
 
