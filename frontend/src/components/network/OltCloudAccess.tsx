@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ExternalLink, Globe2, LockKeyhole, MonitorUp, RadioTower, ShieldCheck, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Globe2, LoaderCircle, LockKeyhole, MonitorUp, RadioTower, RefreshCw, ShieldCheck, X } from 'lucide-react';
 
 type Provider = 'hsgq' | 'custom';
 
@@ -11,6 +11,8 @@ export function OltCloudAccess() {
   const [accountHint, setAccountHint] = useState('');
   const [error, setError] = useState('');
   const [embeddedUrl, setEmbeddedUrl] = useState('');
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
+  const portalFrame = useRef<HTMLIFrameElement>(null);
 
   const portalUrl = provider === 'hsgq' ? HSGQ_LOGIN_URL : customUrl.trim();
 
@@ -31,12 +33,16 @@ export function OltCloudAccess() {
 
   const openPrivateWindow = () => {
     const url = validatedPortalUrl();
-    if (url) setEmbeddedUrl(url);
+    if (url) {
+      setIsPortalLoading(true);
+      setEmbeddedUrl(url);
+    }
   };
 
-  const openExternalPortal = () => {
-    const url = validatedPortalUrl();
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  const reloadPortal = () => {
+    if (!portalFrame.current) return;
+    setIsPortalLoading(true);
+    portalFrame.current.src = portalFrame.current.src;
   };
 
   return (
@@ -63,11 +69,11 @@ export function OltCloudAccess() {
           <label className="block"><span className="text-sm font-medium text-foreground">Cloud portal URL</span><input value={provider === 'hsgq' ? HSGQ_LOGIN_URL : customUrl} onChange={(event) => setCustomUrl(event.target.value)} disabled={provider === 'hsgq'} placeholder="https://cloud.vendor.com/login" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:bg-muted" /></label>
           <label className="block"><span className="text-sm font-medium text-foreground">Account email or username <span className="font-normal text-muted-foreground">(optional reference)</span></span><input value={accountHint} onChange={(event) => setAccountHint(event.target.value)} placeholder="Enter the account you will use" autoComplete="username" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
         </div>
-        <div className="mt-5 flex flex-col gap-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between"><div className="flex gap-3"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" /><p>Your password is never collected or stored by SolarNet Billing. Sign in inside the vendor portal window.</p></div><div className="flex shrink-0 gap-2"><button type="button" onClick={openExternalPortal} className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 font-semibold text-foreground transition hover:bg-muted"><ExternalLink className="h-4 w-4" />Open tab</button><button type="button" onClick={openPrivateWindow} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition hover:opacity-90"><MonitorUp className="h-4 w-4" />Open private window</button></div></div>
+        <div className="mt-5 flex flex-col gap-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between"><div className="flex gap-3"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" /><p>Your password is never collected or stored by SolarNet Billing. Sign in inside the vendor portal window.</p></div><button type="button" onClick={openPrivateWindow} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition hover:opacity-90"><MonitorUp className="h-4 w-4" />Access device</button></div>
         {error && <p className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-400">{error}</p>}
       </section>
 
-      {embeddedUrl && <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xl"><div className="flex items-center justify-between gap-4 border-b border-border/70 bg-muted/35 px-4 py-3"><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Private OLT portal window</p><p className="mt-0.5 truncate text-sm text-foreground">{embeddedUrl}</p></div><button type="button" onClick={() => setEmbeddedUrl('')} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"><X className="h-4 w-4" />Close</button></div><iframe title="OLT cloud portal" src={embeddedUrl} className="h-[680px] w-full bg-white" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" referrerPolicy="strict-origin-when-cross-origin" /><div className="border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">If the provider shows a blank or blocked page, it prevents embedded login for security. Use <strong>Open tab</strong> instead; SolarNet Billing cannot bypass that vendor restriction.</div></section>}
+      {embeddedUrl && <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xl"><div className="flex items-center justify-between gap-4 border-b border-border/70 bg-muted/35 px-4 py-3"><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Private OLT portal window</p><p className="mt-0.5 truncate text-sm text-foreground">{embeddedUrl}</p></div><div className="flex items-center gap-1"><button type="button" onClick={reloadPortal} disabled={isPortalLoading} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${isPortalLoading ? 'animate-spin' : ''}`} />Reload</button><button type="button" onClick={() => { setEmbeddedUrl(''); setIsPortalLoading(false); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"><X className="h-4 w-4" />Close</button></div></div><div className="relative bg-white"><iframe ref={portalFrame} title="OLT cloud portal" src={embeddedUrl} loading="eager" onLoad={() => setIsPortalLoading(false)} className="h-[680px] w-full bg-white" sandbox="allow-forms allow-scripts allow-same-origin" referrerPolicy="strict-origin-when-cross-origin" />{isPortalLoading && <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"><div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-lg"><LoaderCircle className="h-4 w-4 animate-spin text-primary" />Loading secure portal…</div></div>}</div><div className="border-t border-border/70 px-4 py-3 text-xs text-muted-foreground">The portal is contained inside SolarNet Billing. If the provider blocks embedded login, it is enforcing its own security policy and cannot be bypassed by the billing app.</div></section>}
     </div>
   );
 }
