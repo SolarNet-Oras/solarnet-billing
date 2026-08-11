@@ -46,6 +46,18 @@ class DashboardController extends Controller
         $pendingPayments = Invoice::whereIn('status', ['sent', 'partial'])->where('balance', '>', 0)->count();
         $overdueInvoices = Invoice::where('due_date', '<', $today)->where('balance', '>', 0)
                                   ->whereIn('status', ['sent', 'partial', 'overdue'])->count();
+        $paidInvoices    = Invoice::where('status', 'paid')->count();
+        $partialInvoices = Invoice::where('status', 'partial')->count();
+        $unpaidInvoices  = Invoice::whereIn('status', ['sent', 'overdue'])
+            ->where('balance', '>', 0)
+            ->count();
+        $totalBilled     = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])->sum('total');
+        $totalPaid       = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])->sum('paid_amount');
+        $partialPaid     = (float) Invoice::where('status', 'partial')->sum('paid_amount');
+        $collectible     = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])
+            ->where('balance', '>', 0)
+            ->sum('balance');
+        $collectionRate  = $totalBilled > 0 ? round(($totalPaid / $totalBilled) * 100, 1) : 0.0;
 
         // ---- Tickets ----
         $openTickets    = Ticket::where('status', 'open')->count();
@@ -86,6 +98,14 @@ class DashboardController extends Controller
                 'revenue_change_pct'    => $revChangePct,
                 'pending_payments'      => $pendingPayments,
                 'overdue_invoices'      => $overdueInvoices,
+                'paid_invoices'         => $paidInvoices,
+                'partial_invoices'      => $partialInvoices,
+                'unpaid_invoices'       => $unpaidInvoices,
+                'total_billed'          => round($totalBilled, 2),
+                'total_paid'            => round($totalPaid, 2),
+                'partial_paid'          => round($partialPaid, 2),
+                'collectible'           => round($collectible, 2),
+                'collection_rate'       => $collectionRate,
 
                 // Tickets
                 'open_tickets'    => $openTickets,
@@ -111,6 +131,10 @@ class DashboardController extends Controller
                 'recent_logins' => User::whereNotNull('last_login_at')
                     ->orderBy('last_login_at', 'desc')
                     ->limit(5)->get(['id', 'name', 'email', 'last_login_at']),
+                'recent_customers' => Customer::with('servicePlan:id,name,download_speed,upload_speed')
+                    ->orderBy('updated_at', 'desc')
+                    ->limit(6)
+                    ->get(['id', 'full_name', 'status', 'onu_information', 'service_plan_id', 'updated_at']),
             ],
             'timestamp' => now()->toIso8601String(),
         ]);
