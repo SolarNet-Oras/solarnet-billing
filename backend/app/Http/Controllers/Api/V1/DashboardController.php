@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\AutomationLog;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Router;
@@ -131,6 +132,9 @@ class DashboardController extends Controller
                 'recent_logins' => User::whereNotNull('last_login_at')
                     ->orderBy('last_login_at', 'desc')
                     ->limit(5)->get(['id', 'name', 'email', 'last_login_at']),
+                'automation_activity' => AutomationLog::orderByDesc('created_at')
+                    ->limit(6)
+                    ->get(['id', 'job', 'status', 'summary', 'finished_at']),
                 'recent_customers' => Customer::with('servicePlan:id,name,download_speed,upload_speed')
                     ->orderBy('updated_at', 'desc')
                     ->limit(6)

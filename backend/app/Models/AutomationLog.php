@@ -13,6 +13,7 @@ class AutomationLog extends Model
     public const JOB_AUTO_SUSPEND      = 'auto_suspend';
     public const JOB_DB_BACKUP         = 'db_backup';
     public const JOB_UPDATE_OVERDUE    = 'update_overdue';
+    public const JOB_RECURRING_INVOICES = 'recurring_invoices';
 
     public const STATUS_SUCCESS = 'success';
     public const STATUS_PARTIAL = 'partial';

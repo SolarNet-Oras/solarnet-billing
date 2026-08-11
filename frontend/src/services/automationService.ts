@@ -4,7 +4,8 @@ export type AutomationJob =
   | 'invoice_reminders'
   | 'auto_suspend'
   | 'db_backup'
-  | 'update_overdue';
+  | 'update_overdue'
+  | 'recurring_invoices';
 
 export type AutomationStatus = 'success' | 'partial' | 'error';
 

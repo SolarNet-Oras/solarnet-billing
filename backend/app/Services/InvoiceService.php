@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
+use App\Models\Setting;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -25,15 +26,17 @@ class InvoiceService
         Customer $customer,
         Carbon $billingPeriodStart,
         Carbon $billingPeriodEnd,
-        array $additionalItems = []
+        array $additionalItems = [],
+        ?Carbon $issueDate = null,
+        ?Carbon $dueDate = null,
     ): Invoice {
         return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems) {
             // Create invoice
             $invoice = Invoice::create([
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'customer_id' => $customer->id,
-                'issue_date' => now(),
-                'due_date' => now()->addDays(15), // 15 days payment terms
+                'issue_date' => $issueDate ?? now(),
+                'due_date' => $dueDate ?? now()->addDays((int) Setting::get('billing.due_days', 7)),
                 'billing_period_start' => $billingPeriodStart,
                 'billing_period_end' => $billingPeriodEnd,
                 'status' => 'draft',
@@ -272,6 +275,24 @@ class InvoiceService
             }
 
             $invoice->save();
+
+            // A fully settled account can be restored automatically, but only
+            // when it has no other invoice past the configured suspension grace
+            // period. Saving the customer triggers the normal queue sync.
+            $customer = $invoice->customer;
+            if ($customer && $customer->status === 'suspended') {
+                $graceCutoff = now()->subDays((int) Setting::get('billing.auto_suspend_days', 15))->startOfDay();
+                $hasPastDueBalance = Invoice::where('customer_id', $customer->id)
+                    ->where('balance', '>', 0)
+                    ->where('due_date', '<', $graceCutoff)
+                    ->whereIn('status', ['sent', 'partial', 'overdue'])
+                    ->exists();
+
+                if (!$hasPastDueBalance) {
+                    $customer->update(['status' => 'active']);
+                    Log::info('Customer restored after payment', ['customer_id' => $customer->id]);
+                }
+            }
 
             Log::info('Payment recorded', [
                 'payment_id' => $payment->id,

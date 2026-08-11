@@ -8,6 +8,9 @@ use App\Models\DhcpLease;
 use App\Services\CustomerAccountService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
+use App\Services\InvoiceService;
+use App\Models\Invoice;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -19,16 +22,19 @@ class CustomerController extends Controller
     protected QueueService $queueService;
     protected CustomerAccountService $accountService;
     protected MikrotikService $mikrotikService;
+    protected InvoiceService $invoiceService;
 
     public function __construct(
         QueueService $queueService,
         CustomerAccountService $accountService,
         MikrotikService $mikrotikService,
+        InvoiceService $invoiceService,
     )
     {
         $this->queueService = $queueService;
         $this->accountService = $accountService;
         $this->mikrotikService = $mikrotikService;
+        $this->invoiceService = $invoiceService;
     }
 
     /**
@@ -175,6 +181,12 @@ class CustomerController extends Controller
             $emailSent = $this->accountService->sendWelcomeEmail($customer, $plainPassword);
         }
 
+        // A newly registered active customer is immediately part of the
+        // billing ledger. If their installation-day anniversary is today (or
+        // has already passed this month), create the missing monthly invoice
+        // now instead of making staff wait for tonight's scheduled run.
+        $billingInvoice = $this->createCurrentBillingInvoice($customer);
+
         // CustomerObserver queues the MikroTik work after the transaction.
         // Never wait for a router/VPN connection in this HTTP request.
         $queueSyncStatus = null;
@@ -215,7 +227,44 @@ class CustomerController extends Controller
             ] : null,
             'queue_sync' => $queueSyncStatus,
             'mikrotik_sync' => $mikrotikSync,
+            'billing_invoice' => $billingInvoice,
         ], 201);
+    }
+
+    /** Create the current installation-anniversary invoice when one is due. */
+    private function createCurrentBillingInvoice(Customer $customer): ?Invoice
+    {
+        if ($customer->status !== 'active' || !$customer->installation_date) {
+            return null;
+        }
+
+        $today = now()->startOfDay();
+        $installationDate = Carbon::parse($customer->installation_date)->startOfDay();
+        if ($installationDate->isAfter($today)) {
+            return null;
+        }
+
+        $dueDate = $today->copy()->setDay(min($installationDate->day, $today->daysInMonth));
+        if ($dueDate->isAfter($today) || Invoice::where('customer_id', $customer->id)->whereDate('due_date', $dueDate)->exists()) {
+            return null;
+        }
+
+        $customer->loadMissing('servicePlan');
+        if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
+            return null;
+        }
+
+        $invoice = $this->invoiceService->generateInvoice(
+            $customer,
+            $dueDate->copy()->subMonthNoOverflow(),
+            $dueDate,
+            [],
+            $dueDate,
+            $dueDate,
+        );
+        $this->invoiceService->markAsSent($invoice);
+
+        return $invoice->fresh(['items']);
     }
 
     /**
