@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\AutomationLog;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Ticket;
@@ -13,6 +14,46 @@ use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
+    /**
+     * Operational billing/automation audit feed for the Logs & Reports page.
+     * This intentionally uses the existing view-reports permission so staff
+     * who can open the page do not receive a server error from a settings-only endpoint.
+     */
+    public function operationsLog(Request $request): JsonResponse
+    {
+        $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
+        $query = AutomationLog::query();
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+        if ($request->filled('job')) {
+            $query->where('job', $request->input('job'));
+        }
+
+        $summaryQuery = clone $query;
+        $summary = [
+            'total' => (clone $summaryQuery)->count(),
+            'success' => (clone $summaryQuery)->where('status', AutomationLog::STATUS_SUCCESS)->count(),
+            'warnings' => (clone $summaryQuery)->where('status', AutomationLog::STATUS_PARTIAL)->count(),
+            'errors' => (clone $summaryQuery)->where('status', AutomationLog::STATUS_ERROR)->count(),
+        ];
+
+        $logs = $query->orderByDesc('created_at')->paginate($perPage);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $logs->items(),
+            'meta' => [
+                'current_page' => $logs->currentPage(),
+                'last_page' => $logs->lastPage(),
+                'per_page' => $logs->perPage(),
+                'total' => $logs->total(),
+            ],
+            'summary' => $summary,
+        ]);
+    }
+
     /**
      * Revenue report
      */

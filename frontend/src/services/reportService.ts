@@ -1,6 +1,10 @@
 import api from './api';
 
 export const reportService = {
+  getOperationsLog: async (params?: { page?: number; per_page?: number; status?: string; job?: string }): Promise<any> => {
+    const response = await api.get('/reports/logs', { params });
+    return response.data;
+  },
   getRevenueReport: async (startDate?: string, endDate?: string): Promise<any> => {
     const response = await api.get('/reports/revenue', {
       params: { start_date: startDate, end_date: endDate },
