@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Sparkles, X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { aiService, type AiChatResponse, type AiConversationSummary } from '@/services/aiService';
+import { aiService, getAiErrorMessage, type AiChatResponse, type AiConversationSummary } from '@/services/aiService';
 import { useAuth } from '@/hooks/useAuth';
 
 interface UiMessage {
@@ -144,7 +144,7 @@ const FloatingAiAssistant: React.FC = () => {
       }]);
       void refreshConversations();
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'AI request failed');
+      setError(getAiErrorMessage(err));
     } finally {
       setSending(false);
     }
