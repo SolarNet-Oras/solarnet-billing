@@ -77,8 +77,15 @@ class OpenAiClient
 
             // OpenAI rate limit / quota — mark distinctly so the controller can return 429
             if ($status === 429) {
+                $providerError = json_decode($body, true)['error'] ?? [];
+                $providerCode = (string) ($providerError['code'] ?? '');
+                $providerType = (string) ($providerError['type'] ?? '');
+                $message = ($providerCode === 'insufficient_quota' || $providerType === 'insufficient_quota')
+                    ? 'OpenAI API billing quota is unavailable for this project. Add API billing or credits in the OpenAI Platform project that owns this key, then try again.'
+                    : 'OpenAI is temporarily rate-limiting this project. Wait a minute and try again.';
+
                 throw new OpenAiRateLimitException(
-                    'OpenAI rate limit or quota reached. Please try again shortly or upgrade your plan.',
+                    $message,
                     429,
                     $e
                 );
