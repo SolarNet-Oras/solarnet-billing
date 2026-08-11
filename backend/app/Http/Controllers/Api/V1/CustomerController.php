@@ -261,6 +261,7 @@ class CustomerController extends Controller
             [],
             $dueDate,
             $dueDate,
+            $dueDate,
         );
         $this->invoiceService->markAsSent($invoice);
 

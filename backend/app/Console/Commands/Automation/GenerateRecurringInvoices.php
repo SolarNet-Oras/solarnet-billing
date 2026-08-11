@@ -82,6 +82,7 @@ class GenerateRecurringInvoices extends Command
                         [],
                         $billingDate,
                         $billingDate,
+                        $billingDate,
                     );
                     $invoices->markAsSent($invoice);
                 }
