@@ -67,7 +67,7 @@ class CustomerObserver
                     'account_number' => $customer->account_number,
                 ]);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Failed to remove queue on customer deletion', [
                 'customer_id' => $customer->id,
                 'error' => $e->getMessage(),
@@ -101,7 +101,7 @@ class CustomerObserver
                     'error' => $result['message'] ?? 'Unknown error',
                 ]);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error("Exception during queue sync on {$event}", [
                 'customer_id' => $customer->id,
                 'account_number' => $customer->account_number,

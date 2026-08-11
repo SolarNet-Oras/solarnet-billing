@@ -24,13 +24,15 @@ class MikrotikScriptGenerator
         // tunneled/mapped port like 18728), the /ip service on the router
         // must still listen on 8728 for consistency and predictability.
         $apiPort = 8728;
+        $isForwardedEndpoint = (int) $router->port !== $apiPort;
+        $connectionEndpoint = $router->host . ':' . $router->port;
 
         $script = <<<SCRIPT
 # ============================================================
 # MikroTik Setup Script - {$router->name}
 # ------------------------------------------------------------
 # Generated : {{date}}
-# Router    : {$router->host}
+# Billing endpoint : {$connectionEndpoint}
 # API Port  : {$apiPort}  (hardcoded - do not change, VPN-safe)
 # API User  : {$username}
 # ============================================================
@@ -72,7 +74,24 @@ set api disabled=no port={$apiPort}
 
 SCRIPT;
 
-        if ($billingSystemIp) {
+        // A forwarded VPN endpoint has two different ports: the public port
+        // used by the billing server and RouterOS's internal API port. In
+        // that setup the router sees the VPN gateway as the source, not
+        // necessarily the billing server. Restricting the service to the
+        // billing server IP therefore makes an otherwise valid tunnel fail.
+        if ($isForwardedEndpoint) {
+            $script .= <<<VPN
+
+# --- 4/4  VPN / port-forward compatibility
+# The billing endpoint above is a forwarded port. Do NOT restrict the RouterOS
+# API to the billing server IP here: the VPN gateway may rewrite that source.
+# Secure this connection at the VPN/port-forward gateway instead.
+/ip service set api address=0.0.0.0/0
+/ip firewall filter remove [find comment="Solarnet Billing API"]
+:put "  [i] VPN endpoint detected; direct-IP API restriction removed"
+
+VPN;
+        } elseif ($billingSystemIp) {
             $script .= <<<FIREWALL
 
 # --- 4/4  Firewall: allow API traffic ONLY from the billing server
@@ -115,7 +134,11 @@ NOFW;
 
 :put ""
 :put "=== Setup Complete ==="
-:put "Now go back to the billing app and click 'Save Router'."
+:put "Configure the billing application with these separate fields:"
+:put "  Host: {$router->host}"
+:put "  Port: {$router->port}"
+:put "  RouterOS API port on this router: {$apiPort}"
+:put "Do not include :{$router->port} in the Host field."
 :log info "[BILLING] Setup complete."
 
 TAIL;
