@@ -77,6 +77,17 @@ class BillingSuspensionService
 
     public function syncExpiredCustomers(): array
     {
+        if (!Setting::get('automation.auto_suspend_enabled', true)) {
+            return [
+                'enabled' => false,
+                'evaluated' => 0,
+                'suspended' => 0,
+                'restored' => 0,
+                'errors' => [],
+                'message' => 'Automatic suspension is disabled in Settings.',
+            ];
+        }
+
         $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
         $cutoff = now()->subDays($graceDays)->startOfDay();
 

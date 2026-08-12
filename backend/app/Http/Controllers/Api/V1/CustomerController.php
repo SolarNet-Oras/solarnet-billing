@@ -276,11 +276,22 @@ class CustomerController extends Controller
     {
         $customer = Customer::with(['technician', 'router', 'servicePlan'])
             ->findOrFail($id);
+
+        // A subscriber normally has one current DHCP lease. Returning it with
+        // the customer keeps the operator view useful without exposing the
+        // whole lease inventory or requiring another round trip.
+        $lease = DhcpLease::query()
+            ->with('router:id,name')
+            ->where('customer_id', $customer->id)
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('updated_at')
+            ->first();
         
         return response()->json([
             'status' => 'success',
             'data' => $customer,
             'billing' => app(BillingSuspensionService::class)->buildPaymentReminderData($customer),
+            'dhcp_lease' => $lease,
         ]);
     }
 

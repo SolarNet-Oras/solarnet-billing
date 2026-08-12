@@ -30,7 +30,7 @@ class SettingsController extends Controller
         'billing.due_days'            => ['cast' => 'int',   'group' => 'billing', 'label' => 'Invoice Due (days)',       'default' => 7],
         'billing.late_fee_percent'    => ['cast' => 'float', 'group' => 'billing', 'label' => 'Late-fee %',               'default' => 5.0],
         'billing.invoice_prefix'      => ['cast' => 'string','group' => 'billing', 'label' => 'Invoice Number Prefix',    'default' => 'SLR-'],
-        'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'billing', 'label' => 'Auto-suspend after (days overdue)', 'default' => 15],
+        'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'suspension', 'label' => 'Grace period (days overdue)', 'default' => 15],
 
         // AI
         'ai.enabled'          => ['cast' => 'bool',   'group' => 'ai', 'label' => 'AI Assistant enabled', 'default' => true],
@@ -40,14 +40,14 @@ class SettingsController extends Controller
         // Automation (scheduled jobs)
         'automation.enabled'                => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Automations enabled (master switch)',           'default' => true],
         'automation.recurring_billing_enabled' => ['cast' => 'bool', 'group' => 'automation', 'label' => 'Generate monthly billing invoices',             'default' => true],
-        'automation.auto_suspend_enabled'   => ['cast' => 'bool',   'group' => 'automation', 'label' => 'Auto-suspend overdue customers',                'default' => true],
+        'automation.auto_suspend_enabled'   => ['cast' => 'bool',   'group' => 'suspension', 'label' => 'Automatically suspend overdue customers',      'default' => true],
         'automation.reminder_days_before'   => ['cast' => 'int',    'group' => 'automation', 'label' => 'Send reminder N days before due',               'default' => 3],
         'automation.overdue_reminder_days'  => ['cast' => 'string', 'group' => 'automation', 'label' => 'Overdue follow-up days (comma-separated)',      'default' => '1,7,14'],
         'automation.backup_retention_days'  => ['cast' => 'int',    'group' => 'automation', 'label' => 'DB backup retention (days)',                    'default' => 7],
 
         // Network / captive portal
-        'network.suspended_speed_kbps' => ['cast' => 'int',    'group' => 'network', 'label' => 'Suspended customer speed (kbps)', 'default' => 128],
-        'network.payment_reminder_url' => ['cast' => 'string', 'group' => 'network', 'label' => 'Payment reminder URL', 'default' => ''],
+        'network.suspended_speed_kbps' => ['cast' => 'int',    'group' => 'suspension', 'label' => 'Suspended customer speed (kbps)', 'default' => 128],
+        'network.payment_reminder_url' => ['cast' => 'string', 'group' => 'suspension', 'label' => 'Payment reminder URL', 'default' => ''],
     ];
 
     public function index(Request $request): JsonResponse
@@ -108,7 +108,18 @@ class SettingsController extends Controller
                 ], 422);
             }
             $meta = self::SCHEMA[$key];
-            Setting::put($key, $item['value'] ?? '', $meta['cast']);
+            $value = $item['value'] ?? '';
+
+            if ($key === 'billing.auto_suspend_days' && (!is_numeric($value) || (int) $value < 0 || (int) $value > 365)) {
+                return response()->json(['status' => 'error', 'message' => 'Grace period must be between 0 and 365 days.'], 422);
+            }
+            if ($key === 'network.suspended_speed_kbps' && (!is_numeric($value) || (int) $value < 64 || (int) $value > 1000000)) {
+                return response()->json(['status' => 'error', 'message' => 'Suspended speed must be between 64 and 1,000,000 kbps.'], 422);
+            }
+            if ($key === 'network.payment_reminder_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
+                return response()->json(['status' => 'error', 'message' => 'Payment reminder URL must be a valid absolute URL.'], 422);
+            }
+            Setting::put($key, $value, $meta['cast']);
             $applied[] = $key;
         }
 
