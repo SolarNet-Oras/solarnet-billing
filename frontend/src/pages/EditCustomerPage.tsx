@@ -2,10 +2,29 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
-import { customerService } from '@/services/customerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { routerService, type Router } from '@/services/routerService';
 import type { Customer } from '@/types/api';
+import { Activity, Ban, CheckCircle2, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
+
+interface DhcpLease {
+  id: string;
+  mac_address: string;
+  ip_address: string;
+  hostname: string | null;
+  rate_limit: string | null;
+  status: string;
+  server: string | null;
+  is_dynamic: boolean;
+  last_seen_at: string | null;
+  router?: { id: string; name: string } | null;
+}
+
+interface CustomerDetailResponse {
+  status: string;
+  data: Customer;
+  dhcp_lease?: DhcpLease | null;
+}
 
 interface FormData {
   account_number: string;
@@ -44,6 +63,9 @@ const EditCustomerPage: React.FC = () => {
   const [servicePlans, setServicePlans] = useState<ServicePlan[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
   const [formData, setFormData] = useState<FormData>(EMPTY);
+  const [dhcpLease, setDhcpLease] = useState<DhcpLease | null>(null);
+  const [showLease, setShowLease] = useState<boolean>(false);
+  const [networkAction, setNetworkAction] = useState<'suspend' | 'restore' | 'sync' | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -54,8 +76,8 @@ const EditCustomerPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [customer, plans, rs] = await Promise.all([
-        customerService.getCustomer(id!),
+      const [customerResponse, plans, rs] = await Promise.all([
+        api.get<CustomerDetailResponse>(`/customers/${id}`),
         servicePlanService.getAll().catch(() => [] as ServicePlan[]),
         routerService.getAll().catch(() => [] as Router[]),
       ]);
@@ -63,7 +85,8 @@ const EditCustomerPage: React.FC = () => {
       setRouters(rs.filter((r) => r.is_active));
 
       // API returns { data: { ... } } — customerService.getCustomer already unwraps to Customer
-      const c = customer as Customer;
+      const c = customerResponse.data.data;
+      setDhcpLease(customerResponse.data.dhcp_lease ?? null);
       setFormData({
         account_number: c.account_number ?? '',
         full_name: c.full_name ?? '',
@@ -133,6 +156,39 @@ const EditCustomerPage: React.FC = () => {
     }
   };
 
+  const runNetworkAction = async (action: 'suspend' | 'restore' | 'sync'): Promise<void> => {
+    if (!id || networkAction) return;
+
+    const confirmation = action === 'suspend'
+      ? `Suspend internet for ${formData.full_name}? The customer will be throttled and shown the payment reminder page.`
+      : action === 'restore'
+        ? `Restore normal internet service for ${formData.full_name}?`
+        : `Sync ${formData.full_name}'s billing status and MikroTik queue now?`;
+
+    if (!window.confirm(confirmation)) return;
+
+    setNetworkAction(action);
+    setError('');
+    setNotice('');
+    try {
+      const endpoint = action === 'sync' ? 'sync-network' : action;
+      const response = await api.post<{ success?: boolean; message?: string }>(`/customers/${id}/${endpoint}`);
+      if (response.data.success === false) {
+        throw new Error(response.data.message || `Unable to ${action} internet.`);
+      }
+      setNotice(response.data.message || (action === 'suspend'
+        ? 'Internet suspension was sent to MikroTik.'
+        : action === 'restore'
+          ? 'Internet restoration was sent to MikroTik.'
+          : 'Billing and MikroTik status have been synchronized.'));
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || `Failed to ${action} internet.`);
+    } finally {
+      setNetworkAction(null);
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -159,6 +215,61 @@ const EditCustomerPage: React.FC = () => {
             {notice}
           </div>
         )}
+
+        <section className="bg-card border border-border rounded-lg p-6" data-testid="customer-network-controls">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Internet Control</h2>
+              <p className="text-sm text-muted-foreground mt-1">Manually manage this customer&apos;s MikroTik queue and payment restriction.</p>
+            </div>
+            <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${formData.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+              <Activity className="w-3.5 h-3.5" /> {formData.status.toUpperCase()}
+            </span>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="button" onClick={() => void runNetworkAction('suspend')} disabled={networkAction !== null}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              data-testid="suspend-internet-btn">
+              <Ban className="w-4 h-4" /> {networkAction === 'suspend' ? 'Suspending…' : 'Suspend Internet'}
+            </button>
+            <button type="button" onClick={() => void runNetworkAction('restore')} disabled={networkAction !== null}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              data-testid="restore-internet-btn">
+              <CheckCircle2 className="w-4 h-4" /> {networkAction === 'restore' ? 'Restoring…' : 'Restore Internet'}
+            </button>
+            <button type="button" onClick={() => void runNetworkAction('sync')} disabled={networkAction !== null}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-secondary text-secondary-foreground hover:opacity-90 disabled:opacity-50"
+              data-testid="sync-mikrotik-btn">
+              <RefreshCw className={`w-4 h-4 ${networkAction === 'sync' ? 'animate-spin' : ''}`} /> {networkAction === 'sync' ? 'Syncing…' : 'Sync with MikroTik'}
+            </button>
+            <button type="button" onClick={() => setShowLease((visible) => !visible)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border bg-background text-foreground hover:bg-muted"
+              data-testid="view-dhcp-lease-btn">
+              <RouterIcon className="w-4 h-4" /> {showLease ? 'Hide DHCP Lease' : 'View DHCP Lease'}
+            </button>
+          </div>
+
+          {showLease && (
+            <div className="mt-5 rounded-lg border border-border bg-muted/30 p-4" data-testid="dhcp-lease-details">
+              {dhcpLease ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                  <LeaseValue label="IP address" value={dhcpLease.ip_address} />
+                  <LeaseValue label="MAC address" value={dhcpLease.mac_address} />
+                  <LeaseValue label="Lease status" value={dhcpLease.status} />
+                  <LeaseValue label="Router" value={dhcpLease.router?.name || 'Unknown'} />
+                  <LeaseValue label="DHCP server" value={dhcpLease.server || 'default'} />
+                  <LeaseValue label="Rate limit" value={dhcpLease.rate_limit || 'Not set'} />
+                  <LeaseValue label="Lease type" value={dhcpLease.is_dynamic ? 'Dynamic' : 'Static'} />
+                  <LeaseValue label="Last seen" value={dhcpLease.last_seen_at ? new Date(dhcpLease.last_seen_at).toLocaleString() : 'Not reported'} />
+                  <LeaseValue label="Hostname" value={dhcpLease.hostname || 'Not reported'} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground"><Wifi className="w-4 h-4" /> No DHCP lease is currently linked to this customer.</div>
+              )}
+            </div>
+          )}
+        </section>
 
         <form onSubmit={handleSubmit} className="bg-card border border-border rounded-lg p-6 space-y-6" data-testid="edit-customer-form">
           {/* Basic Information */}
@@ -307,6 +418,13 @@ const Field: React.FC<FieldProps> = ({ label, name, value, onChange, type = 'tex
       step={type === 'number' ? '0.01' : undefined}
       className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
       data-testid={testId} />
+  </div>
+);
+
+const LeaseValue: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div>
+    <div className="text-xs text-muted-foreground">{label}</div>
+    <div className="mt-1 font-medium text-foreground break-all">{value}</div>
   </div>
 );
 

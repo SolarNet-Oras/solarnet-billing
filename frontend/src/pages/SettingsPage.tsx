@@ -8,7 +8,7 @@ const GROUP_META: Record<string, { label: string; description: string }> = {
   company:    { label: 'Company',     description: 'Business branding shown on invoices, welcome emails, and the customer portal.' },
   billing:    { label: 'Billing',     description: 'Defaults for invoice generation, VAT, and suspension.' },
   ai:         { label: 'AI Assistant',description: 'Controls the floating AI chat. The OpenAI API key stays on the server — you never enter it here.' },
-  network:    { label: 'Network Reminder', description: 'Suspension speed and payment reminder settings used by the captive reminder flow.' },
+  suspension: { label: 'Internet Suspension & Payment Reminder', description: 'Controls when overdue accounts are restricted, their reduced speed, and the reminder page they can still access.' },
   automation: { label: 'Automation',  description: 'Toggles for the nightly scheduled jobs. When the master switch is off, no jobs run.' },
 };
 
