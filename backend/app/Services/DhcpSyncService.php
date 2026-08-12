@@ -338,34 +338,34 @@ class DhcpSyncService
 
     protected function detachCrossRouterMatches(Router $router): int
     {
-        $detached = 0;
+        // Use a database join rather than hydrated model relations. This also
+        // repairs records written by older releases even if their relation is
+        // affected by a legacy scope or stale relation cache.
+        $leaseIds = DB::table('dhcp_leases as lease')
+            ->join('customers as customer', 'customer.id', '=', 'lease.customer_id')
+            ->where('lease.router_id', $router->id)
+            ->where('lease.is_current', true)
+            ->whereNotNull('customer.router_id')
+            ->whereColumn('lease.router_id', '<>', 'customer.router_id')
+            ->pluck('lease.id');
+
+        if ($leaseIds->isEmpty()) {
+            return 0;
+        }
 
         DhcpLease::query()
-            ->with('customer:id,router_id')
-            ->where('router_id', $router->id)
-            ->presentOnRouter()
-            ->whereNotNull('customer_id')
-            ->get()
-            ->each(function (DhcpLease $lease) use (&$detached, $router): void {
-                if ($lease->customer && $lease->customer->router_id && $lease->customer->router_id !== $router->id) {
-                    $lease->update([
-                        'customer_id' => null,
-                        'is_matched' => false,
-                    ]);
-                    $detached++;
+            ->whereIn('id', $leaseIds)
+            ->update([
+                'customer_id' => null,
+                'is_matched' => false,
+            ]);
 
-                    Log::warning('Detached cross-router DHCP lease match', [
-                        'lease_id' => $lease->id,
-                        'ip_address' => $lease->ip_address,
-                        'mac_address' => $lease->mac_address,
-                        'lease_router_id' => $router->id,
-                        'customer_id' => $lease->customer->id,
-                        'customer_router_id' => $lease->customer->router_id,
-                    ]);
-                }
-            });
+        Log::warning('Detached cross-router DHCP lease matches', [
+            'lease_router_id' => $router->id,
+            'lease_ids' => $leaseIds->values()->all(),
+        ]);
 
-        return $detached;
+        return $leaseIds->count();
     }
 
     /**
