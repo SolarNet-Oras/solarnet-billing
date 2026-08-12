@@ -22,7 +22,7 @@ export const customerPortalService = {
    */
   getDashboard: async (): Promise<{
     customer: Customer;
-    stats: {
+    stats?: {
       total_invoices: number;
       unpaid_invoices: number;
       total_outstanding: number;
@@ -32,8 +32,72 @@ export const customerPortalService = {
         method: string;
       } | null;
     };
+    status?: 'payment_required';
+    message?: string;
+    payment_required?: {
+      customer_id: string;
+      account_number: string;
+      full_name: string;
+      status: string;
+      due_date: string | null;
+      balance: number;
+      payment_url: string;
+      suspended_speed_kbps: number;
+      service_plan?: {
+        name: string;
+        download_speed: number;
+        upload_speed: number;
+      } | null;
+    };
   }> => {
     const response = await api.get('/customer-portal/dashboard');
+    return response.data;
+  },
+
+  getPaymentReminder: async (customerId: string): Promise<{
+    status: string;
+    data: {
+      customer_id: string;
+      account_number: string;
+      full_name: string;
+      status: string;
+      due_date: string | null;
+      balance: number;
+      payment_url: string;
+      suspended_speed_kbps: number;
+      service_plan?: {
+        name: string;
+        download_speed: number;
+        upload_speed: number;
+      } | null;
+    };
+  }> => {
+    const response = await api.get(`/customer-portal/payment-reminder/${customerId}`);
+    return response.data;
+  },
+
+  resolvePaymentReminder: async (data: {
+    ip_address?: string;
+    mac_address?: string;
+    router_id?: string;
+  }): Promise<{
+    status: string;
+    data: {
+      customer_id: string;
+      resolver_data: {
+        customer_id: string;
+        account_number: string;
+        full_name: string;
+        status: string;
+        due_date: string | null;
+        balance: number;
+        payment_url: string;
+        suspended_speed_kbps: number;
+      };
+      redirect_url: string;
+    };
+  }> => {
+    const response = await api.post('/customer-portal/payment-reminder/resolve', data);
     return response.data;
   },
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\Router;
 use App\Models\ServicePlan;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Log;
 
 class QueueService
@@ -173,7 +174,7 @@ class QueueService
             $queueData = [
                 'name' => $queueName,
                 'target' => $customer->ip_address . '/32',
-                'max_limit' => '64k/64k', // Throttle to 64kbps
+            'max_limit' => $this->suspendedLimit(), // Throttle to a configurable low speed
                 'comment' => strtoupper($customer->status) . " - {$customer->full_name} - {$customer->account_number}",
             ];
             
@@ -181,7 +182,7 @@ class QueueService
         } else {
             // Update existing queue to throttled speed
             return $this->mikrotikService->updateQueue($router, $queueName, [
-                'max-limit' => '64k/64k',
+                'max-limit' => $this->suspendedLimit(),
                 'comment' => strtoupper($customer->status) . " - {$customer->full_name} - {$customer->account_number}",
             ]);
         }
@@ -242,6 +243,12 @@ class QueueService
     protected function getQueueName(Customer $customer): string
     {
         return 'customer-' . $customer->id;
+    }
+
+    protected function suspendedLimit(): string
+    {
+        $kbps = max(64, (int) Setting::get('network.suspended_speed_kbps', 128));
+        return $kbps . 'k/' . $kbps . 'k';
     }
 
     /**

@@ -44,6 +44,10 @@ class SettingsController extends Controller
         'automation.reminder_days_before'   => ['cast' => 'int',    'group' => 'automation', 'label' => 'Send reminder N days before due',               'default' => 3],
         'automation.overdue_reminder_days'  => ['cast' => 'string', 'group' => 'automation', 'label' => 'Overdue follow-up days (comma-separated)',      'default' => '1,7,14'],
         'automation.backup_retention_days'  => ['cast' => 'int',    'group' => 'automation', 'label' => 'DB backup retention (days)',                    'default' => 7],
+
+        // Network / captive portal
+        'network.suspended_speed_kbps' => ['cast' => 'int',    'group' => 'network', 'label' => 'Suspended customer speed (kbps)', 'default' => 128],
+        'network.payment_reminder_url' => ['cast' => 'string', 'group' => 'network', 'label' => 'Payment reminder URL', 'default' => ''],
     ];
 
     public function index(Request $request): JsonResponse

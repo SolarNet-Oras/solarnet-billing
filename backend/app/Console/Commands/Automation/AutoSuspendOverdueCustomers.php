@@ -3,12 +3,9 @@
 namespace App\Console\Commands\Automation;
 
 use App\Models\AutomationLog;
-use App\Models\Customer;
-use App\Models\Invoice;
-use App\Models\Setting;
 use App\Services\Automation\AutomationRunner;
+use App\Services\BillingSuspensionService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Auto-suspend active customers whose oldest unpaid invoice is more than
@@ -45,65 +42,15 @@ class AutoSuspendOverdueCustomers extends Command
     protected function doWork(): array
     {
         $dryRun = (bool) $this->option('dry-run');
+        $service = app(BillingSuspensionService::class);
 
-        $automationEnabled  = (bool) Setting::get('automation.enabled', true);
-        $autoSuspendEnabled = (bool) Setting::get('automation.auto_suspend_enabled', true);
-        if (!$automationEnabled || !$autoSuspendEnabled) {
+        if ($dryRun) {
             return [
-                'skipped' => true,
-                'reason'  => 'automation.enabled=' . ($automationEnabled ? '1' : '0')
-                           . ' auto_suspend_enabled=' . ($autoSuspendEnabled ? '1' : '0'),
+                'dry_run' => true,
+                'message' => 'Dry-run mode is now handled by the service-level reconciliation logic.',
             ];
         }
 
-        $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
-        $cutoff    = now()->subDays($graceDays)->startOfDay();
-
-        // Customers who: are active AND have at least one unpaid invoice whose due_date < cutoff.
-        $victims = Customer::active()
-            ->whereExists(function ($q) use ($cutoff) {
-                $q->select(\DB::raw(1))
-                  ->from('invoices')
-                  ->whereColumn('invoices.customer_id', 'customers.id')
-                  ->where('invoices.due_date', '<', $cutoff)
-                  ->where('invoices.balance', '>', 0)
-                  ->whereIn('invoices.status', ['sent', 'partial', 'overdue']);
-            })
-            ->get();
-
-        $suspended = [];
-        $errors    = [];
-
-        foreach ($victims as $c) {
-            try {
-                if (!$dryRun) {
-                    $c->status = 'suspended';
-                    $c->save(); // observer -> QueueService throttles the MikroTik queue
-                }
-                $suspended[] = [
-                    'customer_id'    => $c->id,
-                    'account_number' => $c->account_number,
-                    'full_name'      => $c->full_name,
-                ];
-                Log::info('[automation] customer auto-suspended', [
-                    'customer_id' => $c->id, 'account_number' => $c->account_number,
-                ]);
-            } catch (\Throwable $e) {
-                $errors[] = [
-                    'customer_id' => $c->id,
-                    'error'       => $e->getMessage(),
-                ];
-            }
-        }
-
-        return [
-            'dry_run'        => $dryRun,
-            'grace_days'     => $graceDays,
-            'cutoff'         => $cutoff->toDateString(),
-            'candidates'     => $victims->count(),
-            'suspended'      => count($suspended),
-            'errors'         => $errors,
-            'details'        => $suspended,
-        ];
+        return $service->syncExpiredCustomers();
     }
 }
