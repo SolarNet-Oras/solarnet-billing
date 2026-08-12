@@ -10,6 +10,9 @@ use App\Services\Ai\Tools\ListUnregisteredLeasesTool;
 use App\Services\Ai\Tools\ReadSourceFileTool;
 use App\Services\Ai\Tools\SearchByMacOrIpTool;
 use App\Services\Ai\Tools\SearchCodeTool;
+use App\Services\Ai\Tools\PrepareCustomerStatusChangeTool;
+use App\Services\Ai\Tools\PrepareServicePlanTool;
+use App\Services\Ai\Tools\ConfirmPendingAiActionTool;
 
 /**
  * Registry of all AI-callable tools.
@@ -27,6 +30,9 @@ class AiToolRegistry
         $this->register(new GetCustomerDetailsTool());
         $this->register(new SearchByMacOrIpTool());
         $this->register(new ListUnregisteredLeasesTool());
+        $this->register(new PrepareCustomerStatusChangeTool());
+        $this->register(new PrepareServicePlanTool());
+        $this->register(new ConfirmPendingAiActionTool());
 
         // Super-admin-only code exploration tools (read-only, guarded).
         // Their authorize() rejects non-super-admins so they simply won't

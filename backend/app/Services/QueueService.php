@@ -46,8 +46,9 @@ class QueueService
             return $this->removeCustomerQueue($customer);
         }
 
-        // Check if customer should be suspended (throttled)
-        if ($customer->status === 'suspended') {
+        // Every non-active account receives the restricted queue. This leaves
+        // only enough traffic for the router's configured payment reminder.
+        if (in_array($customer->status, ['suspended', 'expired', 'pending'], true)) {
             return $this->suspendCustomerQueue($customer);
         }
 
@@ -81,11 +82,6 @@ class QueueService
         // Never touch a router that has never connected or is offline —
         // otherwise a dead router hangs synchronous customer-create requests.
         if (in_array($customer->router->connection_status, ['offline', 'unknown', null], true)) {
-            return false;
-        }
-
-        // Must not be expired or pending
-        if (in_array($customer->status, ['expired', 'pending'])) {
             return false;
         }
 
@@ -178,7 +174,7 @@ class QueueService
                 'name' => $queueName,
                 'target' => $customer->ip_address . '/32',
                 'max_limit' => '64k/64k', // Throttle to 64kbps
-                'comment' => "SUSPENDED - {$customer->full_name} - {$customer->account_number}",
+                'comment' => strtoupper($customer->status) . " - {$customer->full_name} - {$customer->account_number}",
             ];
             
             return $this->mikrotikService->addQueue($router, $queueData);
@@ -186,7 +182,7 @@ class QueueService
             // Update existing queue to throttled speed
             return $this->mikrotikService->updateQueue($router, $queueName, [
                 'max-limit' => '64k/64k',
-                'comment' => "SUSPENDED - {$customer->full_name} - {$customer->account_number}",
+                'comment' => strtoupper($customer->status) . " - {$customer->full_name} - {$customer->account_number}",
             ]);
         }
     }
