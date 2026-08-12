@@ -4,12 +4,12 @@ namespace App\Services\Ai\Tools;
 
 use App\Models\User;
 use App\Services\Ai\AiTool;
-use Symfony\Component\Process\Process;
 
 /**
- * SUPER-ADMIN-ONLY: grep the codebase for a literal or regex pattern.
- * Uses `grep -rnE` under the hood so we get real speed + line numbers.
- * ONLY searches allowed roots. Read-only.
+ * SUPER-ADMIN-ONLY: search the allowed source code roots.
+ *
+ * This intentionally uses PHP filesystem APIs instead of GNU grep: the
+ * production PHP image is Alpine-based, where GNU-only grep options can fail.
  */
 class SearchCodeTool implements AiTool
 {
@@ -18,20 +18,20 @@ class SearchCodeTool implements AiTool
     public function schema(): array
     {
         return [
-            'type'     => 'function',
+            'type' => 'function',
             'function' => [
-                'name'        => 'search_code',
-                'description' => 'Search for a text pattern (POSIX extended regex) across the project source. Returns up to 60 hits with file paths and line numbers. Use to locate implementations before proposing changes. Super-admin only.',
-                'parameters'  => [
-                    'type'       => 'object',
+                'name' => 'search_code',
+                'description' => 'Search a case-insensitive regular expression across project source. Returns up to 60 matches with file paths and line numbers. Read-only. Super-admin only.',
+                'parameters' => [
+                    'type' => 'object',
                     'properties' => [
                         'pattern' => [
-                            'type'        => 'string',
-                            'description' => 'Search pattern. Passed to grep -E (POSIX ERE). Case-insensitive by default.',
+                            'type' => 'string',
+                            'description' => 'Case-insensitive regular expression to find.',
                         ],
                         'path' => [
-                            'type'        => 'string',
-                            'description' => 'Optional root to limit the search. Must be inside an allowed root. Default: /var/www/app + /var/www/frontend/src.',
+                            'type' => 'string',
+                            'description' => 'Optional allowed source directory. Defaults to /var/www/app and /var/www/frontend/src.',
                         ],
                     ],
                     'required' => ['pattern'],
@@ -52,10 +52,9 @@ class SearchCodeTool implements AiTool
         if (strlen($pattern) > 200) return ['error' => 'pattern too long (max 200 chars)'];
 
         $rawPath = (string) ($arguments['path'] ?? '');
-        $roots = [];
         if ($rawPath !== '') {
             try {
-                $roots[] = CodeToolGuards::resolveSafePath($rawPath);
+                $roots = [CodeToolGuards::resolveSafePath($rawPath)];
             } catch (\InvalidArgumentException $e) {
                 return ['error' => $e->getMessage()];
             }
@@ -63,44 +62,50 @@ class SearchCodeTool implements AiTool
             $roots = ['/var/www/app', '/var/www/frontend/src'];
         }
 
-        // grep -rnE -i --include patterns, refuse to read binaries via -I
-        $cmd = ['grep', '-rnEI', '-i',
-            '--exclude-dir=node_modules',
-            '--exclude-dir=vendor',
-            '--exclude-dir=.git',
-            '--include=*.php', '--include=*.ts', '--include=*.tsx',
-            '--include=*.js', '--include=*.jsx', '--include=*.json',
-            '--include=*.md', '--include=*.blade.php',
-            $pattern,
-            ...$roots,
-        ];
-
-        $proc = new Process($cmd, null, null, null, 15);
-        $proc->run();
-        $out = $proc->getOutput();
-        // grep exit code 1 means "no matches" — not an error for us
-        if (!$proc->isSuccessful() && $proc->getExitCode() !== 1) {
-            return ['error' => 'search failed: ' . trim($proc->getErrorOutput())];
+        $regex = '/' . str_replace('/', '\\/', $pattern) . '/i';
+        set_error_handler(static fn () => true);
+        $validPattern = @preg_match($regex, '') !== false;
+        restore_error_handler();
+        if (!$validPattern) {
+            return ['error' => 'Invalid search pattern. Use a valid regular expression.'];
         }
 
-        $lines = array_slice(array_filter(explode("\n", $out)), 0, 60);
         $rows = [];
-        foreach ($lines as $line) {
-            // format: /path:LINE:content
-            $parts = explode(':', $line, 3);
-            if (count($parts) === 3) {
-                $rows[] = [
-                    'file'    => $parts[0],
-                    'line'    => (int) $parts[1],
-                    'snippet' => mb_substr(trim($parts[2]), 0, 240),
-                ];
+        foreach ($roots as $root) {
+            if (!is_dir($root)) continue;
+
+            try {
+                $files = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+                );
+            } catch (\UnexpectedValueException) {
+                return ['error' => 'Search could not open source directory: ' . $root];
+            }
+
+            foreach ($files as $file) {
+                $path = $file->getPathname();
+                if (!$file->isFile() || !CodeToolGuards::hasAllowedExt($path)) continue;
+
+                $lines = @file($path, FILE_IGNORE_NEW_LINES);
+                if ($lines === false) continue;
+
+                foreach ($lines as $lineNumber => $line) {
+                    if (preg_match($regex, $line) !== 1) continue;
+                    $rows[] = [
+                        'file' => $path,
+                        'line' => $lineNumber + 1,
+                        'snippet' => mb_substr(trim($line), 0, 240),
+                    ];
+                    if (count($rows) >= 60) break 3;
+                }
             }
         }
+
         return [
             'pattern' => $pattern,
-            'roots'   => $roots,
-            'hits'    => count($rows),
-            'rows'    => $rows,
+            'roots' => $roots,
+            'hits' => count($rows),
+            'rows' => $rows,
         ];
     }
 }

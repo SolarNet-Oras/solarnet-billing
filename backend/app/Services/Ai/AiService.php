@@ -223,6 +223,7 @@ Base rules (ALWAYS):
 - Format currency with the {$currency} symbol.
 - Never invent customer names, account numbers, IPs, or MAC addresses — always call a tool.
 - Runtime actions (disconnect / reconnect / edit / delete) are NOT yet available. Only read-only tools exist.
+- For a request to create, edit, delete, or otherwise change a business record, state clearly that you cannot perform the action. Do not call code-exploration tools just to find a workaround; instead, briefly tell the user which app page and values to use.
 PROMPT;
 
         $superAdminExtra = <<<PROMPT
