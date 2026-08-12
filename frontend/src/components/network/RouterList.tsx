@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { type Router, routerService } from '@/services/routerService';
-import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users } from 'lucide-react';
+import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
 
 interface RouterListProps {
@@ -18,6 +18,8 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const [dhcpSyncingId, setDhcpSyncingId] = useState<string | null>(null);
   const [scriptModalOpen, setScriptModalOpen] = useState(false);
   const [selectedRouter, setSelectedRouter] = useState<Router | null>(null);
+  const [billingActionId, setBillingActionId] = useState<string | null>(null);
+  const [billingResult, setBillingResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
   const handleTest = async (id: string) => {
     setTestingId(id);
@@ -67,6 +69,55 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
       alert('DHCP sync failed');
     } finally {
       setDhcpSyncingId(null);
+    }
+  };
+
+  const handleInstallBillingAccess = async (router: Router) => {
+    if (!confirm(`Install or update Solarnet payment-only firewall rules on ${router.name}?\n\nSuspended customers will be allowed DNS and the configured payment portal, while other forwarded internet traffic is blocked. Existing Solarnet billing rules will be replaced; unrelated firewall rules are not changed.`)) return;
+
+    setBillingActionId(router.id);
+    setBillingResult(null);
+    try {
+      const result = await routerService.installBillingAccess(router.id);
+      setBillingResult({ id: router.id, success: result.success, message: result.message });
+    } catch (error: any) {
+      setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to install billing access rules.' });
+    } finally {
+      setBillingActionId(null);
+    }
+  };
+
+  const handleVerifyBillingAccess = async (router: Router) => {
+    setBillingActionId(router.id);
+    setBillingResult(null);
+    try {
+      const result = await routerService.billingAccessStatus(router.id);
+      setBillingResult({
+        id: router.id,
+        success: result.installed,
+        message: result.installed
+          ? `Billing access is installed and verified (${result.rule_count} rules).`
+          : `Billing access is incomplete (${result.rule_count} of 4 rules found).`,
+      });
+    } catch (error: any) {
+      setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to verify billing access rules.' });
+    } finally {
+      setBillingActionId(null);
+    }
+  };
+
+  const handleRemoveBillingAccess = async (router: Router) => {
+    if (!confirm(`Remove only Solarnet billing firewall rules from ${router.name}?\n\nSuspended customers will no longer have payment-only access restrictions from this router.`)) return;
+
+    setBillingActionId(router.id);
+    setBillingResult(null);
+    try {
+      const result = await routerService.removeBillingAccess(router.id);
+      setBillingResult({ id: router.id, success: result.success, message: result.message });
+    } catch (error: any) {
+      setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to remove billing access rules.' });
+    } finally {
+      setBillingActionId(null);
     }
   };
 
@@ -134,7 +185,8 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
           </thead>
           <tbody className="divide-y divide-border">
             {routers.map((router) => (
-              <tr key={router.id} className="hover:bg-muted/50 transition-colors">
+              <Fragment key={router.id}>
+              <tr className="hover:bg-muted/50 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center space-x-2">
                     {getStatusIcon(router.connection_status)}
@@ -165,6 +217,40 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                       aria-label="Generate Setup Script"
                     >
                       <FileCode className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleInstallBillingAccess(router)}
+                      disabled={billingActionId === router.id}
+                      className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors disabled:opacity-50"
+                      title="Install payment-only billing access"
+                      aria-label="Install payment-only billing access"
+                      data-testid="router-install-billing-access-btn"
+                    >
+                      {billingActionId === router.id ? (
+                        <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full" />
+                      ) : (
+                        <ShieldCheck className="h-4 w-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleVerifyBillingAccess(router)}
+                      disabled={billingActionId === router.id}
+                      className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors disabled:opacity-50"
+                      title="Verify billing access rules"
+                      aria-label="Verify billing access rules"
+                      data-testid="router-verify-billing-access-btn"
+                    >
+                      <ShieldAlert className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveBillingAccess(router)}
+                      disabled={billingActionId === router.id}
+                      className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50"
+                      title="Remove Solarnet billing rules"
+                      aria-label="Remove Solarnet billing rules"
+                      data-testid="router-remove-billing-access-btn"
+                    >
+                      Remove billing
                     </button>
                     <button
                       onClick={() => handleDhcpSync(router.id)}
@@ -228,6 +314,14 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                   </div>
                 </td>
               </tr>
+              {billingResult?.id === router.id && (
+                <tr>
+                  <td colSpan={6} className={`px-6 py-3 text-sm ${billingResult.success ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200' : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200'}`}>
+                    {billingResult.message}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

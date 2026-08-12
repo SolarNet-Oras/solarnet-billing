@@ -193,6 +193,31 @@ class RouterController extends Controller
         return response()->json($result);
     }
 
+    /** Install or replace only the Solarnet payment-only firewall rules. */
+    public function installBillingAccess(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $paymentUrl = trim((string) Setting::get('network.payment_reminder_url', rtrim((string) config('app.url'), '/') . '/customer/login'));
+        $result = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Verify the Solarnet payment-only firewall rules without changing the router. */
+    public function billingAccessStatus(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->billingAccessRulesStatus($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Remove only firewall rules whose comments belong to Solarnet billing. */
+    public function removeBillingAccess(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->removeBillingAccessRules($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
 
     /**
      * Generate setup script for router

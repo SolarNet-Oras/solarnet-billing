@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Cache;
 
 class MikrotikService
 {
+    private const BILLING_RULE_PREFIX = 'Solarnet Billing: suspended';
+    private const SUSPENDED_ADDRESS_LIST = 'suspended_customers';
+
     protected function makeConfig(Router $router): Config
     {
         return (new Config())
@@ -775,6 +778,131 @@ class MikrotikService
                 'success' => false,
                 'message' => 'Failed to remove address-list entry: ' . $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Install the payment-only firewall policy through the RouterOS API.
+     * Only rules whose comments start with our prefix are removed or changed.
+     */
+    public function installBillingAccessRules(Router $router, string $paymentPortalUrl): array
+    {
+        $host = parse_url($paymentPortalUrl, PHP_URL_HOST);
+        if (!$host) {
+            return ['success' => false, 'message' => 'Payment reminder URL must be a valid absolute URL.'];
+        }
+
+        $paymentIp = gethostbyname($host);
+        if (!filter_var($paymentIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return ['success' => false, 'message' => "Could not resolve the payment portal host: {$host}"];
+        }
+
+        try {
+            $client = new Client($this->makeConfig($router));
+            $this->removeBillingFilterRules($client);
+
+            // `place-before=0` puts each new rule above the previous one;
+            // add the drop rule first so the final policy ordering is allow,
+            // allow, allow, then drop.
+            $rules = [
+                ['protocol' => null,  'dst_port' => null,     'dst_address' => null,       'action' => 'drop',   'comment' => self::BILLING_RULE_PREFIX . ' block internet'],
+                ['protocol' => 'tcp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS TCP'],
+                ['protocol' => 'udp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS UDP'],
+                ['protocol' => 'tcp', 'dst_port' => '80,443', 'dst_address' => $paymentIp, 'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow payment portal'],
+            ];
+
+            foreach ($rules as $rule) {
+                $query = (new Query('/ip/firewall/filter/add'))
+                    ->equal('chain', 'forward')
+                    ->equal('src-address-list', self::SUSPENDED_ADDRESS_LIST)
+                    ->equal('action', $rule['action'])
+                    ->equal('comment', $rule['comment'])
+                    ->equal('place-before', '0');
+                if ($rule['protocol']) $query->equal('protocol', $rule['protocol']);
+                if ($rule['dst_port']) $query->equal('dst-port', $rule['dst_port']);
+                if ($rule['dst_address']) $query->equal('dst-address', $rule['dst_address']);
+                $client->query($query)->read();
+            }
+
+            $this->ensureSuspendedAddressList($client);
+
+            return [
+                'success' => true,
+                'message' => "Installed payment-only access rules for {$host} ({$paymentIp}).",
+                'payment_portal_host' => $host,
+                'payment_portal_ip' => $paymentIp,
+                'rules_installed' => 4,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Failed to install billing firewall rules', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Failed to install billing firewall rules: ' . $e->getMessage()];
+        }
+    }
+
+    public function billingAccessRulesStatus(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $rules = $this->billingFilterRules($client);
+            return [
+                'success' => true,
+                'installed' => count($rules) === 4,
+                'rule_count' => count($rules),
+                'rules' => array_map(fn (array $rule) => [
+                    'id' => $rule['.id'] ?? null,
+                    'action' => $rule['action'] ?? null,
+                    'protocol' => $rule['protocol'] ?? 'any',
+                    'dst_address' => $rule['dst-address'] ?? 'any',
+                    'dst_port' => $rule['dst-port'] ?? 'any',
+                    'disabled' => ($rule['disabled'] ?? 'false') === 'true',
+                    'comment' => $rule['comment'] ?? '',
+                ], $rules),
+            ];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to verify billing firewall rules: ' . $e->getMessage()];
+        }
+    }
+
+    public function removeBillingAccessRules(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $removed = $this->removeBillingFilterRules($client);
+            return ['success' => true, 'message' => "Removed {$removed} Solarnet billing firewall rule(s).", 'removed' => $removed];
+        } catch (Throwable $e) {
+            Log::warning('Failed to remove billing firewall rules', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Failed to remove billing firewall rules: ' . $e->getMessage()];
+        }
+    }
+
+    private function billingFilterRules(Client $client): array
+    {
+        $rules = $client->query(new Query('/ip/firewall/filter/print'))->read();
+        return array_values(array_filter($rules, fn (array $rule) => str_starts_with((string) ($rule['comment'] ?? ''), self::BILLING_RULE_PREFIX)));
+    }
+
+    private function removeBillingFilterRules(Client $client): int
+    {
+        $rules = $this->billingFilterRules($client);
+        foreach ($rules as $rule) {
+            if (!empty($rule['.id'])) {
+                $client->query((new Query('/ip/firewall/filter/remove'))->equal('.id', $rule['.id']))->read();
+            }
+        }
+        return count($rules);
+    }
+
+    private function ensureSuspendedAddressList(Client $client): void
+    {
+        $entries = $client->query((new Query('/ip/firewall/address-list/print'))->where('list', self::SUSPENDED_ADDRESS_LIST))->read();
+        if (empty($entries)) {
+            $client->query(
+                (new Query('/ip/firewall/address-list/add'))
+                    ->equal('list', self::SUSPENDED_ADDRESS_LIST)
+                    ->equal('address', '0.0.0.0')
+                    ->equal('disabled', 'true')
+                    ->equal('comment', 'Solarnet Billing placeholder - do not enable')
+            )->read();
         }
     }
 }

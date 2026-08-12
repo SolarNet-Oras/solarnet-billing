@@ -80,6 +80,21 @@ export const routerService = {
     return response.data;
   },
 
+  async installBillingAccess(id: string): Promise<{ success: boolean; message: string; rules_installed?: number }> {
+    const response = await api.post(`/routers/${id}/billing-access/install`);
+    return response.data;
+  },
+
+  async billingAccessStatus(id: string): Promise<{ success: boolean; installed: boolean; rule_count: number; message?: string }> {
+    const response = await api.get(`/routers/${id}/billing-access`);
+    return response.data;
+  },
+
+  async removeBillingAccess(id: string): Promise<{ success: boolean; message: string; removed?: number }> {
+    const response = await api.delete(`/routers/${id}/billing-access`);
+    return response.data;
+  },
+
   async generateSetupScript(id: string, billingSystemIp?: string): Promise<{ script: string; billing_system_ip?: string | null }> {
     const params = billingSystemIp ? { billing_system_ip: billingSystemIp } : {};
     const response = await api.get<{ success: boolean; data: { script: string; billing_system_ip?: string | null } }>(`/routers/${id}/setup-script`, { params });

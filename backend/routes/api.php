@@ -99,6 +99,9 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['permission:manage-routers'])->group(function () {
             Route::post('routers/{id}/test-connection', [RouterController::class, 'testConnection']);
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);
+            Route::post('routers/{id}/billing-access/install', [RouterController::class, 'installBillingAccess']);
+            Route::get('routers/{id}/billing-access', [RouterController::class, 'billingAccessStatus']);
+            Route::delete('routers/{id}/billing-access', [RouterController::class, 'removeBillingAccess']);
             Route::get('routers/{id}/setup-script', [RouterController::class, 'generateSetupScript']);
             Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
