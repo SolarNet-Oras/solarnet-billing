@@ -29,6 +29,8 @@ class BillingSuspensionService
         if ($mac) {
             $leaseQuery = DhcpLease::query()
                 ->with('customer')
+                ->active()
+                ->presentOnRouter()
                 ->whereRaw('upper(mac_address) = ?', [$mac]);
 
             if ($routerId) {
@@ -44,6 +46,8 @@ class BillingSuspensionService
         if ($ip) {
             $leaseQuery = DhcpLease::query()
                 ->with('customer')
+                ->active()
+                ->presentOnRouter()
                 ->where('ip_address', $ip);
 
             if ($routerId) {
@@ -57,6 +61,12 @@ class BillingSuspensionService
         }
 
         $customerQuery = Customer::query()->with(['servicePlan', 'router']);
+
+        if ($routerId) {
+            // Do not fall back to an identically addressed customer on a
+            // different router when a caller has told us the source router.
+            $customerQuery->where('router_id', $routerId);
+        }
 
         if ($mac) {
             $customer = (clone $customerQuery)->whereRaw('upper(mac_address) = ?', [$mac])->first();

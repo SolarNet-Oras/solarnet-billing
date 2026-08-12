@@ -283,6 +283,8 @@ class CustomerController extends Controller
         $lease = DhcpLease::query()
             ->with('router:id,name')
             ->where('customer_id', $customer->id)
+            ->presentOnRouter()
+            ->active()
             ->orderByDesc('last_seen_at')
             ->orderByDesc('updated_at')
             ->first();

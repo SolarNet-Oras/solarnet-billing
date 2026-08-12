@@ -161,6 +161,8 @@ class DashboardController extends Controller
             ->where('is_matched', true)
             ->whereNotNull('customer_id')
             ->whereNotNull('router_id')
+            ->presentOnRouter()
+            ->active()
             ->distinct()
             ->pluck('router_id');
 
@@ -205,6 +207,8 @@ class DashboardController extends Controller
         $leases = DhcpLease::query()
             ->where('is_matched', true)
             ->whereNotNull('customer_id')
+            ->presentOnRouter()
+            ->active()
             ->with([
                 'customer:id,full_name,status,service_plan_id',
                 'customer.servicePlan:id,name,download_speed,upload_speed',

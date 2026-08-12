@@ -59,6 +59,8 @@ class UnregisteredLeaseController extends Controller
     {
         $leases = DhcpLease::with('router:id,name')
             ->unmatched()
+            ->active()
+            ->presentOnRouter()
             ->where('is_dynamic', false)
             ->whereNotNull('comment')
             ->where('comment', '!=', '')
@@ -84,6 +86,8 @@ class UnregisteredLeaseController extends Controller
     {
         $leases = DhcpLease::with('router:id,name')
             ->unmatched()
+            ->active()
+            ->presentOnRouter()
             ->where(function ($q) {
                 $q->where('is_dynamic', true)
                   ->orWhereNull('comment')

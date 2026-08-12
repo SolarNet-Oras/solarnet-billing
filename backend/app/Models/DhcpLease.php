@@ -25,6 +25,7 @@ class DhcpLease extends Model
         'expires_at',
         'last_seen_at',
         'is_matched',
+        'is_current',
     ];
 
     protected $casts = [
@@ -32,6 +33,7 @@ class DhcpLease extends Model
         'last_seen_at' => 'datetime',
         'is_matched' => 'boolean',
         'is_dynamic' => 'boolean',
+        'is_current' => 'boolean',
     ];
 
     /**
@@ -64,5 +66,11 @@ class DhcpLease extends Model
     public function scopeActive($query)
     {
         return $query->where('status', 'bound');
+    }
+
+    /** Leases present in the most recent successful sync for their router. */
+    public function scopePresentOnRouter($query)
+    {
+        return $query->where('is_current', true);
     }
 }

@@ -51,6 +51,7 @@ class DhcpSyncService
 
             $leases = $leasesResponse['data'];
             $result['leases_fetched'] = count($leases);
+            $seenMacAddresses = [];
 
             foreach ($leases as $leaseData) {
                 // Skip invalid leases
@@ -58,14 +59,21 @@ class DhcpSyncService
                     continue;
                 }
 
+                $seenMacAddresses[] = $this->normalizeMacAddress($leaseData['mac_address']);
+
                 // Store or update lease
                 $lease = $this->storeLease($router, $leaseData);
-                if ($lease) {
-                    $result['leases_stored']++;
+                if (!$lease) {
+                    continue;
                 }
+                $result['leases_stored']++;
 
-                // Match to existing customer by MAC
-                $customer = $this->matchLeaseToCustomer($lease);
+                // Only a currently bound lease can become a live client. A
+                // waiting/expired lease must never update a customer's IP or
+                // appear as a live connection.
+                $customer = strtolower((string) ($leaseData['status'] ?? '')) === 'bound'
+                    ? $this->matchLeaseToCustomer($lease)
+                    : null;
                 
                 if ($customer) {
                     $result['customers_matched']++;
@@ -86,6 +94,16 @@ class DhcpSyncService
                     }
                 }
             }
+
+            // The API response is the source of truth after a successful
+            // router sync. Keep historical rows, but mark entries that the
+            // router no longer returned as not current so they cannot become
+            // ghost clients in the dashboard or unregistered-lease lists.
+            $staleLeases = DhcpLease::query()->where('router_id', $router->id);
+            if ($seenMacAddresses !== []) {
+                $staleLeases->whereNotIn(DB::raw('upper(mac_address)'), array_values(array_unique($seenMacAddresses)));
+            }
+            $staleLeases->update(['is_current' => false]);
 
             Log::info('DHCP sync completed for router', $result);
             
@@ -152,23 +170,32 @@ class DhcpSyncService
                 $expiresAt = $this->parseMikrotikTime($leaseData['expires_after']);
             }
 
-            $lease = DhcpLease::updateOrCreate(
-                [
+            $macAddress = $this->normalizeMacAddress($leaseData['mac_address']);
+            $lease = DhcpLease::query()
+                ->where('router_id', $router->id)
+                ->whereRaw('upper(mac_address) = ?', [$macAddress])
+                ->first();
+
+            if (!$lease) {
+                $lease = new DhcpLease([
                     'router_id' => $router->id,
-                    'mac_address' => $leaseData['mac_address'],
-                ],
-                [
-                    'ip_address'   => $leaseData['ip_address'],
-                    'hostname'     => $leaseData['hostname'] ?? null,
-                    'comment'      => $leaseData['comment'] ?? null,
-                    'rate_limit'   => $leaseData['rate_limit'] ?? null,
-                    'is_dynamic'   => $leaseData['is_dynamic'] ?? true,
-                    'status'       => $leaseData['status'] ?? 'unknown',
-                    'server'       => $leaseData['server'] ?? 'default',
-                    'expires_at'   => $expiresAt,
-                    'last_seen_at' => now(),
-                ]
-            );
+                    'mac_address' => $macAddress,
+                ]);
+            }
+
+            $lease->fill([
+                'ip_address'   => $leaseData['ip_address'],
+                'hostname'     => $leaseData['hostname'] ?? null,
+                'comment'      => $leaseData['comment'] ?? null,
+                'rate_limit'   => $leaseData['rate_limit'] ?? null,
+                'is_dynamic'   => $leaseData['is_dynamic'] ?? true,
+                'status'       => $leaseData['status'] ?? 'unknown',
+                'server'       => $leaseData['server'] ?? 'default',
+                'expires_at'   => $expiresAt,
+                'last_seen_at' => now(),
+                'is_current'   => true,
+            ]);
+            $lease->save();
 
             return $lease;
 
@@ -193,9 +220,21 @@ class DhcpSyncService
             return null;
         }
 
-        $customer = Customer::where('mac_address', $lease->mac_address)->first();
+        $customer = Customer::query()
+            ->whereRaw('upper(mac_address) = ?', [$this->normalizeMacAddress($lease->mac_address)])
+            // A customer assigned to Router A must never be claimed by a
+            // lease from Router B, even if both networks reuse a MAC/IP.
+            ->where(function ($query) use ($lease) {
+                $query->where('router_id', $lease->router_id)
+                    ->orWhereNull('router_id');
+            })
+            ->orderByRaw('case when router_id = ? then 0 else 1 end', [$lease->router_id])
+            ->first();
 
         if ($customer) {
+            if (!$customer->router_id) {
+                $customer->update(['router_id' => $lease->router_id]);
+            }
             // Update lease with customer match
             $lease->update([
                 'customer_id' => $customer->id,
@@ -285,6 +324,11 @@ class DhcpSyncService
         return $now;
     }
 
+    protected function normalizeMacAddress(string $macAddress): string
+    {
+        return strtoupper(trim($macAddress));
+    }
+
     /**
      * Get unmatched leases (no customer)
      * 
@@ -296,6 +340,7 @@ class DhcpSyncService
         $query = DhcpLease::with(['router'])
                           ->unmatched()
                           ->active()
+                          ->presentOnRouter()
                           ->orderBy('last_seen_at', 'desc');
 
         if ($router) {
