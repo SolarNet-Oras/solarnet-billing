@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { type Router, type CreateRouterData, routerService } from '@/services/routerService';
-import { X, Copy, Check, Terminal, ShieldCheck, ArrowRight, ArrowLeft, Loader2, ExternalLink } from 'lucide-react';
+import { X, Copy, Check, Terminal, ShieldCheck, ArrowRight, ArrowLeft, Loader2, ExternalLink, Eye, EyeOff } from 'lucide-react';
 
 interface RouterFormModalProps {
   isOpen: boolean;
@@ -37,6 +37,7 @@ export function RouterFormModal({ isOpen, onClose, onSave, router }: RouterFormM
   const [scriptLoading, setScriptLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pastedConfirmed, setPastedConfirmed] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -61,6 +62,7 @@ export function RouterFormModal({ isOpen, onClose, onSave, router }: RouterFormM
     setScript('');
     setCopied(false);
     setPastedConfirmed(false);
+    setShowPassword(false);
 
     // Auto-fetch billing IP so we can show it in the wizard
     setIpLoading(true);
@@ -284,15 +286,33 @@ export function RouterFormModal({ isOpen, onClose, onSave, router }: RouterFormM
                   <label className="block text-sm font-medium text-foreground mb-1">
                     API Password {!isEdit && <span className="text-red-600">*</span>}
                   </label>
-                  <input
-                    type="password"
-                    required={!isEdit}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder={isEdit ? 'Leave blank to keep current' : 'Min 6 characters'}
-                    data-testid="router-password-input"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required={!isEdit}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full px-3 py-2 pr-10 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder={isEdit ? 'Leave blank to keep saved password' : 'Min 6 characters'}
+                      autoComplete="new-password"
+                      data-testid="router-password-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((visible) => !visible)}
+                      className="absolute inset-y-0 right-0 px-3 text-muted-foreground hover:text-foreground"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                      data-testid="router-password-visibility-toggle"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {isEdit && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      The saved password is preserved when this is blank. Enter a replacement only when rotating credentials.
+                    </p>
+                  )}
                 </div>
 
                 <div>
