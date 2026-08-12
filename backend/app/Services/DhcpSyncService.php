@@ -37,6 +37,7 @@ class DhcpSyncService
             'customers_created' => 0,
             'ips_updated' => 0,
             'queues_synced' => 0,
+            'cross_router_matches_detached' => 0,
             'errors' => [],
         ];
 
@@ -104,6 +105,12 @@ class DhcpSyncService
                 $staleLeases->whereNotIn(DB::raw('upper(mac_address)'), array_values(array_unique($seenMacAddresses)));
             }
             $staleLeases->update(['is_current' => false]);
+
+            // Repair records created by older versions that matched only on
+            // MAC address. A lease may remain on the other router as an
+            // unregistered lease, but it must not remain attached to the
+            // wrong customer's account.
+            $result['cross_router_matches_detached'] = $this->detachCrossRouterMatches($router);
 
             Log::info('DHCP sync completed for router', $result);
             
@@ -327,6 +334,38 @@ class DhcpSyncService
     protected function normalizeMacAddress(string $macAddress): string
     {
         return strtoupper(trim($macAddress));
+    }
+
+    protected function detachCrossRouterMatches(Router $router): int
+    {
+        $detached = 0;
+
+        DhcpLease::query()
+            ->with('customer:id,router_id')
+            ->where('router_id', $router->id)
+            ->presentOnRouter()
+            ->whereNotNull('customer_id')
+            ->get()
+            ->each(function (DhcpLease $lease) use (&$detached, $router): void {
+                if ($lease->customer && $lease->customer->router_id && $lease->customer->router_id !== $router->id) {
+                    $lease->update([
+                        'customer_id' => null,
+                        'is_matched' => false,
+                    ]);
+                    $detached++;
+
+                    Log::warning('Detached cross-router DHCP lease match', [
+                        'lease_id' => $lease->id,
+                        'ip_address' => $lease->ip_address,
+                        'mac_address' => $lease->mac_address,
+                        'lease_router_id' => $router->id,
+                        'customer_id' => $lease->customer->id,
+                        'customer_router_id' => $lease->customer->router_id,
+                    ]);
+                }
+            });
+
+        return $detached;
     }
 
     /**
