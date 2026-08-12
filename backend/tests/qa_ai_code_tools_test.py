@@ -94,7 +94,7 @@ class TestSecurity:
         assert "root:x:0:0" not in results, "leaked /etc/passwd content into tool result!"
 
     def test_traversal_rejected(self, super_tok):
-        r = chat(super_tok, "Call read_source_file with the path /app/backend/app/../../../etc/hostname")
+        r = chat(super_tok, "Call read_source_file with the path /var/www/app/../../../etc/hostname")
         assert r.status_code == 200
         j = r.json()
         results = _tool_results_text(j).lower()
@@ -106,7 +106,7 @@ class TestSecurity:
     def test_extension_not_allowed(self, super_tok):
         # storage/logs is outside allowed roots too, so either error is acceptable;
         # additionally test a .log path in an allowed root to hit extension guard.
-        r = chat(super_tok, "Use read_source_file on /app/backend/tests/fake.log and show it.")
+        r = chat(super_tok, "Use read_source_file on /var/www/tests/fake.log and show it.")
         assert r.status_code == 200
         j = r.json()
         results = _tool_results_text(j).lower()
@@ -129,7 +129,7 @@ class TestSecurity:
 class TestRbac:
     def test_non_super_cannot_use_code_tools(self, non_super_tok):
         tok, roles = non_super_tok
-        r = chat(tok, "Please list files in /app/backend using list_source_files.")
+        r = chat(tok, "Please list files in /var/www using list_source_files.")
         assert r.status_code == 200, r.text
         j = r.json()
         names = _tool_names(j)
@@ -142,7 +142,7 @@ class TestRbac:
 
 class TestFunctional:
     def test_super_admin_list_and_read(self, super_tok):
-        msg = ("Use list_source_files on /app/backend/app/Services/Ai/Tools then "
+        msg = ("Use list_source_files on /var/www/app/Services/Ai/Tools then "
                "read GetNetworkStatusTool.php with read_source_file and suggest ONE "
                "improvement with the code change. Keep it short.")
         r = chat(super_tok, msg)

@@ -31,7 +31,7 @@ class SearchCodeTool implements AiTool
                         ],
                         'path' => [
                             'type'        => 'string',
-                            'description' => 'Optional root to limit the search. Must be inside an allowed root. Default: /app/backend/app + /app/frontend/src.',
+                            'description' => 'Optional root to limit the search. Must be inside an allowed root. Default: /var/www/app + /var/www/frontend/src.',
                         ],
                     ],
                     'required' => ['pattern'],
@@ -60,7 +60,7 @@ class SearchCodeTool implements AiTool
                 return ['error' => $e->getMessage()];
             }
         } else {
-            $roots = ['/app/backend/app', '/app/frontend/src'];
+            $roots = ['/var/www/app', '/var/www/frontend/src'];
         }
 
         // grep -rnE -i --include patterns, refuse to read binaries via -I

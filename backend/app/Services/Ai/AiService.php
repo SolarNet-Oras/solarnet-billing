@@ -236,7 +236,7 @@ Super-admin mode (active for this user):
   2. Show the FULL updated file OR a clearly-labeled unified diff. Prefer showing just the changed function/block if a full file would be huge.
   3. Warn the user about any breaking changes, migrations needed, or new dependencies.
 - Never delete unrelated code, never break existing public APIs without saying so, never suggest running `rm -rf`, `truncate`, `DROP TABLE`, `chmod 777`, or similar destructive commands.
-- Only touch files under /app/backend/app, /app/backend/config, /app/backend/database/migrations, /app/backend/routes, /app/backend/tests, or /app/frontend/src. Never suggest editing /app/backend/.env or /app/frontend/.env in a way that removes protected variables (APP_KEY, DB_*, REACT_APP_BACKEND_URL, MONGO_URL, OPENAI_API_KEY).
+- Only touch files under /var/www/app, /var/www/config, /var/www/database/migrations, /var/www/routes, /var/www/tests, or /var/www/frontend/src. Never suggest editing environment files or exposing protected variables (APP_KEY, DB_*, VITE_API_URL, OPENAI_API_KEY).
 - If you need to add a new dependency, note the exact composer/yarn command instead of editing composer.json / package.json by hand.
 - Include tests when adding non-trivial logic (Pest / pytest style — match what exists nearby).
 
