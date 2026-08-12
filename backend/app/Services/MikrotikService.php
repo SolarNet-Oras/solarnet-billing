@@ -905,4 +905,73 @@ class MikrotikService
             )->read();
         }
     }
+
+    /** Run a one-time RouterOS script and delete the temporary script afterward. */
+    public function runOneTimeScript(Router $router, string $source, ?string $executedBy = null): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $name = 'solarnet-once-' . substr(str_replace('-', '', (string) \Illuminate\Support\Str::uuid()), 0, 12);
+
+            $client->query(
+                (new Query('/system/script/add'))
+                    ->equal('name', $name)
+                    ->equal('source', $source)
+                    ->equal('comment', 'Solarnet one-time console command')
+            )->read();
+
+            try {
+                $scripts = $client->query((new Query('/system/script/print'))->where('name', $name))->read();
+                $scriptId = $scripts[0]['.id'] ?? null;
+                if (!$scriptId) {
+                    throw new \RuntimeException('RouterOS did not return the temporary script.');
+                }
+                $result = $client->query((new Query('/system/script/run'))->equal('.id', $scriptId))->read();
+            } finally {
+                // Always remove the temporary script, including when RouterOS
+                // reports a script error. The submitted source is never saved.
+                $scripts = $client->query((new Query('/system/script/print'))->where('name', $name))->read();
+                foreach ($scripts as $script) {
+                    if (!empty($script['.id'])) {
+                        $client->query((new Query('/system/script/remove'))->equal('.id', $script['.id']))->read();
+                    }
+                }
+            }
+
+            Log::info('One-time MikroTik console script executed', [
+                'router_id' => $router->id,
+                'executed_by' => $executedBy,
+                'source_length' => strlen($source),
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Script executed. The temporary RouterOS script was removed.',
+                'result' => $result,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('MikroTik console script failed', [
+                'router_id' => $router->id,
+                'executed_by' => $executedBy,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'message' => 'Script failed: ' . $e->getMessage()];
+        }
+    }
+
+    /** Run RouterOS /ping through the API and return its response rows. */
+    public function ping(Router $router, string $address, int $count = 4): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $rows = $client->query(
+                (new Query('/ping'))
+                    ->equal('address', $address)
+                    ->equal('count', (string) max(1, min($count, 10)))
+            )->read();
+            return ['success' => true, 'message' => "Ping completed for {$address}.", 'rows' => $rows];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'Ping failed: ' . $e->getMessage()];
+        }
+    }
 }

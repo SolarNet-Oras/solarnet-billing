@@ -102,6 +102,8 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/{id}/billing-access/install', [RouterController::class, 'installBillingAccess']);
             Route::get('routers/{id}/billing-access', [RouterController::class, 'billingAccessStatus']);
             Route::delete('routers/{id}/billing-access', [RouterController::class, 'removeBillingAccess']);
+            Route::post('routers/{id}/console/script', [RouterController::class, 'runConsoleScript']);
+            Route::post('routers/{id}/console/ping', [RouterController::class, 'consolePing']);
             Route::get('routers/{id}/setup-script', [RouterController::class, 'generateSetupScript']);
             Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);

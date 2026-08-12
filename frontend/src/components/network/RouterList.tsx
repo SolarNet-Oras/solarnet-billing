@@ -1,7 +1,8 @@
 import { Fragment, useState } from 'react';
 import { type Router, routerService } from '@/services/routerService';
-import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
+import { RouterConsoleModal } from './RouterConsoleModal';
 
 interface RouterListProps {
   routers: Router[];
@@ -18,6 +19,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const [dhcpSyncingId, setDhcpSyncingId] = useState<string | null>(null);
   const [scriptModalOpen, setScriptModalOpen] = useState(false);
   const [selectedRouter, setSelectedRouter] = useState<Router | null>(null);
+  const [consoleRouter, setConsoleRouter] = useState<Router | null>(null);
   const [billingActionId, setBillingActionId] = useState<string | null>(null);
   const [billingResult, setBillingResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
@@ -219,6 +221,15 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                       <FileCode className="h-4 w-4" />
                     </button>
                     <button
+                      onClick={() => setConsoleRouter(router)}
+                      className="p-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 rounded transition-colors"
+                      title="Open MikroTik console"
+                      aria-label="Open MikroTik console"
+                      data-testid="router-console-btn"
+                    >
+                      <Terminal className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={() => handleInstallBillingAccess(router)}
                       disabled={billingActionId === router.id}
                       className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors disabled:opacity-50"
@@ -349,6 +360,14 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
           onClose={() => setScriptModalOpen(false)}
           routerId={selectedRouter.id}
           routerName={selectedRouter.name}
+        />
+      )}
+      {consoleRouter && (
+        <RouterConsoleModal
+          isOpen={true}
+          onClose={() => setConsoleRouter(null)}
+          routerId={consoleRouter.id}
+          routerName={consoleRouter.name}
         />
       )}
     </div>

@@ -95,6 +95,16 @@ export const routerService = {
     return response.data;
   },
 
+  async runConsoleScript(id: string, script: string): Promise<{ success: boolean; message: string; result?: unknown }> {
+    const response = await api.post(`/routers/${id}/console/script`, { script });
+    return response.data;
+  },
+
+  async consolePing(id: string, address: string, count: number = 4): Promise<{ success: boolean; message: string; rows?: unknown[] }> {
+    const response = await api.post(`/routers/${id}/console/ping`, { address, count });
+    return response.data;
+  },
+
   async generateSetupScript(id: string, billingSystemIp?: string): Promise<{ script: string; billing_system_ip?: string | null }> {
     const params = billingSystemIp ? { billing_system_ip: billingSystemIp } : {};
     const response = await api.get<{ success: boolean; data: { script: string; billing_system_ip?: string | null } }>(`/routers/${id}/setup-script`, { params });

@@ -218,6 +218,37 @@ class RouterController extends Controller
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
+    /** Execute a one-time RouterOS script over the saved API connection. */
+    public function runConsoleScript(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'script' => 'required|string|min:1|max:10000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'A script between 1 and 10,000 characters is required.', 'errors' => $validator->errors()], 422);
+        }
+
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->runOneTimeScript($router, $request->string('script')->toString(), $request->user()?->id);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Run a bounded ping diagnostic from the router. */
+    public function consolePing(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'address' => 'required|string|max:255',
+            'count' => 'nullable|integer|min:1|max:10',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'A valid ping host/address is required.', 'errors' => $validator->errors()], 422);
+        }
+
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->ping($router, $request->string('address')->toString(), (int) $request->input('count', 4));
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
 
     /**
      * Generate setup script for router
