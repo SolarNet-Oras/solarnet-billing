@@ -201,6 +201,8 @@ SCRIPT;
      */
     public function generatePaymentRedirectScript(string $paymentPortalUrl): string
     {
+        $paymentHost = parse_url($paymentPortalUrl, PHP_URL_HOST) ?: $paymentPortalUrl;
+
         return <<<SCRIPT
 # ============================================================
 # Payment Portal Redirect Script
@@ -212,9 +214,11 @@ SCRIPT;
 
 # Create walled garden for payment portal domain
 /ip hotspot walled-garden
-add dst-host={$paymentPortalUrl} comment="Allow access to payment portal"
+add dst-host={$paymentHost} comment="Allow access to payment portal"
 
-# Create NAT rule to redirect HTTP traffic to payment portal
+# Create NAT rule to redirect HTTP traffic to the payment portal domain
+# HTTPS should be handled by a captive portal / hotspot login page, not a
+# transparent TLS redirect, to avoid certificate warnings.
 /ip firewall nat
 add chain=dstnat \\
     protocol=tcp \\
@@ -223,15 +227,6 @@ add chain=dstnat \\
     action=redirect \\
     to-ports=80 \\
     comment="Redirect suspended customers to payment portal"
-
-# Create NAT rule to redirect HTTPS traffic
-add chain=dstnat \\
-    protocol=tcp \\
-    dst-port=443 \\
-    src-address-list=suspended_customers \\
-    action=redirect \\
-    to-ports=443 \\
-    comment="Redirect suspended HTTPS to payment portal"
 
 :log info "Payment portal redirect configured for: {$paymentPortalUrl}"
 

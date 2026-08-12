@@ -85,6 +85,9 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('customers', CustomerController::class)->only(['update'])->middleware('permission:edit-customers');
         Route::apiResource('customers', CustomerController::class)->only(['destroy'])->middleware('permission:delete-customers');
         Route::post('customers/{id}/sync-queue', [CustomerController::class, 'syncQueue'])->middleware('permission:edit-customers');
+        Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
+        Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
+        Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
         
@@ -199,6 +202,8 @@ Route::prefix('v1')->group(function () {
         // Public customer login + self-signup
         Route::post('login',  [CustomerPortalController::class, 'login'])->middleware('throttle:5,1');
         Route::post('signup', [CustomerPortalController::class, 'signup'])->middleware('throttle:3,1');
+        Route::get('payment-reminder/{customerId}', [CustomerPortalController::class, 'paymentReminder']);
+        Route::post('payment-reminder/resolve', [CustomerPortalController::class, 'resolvePaymentReminder']);
         // Public list of active plans (for the signup page dropdown)
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
 

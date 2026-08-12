@@ -12,6 +12,19 @@ use Illuminate\Support\Facades\Cache;
 
 class MikrotikService
 {
+    protected function makeConfig(Router $router): Config
+    {
+        return (new Config())
+            ->set('host', $router->host)
+            ->set('user', $router->username)
+            ->set('pass', $router->password)
+            ->set('port', $router->port)
+            ->set('timeout', 3)
+            ->set('socket_timeout', 5)
+            ->set('attempts', 1)
+            ->set('delay', 1);
+    }
+
     /**
      * Test connection to MikroTik router
      * 
@@ -668,6 +681,99 @@ class MikrotikService
             return [
                 'success' => false,
                 'message' => 'MikroTik error: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Add an IP address to a MikroTik firewall address-list.
+     */
+    public function addAddressList(Router $router, string $listName, string $address, ?string $comment = null): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+
+            $query = (new Query('/ip/firewall/address-list/print'))
+                ->where('list', $listName)
+                ->where('address', $address);
+            $existing = $client->query($query)->read();
+            if (!empty($existing)) {
+                return [
+                    'success' => true,
+                    'message' => 'Address already present in list',
+                ];
+            }
+
+            $add = (new Query('/ip/firewall/address-list/add'))
+                ->equal('list', $listName)
+                ->equal('address', $address);
+            if ($comment !== null && $comment !== '') {
+                $add->equal('comment', $comment);
+            }
+            $client->query($add)->read();
+
+            return [
+                'success' => true,
+                'message' => 'Address added to address-list',
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Failed to add MikroTik address-list entry', [
+                'router_id' => $router->id,
+                'list' => $listName,
+                'address' => $address,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to add address-list entry: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Remove an IP address from a MikroTik firewall address-list.
+     */
+    public function removeAddressList(Router $router, string $listName, string $address): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+
+            $query = (new Query('/ip/firewall/address-list/print'))
+                ->where('list', $listName)
+                ->where('address', $address);
+            $entries = $client->query($query)->read();
+
+            if (empty($entries)) {
+                return [
+                    'success' => true,
+                    'message' => 'Address already absent from list',
+                ];
+            }
+
+            foreach ($entries as $entry) {
+                if (!empty($entry['.id'])) {
+                    $remove = (new Query('/ip/firewall/address-list/remove'))
+                        ->equal('.id', $entry['.id']);
+                    $client->query($remove)->read();
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Address removed from address-list',
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Failed to remove MikroTik address-list entry', [
+                'router_id' => $router->id,
+                'list' => $listName,
+                'address' => $address,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to remove address-list entry: ' . $e->getMessage(),
             ];
         }
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\BillingSuspensionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\Validator;
 
 class CustomerPortalController extends Controller
 {
+    public function __construct(protected BillingSuspensionService $billingSuspensionService)
+    {
+    }
+
     /**
      * Customer login. Two supported flows:
      *   (a) NEW: email + password  (checked against Customer.portal_password)
@@ -166,6 +171,15 @@ class CustomerPortalController extends Controller
 
         if (!$customer) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (in_array($customer->status, ['suspended', 'expired'], true)) {
+            return response()->json([
+                'status' => 'payment_required',
+                'message' => 'Internet Service Temporarily Suspended',
+                'customer' => $customer->load('servicePlan', 'router'),
+                'payment_required' => $this->billingSuspensionService->buildPaymentReminderData($customer),
+            ], 200);
         }
 
         $totalInvoices = Invoice::where('customer_id', $customer->id)->count();
@@ -330,10 +344,10 @@ class CustomerPortalController extends Controller
                 return null;
             }
 
-            // Verify customer still exists and is active
+            // Verify customer still exists
             $customer = Customer::find($payload['customer_id']);
-            
-            if (!$customer || $customer->status === 'suspended') {
+
+            if (!$customer) {
                 return null;
             }
 
@@ -352,5 +366,81 @@ class CustomerPortalController extends Controller
             ]);
             return null;
         }
+    }
+
+    /**
+     * Public reminder payload for captive-portal or local reminder screens.
+     */
+    public function paymentReminder(string $customerId): JsonResponse
+    {
+        $customer = Customer::with('servicePlan')->find($customerId);
+
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found',
+            ], 404);
+        }
+
+        if (!in_array($customer->status, ['suspended', 'expired'], true)) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Customer is currently active',
+                'data' => [
+                    'customer_id' => $customer->id,
+                    'account_number' => $customer->account_number,
+                    'full_name' => $customer->full_name,
+                    'status' => $customer->status,
+                    'active' => true,
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $this->billingSuspensionService->buildPaymentReminderData($customer),
+        ]);
+    }
+
+    /**
+     * Resolve a customer from IP/MAC data for future hotspot/captive portal use.
+     */
+    public function resolvePaymentReminder(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'ip_address' => 'nullable|ip',
+            'mac_address' => 'nullable|string|max:32',
+            'router_id' => 'nullable|uuid|exists:routers,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $customer = $this->billingSuspensionService->findCustomerByDhcpLease(
+            $request->input('ip_address'),
+            $request->input('mac_address'),
+            $request->input('router_id')
+        );
+
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer could not be identified from the lease data',
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'customer_id' => $customer->id,
+                'resolver_data' => $this->billingSuspensionService->buildPaymentReminderData($customer),
+                'redirect_url' => rtrim(config('app.url'), '/') . '/payment-required/' . $customer->id,
+            ],
+        ]);
     }
 }

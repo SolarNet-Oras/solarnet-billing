@@ -16,6 +16,7 @@ import TicketsPage from '@/pages/TicketsPage';
 import ReportsPage from '@/pages/ReportsPage';
 import CustomerLoginPage from '@/pages/CustomerLoginPage';
 import CustomerDashboardPage from '@/pages/CustomerDashboardPage';
+import PaymentRequiredPage from '@/pages/PaymentRequiredPage';
 import SignupPage from '@/pages/SignupPage';
 import UsersPage from '@/pages/UsersPage';
 import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
@@ -139,6 +140,7 @@ const App: React.FC = (): JSX.Element => {
               {/* Customer Portal Routes */}
               <Route path="/customer/login" element={<CustomerLoginPage />} />
               <Route path="/customer/dashboard" element={<CustomerDashboardPage />} />
+              <Route path="/payment-required/:customerId" element={<PaymentRequiredPage />} />
               <Route path="/signup" element={<SignupPage />} />
 
               {/* Staff user management */}

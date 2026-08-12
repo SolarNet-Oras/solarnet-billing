@@ -9,6 +9,7 @@ import {
   DollarSign,
   Calendar,
   AlertCircle,
+  Wifi,
 } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
@@ -27,11 +28,25 @@ const CustomerDashboardPage: React.FC = () => {
   const fetchDashboardData = async () => {
     try {
       const data = await customerPortalService.getDashboard();
+      if (data.status === 'payment_required' && data.payment_required) {
+        navigate(`/payment-required/${data.payment_required.customer_id}`);
+        return;
+      }
       setCustomer(data.customer);
       setStats(data.stats);
     } catch (error) {
       console.error('Error fetching dashboard:', error);
       // If unauthorized, redirect to login
+      try {
+        const raw = localStorage.getItem('customer_data');
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed?.id) {
+          navigate(`/payment-required/${parsed.id}`);
+          return;
+        }
+      } catch {
+        // fall through to login redirect
+      }
       localStorage.removeItem('customer_token');
       localStorage.removeItem('customer_data');
       navigate('/customer/login');

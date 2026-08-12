@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\DhcpLease;
 use App\Services\CustomerAccountService;
+use App\Services\BillingSuspensionService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
 use App\Services\InvoiceService;
@@ -279,6 +280,7 @@ class CustomerController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $customer,
+            'billing' => app(BillingSuspensionService::class)->buildPaymentReminderData($customer),
         ]);
     }
 
@@ -403,6 +405,39 @@ class CustomerController extends Controller
         }
 
         $result = $this->queueService->syncCustomerQueue($customer);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Suspend customer internet access.
+     */
+    public function suspend(string $id): JsonResponse
+    {
+        $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
+        $result = app(BillingSuspensionService::class)->suspendCustomer($customer);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Restore customer internet access.
+     */
+    public function restore(string $id): JsonResponse
+    {
+        $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
+        $result = app(BillingSuspensionService::class)->restoreCustomer($customer);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Reconcile customer billing and network status.
+     */
+    public function syncNetwork(string $id): JsonResponse
+    {
+        $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
+        $result = app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($customer);
 
         return response()->json($result);
     }

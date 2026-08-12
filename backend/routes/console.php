@@ -43,9 +43,9 @@ Schedule::command('automation:invoice-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 09:00 — auto-suspend customers past the grace period
+// Every 5 minutes — reconcile billing and network suspension state.
 Schedule::command('automation:auto-suspend')
-    ->dailyAt('09:00')
+    ->everyFiveMinutes()
     ->timezone($tz)
     ->withoutOverlapping()
     ->runInBackground();

@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Services\BillingSuspensionService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -320,6 +321,21 @@ class InvoiceService
                     $customer->update(['status' => 'active']);
                     Log::info('Customer restored after payment', ['customer_id' => $customer->id]);
                 }
+            }
+
+            if ($customer) {
+                DB::afterCommit(function () use ($customer) {
+                    try {
+                        app(BillingSuspensionService::class)->syncCustomerMikrotikStatus(
+                            $customer->fresh(['servicePlan', 'router'])
+                        );
+                    } catch (\Throwable $e) {
+                        Log::warning('Deferred customer network sync after payment failed', [
+                            'customer_id' => $customer->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                });
             }
 
             Log::info('Payment recorded', [
