@@ -20,6 +20,7 @@ import SignupPage from '@/pages/SignupPage';
 import UsersPage from '@/pages/UsersPage';
 import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
 import SettingsPage from '@/pages/SettingsPage';
+import SuspendedAccountPage from '@/pages/SuspendedAccountPage';
 
 // ============================================================================
 // Main App Component
@@ -34,6 +35,7 @@ const App: React.FC = (): JSX.Element => {
             <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/suspended" element={<SuspendedAccountPage />} />
               
               {/* Protected Routes */}
               <Route
