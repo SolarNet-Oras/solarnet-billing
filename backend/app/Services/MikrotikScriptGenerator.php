@@ -13,7 +13,7 @@ class MikrotikScriptGenerator
      * @param string $billingSystemIp (optional - IP of billing system for firewall rules)
      * @return string
      */
-    public function generateSetupScript(Router $router, ?string $billingSystemIp = null): string
+    public function generateSetupScript(Router $router, ?string $billingSystemIp = null, ?string $paymentPortalUrl = null): string
     {
         $username = $router->username;
         $password = $router->password;
@@ -26,6 +26,12 @@ class MikrotikScriptGenerator
         $apiPort = 8728;
         $isForwardedEndpoint = (int) $router->port !== $apiPort;
         $connectionEndpoint = $router->host . ':' . $router->port;
+        $paymentPortalUrl = trim((string) ($paymentPortalUrl ?: config('app.url')));
+        $paymentPortalHost = parse_url($paymentPortalUrl, PHP_URL_HOST);
+        $paymentPortalIp = $paymentPortalHost ? gethostbyname($paymentPortalHost) : null;
+        if (!filter_var($paymentPortalIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $paymentPortalIp = filter_var($billingSystemIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $billingSystemIp : null;
+        }
 
         $script = <<<SCRIPT
 # ============================================================
@@ -118,19 +124,63 @@ FIREWALL;
 NOFW;
         }
 
-        $script .= <<<TAIL
+        $script .= <<<LIST
 
-# --- 5/5  Address list used by the billing system to throttle suspended customers
+# --- 5/6  Billing suspension address list
+# The billing system adds/removes customer IPs in this exact list name.
 /ip firewall address-list
 :if ([:len [find list="suspended_customers"]] = 0) do={
-    :put "  [i] Address list suspended_customers will be populated by the billing system"
+    add list="suspended_customers" address=0.0.0.0 disabled=yes \\
+        comment="Solarnet Billing placeholder - do not enable"
+    :put "  [+] Created suspended_customers list"
+} else={
+    :put "  [=] suspended_customers list already present"
 }
+
+LIST;
+
+        if ($paymentPortalIp) {
+            $script .= <<<BILLING
+
+# --- 6/6  Payment-only access for suspended IPoE clients
+# Safe to paste before any customer is suspended: the list is empty until the
+# billing app adds an overdue customer. Suspended clients may resolve DNS and
+# open the payment portal at {$paymentPortalUrl}; other forwarded traffic is blocked.
+# HTTPS is NOT transparently redirected because that causes certificate errors.
+/ip firewall filter
+:foreach rule in=[find comment~"^Solarnet Billing: suspended"] do={ remove \$rule }
+add chain=forward src-address-list=suspended_customers action=drop \\
+    comment="Solarnet Billing: suspended block internet" place-before=0
+add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 action=accept \\
+    comment="Solarnet Billing: suspended allow DNS TCP" place-before=0
+add chain=forward src-address-list=suspended_customers protocol=udp dst-port=53 action=accept \\
+    comment="Solarnet Billing: suspended allow DNS UDP" place-before=0
+add chain=forward src-address-list=suspended_customers protocol=tcp \\
+    dst-address={$paymentPortalIp} dst-port=80,443 action=accept \\
+    comment="Solarnet Billing: suspended allow payment portal" place-before=0
+:put "  [+] Suspended clients limited to DNS + payment portal ({$paymentPortalHost})"
+
+BILLING;
+        } else {
+            $script .= <<<NOPORTAL
+
+# --- 6/6  Payment-only access not installed
+# Set Network Reminder > Payment reminder URL to a valid public HTTPS URL,
+# then regenerate this script. Queue throttling still works, but traffic will
+# not be blocked without a verified payment portal target.
+:put "  [!] Payment portal URL is not configured; suspension firewall rules skipped"
+
+NOPORTAL;
+        }
+
+        $script .= <<<TAIL
 
 # Verify
 :put ""
 :put "--- Verification ---"
 /ip service print where name=api
 /user print where name={$username}
+/ip firewall filter print where comment~"^Solarnet Billing: suspended"
 
 :put ""
 :put "=== Setup Complete ==="

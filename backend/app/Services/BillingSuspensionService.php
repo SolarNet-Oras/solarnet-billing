@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\Log;
 
 class BillingSuspensionService
 {
-    public const SUSPENDED_ADDRESS_LIST = 'SUSPENDED_CUSTOMERS';
+    /** Must exactly match the list created by MikrotikScriptGenerator. */
+    public const SUSPENDED_ADDRESS_LIST = 'suspended_customers';
+    private const LEGACY_SUSPENDED_ADDRESS_LIST = 'SUSPENDED_CUSTOMERS';
 
     public function __construct(
         protected QueueService $queueService,
@@ -318,19 +320,25 @@ class BillingSuspensionService
         }
 
         if ($suspended) {
-            return $this->mikrotikService->addAddressList(
+            $result = $this->mikrotikService->addAddressList(
                 $router,
                 self::SUSPENDED_ADDRESS_LIST,
                 $customer->ip_address,
                 'Suspended customer ' . $customer->account_number
             );
+            // Earlier builds used a differently-cased list name. Clean it up
+            // so old entries cannot become unmanaged firewall exceptions.
+            $this->mikrotikService->removeAddressList($router, self::LEGACY_SUSPENDED_ADDRESS_LIST, $customer->ip_address);
+            return $result;
         }
 
-        return $this->mikrotikService->removeAddressList(
+        $result = $this->mikrotikService->removeAddressList(
             $router,
             self::SUSPENDED_ADDRESS_LIST,
             $customer->ip_address
         );
+        $this->mikrotikService->removeAddressList($router, self::LEGACY_SUSPENDED_ADDRESS_LIST, $customer->ip_address);
+        return $result;
     }
 
     protected function normalizeMac(?string $macAddress): ?string

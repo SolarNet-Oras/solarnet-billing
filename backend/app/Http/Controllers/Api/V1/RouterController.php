@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Router;
+use App\Models\Setting;
 use App\Services\MikrotikService;
 use App\Services\MikrotikScriptGenerator;
 use Illuminate\Http\JsonResponse;
@@ -208,7 +209,7 @@ class RouterController extends Controller
         }
 
         $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
-        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp);
+        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, Setting::get('network.payment_reminder_url', config('app.url')));
 
         return response()->json([
             'success' => true,
@@ -256,7 +257,7 @@ class RouterController extends Controller
         ]);
 
         $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
-        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp);
+        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, Setting::get('network.payment_reminder_url', config('app.url')));
 
         return response()->json([
             'success' => true,
