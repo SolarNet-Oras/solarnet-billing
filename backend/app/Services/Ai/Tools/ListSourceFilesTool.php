@@ -25,7 +25,7 @@ class ListSourceFilesTool implements AiTool
                     'properties' => [
                         'path' => [
                             'type'        => 'string',
-                            'description' => 'Absolute directory path (e.g. /app/backend/app/Services/Ai/Tools). Defaults to /app/backend/app if omitted.',
+                            'description' => 'Absolute directory path (e.g. /var/www/app/Services/Ai/Tools). Defaults to /var/www/app if omitted.',
                         ],
                     ],
                     'required' => [],
@@ -41,7 +41,7 @@ class ListSourceFilesTool implements AiTool
 
     public function execute(User $user, array $arguments): array
     {
-        $raw = (string) ($arguments['path'] ?? '/app/backend/app');
+        $raw = (string) ($arguments['path'] ?? '/var/www/app');
         try {
             $abs = CodeToolGuards::resolveSafePath($raw);
         } catch (\InvalidArgumentException $e) {

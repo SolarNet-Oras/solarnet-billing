@@ -63,6 +63,8 @@ services:
     restart: unless-stopped
     volumes:
       - ../backend:/var/www
+      # Read-only source mount for the super-admin AI code-review tools.
+      - ../frontend:/var/www/frontend:ro
       - backend_storage:/var/www/storage
     env_file: .env
     environment:

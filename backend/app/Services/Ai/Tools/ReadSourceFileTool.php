@@ -19,13 +19,13 @@ class ReadSourceFileTool implements AiTool
             'type'     => 'function',
             'function' => [
                 'name'        => 'read_source_file',
-                'description' => 'Read a single source file (PHP/TS/TSX/JSON/MD/CSS) so you can review, refactor, or suggest improvements. Restricted to /app/backend/app, /app/backend/config, /app/backend/database/migrations, /app/backend/routes, /app/backend/tests, and /app/frontend/src. Max 64 KB. NEVER modifies anything on disk. Super-admin only.',
+                'description' => 'Read a single source file (PHP/TS/TSX/JSON/MD/CSS) so you can review, refactor, or suggest improvements. Restricted to /var/www/app, /var/www/config, /var/www/database/migrations, /var/www/routes, /var/www/tests, and /var/www/frontend/src. Max 64 KB. NEVER modifies anything on disk. Super-admin only.',
                 'parameters'  => [
                     'type'       => 'object',
                     'properties' => [
                         'path' => [
                             'type'        => 'string',
-                            'description' => 'Absolute path starting with /app/backend/... or /app/frontend/src/...',
+                            'description' => 'Absolute path starting with /var/www/... or /var/www/frontend/src/...',
                         ],
                     ],
                     'required' => ['path'],

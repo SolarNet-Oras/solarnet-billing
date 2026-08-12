@@ -15,12 +15,15 @@ final class CodeToolGuards
 {
     /** Directory prefixes the AI is allowed to read from. */
     public const ALLOWED_ROOTS = [
-        '/app/backend/app',
-        '/app/backend/config',
-        '/app/backend/database/migrations',
-        '/app/backend/routes',
-        '/app/backend/tests',
-        '/app/frontend/src',
+        // The production backend container mounts Laravel's backend directory
+        // directly at /var/www (see deploy/docker-compose.prod.yml).
+        '/var/www/app',
+        '/var/www/config',
+        '/var/www/database/migrations',
+        '/var/www/routes',
+        '/var/www/tests',
+        // The frontend source is mounted read-only for super-admin review.
+        '/var/www/frontend/src',
     ];
 
     /** Extensions the AI can read. Everything else is refused. */
