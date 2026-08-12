@@ -4,7 +4,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
-import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, X } from 'lucide-react';
+import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X } from 'lucide-react';
 
 type Tab = 'static' | 'dynamic';
 
@@ -21,6 +21,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
   const [modalLease, setModalLease] = useState<UnregisteredLease | null>(null);
+  const [search, setSearch] = useState<string>('');
 
   useEffect(() => {
     void loadAll();
@@ -125,6 +126,25 @@ const UnregisteredLeasesPage: React.FC = () => {
   const routerName = (id: string): string =>
     routers.find((r) => r.id === id)?.name ?? 'Unknown router';
 
+  const normalizedSearch = search.trim().toLowerCase();
+  const filterLeases = (leases: UnregisteredLease[]): UnregisteredLease[] => {
+    if (!normalizedSearch) return leases;
+
+    return leases.filter((lease) => [
+      lease.mac_address,
+      lease.ip_address,
+      lease.hostname,
+      lease.comment,
+      lease.rate_limit,
+      lease.status,
+      lease.server,
+      routerName(lease.router_id),
+    ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch)));
+  };
+
+  const filteredStaticLeases = filterLeases(staticLeases);
+  const filteredDynamicLeases = filterLeases(dynamicLeases);
+
   return (
     <DashboardLayout>
       <div className="max-w-7xl mx-auto space-y-6">
@@ -172,20 +192,44 @@ const UnregisteredLeasesPage: React.FC = () => {
           </div>
         )}
 
+        <div className="relative max-w-xl" data-testid="unregistered-lease-search">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search MAC, IP, hostname, comment, router, rate limit…"
+            className="w-full rounded-lg border border-input bg-background py-2.5 pl-10 pr-10 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary"
+            data-testid="unregistered-lease-search-input"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear lease search"
+              data-testid="unregistered-lease-search-clear"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <p className="mt-1.5 text-xs text-muted-foreground">Searches all unregistered lease details from both MikroTik routers.</p>
+        </div>
+
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
           <TabButton
             active={tab === 'static'}
             onClick={() => setTab('static')}
             label={`Static + Comment`}
-            count={staticLeases.length}
+            count={filteredStaticLeases.length}
             testId="tab-static"
           />
           <TabButton
             active={tab === 'dynamic'}
             onClick={() => setTab('dynamic')}
             label={`Dynamic / Manual`}
-            count={dynamicLeases.length}
+            count={filteredDynamicLeases.length}
             testId="tab-dynamic"
           />
         </div>
@@ -195,14 +239,14 @@ const UnregisteredLeasesPage: React.FC = () => {
           <div className="p-12 text-center text-muted-foreground">Loading leases…</div>
         ) : tab === 'static' ? (
           <StaticLeasesTable
-            leases={staticLeases}
+            leases={filteredStaticLeases}
             routerName={routerName}
             onRegister={handleQuickRegister}
             registeringId={registeringId}
           />
         ) : (
           <DynamicLeasesTable
-            leases={dynamicLeases}
+            leases={filteredDynamicLeases}
             routerName={routerName}
             onRegister={(l) => setModalLease(l)}
             onAdd={handleManualAdd}
