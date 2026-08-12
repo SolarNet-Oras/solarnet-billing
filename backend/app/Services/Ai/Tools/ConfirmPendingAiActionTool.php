@@ -12,7 +12,26 @@ use Illuminate\Support\Facades\DB;
 class ConfirmPendingAiActionTool implements AiTool
 {
     public function name(): string { return 'confirm_pending_action'; }
-    public function schema(): array { return ['type' => 'function', 'function' => ['name' => $this->name(), 'description' => 'Apply the latest pending action only after the user explicitly replies Confirm.', 'parameters' => ['type' => 'object', 'properties' => ['action_id' => ['type' => 'string', 'description' => 'Optional pending action ID. Omit to confirm the latest action.']], 'required' => []]]; }
+    public function schema(): array
+    {
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => $this->name(),
+                'description' => 'Apply the latest pending action only after the user explicitly replies Confirm.',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'action_id' => [
+                            'type' => 'string',
+                            'description' => 'Optional pending action ID. Omit to confirm the latest action.',
+                        ],
+                    ],
+                    'required' => [],
+                ],
+            ],
+        ];
+    }
     public function authorize(User $user): bool { return $user->hasRole('super_admin') || $user->hasPermission('edit-customers') || $user->hasPermission('create-service-plans'); }
     public function execute(User $user, array $arguments): array
     {
