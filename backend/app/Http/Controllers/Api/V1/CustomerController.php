@@ -335,7 +335,21 @@ class CustomerController extends Controller
             ], 422);
         }
 
-        $customer->update($validator->validated());
+        $validated = $validator->validated();
+        $statusWasChanged = array_key_exists('status', $validated) && $validated['status'] !== $customer->status;
+        if ($statusWasChanged) {
+            // Any status picked from the operator form is intentional. Keep
+            // the monthly billing scheduler from undoing it unexpectedly.
+            $validated['suspension_source'] = in_array($validated['status'], ['suspended', 'expired'], true)
+                ? 'manual'
+                : null;
+        }
+        $customer->update($validated);
+
+        if ($statusWasChanged) {
+            $customer->load(['servicePlan', 'router']);
+            app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($customer, true);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -428,7 +442,7 @@ class CustomerController extends Controller
     public function suspend(string $id): JsonResponse
     {
         $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
-        $result = app(BillingSuspensionService::class)->suspendCustomer($customer);
+        $result = app(BillingSuspensionService::class)->suspendCustomer($customer, [], true, 'manual', 'suspended');
 
         return response()->json($result);
     }

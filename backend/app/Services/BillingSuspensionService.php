@@ -106,7 +106,7 @@ class BillingSuspensionService
         $customers = Customer::query()
             ->with(['servicePlan', 'router'])
             ->where(function ($query) use ($cutoff) {
-                $query->where('status', 'suspended')
+                $query->where('suspension_source', 'automation')
                     ->orWhereExists(function ($invoiceQuery) use ($cutoff) {
                         $invoiceQuery->selectRaw('1')
                             ->from('invoices')
@@ -131,13 +131,13 @@ class BillingSuspensionService
             try {
                 $billingState = $this->billingState($customer);
 
-                if ($billingState['should_suspend']) {
-                    $this->suspendCustomer($customer, $billingState);
+                if ($billingState['should_suspend'] && $customer->status === 'active') {
+                    $this->suspendCustomer($customer, $billingState, false, 'automation');
                     $summary['suspended']++;
                     continue;
                 }
 
-                if ($customer->status === 'suspended' && $billingState['outstanding_balance'] <= 0) {
+                if ($customer->suspension_source === 'automation' && $billingState['outstanding_balance'] <= 0) {
                     $this->restoreCustomer($customer, 'payment_confirmed');
                     $summary['restored']++;
                 }
@@ -158,21 +158,46 @@ class BillingSuspensionService
         $customer->loadMissing(['servicePlan', 'router']);
         $billingState = $this->billingState($customer);
 
+        // Status chosen by an operator always wins. Do not restore a manually
+        // suspended/expired client merely because the due date has not passed.
+        if (in_array($customer->status, ['suspended', 'expired'], true)) {
+            return $this->suspendCustomer(
+                $customer,
+                $billingState,
+                $force,
+                $customer->suspension_source ?: 'manual',
+                $customer->status,
+            );
+        }
+
+        if ($customer->status === 'pending') {
+            $queueResult = $this->queueService->syncCustomerQueue($customer);
+            $addressResult = $this->syncSuspendedAddressList($customer, false, $customer->router);
+            return [
+                'success' => (bool) ($queueResult['success'] ?? false),
+                'action' => 'sync_pending',
+                'customer_id' => $customer->id,
+                'queue' => $queueResult,
+                'address_list' => $addressResult,
+            ];
+        }
+
         if ($billingState['should_suspend']) {
-            return $this->suspendCustomer($customer, $billingState, $force);
+            return $this->suspendCustomer($customer, $billingState, $force, 'automation');
         }
 
         return $this->restoreCustomer($customer, 'billing_current', $force);
     }
 
-    public function suspendCustomer(Customer $customer, array $billingState = [], bool $force = false): array
+    public function suspendCustomer(Customer $customer, array $billingState = [], bool $force = false, string $source = 'manual', string $status = 'suspended'): array
     {
         $customer->loadMissing(['servicePlan', 'router']);
         $billingState = $billingState ?: $this->billingState($customer);
         $router = $customer->router;
 
         $customer->forceFill([
-            'status' => 'suspended',
+            'status' => $status === 'expired' ? 'expired' : 'suspended',
+            'suspension_source' => $source,
             'queue_sync_status' => 'pending',
         ])->saveQuietly();
 
@@ -212,6 +237,7 @@ class BillingSuspensionService
 
         $customer->forceFill([
             'status' => 'active',
+            'suspension_source' => null,
             'queue_sync_status' => 'pending',
         ])->saveQuietly();
 

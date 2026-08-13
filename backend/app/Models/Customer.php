@@ -50,6 +50,7 @@ class Customer extends Model
         'queue_synced',
         'queue_last_synced_at',
         'queue_sync_status',
+        'suspension_source',
     ];
 
     /**

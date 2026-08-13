@@ -309,7 +309,7 @@ class InvoiceService
             // when it has no other invoice past the configured suspension grace
             // period. Saving the customer triggers the normal queue sync.
             $customer = $invoice->customer;
-            if ($customer && $customer->status === 'suspended') {
+            if ($customer && $customer->status === 'suspended' && $customer->suspension_source === 'automation') {
                 $graceCutoff = now()->subDays((int) Setting::get('billing.auto_suspend_days', 15))->startOfDay();
                 $hasPastDueBalance = Invoice::where('customer_id', $customer->id)
                     ->where('balance', '>', 0)
