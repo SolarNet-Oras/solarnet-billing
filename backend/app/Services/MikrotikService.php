@@ -14,6 +14,8 @@ class MikrotikService
 {
     private const BILLING_RULE_PREFIX = 'Solarnet Billing: suspended';
     private const SUSPENDED_ADDRESS_LIST = 'suspended_customers';
+    private const PAYMENT_PORTAL_ADDRESS_LIST = 'solarnet_payment_portal';
+    private const PAYMENT_PORTAL_COMMENT_PREFIX = 'Solarnet Billing payment portal';
 
     protected function makeConfig(Router $router): Config
     {
@@ -799,6 +801,13 @@ class MikrotikService
 
         try {
             $client = new Client($this->makeConfig($router));
+            if ($this->paymentPortalAddressListHasUnmanagedEntries($client)) {
+                return [
+                    'success' => false,
+                    'message' => 'The solarnet_payment_portal address list contains entries not created by SolarNet. No firewall changes were made.',
+                ];
+            }
+            $this->ensurePaymentPortalAddressList($client, $paymentIp, $host);
             $this->removeBillingFilterRules($client);
 
             // `place-before=0` puts each new rule above the previous one;
@@ -808,7 +817,7 @@ class MikrotikService
                 ['protocol' => null,  'dst_port' => null,     'dst_address' => null,       'action' => 'drop',   'comment' => self::BILLING_RULE_PREFIX . ' block internet'],
                 ['protocol' => 'tcp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS TCP'],
                 ['protocol' => 'udp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS UDP'],
-                ['protocol' => 'tcp', 'dst_port' => '80,443', 'dst_address' => $paymentIp, 'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow payment portal'],
+                ['protocol' => 'tcp', 'dst_port' => '80,443', 'dst_address_list' => self::PAYMENT_PORTAL_ADDRESS_LIST, 'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow payment portal'],
             ];
 
             foreach ($rules as $rule) {
@@ -820,7 +829,7 @@ class MikrotikService
                     ->equal('place-before', '0');
                 if ($rule['protocol']) $query->equal('protocol', $rule['protocol']);
                 if ($rule['dst_port']) $query->equal('dst-port', $rule['dst_port']);
-                if ($rule['dst_address']) $query->equal('dst-address', $rule['dst_address']);
+                if (!empty($rule['dst_address_list'])) $query->equal('dst-address-list', $rule['dst_address_list']);
                 $client->query($query)->read();
             }
 
@@ -844,11 +853,17 @@ class MikrotikService
         try {
             $client = new Client($this->makeConfig($router));
             $rules = $this->billingFilterRules($client);
+            $paymentPortalEntries = $this->paymentPortalAddressListEntries($client);
             $audit = $this->billingNetworkAudit($client);
             return [
                 'success' => true,
-                'installed' => count($rules) === 4,
+                'installed' => count($rules) === 4 && count($paymentPortalEntries) === 1,
                 'rule_count' => count($rules),
+                'payment_portal_entries' => array_map(fn (array $entry) => [
+                    'address' => $entry['address'] ?? null,
+                    'comment' => $entry['comment'] ?? '',
+                    'disabled' => ($entry['disabled'] ?? 'false') === 'true',
+                ], $paymentPortalEntries),
                 'audit' => $audit,
                 'rules' => array_map(fn (array $rule) => [
                     'id' => $rule['.id'] ?? null,
@@ -921,6 +936,47 @@ class MikrotikService
                     ->equal('comment', 'Solarnet Billing placeholder - do not enable')
             )->read();
         }
+    }
+
+    /**
+     * Refresh only the address-list entries owned by the billing application.
+     * The firewall rule points at this list, so a later refresh never needs to
+     * touch customer entries or unrelated firewall rules.
+     */
+    private function ensurePaymentPortalAddressList(Client $client, string $paymentIp, string $host): void
+    {
+        foreach ($this->paymentPortalAddressListEntries($client) as $entry) {
+            if (!empty($entry['.id'])) {
+                $client->query((new Query('/ip/firewall/address-list/remove'))->equal('.id', $entry['.id']))->read();
+            }
+        }
+
+        $client->query(
+            (new Query('/ip/firewall/address-list/add'))
+                ->equal('list', self::PAYMENT_PORTAL_ADDRESS_LIST)
+                ->equal('address', $paymentIp)
+                ->equal('comment', self::PAYMENT_PORTAL_COMMENT_PREFIX . ' ' . $host)
+        )->read();
+    }
+
+    private function paymentPortalAddressListEntries(Client $client): array
+    {
+        $entries = $client->query((new Query('/ip/firewall/address-list/print'))->where('list', self::PAYMENT_PORTAL_ADDRESS_LIST))->read();
+
+        return array_values(array_filter($entries, fn (array $entry) => str_starts_with(
+            (string) ($entry['comment'] ?? ''),
+            self::PAYMENT_PORTAL_COMMENT_PREFIX,
+        )));
+    }
+
+    private function paymentPortalAddressListHasUnmanagedEntries(Client $client): bool
+    {
+        $entries = $client->query((new Query('/ip/firewall/address-list/print'))->where('list', self::PAYMENT_PORTAL_ADDRESS_LIST))->read();
+
+        return collect($entries)->contains(fn (array $entry) => !str_starts_with(
+            (string) ($entry['comment'] ?? ''),
+            self::PAYMENT_PORTAL_COMMENT_PREFIX,
+        ));
     }
 
     private function billingNetworkAudit(Client $client): array

@@ -149,6 +149,13 @@ LIST;
 # HTTPS is NOT transparently redirected because that causes certificate errors.
 /ip firewall filter
 :foreach rule in=[find comment~"^Solarnet Billing: suspended"] do={ remove \$rule }
+# Keep the payment destination separate from customer suspension entries. Only
+# this Solarnet-managed destination entry is replaced when the script is rerun.
+/ip firewall address-list
+:foreach entry in=[find list="solarnet_payment_portal" comment~"^Solarnet Billing payment portal"] do={ remove \$entry }
+add list="solarnet_payment_portal" address={$paymentPortalIp} \\
+    comment="Solarnet Billing payment portal {$paymentPortalHost}"
+/ip firewall filter
 add chain=forward src-address-list=suspended_customers action=drop \\
     comment="Solarnet Billing: suspended block internet" place-before=0
 add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 action=accept \\
@@ -156,7 +163,7 @@ add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 
 add chain=forward src-address-list=suspended_customers protocol=udp dst-port=53 action=accept \\
     comment="Solarnet Billing: suspended allow DNS UDP" place-before=0
 add chain=forward src-address-list=suspended_customers protocol=tcp \\
-    dst-address={$paymentPortalIp} dst-port=80,443 action=accept \\
+    dst-address-list=solarnet_payment_portal dst-port=80,443 action=accept \\
     comment="Solarnet Billing: suspended allow payment portal" place-before=0
 :put "  [+] Suspended clients limited to DNS + payment portal ({$paymentPortalHost})"
 
