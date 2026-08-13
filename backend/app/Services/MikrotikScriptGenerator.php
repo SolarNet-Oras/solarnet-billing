@@ -6,6 +6,9 @@ use App\Models\Router;
 
 class MikrotikScriptGenerator
 {
+    /** PayMongo hosts the GCash checkout page; keep the walled garden narrow. */
+    private const PAYMENT_CHECKOUT_HOSTS = ['checkout.paymongo.com'];
+
     /**
      * Generate RouterOS setup script for API configuration
      * 
@@ -31,6 +34,13 @@ class MikrotikScriptGenerator
         $paymentPortalIp = $paymentPortalHost ? gethostbyname($paymentPortalHost) : null;
         if (!filter_var($paymentPortalIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             $paymentPortalIp = filter_var($billingSystemIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $billingSystemIp : null;
+        }
+        $paymentCheckoutHosts = [];
+        foreach (self::PAYMENT_CHECKOUT_HOSTS as $checkoutHost) {
+            $checkoutIp = gethostbyname($checkoutHost);
+            if (filter_var($checkoutIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $paymentCheckoutHosts[$checkoutHost] = $checkoutIp;
+            }
         }
 
         $script = <<<SCRIPT
@@ -155,7 +165,7 @@ LIST;
 :foreach entry in=[find list="solarnet_payment_portal" comment~"^Solarnet Billing payment portal"] do={ remove \$entry }
 add list="solarnet_payment_portal" address={$paymentPortalIp} \\
     comment="Solarnet Billing payment portal {$paymentPortalHost}"
-/ip firewall filter
+{$this->paymentCheckoutAddressListLines($paymentCheckoutHosts)}/ip firewall filter
 add chain=forward src-address-list=suspended_customers action=drop \\
     comment="Solarnet Billing: suspended block internet"
 add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 action=accept \\
@@ -171,7 +181,7 @@ move [find comment="Solarnet Billing: suspended allow payment portal"] destinati
 move [find comment="Solarnet Billing: suspended allow DNS UDP"] destination=1
 move [find comment="Solarnet Billing: suspended allow DNS TCP"] destination=2
 move [find comment="Solarnet Billing: suspended block internet"] destination=3
-:put "  [+] Suspended clients limited to DNS + payment portal ({$paymentPortalHost})"
+:put "  [+] Suspended clients limited to DNS + SolarNet portal + PayMongo GCash checkout"
 
 BILLING;
         } else {
@@ -256,6 +266,26 @@ TAIL;
 SCRIPT;
     }
 
+    /** @param array<string, string> $hosts IPv4 addresses resolved by the billing server. */
+    private function paymentCheckoutAddressListLines(array $hosts): string
+    {
+        if ($hosts === []) {
+            return '';
+        }
+
+        $lines = [
+            '# PayMongo hosts the secure GCash checkout. It is allowed only for',
+            '# suspended customers and only over HTTP(S), via the same allow-list.',
+        ];
+
+        foreach ($hosts as $host => $ip) {
+            $lines[] = 'add list="solarnet_payment_portal" address=' . $ip . ' \\';
+            $lines[] = '    comment="Solarnet Billing payment portal ' . $host . '"';
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
     /**
      * Generate firewall redirect script for payment portal
      * 
@@ -278,6 +308,9 @@ SCRIPT;
 # Create walled garden for payment portal domain
 /ip hotspot walled-garden
 add dst-host={$paymentHost} comment="Allow access to payment portal"
+:if ([:len [find dst-host="checkout.paymongo.com"]] = 0) do={
+    add dst-host="checkout.paymongo.com" comment="Allow PayMongo GCash checkout"
+}
 
 # Create NAT rule to redirect HTTP traffic to the payment portal domain
 # HTTPS should be handled by a captive portal / hotspot login page, not a

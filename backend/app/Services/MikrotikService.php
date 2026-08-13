@@ -16,6 +16,12 @@ class MikrotikService
     private const SUSPENDED_ADDRESS_LIST = 'suspended_customers';
     private const PAYMENT_PORTAL_ADDRESS_LIST = 'solarnet_payment_portal';
     private const PAYMENT_PORTAL_COMMENT_PREFIX = 'Solarnet Billing payment portal';
+    /**
+     * Customers are sent to this PayMongo-hosted page to choose GCash and
+     * complete payment. Keep this deliberately narrow: allowing arbitrary
+     * GCash domains would defeat the payment-only network policy.
+     */
+    private const PAYMENT_CHECKOUT_HOSTS = ['checkout.paymongo.com'];
 
     protected function makeConfig(Router $router): Config
     {
@@ -837,9 +843,14 @@ class MikrotikService
             return ['success' => false, 'message' => 'Payment reminder URL must be a valid absolute URL.'];
         }
 
-        $paymentIp = gethostbyname($host);
-        if (!filter_var($paymentIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $allowedHosts = $this->resolvePaymentHosts(array_merge([$host], self::PAYMENT_CHECKOUT_HOSTS));
+        if (!isset($allowedHosts[$host])) {
             return ['success' => false, 'message' => "Could not resolve the payment portal host: {$host}"];
+        }
+        foreach (self::PAYMENT_CHECKOUT_HOSTS as $checkoutHost) {
+            if (!isset($allowedHosts[$checkoutHost])) {
+                return ['success' => false, 'message' => "Could not resolve the PayMongo checkout host: {$checkoutHost}. No firewall changes were made."];
+            }
         }
 
         try {
@@ -850,7 +861,7 @@ class MikrotikService
                     'message' => 'The solarnet_payment_portal address list contains entries not created by SolarNet. No firewall changes were made.',
                 ];
             }
-            $this->ensurePaymentPortalAddressList($client, $paymentIp, $host);
+            $this->ensurePaymentPortalAddressList($client, $allowedHosts);
             $this->removeBillingFilterRules($client);
 
             // RouterOS versions differ in how they interpret numeric
@@ -881,9 +892,10 @@ class MikrotikService
 
             return [
                 'success' => true,
-                'message' => "Installed payment-only access rules for {$host} ({$paymentIp}).",
+                'message' => 'Installed payment-only access rules for the customer portal and PayMongo GCash checkout.',
                 'payment_portal_host' => $host,
-                'payment_portal_ip' => $paymentIp,
+                'payment_portal_ip' => $allowedHosts[$host],
+                'allowed_payment_hosts' => array_keys($allowedHosts),
                 'rules_installed' => 4,
             ];
         } catch (Throwable $e) {
@@ -901,7 +913,7 @@ class MikrotikService
             $audit = $this->billingNetworkAudit($client);
             return [
                 'success' => true,
-                'installed' => count($rules) === 4 && count($paymentPortalEntries) === 1,
+                'installed' => count($rules) === 4 && count($paymentPortalEntries) >= 1 + count(self::PAYMENT_CHECKOUT_HOSTS),
                 'rule_count' => count($rules),
                 'payment_portal_entries' => array_map(fn (array $entry) => [
                     'address' => $entry['address'] ?? null,
@@ -1012,7 +1024,7 @@ class MikrotikService
      * The firewall rule points at this list, so a later refresh never needs to
      * touch customer entries or unrelated firewall rules.
      */
-    private function ensurePaymentPortalAddressList(Client $client, string $paymentIp, string $host): void
+    private function ensurePaymentPortalAddressList(Client $client, array $allowedHosts): void
     {
         foreach ($this->paymentPortalAddressListEntries($client) as $entry) {
             if (!empty($entry['.id'])) {
@@ -1020,12 +1032,28 @@ class MikrotikService
             }
         }
 
-        $client->query(
-            (new Query('/ip/firewall/address-list/add'))
-                ->equal('list', self::PAYMENT_PORTAL_ADDRESS_LIST)
-                ->equal('address', $paymentIp)
-                ->equal('comment', self::PAYMENT_PORTAL_COMMENT_PREFIX . ' ' . $host)
-        )->read();
+        foreach ($allowedHosts as $host => $ip) {
+            $client->query(
+                (new Query('/ip/firewall/address-list/add'))
+                    ->equal('list', self::PAYMENT_PORTAL_ADDRESS_LIST)
+                    ->equal('address', $ip)
+                    ->equal('comment', self::PAYMENT_PORTAL_COMMENT_PREFIX . ' ' . $host)
+            )->read();
+        }
+    }
+
+    /** @return array<string, string> Hostname => resolved IPv4 address. */
+    private function resolvePaymentHosts(array $hosts): array
+    {
+        $resolved = [];
+        foreach (array_unique($hosts) as $host) {
+            $ip = gethostbyname($host);
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $resolved[$host] = $ip;
+            }
+        }
+
+        return $resolved;
     }
 
     private function paymentPortalAddressListEntries(Client $client): array
