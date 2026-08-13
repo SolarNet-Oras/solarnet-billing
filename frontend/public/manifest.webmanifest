@@ -1,0 +1,18 @@
+{
+  "name": "SolarNet Customer App",
+  "short_name": "SolarNet",
+  "description": "View your SolarNet account, bills, payments, and support updates.",
+  "start_url": "/customer/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/solarnet-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

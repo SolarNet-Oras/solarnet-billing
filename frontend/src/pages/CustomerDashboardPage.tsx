@@ -14,6 +14,7 @@ import {
 import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
 import { formatPHP } from '../lib/currency';
+import CustomerAppInstallCard from '../components/customer/CustomerAppInstallCard';
 
 const CustomerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -265,6 +266,7 @@ const CustomerDashboardPage: React.FC = () => {
               </div>
             </button>
           </div>
+          <CustomerAppInstallCard />
         </div>
       </div>
     </div>
