@@ -6,7 +6,7 @@ import { formatPHP } from '@/lib/currency';
 type Entry = { id: string; description: string; category?: string; amount: number; payment_method: string };
 type Wallet = { collections: number; cash_in: number; transfers_in: number; transfers_out: number; expenses: number; balance: number };
 type Data = { collections: Entry[]; cash_in: Entry[]; transfers: Entry[]; expenses: Entry[]; wallets: Record<'cash' | 'gcash' | 'bpi' | 'landbank', Wallet> };
-type Definition = { id: string; type: string; description: string; payment_method: string };
+type Definition = { id: string; type: string; description: string; payment_method: string; active?: boolean };
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'Cash', gcash: 'GCash', bank_bpi: 'BPI', bank_landbank: 'Landbank',
@@ -25,19 +25,23 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const [reference, setReference] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [masterOpen, setMasterOpen] = useState(false);
+  const [masterForm, setMasterForm] = useState({ type: '', description: '', payment_method: 'cash', source_wallet: '' });
+  const [isSavingMaster, setIsSavingMaster] = useState(false);
 
-  const types = useMemo(() => [...new Set(definitions.map((definition) => definition.type))], [definitions]);
-  const descriptions = useMemo(() => [...new Set(definitions.filter((definition) => definition.type === type).map((definition) => definition.description))], [definitions, type]);
-  const paymentOptions = useMemo(() => definitions.filter((definition) => definition.type === type && definition.description === description), [definitions, type, description]);
+  const activeDefinitions = useMemo(() => definitions.filter((definition) => definition.active !== false), [definitions]);
+  const types = useMemo(() => [...new Set(activeDefinitions.map((definition) => definition.type))], [activeDefinitions]);
+  const descriptions = useMemo(() => [...new Set(activeDefinitions.filter((definition) => definition.type === type).map((definition) => definition.description))], [activeDefinitions, type]);
+  const paymentOptions = useMemo(() => activeDefinitions.filter((definition) => definition.type === type && definition.description === description), [activeDefinitions, type, description]);
 
   const load = async (): Promise<void> => {
     try {
-      const [ledger, master] = await Promise.all([api.get('/financial-entries', { params: { date } }), api.get('/transaction-definitions')]);
+      const [ledger, master] = await Promise.all([api.get('/financial-entries', { params: { date } }), api.get('/transaction-definitions', { params: { include_inactive: masterOpen } })]);
       setData(ledger.data.data);
       setDefinitions(master.data.data);
     } catch { setError('Could not load the daily ledger.'); }
   };
-  useEffect(() => { void load(); }, [date]);
+  useEffect(() => { void load(); }, [date, masterOpen]);
 
   const save = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
@@ -51,13 +55,33 @@ export default function OperationsLedgerPage(): React.JSX.Element {
     finally { setIsSaving(false); }
   };
 
+  const saveMaster = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (isSavingMaster) return;
+    setError(''); setIsSavingMaster(true);
+    try {
+      await api.post('/transaction-definitions', { ...masterForm, source_wallet: masterForm.source_wallet || null });
+      setMasterForm({ type: '', description: '', payment_method: 'cash', source_wallet: '' });
+      await load();
+    } catch (requestError: any) { setError(requestError.response?.data?.message || 'Could not save this dropdown option.'); }
+    finally { setIsSavingMaster(false); }
+  };
+
+  const deactivateMaster = async (definition: Definition): Promise<void> => {
+    if (!window.confirm(`Remove “${definition.type} → ${definition.description} → ${METHOD_LABELS[definition.payment_method] ?? definition.payment_method}” from future dropdowns? Historical records will be kept.`)) return;
+    setError('');
+    try { await api.delete(`/transaction-definitions/${definition.id}`); await load(); }
+    catch (requestError: any) { setError(requestError.response?.data?.message || 'Could not remove this dropdown option.'); }
+  };
+
   const list = (items: Entry[], empty: string) => <div className="mt-3 divide-y divide-border text-sm">{items.length ? items.map((item) => <div key={item.id} className="flex justify-between gap-3 py-2"><span><b>{item.category}</b><span className="ml-2">{item.description}</span><span className="ml-2 text-muted-foreground">{METHOD_LABELS[item.payment_method] ?? item.payment_method}</span></span><b>{formatPHP(item.amount)}</b></div>) : <p className="py-3 text-muted-foreground">{empty}</p>}</div>;
   const wallets: Array<['cash' | 'gcash' | 'bpi' | 'landbank', string, string]> = [['cash', 'Cash', 'text-emerald-600'], ['gcash', 'GCash', 'text-violet-600'], ['bpi', 'BPI', 'text-blue-600'], ['landbank', 'Landbank', 'text-cyan-600']];
 
   return <DashboardLayout><main className="mx-auto max-w-6xl space-y-6">
-    <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-3xl font-bold text-foreground">Daily Operations</h1><p className="mt-1 text-muted-foreground">A validated transaction master controls every record and wallet effect.</p></div><input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-foreground" /></div>
+    <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-3xl font-bold text-foreground">Daily Operations</h1><p className="mt-1 text-muted-foreground">A validated transaction master controls every record and wallet effect.</p></div><div className="flex gap-2"><button type="button" onClick={() => setMasterOpen((open) => !open)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium text-foreground">{masterOpen ? 'Close dropdown settings' : 'Manage dropdowns'}</button><input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-foreground" /></div></div>
     {error && <p className="rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}
     <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{wallets.map(([key, name, color]) => { const wallet = data?.wallets?.[key] ?? { collections: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 }; return <article key={key} className="rounded-2xl border border-border bg-card p-5"><p className="text-sm text-muted-foreground">{name} balance</p><p className={`mt-2 text-2xl font-bold ${color}`}>{formatPHP(wallet.balance)}</p><p className="mt-2 text-xs text-muted-foreground">Collections {formatPHP(wallet.collections)} · In {formatPHP(wallet.cash_in + wallet.transfers_in)} · Out {formatPHP(wallet.expenses + wallet.transfers_out)}</p></article>; })}</section>
+    {masterOpen && <section className="rounded-2xl border border-border bg-card p-5"><div><h2 className="font-semibold text-foreground">Transaction dropdown settings</h2><p className="mt-1 text-sm text-muted-foreground">Add one allowed Type → Description → Payment Method combination. Remove only deactivates it; saved financial records are never deleted.</p></div><div className="mt-5 grid gap-6 lg:grid-cols-2"><form onSubmit={saveMaster} className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-muted-foreground">Type<input required value={masterForm.type} onChange={(event) => setMasterForm({ ...masterForm, type: event.target.value })} placeholder="e.g. CCTV Supplies" className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label><label className="text-xs font-semibold text-muted-foreground">Description<input required value={masterForm.description} onChange={(event) => setMasterForm({ ...masterForm, description: event.target.value })} placeholder="e.g. Installation" className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label><label className="text-xs font-semibold text-muted-foreground">Payment method<select value={masterForm.payment_method} onChange={(event) => setMasterForm({ ...masterForm, payment_method: event.target.value })} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_bpi">BPI</option><option value="bank_landbank">Landbank</option><option value="add_to_cash">Add to Cash</option><option value="add_to_gcash">Add to GCash</option><option value="deposit_to_bpi">Deposit to BPI</option><option value="deposit_to_landbank">Deposit to Landbank</option></select></label><label className="text-xs font-semibold text-muted-foreground">Source wallet <span className="font-normal">(Cash In transfer only)</span><select value={masterForm.source_wallet} onChange={(event) => setMasterForm({ ...masterForm, source_wallet: event.target.value })} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground"><option value="">New cash in / no source</option><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bpi">BPI</option><option value="landbank">Landbank</option></select></label><button disabled={isSavingMaster} className="rounded-lg bg-primary p-2 font-semibold text-primary-foreground disabled:opacity-50 sm:col-span-2">{isSavingMaster ? 'Saving…' : 'Add dropdown option'}</button></form><div className="max-h-72 overflow-auto rounded-lg border border-border"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-card text-muted-foreground"><tr><th className="p-2">Type</th><th className="p-2">Description</th><th className="p-2">Method</th><th className="p-2">Status</th><th className="p-2"></th></tr></thead><tbody>{definitions.map((definition) => <tr key={definition.id} className="border-t border-border"><td className="p-2">{definition.type}</td><td className="p-2">{definition.description}</td><td className="p-2">{METHOD_LABELS[definition.payment_method] ?? definition.payment_method}</td><td className="p-2">{definition.active === false ? 'Inactive' : 'Active'}</td><td className="p-2">{definition.active !== false && <button type="button" onClick={() => void deactivateMaster(definition)} className="text-red-600 hover:underline">Remove</button>}</td></tr>)}</tbody></table></div></div></section>}
     <section className="grid gap-6 lg:grid-cols-3"><form onSubmit={save} className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Add daily record</h2><p className="mt-1 text-xs text-muted-foreground">Choose each field in order. Invalid combinations cannot be saved.</p><div className="mt-4 space-y-3">
       <label className="block text-xs font-semibold text-muted-foreground">Type of transaction<select required value={type} onChange={(event) => { setType(event.target.value); setDescription(''); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground"><option value="">Select transaction type</option>{types.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label className="block text-xs font-semibold text-muted-foreground">Description<select required disabled={!type} value={description} onChange={(event) => { setDescription(event.target.value); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{type ? 'Select description' : 'Select a type first'}</option>{descriptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>

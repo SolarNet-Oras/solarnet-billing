@@ -53,10 +53,56 @@ class FinancialEntryController extends Controller
 
     public function definitions(Request $request): JsonResponse
     {
-        $query = TransactionDefinition::query()->where('active', true);
+        $query = TransactionDefinition::query();
+        if (!$request->boolean('include_inactive')) $query->where('active', true);
         if ($request->filled('type')) $query->where('type', $request->string('type'));
         if ($request->filled('description')) $query->where('description', $request->string('description'));
-        return response()->json(['data' => $query->orderBy('sort_order')->get(['id', 'type', 'description', 'payment_method'])]);
+        return response()->json(['data' => $query->orderBy('sort_order')->get(['id', 'type', 'description', 'payment_method', 'effect_type', 'source_wallet', 'destination_wallet', 'active'])]);
+    }
+
+    public function createDefinition(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'type' => 'required|string|max:100',
+            'description' => 'required|string|max:255',
+            'payment_method' => 'required|in:cash,gcash,bank_bpi,bank_landbank,add_to_cash,add_to_gcash,deposit_to_bpi,deposit_to_landbank',
+            'source_wallet' => 'nullable|in:cash,gcash,bpi,landbank',
+        ]);
+        $data['type'] = trim($data['type']);
+        $data['description'] = trim($data['description']);
+
+        if ($data['type'] === 'Cash In') {
+            $destination = $this->walletFor($data['payment_method']);
+            if ($destination === 'other' || in_array($data['payment_method'], ['cash', 'gcash', 'bank_bpi', 'bank_landbank'], true)) {
+                return response()->json(['message' => 'Cash In must use an Add to or Deposit to destination.'], 422);
+            }
+            $effect = $data['source_wallet'] ? 'transfer' : 'cash_in';
+        } else {
+            if (!in_array($data['payment_method'], ['cash', 'gcash', 'bank_bpi', 'bank_landbank'], true)) {
+                return response()->json(['message' => 'Expense definitions must use Cash, GCash, BPI, or Landbank.'], 422);
+            }
+            $data['source_wallet'] = $this->walletFor($data['payment_method']);
+            $destination = null;
+            $effect = 'expense';
+        }
+
+        $definition = TransactionDefinition::firstOrNew([
+            'type' => $data['type'], 'description' => $data['description'], 'payment_method' => $data['payment_method'],
+        ]);
+        $definition->fill([
+            'effect_type' => $effect,
+            'source_wallet' => $data['source_wallet'] ?? null,
+            'destination_wallet' => $destination,
+            'active' => true,
+            'sort_order' => $definition->exists ? $definition->sort_order : ((int) TransactionDefinition::max('sort_order') + 1),
+        ])->save();
+        return response()->json(['data' => $definition], $definition->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function deactivateDefinition(TransactionDefinition $transactionDefinition): JsonResponse
+    {
+        $transactionDefinition->update(['active' => false]);
+        return response()->json(['data' => $transactionDefinition]);
     }
 
     public function store(Request $request): JsonResponse
