@@ -106,49 +106,31 @@ const formatBytes = (bytes: number | null): string => {
   return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
-const TrafficFlow = ({
-  label,
-  rate,
-  capacityMbps,
-  direction,
-}: {
-  label: string;
-  rate: number | null;
-  capacityMbps: number;
-  direction: 'download' | 'upload';
-}): React.JSX.Element => {
-  const active = (rate ?? 0) > 0;
-  const percentage = capacityMbps > 0
-    ? Math.min(100, ((rate ?? 0) / (capacityMbps * 1_000_000)) * 100)
-    : 0;
-  const tint = direction === 'download'
-    ? 'from-cyan-500 via-sky-400 to-cyan-500'
-    : 'from-violet-500 via-fuchsia-400 to-violet-500';
+type TrafficSample = { download: number; upload: number };
 
-  return <div className="min-w-[138px]">
-    <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium">
-      <span>{label}</span>
-      <span className="tabular-nums">{formatRate(rate)}</span>
-    </div>
-    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-      <div
-        className={`h-full rounded-full bg-gradient-to-r ${tint} ${active ? 'traffic-flow' : ''} transition-[width] duration-700`}
-        style={{ width: `${active ? Math.max(3, percentage) : 0}%` }}
-      />
-    </div>
-  </div>;
-};
-
-const QueueTraffic = ({ customer }: { customer: ClientMonitor }): React.JSX.Element => {
+const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history: TrafficSample[] }): React.JSX.Element => {
   const hasLiveRate = customer.traffic.download_bps !== null || customer.traffic.upload_bps !== null;
 
   if (!hasLiveRate) {
     return <span className="text-xs">↓ {formatBytes(customer.traffic.download_bytes)} · ↑ {formatBytes(customer.traffic.upload_bytes)}</span>;
   }
 
-  return <div className="space-y-2">
-    <TrafficFlow label="↓ Download" rate={customer.traffic.download_bps} capacityMbps={customer.service_plan?.download_speed ?? 0} direction="download" />
-    <TrafficFlow label="↑ Upload" rate={customer.traffic.upload_bps} capacityMbps={customer.service_plan?.upload_speed ?? 0} direction="upload" />
+  const samples = history.length ? history : [{ download: customer.traffic.download_bps ?? 0, upload: customer.traffic.upload_bps ?? 0 }];
+  const maximum = Math.max(1, ...samples.flatMap((sample) => [sample.download, sample.upload]));
+  const path = (key: keyof TrafficSample): string => samples.map((sample, index) => {
+    const x = samples.length === 1 ? 0 : (index / (samples.length - 1)) * 160;
+    const y = 44 - ((sample[key] / maximum) * 40);
+    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ');
+
+  return <div className="min-w-[172px]">
+    <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium tabular-nums"><span className="text-sky-600 dark:text-sky-400">↓ {formatRate(customer.traffic.download_bps)}</span><span className="text-red-600 dark:text-red-400">↑ {formatRate(customer.traffic.upload_bps)}</span></div>
+    <svg viewBox="0 0 160 48" className="h-12 w-full overflow-visible" role="img" aria-label="Live download and upload traffic graph">
+      <path d="M0 44 H160" stroke="currentColor" className="text-border" strokeWidth="1" />
+      <path d={path('download')} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
+      <path d={path('upload')} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
+    </svg>
+    <p className="mt-0.5 text-[10px] text-muted-foreground">Blue download · Red upload · 5s samples</p>
   </div>;
 };
 
@@ -173,6 +155,7 @@ const NewDashboardPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [clientMonitor, setClientMonitor] = useState<ClientMonitor[]>([]);
+  const [trafficHistory, setTrafficHistory] = useState<Record<string, TrafficSample[]>>({});
   const [monitorUpdatedAt, setMonitorUpdatedAt] = useState<string | null>(null);
   const [monitorPolling, setMonitorPolling] = useState(false);
   const monitorRequestInFlight = useRef(false);
@@ -204,6 +187,14 @@ const NewDashboardPage: React.FC = () => {
         headers: { 'Cache-Control': 'no-cache' },
       });
       setClientMonitor(response.data.data ?? []);
+      setTrafficHistory((previous) => {
+        const next = { ...previous };
+        (response.data.data ?? []).forEach((customer) => {
+          const sample = { download: customer.traffic.download_bps ?? 0, upload: customer.traffic.upload_bps ?? 0 };
+          next[customer.customer_id] = [...(next[customer.customer_id] ?? []), sample].slice(-18);
+        });
+        return next;
+      });
       setMonitorUpdatedAt(response.data.refreshed_at ?? new Date().toISOString());
     } catch (error) {
       // Preserve the last good counters when a router is temporarily offline.
@@ -348,7 +339,7 @@ const NewDashboardPage: React.FC = () => {
                 {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading client monitor…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matched DHCP client leases yet. Sync a router to populate this monitor.</td></tr> : customers.map((customer) => {
                   const theme = statusTheme(customer.customer_status);
                   const StatusIcon = theme.Icon;
-                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-1 text-xs capitalize">{customer.lease_status}</p></td><td className="px-5 py-4 text-muted-foreground"><p className="font-mono text-xs">{customer.queue_name}</p><p className={`mt-1 text-xs ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-5 py-4 text-muted-foreground"><QueueTraffic customer={customer} /></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
+                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-1 text-xs capitalize">{customer.lease_status}</p></td><td className="px-5 py-4 text-muted-foreground"><p className="font-mono text-xs">{customer.queue_name}</p><p className={`mt-1 text-xs ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-5 py-4 text-muted-foreground"><QueueTraffic customer={customer} history={trafficHistory[customer.customer_id] ?? []} /></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
                 })}
               </tbody>
             </table>
