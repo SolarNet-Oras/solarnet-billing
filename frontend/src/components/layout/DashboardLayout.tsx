@@ -18,7 +18,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, head
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex min-h-screen flex-1 flex-col md:ml-64">
         {/* Header */}
           <Header onMenuClick={() => setSidebarOpen(true)} title={headerTitle} subtitle={headerSubtitle} />
 

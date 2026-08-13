@@ -67,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       <aside
         className={`fixed top-0 left-0 z-50 flex h-full w-64 flex-col border-r border-border bg-card transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } md:static md:translate-x-0`}
+        } md:fixed md:translate-x-0`}
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <Link to="/dashboard" className="flex min-w-0 items-center gap-3">
