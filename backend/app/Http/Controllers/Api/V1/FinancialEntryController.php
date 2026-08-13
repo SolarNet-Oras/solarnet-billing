@@ -15,7 +15,17 @@ class FinancialEntryController extends Controller
         $date = $request->date('date')?->toDateString() ?? now()->toDateString();
         $entries = FinancialEntry::whereDate('entry_date', $date)->latest()->get();
         $collections = Payment::with('customer:id,full_name,account_number')->whereDate('payment_date', $date)->latest()->get();
-        return response()->json(['data' => ['date' => $date, 'collections' => $collections, 'sales' => $entries->where('type', 'sale')->values(), 'expenses' => $entries->where('type', 'expense')->values(), 'totals' => ['collections' => (float) $collections->sum('amount'), 'sales' => (float) $entries->where('type', 'sale')->sum('amount'), 'expenses' => (float) $entries->where('type', 'expense')->sum('amount')]]]);
+        $wallets = collect(['cash', 'ewallet', 'bank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'sales' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
+        foreach ($collections as $collection) {
+            $wallet = $this->walletFor($collection->payment_method);
+            if (isset($wallets[$wallet])) $wallets[$wallet]['collections'] += (float) $collection->amount;
+        }
+        foreach ($entries as $entry) {
+            $wallet = $this->walletFor($entry->payment_method);
+            if (isset($wallets[$wallet])) $wallets[$wallet][$entry->type === 'expense' ? 'expenses' : 'sales'] += (float) $entry->amount;
+        }
+        foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['sales'] - $wallet['expenses'];
+        return response()->json(['data' => ['date' => $date, 'collections' => $collections, 'sales' => $entries->where('type', 'sale')->values(), 'expenses' => $entries->where('type', 'expense')->values(), 'wallets' => $wallets, 'totals' => ['collections' => (float) $collections->sum('amount'), 'sales' => (float) $entries->where('type', 'sale')->sum('amount'), 'expenses' => (float) $entries->where('type', 'expense')->sum('amount')]]]);
     }
 
     public function store(Request $request): JsonResponse
@@ -23,5 +33,15 @@ class FinancialEntryController extends Controller
         $data = $request->validate(['type' => 'required|in:sale,expense', 'description' => 'required|string|max:255', 'category' => 'nullable|string|max:100', 'amount' => 'required|numeric|min:0.01', 'entry_date' => 'required|date', 'payment_method' => 'required|in:cash,gcash,bank,other', 'reference' => 'nullable|string|max:100', 'notes' => 'nullable|string|max:1000']);
         $data['recorded_by'] = optional($request->user())->id;
         return response()->json(['data' => FinancialEntry::create($data)], 201);
+    }
+
+    private function walletFor(?string $method): string
+    {
+        return match (strtolower((string) $method)) {
+            'cash' => 'cash',
+            'bank', 'bank_transfer', 'transfer' => 'bank',
+            'gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya' => 'ewallet',
+            default => 'other',
+        };
     }
 }
