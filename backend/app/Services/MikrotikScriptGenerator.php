@@ -31,17 +31,21 @@ class MikrotikScriptGenerator
         $connectionEndpoint = $router->host . ':' . $router->port;
         $paymentPortalUrl = trim((string) ($paymentPortalUrl ?: config('app.url')));
         $paymentPortalHost = parse_url($paymentPortalUrl, PHP_URL_HOST);
-        $paymentPortalIp = $paymentPortalHost ? gethostbyname($paymentPortalHost) : null;
-        if (!filter_var($paymentPortalIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $paymentPortalIp = filter_var($billingSystemIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $billingSystemIp : null;
+        $paymentAccessHosts = [];
+        $paymentPortalIps = $paymentPortalHost ? $this->resolveIpv4Addresses($paymentPortalHost) : [];
+        if ($paymentPortalIps === [] && filter_var($billingSystemIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $paymentPortalIps = [$billingSystemIp];
         }
-        $paymentCheckoutHosts = [];
+        if ($paymentPortalHost && $paymentPortalIps !== []) {
+            $paymentAccessHosts[$paymentPortalHost] = $paymentPortalIps;
+        }
         foreach (self::PAYMENT_CHECKOUT_HOSTS as $checkoutHost) {
-            $checkoutIp = gethostbyname($checkoutHost);
-            if (filter_var($checkoutIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $paymentCheckoutHosts[$checkoutHost] = $checkoutIp;
+            $checkoutIps = $this->resolveIpv4Addresses($checkoutHost);
+            if ($checkoutIps !== []) {
+                $paymentAccessHosts[$checkoutHost] = $checkoutIps;
             }
         }
+        $paymentPortalIp = $paymentPortalIps[0] ?? null;
 
         $script = <<<SCRIPT
 # ============================================================
@@ -163,9 +167,7 @@ LIST;
 # this Solarnet-managed destination entry is replaced when the script is rerun.
 /ip firewall address-list
 :foreach entry in=[find list="solarnet_payment_portal" comment~"^Solarnet Billing payment portal"] do={ remove \$entry }
-add list="solarnet_payment_portal" address={$paymentPortalIp} \\
-    comment="Solarnet Billing payment portal {$paymentPortalHost}"
-{$this->paymentCheckoutAddressListLines($paymentCheckoutHosts)}/ip firewall filter
+{$this->paymentCheckoutAddressListLines($paymentAccessHosts)}/ip firewall filter
 add chain=forward src-address-list=suspended_customers action=drop \\
     comment="Solarnet Billing: suspended block internet"
 add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 action=accept \\
@@ -266,7 +268,7 @@ TAIL;
 SCRIPT;
     }
 
-    /** @param array<string, string> $hosts IPv4 addresses resolved by the billing server. */
+    /** @param array<string, list<string>> $hosts IPv4 addresses resolved by the billing server. */
     private function paymentCheckoutAddressListLines(array $hosts): string
     {
         if ($hosts === []) {
@@ -278,12 +280,25 @@ SCRIPT;
             '# suspended customers and only over HTTP(S), via the same allow-list.',
         ];
 
-        foreach ($hosts as $host => $ip) {
-            $lines[] = 'add list="solarnet_payment_portal" address=' . $ip . ' \\';
-            $lines[] = '    comment="Solarnet Billing payment portal ' . $host . '"';
+        foreach ($hosts as $host => $ips) {
+            foreach ($ips as $ip) {
+                $lines[] = 'add list="solarnet_payment_portal" address=' . $ip . ' \\';
+                $lines[] = '    comment="Solarnet Billing payment portal ' . $host . '"';
+            }
         }
 
         return implode("\n", $lines) . "\n";
+    }
+
+    /** @return list<string> */
+    private function resolveIpv4Addresses(string $host): array
+    {
+        $ips = gethostbynamel($host) ?: [gethostbyname($host)];
+
+        return array_values(array_unique(array_filter(
+            $ips,
+            fn (string $ip) => filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4),
+        )));
     }
 
     /**

@@ -894,7 +894,7 @@ class MikrotikService
                 'success' => true,
                 'message' => 'Installed payment-only access rules for the customer portal and PayMongo GCash checkout.',
                 'payment_portal_host' => $host,
-                'payment_portal_ip' => $allowedHosts[$host],
+                'payment_portal_ip' => $allowedHosts[$host][0],
                 'allowed_payment_hosts' => array_keys($allowedHosts),
                 'rules_installed' => 4,
             ];
@@ -1032,24 +1032,27 @@ class MikrotikService
             }
         }
 
-        foreach ($allowedHosts as $host => $ip) {
-            $client->query(
-                (new Query('/ip/firewall/address-list/add'))
-                    ->equal('list', self::PAYMENT_PORTAL_ADDRESS_LIST)
-                    ->equal('address', $ip)
-                    ->equal('comment', self::PAYMENT_PORTAL_COMMENT_PREFIX . ' ' . $host)
-            )->read();
+        foreach ($allowedHosts as $host => $ips) {
+            foreach ($ips as $ip) {
+                $client->query(
+                    (new Query('/ip/firewall/address-list/add'))
+                        ->equal('list', self::PAYMENT_PORTAL_ADDRESS_LIST)
+                        ->equal('address', $ip)
+                        ->equal('comment', self::PAYMENT_PORTAL_COMMENT_PREFIX . ' ' . $host)
+                )->read();
+            }
         }
     }
 
-    /** @return array<string, string> Hostname => resolved IPv4 address. */
+    /** @return array<string, list<string>> Hostname => all resolved IPv4 addresses. */
     private function resolvePaymentHosts(array $hosts): array
     {
         $resolved = [];
         foreach (array_unique($hosts) as $host) {
-            $ip = gethostbyname($host);
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $resolved[$host] = $ip;
+            $ips = gethostbynamel($host) ?: [gethostbyname($host)];
+            $ips = array_values(array_unique(array_filter($ips, fn (string $ip) => filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4))));
+            if ($ips !== []) {
+                $resolved[$host] = $ips;
             }
         }
 
