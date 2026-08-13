@@ -157,14 +157,20 @@ add list="solarnet_payment_portal" address={$paymentPortalIp} \\
     comment="Solarnet Billing payment portal {$paymentPortalHost}"
 /ip firewall filter
 add chain=forward src-address-list=suspended_customers action=drop \\
-    comment="Solarnet Billing: suspended block internet" place-before=0
+    comment="Solarnet Billing: suspended block internet"
 add chain=forward src-address-list=suspended_customers protocol=tcp dst-port=53 action=accept \\
-    comment="Solarnet Billing: suspended allow DNS TCP" place-before=0
+    comment="Solarnet Billing: suspended allow DNS TCP"
 add chain=forward src-address-list=suspended_customers protocol=udp dst-port=53 action=accept \\
-    comment="Solarnet Billing: suspended allow DNS UDP" place-before=0
+    comment="Solarnet Billing: suspended allow DNS UDP"
 add chain=forward src-address-list=suspended_customers protocol=tcp \\
     dst-address-list=solarnet_payment_portal dst-port=80,443 action=accept \\
-    comment="Solarnet Billing: suspended allow payment portal" place-before=0
+    comment="Solarnet Billing: suspended allow payment portal"
+# Put the allows before the drop. This explicit order is reliable on RouterOS
+# versions that ignore numeric place-before values in pasted scripts.
+move [find comment="Solarnet Billing: suspended allow payment portal"] destination=0
+move [find comment="Solarnet Billing: suspended allow DNS UDP"] destination=1
+move [find comment="Solarnet Billing: suspended allow DNS TCP"] destination=2
+move [find comment="Solarnet Billing: suspended block internet"] destination=3
 :put "  [+] Suspended clients limited to DNS + payment portal ({$paymentPortalHost})"
 
 BILLING;

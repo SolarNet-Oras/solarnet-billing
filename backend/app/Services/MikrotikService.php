@@ -810,9 +810,9 @@ class MikrotikService
             $this->ensurePaymentPortalAddressList($client, $paymentIp, $host);
             $this->removeBillingFilterRules($client);
 
-            // `place-before=0` puts each new rule above the previous one;
-            // add the drop rule first so the final policy ordering is allow,
-            // allow, allow, then drop.
+            // RouterOS versions differ in how they interpret numeric
+            // `place-before` values over the API. Add the managed rules, then
+            // explicitly move them into their required order below.
             $rules = [
                 ['protocol' => null,  'dst_port' => null,     'dst_address' => null,       'action' => 'drop',   'comment' => self::BILLING_RULE_PREFIX . ' block internet'],
                 ['protocol' => 'tcp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS TCP'],
@@ -825,13 +825,14 @@ class MikrotikService
                     ->equal('chain', 'forward')
                     ->equal('src-address-list', self::SUSPENDED_ADDRESS_LIST)
                     ->equal('action', $rule['action'])
-                    ->equal('comment', $rule['comment'])
-                    ->equal('place-before', '0');
+                    ->equal('comment', $rule['comment']);
                 if ($rule['protocol']) $query->equal('protocol', $rule['protocol']);
                 if ($rule['dst_port']) $query->equal('dst-port', $rule['dst_port']);
                 if (!empty($rule['dst_address_list'])) $query->equal('dst-address-list', $rule['dst_address_list']);
                 $client->query($query)->read();
             }
+
+            $this->orderBillingFilterRules($client);
 
             $this->ensureSuspendedAddressList($client);
 
@@ -922,6 +923,31 @@ class MikrotikService
             }
         }
         return count($rules);
+    }
+
+    /** Ensure allow rules always precede the suspended-client drop rule. */
+    private function orderBillingFilterRules(Client $client): void
+    {
+        $order = [
+            self::BILLING_RULE_PREFIX . ' allow payment portal',
+            self::BILLING_RULE_PREFIX . ' allow DNS UDP',
+            self::BILLING_RULE_PREFIX . ' allow DNS TCP',
+            self::BILLING_RULE_PREFIX . ' block internet',
+        ];
+
+        foreach ($order as $position => $comment) {
+            $rules = $client->query((new Query('/ip/firewall/filter/print'))->where('comment', $comment))->read();
+            $ruleId = $rules[0]['.id'] ?? null;
+            if (!$ruleId) {
+                throw new \RuntimeException("Billing firewall rule is missing: {$comment}");
+            }
+
+            $client->query(
+                (new Query('/ip/firewall/filter/move'))
+                    ->equal('numbers', $ruleId)
+                    ->equal('destination', (string) $position)
+            )->read();
+        }
     }
 
     private function ensureSuspendedAddressList(Client $client): void
