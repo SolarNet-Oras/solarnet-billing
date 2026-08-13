@@ -172,8 +172,9 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['permission:view-payments'])->group(function () {
             Route::get('payments', [PaymentController::class, 'index']);
             Route::get('payments-statistics', [PaymentController::class, 'statistics']);
-            Route::get('payments/{id}', [PaymentController::class, 'show']);
+        Route::get('payments/{id}', [PaymentController::class, 'show']);
         });
+        Route::post('payments/advance', [PaymentController::class, 'recordAdvance'])->middleware('permission:create-payments');
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
         Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');

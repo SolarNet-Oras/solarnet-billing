@@ -4,11 +4,19 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Models\Customer;
+use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
+    public function recordAdvance(Request $request, InvoiceService $invoices): JsonResponse
+    {
+        $data = $request->validate(['customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash,bank_transfer,credit_card,debit_card,mobile_money,other', 'payment_date' => 'nullable|date', 'transaction_id' => 'nullable|string|max:255', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000']);
+        $payment = $invoices->recordAdvancePayment(Customer::findOrFail($data['customer_id']), $data);
+        return response()->json(['message' => 'Advance payment saved as credit for the next invoice.', 'payment' => $payment], 201);
+    }
     /**
      * Get all payments with filters
      */

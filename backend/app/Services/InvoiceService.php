@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
@@ -96,6 +97,7 @@ class InvoiceService
 
             // Calculate totals
             $this->calculateInvoiceTotals($invoice);
+            $this->applyAvailableCredits($invoice);
 
             Log::info('Invoice generated', [
                 'invoice_id' => $invoice->id,
@@ -336,6 +338,43 @@ class InvoiceService
 
             return $payment->fresh(['invoice', 'customer']);
         });
+    }
+
+    public function recordAdvancePayment(Customer $customer, array $paymentData): Payment
+    {
+        return DB::transaction(function () use ($customer, $paymentData) {
+            $payment = Payment::create([
+                'customer_id' => $customer->id,
+                'payment_number' => $this->generatePaymentNumber(),
+                'amount' => $paymentData['amount'],
+                'payment_method' => $paymentData['payment_method'],
+                'payment_date' => $paymentData['payment_date'] ?? now(),
+                'transaction_id' => $paymentData['transaction_id'] ?? null,
+                'reference' => $paymentData['reference'] ?? null,
+                'notes' => $paymentData['notes'] ?? 'Advance payment for future billing',
+            ]);
+            CustomerCredit::create(['customer_id' => $customer->id, 'payment_id' => $payment->id, 'original_amount' => $payment->amount, 'remaining_amount' => $payment->amount, 'notes' => 'Advance payment credit']);
+            return $payment;
+        });
+    }
+
+    private function applyAvailableCredits(Invoice $invoice): void
+    {
+        $remaining = (float) $invoice->balance;
+        if ($remaining <= 0) return;
+        $credits = CustomerCredit::where('customer_id', $invoice->customer_id)->where('remaining_amount', '>', 0)->orderBy('created_at')->lockForUpdate()->get();
+        foreach ($credits as $credit) {
+            if ($remaining <= 0) break;
+            $applied = min($remaining, (float) $credit->remaining_amount);
+            Payment::create(['invoice_id' => $invoice->id, 'customer_id' => $invoice->customer_id, 'payment_number' => $this->generatePaymentNumber(), 'amount' => $applied, 'payment_method' => 'other', 'payment_date' => now(), 'notes' => 'Applied advance credit']);
+            $credit->decrement('remaining_amount', $applied);
+            $invoice->paid_amount += $applied;
+            $remaining -= $applied;
+        }
+        $invoice->balance = max(0, $invoice->total - $invoice->paid_amount);
+        if ($invoice->balance <= 0) { $invoice->status = 'paid'; $invoice->paid_at = now(); }
+        elseif ($invoice->paid_amount > 0) $invoice->status = 'partial';
+        $invoice->save();
     }
 
     /**
