@@ -43,15 +43,14 @@ interface FormData {
   onu_information: string;
   olt_port: string;
   notes: string;
-  latitude: string;
-  longitude: string;
+  coordinates: string;
 }
 
 const EMPTY: FormData = {
   account_number: '', full_name: '', address: '', contact_number: '', email: '',
   installation_date: '', service_plan_id: '', router_id: '', monthly_fee: '0',
   mac_address: '', ip_address: '', vlan: '', status: 'active',
-  onu_information: '', olt_port: '', notes: '', latitude: '', longitude: '',
+  onu_information: '', olt_port: '', notes: '', coordinates: '',
 };
 
 const EditCustomerPage: React.FC = () => {
@@ -106,8 +105,7 @@ const EditCustomerPage: React.FC = () => {
         onu_information: (c as any).onu_information ?? '',
         olt_port: (c as any).olt_port ?? '',
         notes: (c as any).notes ?? '',
-        latitude: c.gps_coordinates?.latitude?.toString() ?? '',
-        longitude: c.gps_coordinates?.longitude?.toString() ?? '',
+        coordinates: c.gps_coordinates ? `${c.gps_coordinates.latitude}, ${c.gps_coordinates.longitude}` : '',
       });
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to load customer');
@@ -142,10 +140,15 @@ const EditCustomerPage: React.FC = () => {
     const payload: Record<string, unknown> = Object.fromEntries(
       Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined)
     );
-    delete payload.latitude;
-    delete payload.longitude;
-    if (formData.latitude !== '' || formData.longitude !== '') {
-      payload.gps_coordinates = { latitude: Number(formData.latitude), longitude: Number(formData.longitude) };
+    delete payload.coordinates;
+    if (formData.coordinates.trim()) {
+      const [latitude, longitude] = formData.coordinates.split(',').map((value) => Number(value.trim()));
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        setSaving(false);
+        setError('Enter coordinates as Latitude, Longitude. Example: 11.123456, 125.123456');
+        return;
+      }
+      payload.gps_coordinates = { latitude, longitude };
     }
 
     try {
@@ -284,11 +287,9 @@ const EditCustomerPage: React.FC = () => {
           {/* Basic Information */}
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Installation Location</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Latitude" name="latitude" value={formData.latitude} onChange={handleChange} placeholder="11.123456" testId="edit-latitude" />
-              <Field label="Longitude" name="longitude" value={formData.longitude} onChange={handleChange} placeholder="125.123456" testId="edit-longitude" />
-            </div>
-            {formData.latitude && formData.longitude && <a href={`https://www.google.com/maps/dir/?api=1&destination=${formData.latitude},${formData.longitude}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><MapPin className="h-4 w-4" /> Navigate to this location</a>}
+            <Field label="Coordinates" name="coordinates" value={formData.coordinates} onChange={handleChange} placeholder="11.123456, 125.123456" testId="edit-coordinates" />
+            <p className="mt-2 text-xs text-muted-foreground">Enter latitude and longitude separated by a comma.</p>
+            {formData.coordinates.includes(',') && <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(formData.coordinates)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><MapPin className="h-4 w-4" /> Navigate to this location</a>}
           </section>
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Basic Information</h2>
