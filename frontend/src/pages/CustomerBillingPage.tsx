@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CreditCard, FileText, ReceiptText, Smartphone } from 'lucide-react';
 import customerPortalService from '@/services/customerPortalService';
 import type { Invoice, Payment } from '@/types/api';
@@ -7,6 +7,7 @@ import { formatPHP } from '@/lib/currency';
 
 export default function CustomerBillingPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +18,13 @@ export default function CustomerBillingPage(): React.JSX.Element {
   useEffect(() => {
     const load = async (): Promise<void> => {
       try {
+        const returnedFromPayment = new URLSearchParams(location.search).get('payment') === 'success';
+        if (returnedFromPayment) {
+          const result = await customerPortalService.reconcileLatestGcashCheckout();
+          if (result.paid) setNotice('Your GCash payment was confirmed and has been applied to your account.');
+          else if (result.found) setNotice('Your payment is still being confirmed by PayMongo. Refresh this page shortly.');
+          window.history.replaceState({}, '', '/customer/billing');
+        }
         const [invoiceResponse, paymentResponse] = await Promise.all([
           customerPortalService.getInvoices({ per_page: 100 }),
           customerPortalService.getPayments({ per_page: 100 }),
@@ -31,7 +39,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
       }
     };
     void load();
-  }, [navigate]);
+  }, [location.search, navigate]);
 
   const payWithGcash = async (invoiceId: string): Promise<void> => {
     setError(''); setNotice(''); setPayingInvoiceId(invoiceId);
@@ -51,7 +59,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
         : checkout.temporary_payment_access && !checkout.temporary_payment_access.success
           ? ' If checkout does not load, contact SolarNet because temporary payment access could not be enabled.'
           : '';
-      setNotice('GCash checkout opened in a new tab. Your account stays signed in here. Your invoice is updated only after PayMongo confirms payment.' + accessNotice);
+      setNotice(`GCash checkout opened for account ${checkout.account_number}. Your account stays signed in here. Your invoice is updated only after PayMongo confirms payment.` + accessNotice);
       setPayingInvoiceId(null);
     } catch (requestError: any) {
       setError(requestError.response?.data?.message || 'Could not start GCash payment.');

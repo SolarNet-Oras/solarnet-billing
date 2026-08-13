@@ -439,6 +439,15 @@ class CustomerPortalController extends Controller
         return response()->json(['status' => 'success', 'paid' => $paid, 'checkout_status' => $checkout->fresh()->status]);
     }
 
+    /** Re-check the most recent checkout when PayMongo returns the customer to the portal. */
+    public function reconcileLatestGcashCheckout(Request $request, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+
+        return response()->json(['status' => 'success', 'data' => $paymongo->reconcileLatestCustomerCheckout($customer->id)]);
+    }
+
     /** PayMongo webhook endpoint. The event is signed, then payment state is re-read from PayMongo. */
     public function paymongoWebhook(Request $request, PaymongoService $paymongo): JsonResponse
     {

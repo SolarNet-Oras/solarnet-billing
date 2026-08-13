@@ -161,9 +161,17 @@ export const customerPortalService = {
   startGcashCheckout: async (invoiceId: string): Promise<{
     checkout_url: string;
     reference_number: string;
+    account_number: string;
+    customer_name: string;
+    invoice_number: string;
     temporary_payment_access?: { success: boolean; granted: boolean; message: string };
   }> => {
     const response = await api.post(`/customer-portal/invoices/${invoiceId}/gcash-checkout`);
+    return response.data.data;
+  },
+
+  reconcileLatestGcashCheckout: async (): Promise<{ found: boolean; paid: boolean }> => {
+    const response = await api.post('/customer-portal/gcash-checkouts/reconcile-latest');
     return response.data.data;
   },
 

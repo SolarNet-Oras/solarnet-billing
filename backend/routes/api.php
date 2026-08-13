@@ -230,6 +230,7 @@ Route::prefix('v1')->group(function () {
             Route::get('payments', [CustomerPortalController::class, 'payments']);
             Route::post('invoices/{id}/gcash-checkout', [CustomerPortalController::class, 'startGcashCheckout']);
             Route::post('gcash-checkouts/{id}/reconcile', [CustomerPortalController::class, 'reconcileGcashCheckout']);
+            Route::post('gcash-checkouts/reconcile-latest', [CustomerPortalController::class, 'reconcileLatestGcashCheckout']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
             Route::get('profile-change-requests', [CustomerPortalController::class, 'profileChangeRequests']);
             Route::post('profile-change-requests', [CustomerPortalController::class, 'submitProfileChangeRequest']);
