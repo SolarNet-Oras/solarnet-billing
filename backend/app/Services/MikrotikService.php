@@ -335,7 +335,30 @@ class MikrotikService
                 $query->equal($key, $value);
             }
             
-            $client->query($query)->read();
+            $response = $client->query($query)->read();
+
+            $trap = collect($response)->first(fn (array $row) => isset($row['!trap']) || isset($row['message']));
+            if ($trap) {
+                return [
+                    'success' => false,
+                    'message' => 'RouterOS rejected queue update: ' . ($trap['message'] ?? 'unknown error'),
+                ];
+            }
+
+            // RouterOS API calls can complete without throwing when a setting
+            // was not applied. Read the queue back so callers never report a
+            // false success to the operator.
+            $verify = (new Query('/queue/simple/print'))->where('name', $queueName);
+            $saved = $client->query($verify)->read()[0] ?? null;
+            $expectedLimit = $updates['max-limit'] ?? null;
+            $savedLimit = $saved['max-limit'] ?? null;
+            if (!$saved || ($expectedLimit && !$this->sameRateLimit($expectedLimit, $savedLimit))
+                || (isset($updates['comment']) && ($saved['comment'] ?? '') !== $updates['comment'])) {
+                return [
+                    'success' => false,
+                    'message' => 'RouterOS did not save the requested queue limit. Expected ' . ($expectedLimit ?? 'queue update') . ', found ' . ($savedLimit ?? 'no queue') . '.',
+                ];
+            }
             
             Log::info('Queue updated on MikroTik', [
                 'router' => $router->name,
@@ -360,6 +383,26 @@ class MikrotikService
                 'message' => 'Failed to update queue: ' . $e->getMessage(),
             ];
         }
+    }
+
+    /** Compare RouterOS rate values such as 80M/80M and 80000000/80000000. */
+    protected function sameRateLimit(string $expected, string $actual): bool
+    {
+        $toBits = static function (string $value): ?int {
+            $value = strtolower(trim($value));
+            if (preg_match('/^(\d+(?:\.\d+)?)([kmg]?)$/', $value, $matches) !== 1) {
+                return null;
+            }
+            $factor = ['' => 1, 'k' => 1_000, 'm' => 1_000_000, 'g' => 1_000_000_000][$matches[2]];
+            return (int) round((float) $matches[1] * $factor);
+        };
+        $expectedParts = explode('/', $expected);
+        $actualParts = explode('/', $actual);
+        if (count($expectedParts) !== 2 || count($actualParts) !== 2) {
+            return false;
+        }
+        return $toBits($expectedParts[0]) === $toBits($actualParts[0])
+            && $toBits($expectedParts[1]) === $toBits($actualParts[1]);
     }
 
     /**

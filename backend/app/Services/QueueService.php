@@ -117,15 +117,27 @@ class QueueService
         $queueData = $this->buildQueueData($customer, $servicePlan);
 
         if ($existingQueue) {
-            // Update existing queue
-            $result = $this->mikrotikService->updateQueue($router, $queueName, [
+            // RouterOS treats empty burst values as invalid in a set command.
+            // A single invalid value can reject the entire command, including
+            // max-limit, so send RouterOS' explicit disabled burst values when
+            // the selected plan has no burst configuration.
+            $updates = [
                 'max-limit' => $queueData['max_limit'],
-                'burst-limit' => $queueData['burst_limit'] ?? '',
-                'burst-threshold' => $queueData['burst_threshold'] ?? '',
-                'burst-time' => $queueData['burst_time'] ?? '',
                 'priority' => $queueData['priority'] . '/' . $queueData['priority'],
                 'comment' => $queueData['comment'],
-            ]);
+            ];
+            if (!empty($queueData['burst_limit'])) {
+                $updates['burst-limit'] = $queueData['burst_limit'];
+                $updates['burst-threshold'] = $queueData['burst_threshold'] ?? '0/0';
+                $updates['burst-time'] = $queueData['burst_time'] ?? '0s/0s';
+            } else {
+                $updates['burst-limit'] = '0/0';
+                $updates['burst-threshold'] = '0/0';
+                $updates['burst-time'] = '0s/0s';
+            }
+
+            // Update existing queue
+            $result = $this->mikrotikService->updateQueue($router, $queueName, $updates);
         } else {
             // Create new queue
             $result = $this->mikrotikService->addQueue($router, $queueData);
