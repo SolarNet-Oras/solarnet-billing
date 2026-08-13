@@ -5,7 +5,7 @@ import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '', email: '', facebook_url: '' });
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -120,10 +120,8 @@ const CustomerLoginPage: React.FC = () => {
               </a>
             </p>
             <p className="text-center text-sm text-gray-600">
-              Need help? Contact support at{' '}
-              <a href="mailto:support@solarnetinternet.com" className="text-blue-600 hover:text-blue-700">
-                support@solarnetinternet.com
-              </a>
+              Need help? {branding.email && <><a href={`mailto:${branding.email}`} className="text-blue-600 hover:text-blue-700">Email customer support</a>{branding.facebook_url && ' or '}</>}
+              {branding.facebook_url && <a href={branding.facebook_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700">message us on Facebook</a>}
             </p>
           </div>
         </div>

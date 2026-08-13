@@ -24,6 +24,7 @@ class SettingsController extends Controller
         'company.address'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Business Address',    'default' => ''],
         'company.contact'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Number',      'default' => ''],
         'company.email'        => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Email',       'default' => ''],
+        'company.facebook_url' => ['cast' => 'string', 'group' => 'company', 'label' => 'Facebook Support Page','default' => 'https://www.facebook.com/SolarnetConnectionInstallationandServices'],
         'company.timezone'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Timezone',            'default' => 'Asia/Manila'],
         'company.logo_url'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Company Logo',        'default' => ''],
         'company.currency'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Currency Symbol',     'default' => '₱'],
@@ -122,6 +123,9 @@ class SettingsController extends Controller
             if ($key === 'network.payment_reminder_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
                 return response()->json(['status' => 'error', 'message' => 'Payment reminder URL must be a valid absolute URL.'], 422);
             }
+            if ($key === 'company.facebook_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
+                return response()->json(['status' => 'error', 'message' => 'Facebook Support Page must be a valid URL.'], 422);
+            }
             Setting::put($key, $value, $meta['cast']);
             $applied[] = $key;
         }
@@ -166,6 +170,8 @@ class SettingsController extends Controller
         return response()->json(['data' => [
             'name' => Setting::get('company.name', 'Solarnet Internet'),
             'logo_url' => Setting::get('company.logo_url', ''),
+            'email' => Setting::get('company.email', ''),
+            'facebook_url' => Setting::get('company.facebook_url', 'https://www.facebook.com/SolarnetConnectionInstallationandServices'),
         ]]);
     }
 
