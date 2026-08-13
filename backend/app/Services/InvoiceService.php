@@ -256,15 +256,13 @@ class InvoiceService
     public function getCompanyInfo(): array
     {
         return [
-            'name' => 'Solarnet Internet',
+            'name' => Setting::get('company.name', 'Solarnet Internet'),
             'tagline' => 'High-Speed Internet & Network Solutions',
-            'address' => config('app.company_address', '123 Network Avenue'),
-            'city' => config('app.company_city', 'Your City'),
-            'country' => config('app.company_country', 'Your Country'),
-            'phone' => config('app.company_phone', '+1234567890'),
-            'email' => config('app.company_email', 'billing@solarnetinternet.com'),
-            'website' => config('app.company_website', 'www.solarnetinternet.com'),
-            'tax_id' => config('app.company_tax_id', 'TAX-123456'),
+            'address' => Setting::get('company.address', ''),
+            'phone' => Setting::get('company.contact', ''),
+            'email' => Setting::get('company.email', ''),
+            'website' => Setting::get('company.website', ''),
+            'tax_id' => Setting::get('company.tax_id', ''),
         ];
     }
 

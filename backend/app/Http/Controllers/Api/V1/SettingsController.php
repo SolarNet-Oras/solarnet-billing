@@ -24,6 +24,8 @@ class SettingsController extends Controller
         'company.address'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Business Address',    'default' => ''],
         'company.contact'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Number',      'default' => ''],
         'company.email'        => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Email',       'default' => ''],
+        'company.website'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Website',             'default' => ''],
+        'company.tax_id'       => ['cast' => 'string', 'group' => 'company', 'label' => 'Tax ID',              'default' => ''],
         'company.facebook_url' => ['cast' => 'string', 'group' => 'company', 'label' => 'Facebook Support Page','default' => 'https://www.facebook.com/SolarnetConnectionInstallationandServices'],
         'company.timezone'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Timezone',            'default' => 'Asia/Manila'],
         'company.logo_url'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Company Logo',        'default' => ''],

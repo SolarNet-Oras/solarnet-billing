@@ -186,9 +186,9 @@
                     <div class="company-name">{{ $company['name'] }}</div>
                     <div class="company-tagline">{{ $company['tagline'] }}</div>
                     <div class="company-info">
-                        {{ $company['address'] }}, {{ $company['city'] }}, {{ $company['country'] }}<br>
-                        Phone: {{ $company['phone'] }} | Email: {{ $company['email'] }}<br>
-                        Website: {{ $company['website'] }} | Tax ID: {{ $company['tax_id'] }}
+                        @if($company['address']){{ $company['address'] }}<br>@endif
+                        @if($company['phone'] || $company['email'])Phone: {{ $company['phone'] ?: '—' }} | Email: {{ $company['email'] ?: '—' }}<br>@endif
+                        @if($company['website'] || $company['tax_id'])@if($company['website'])Website: {{ $company['website'] }}@endif @if($company['website'] && $company['tax_id']) | @endif @if($company['tax_id'])Tax ID: {{ $company['tax_id'] }}@endif@endif
                     </div>
                 </td>
                 <td style="width: 40%; text-align: right; vertical-align: top;">
@@ -214,16 +214,13 @@
             <td>
                 <div class="bill-to">
                     <div class="section-title">Bill To</div>
-                    <strong>{{ $invoice->customer->first_name }} {{ $invoice->customer->last_name }}</strong><br>
-                    @if($invoice->customer->company_name)
-                        {{ $invoice->customer->company_name }}<br>
-                    @endif
+                    <strong>{{ $invoice->customer->full_name }}</strong><br>
                     @if($invoice->customer->address)
                         {{ $invoice->customer->address }}<br>
                     @endif
                     Email: {{ $invoice->customer->email }}<br>
-                    @if($invoice->customer->phone)
-                        Phone: {{ $invoice->customer->phone }}<br>
+                    @if($invoice->customer->contact_number)
+                        Phone: {{ $invoice->customer->contact_number }}<br>
                     @endif
                     Account: {{ $invoice->customer->account_number }}
                 </div>
