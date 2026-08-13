@@ -5,6 +5,7 @@ import {
   Search, 
   Filter, 
   Download, 
+  Loader2,
   DollarSign, 
   Send,
   Eye,
@@ -48,6 +49,7 @@ const InvoicesPage: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -136,6 +138,7 @@ const InvoicesPage: React.FC = () => {
   };
 
   const handleDownloadPdf = async (invoice: Invoice) => {
+    setDownloadingInvoiceId(invoice.id);
     try {
       const blob = await invoiceService.downloadPdf(invoice.id);
       const url = window.URL.createObjectURL(blob);
@@ -146,6 +149,8 @@ const InvoicesPage: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading PDF:', error);
+    } finally {
+      setDownloadingInvoiceId(null);
     }
   };
 
@@ -361,10 +366,13 @@ const InvoicesPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => handleDownloadPdf(invoice)}
-                        className="text-green-600 hover:text-green-900"
-                        title="Download PDF"
+                        disabled={downloadingInvoiceId !== null}
+                        className="text-green-600 hover:text-green-900 disabled:cursor-wait disabled:opacity-60"
+                        title={downloadingInvoiceId === invoice.id ? 'Downloading PDF…' : 'Download PDF'}
                       >
-                        <Download className="w-4 h-4" />
+                        {downloadingInvoiceId === invoice.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : <Download className="w-4 h-4" />}
                       </button>
                       {invoice.status === 'draft' && (
                         <button
@@ -784,10 +792,13 @@ const InvoicesPage: React.FC = () => {
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   onClick={() => handleDownloadPdf(selectedInvoice)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  disabled={downloadingInvoiceId !== null}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:cursor-wait disabled:opacity-70"
                 >
-                  <Download className="w-4 h-4" />
-                  Download PDF
+                  {downloadingInvoiceId === selectedInvoice.id
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Download className="w-4 h-4" />}
+                  {downloadingInvoiceId === selectedInvoice.id ? 'Downloading…' : 'Download PDF'}
                 </button>
                 <button
                   onClick={() => setShowViewModal(false)}
