@@ -4,7 +4,16 @@ import type { Customer, Invoice, Payment, PaginatedResponse } from '../types/api
 export const customerPortalService = {
   getBranding: async (): Promise<{ name: string; logo_url: string }> => {
     const response = await api.get('/customer-portal/branding');
-    return response.data.data;
+    const branding = response.data.data as { name: string; logo_url: string };
+    // The favicon is a normal DOM link so the browser tab uses the same logo
+    // selected by the administrator, rather than the compiled default mark.
+    const icon = document.querySelector<HTMLLinkElement>('#company-favicon')
+      ?? document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (icon && branding.logo_url) {
+      icon.href = branding.logo_url;
+      icon.removeAttribute('type');
+    }
+    return branding;
   },
   /**
    * Customer login
