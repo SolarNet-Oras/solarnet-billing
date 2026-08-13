@@ -4,9 +4,11 @@ import { useAuth } from '@/hooks/useAuth';
 
 interface HeaderProps {
   onMenuClick: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
+export const Header: React.FC<HeaderProps> = ({ onMenuClick, title = 'Network Operations Center', subtitle }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
@@ -39,9 +41,10 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             </svg>
           </button>
 
-          <h2 className="text-lg font-semibold text-foreground hidden sm:block">
-            Network Operations Center
-          </h2>
+          <div className="hidden sm:block">
+            <h2 className="text-base font-semibold leading-tight text-foreground">{title}</h2>
+            {subtitle && <p className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">{subtitle}</p>}
+          </div>
         </div>
 
         {/* Right side - User menu */}

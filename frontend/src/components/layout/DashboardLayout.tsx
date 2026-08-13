@@ -5,9 +5,11 @@ import FloatingAiAssistant from '@/components/ai/FloatingAiAssistant';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
+  headerTitle?: string;
+  headerSubtitle?: string;
 }
 
-export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
+export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, headerTitle, headerSubtitle }) => {
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   return (
@@ -18,7 +20,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Header */}
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+          <Header onMenuClick={() => setSidebarOpen(true)} title={headerTitle} subtitle={headerSubtitle} />
 
         {/* Page content */}
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
