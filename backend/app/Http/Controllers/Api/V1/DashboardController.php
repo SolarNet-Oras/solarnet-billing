@@ -235,6 +235,20 @@ class DashboardController extends Controller
             $queue = collect($snapshot['data'] ?? [])->firstWhere('name', $queueName);
             $rate = $this->trafficPair($queue['rate'] ?? null);
             $bytes = $this->trafficPair($queue['bytes'] ?? null);
+            $previousQueue = collect($snapshot['previous_data'] ?? [])->firstWhere('name', $queueName);
+            $derivedRate = $this->counterRate(
+                $bytes,
+                $this->trafficPair($previousQueue['bytes'] ?? null),
+                $snapshot['captured_at'] ?? null,
+                $snapshot['previous_captured_at'] ?? null,
+            );
+            // Some RouterOS versions return 0/0 even while bytes increase.
+            // Prefer its rate when non-zero; otherwise use the measured bytes
+            // across the most recent two successful five-second polls.
+            $displayRate = [
+                ($rate[0] ?? 0) > 0 ? $rate[0] : $derivedRate[0],
+                ($rate[1] ?? 0) > 0 ? $rate[1] : $derivedRate[1],
+            ];
 
             $monitor[$lease->customer_id] = [
                 'customer_id' => $lease->customer_id,
@@ -250,8 +264,8 @@ class DashboardController extends Controller
                 'traffic' => [
                     // RouterOS may provide live rate; counters are retained
                     // even on RouterOS versions that omit that field.
-                    'download_bps' => $rate[0],
-                    'upload_bps' => $rate[1],
+                    'download_bps' => $displayRate[0],
+                    'upload_bps' => $displayRate[1],
                     'download_bytes' => $bytes[0],
                     'upload_bytes' => $bytes[1],
                 ],
@@ -282,6 +296,15 @@ class DashboardController extends Controller
             is_numeric($first) ? (int) $first : null,
             is_numeric($second) ? (int) $second : null,
         ];
+    }
+
+    /** Derive bits/sec from monotonic RouterOS byte counters. */
+    protected function counterRate(array $current, array $previous, ?string $currentAt, ?string $previousAt): array
+    {
+        if (!$currentAt || !$previousAt || in_array(null, $current, true) || in_array(null, $previous, true)) return [null, null];
+        $seconds = Carbon::parse($previousAt)->diffInRealSeconds(Carbon::parse($currentAt));
+        if ($seconds <= 0 || $seconds > 60) return [null, null];
+        return array_map(static fn ($now, $before) => $now >= $before ? (int) round((($now - $before) * 8) / $seconds) : null, $current, $previous);
     }
 
     /**

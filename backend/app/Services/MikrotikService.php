@@ -506,8 +506,16 @@ class MikrotikService
             // The dashboard reads this snapshot rather than making its own
             // router connection on every page refresh. A failed VPN/API link
             // therefore never turns the dashboard into a slow or failing page.
-            Cache::put("router:queues:{$router->id}", [
-                'captured_at' => now()->toIso8601String(),
+            $cacheKey = "router:queues:{$router->id}";
+            $previous = Cache::get($cacheKey, []);
+            $capturedAt = now()->toIso8601String();
+            Cache::put($cacheKey, [
+                // Retain exactly one prior sample. Dashboard traffic can then
+                // calculate bps from byte counters when RouterOS reports 0/0
+                // in its optional instantaneous `rate` property.
+                'previous_data' => $previous['data'] ?? [],
+                'previous_captured_at' => $previous['captured_at'] ?? null,
+                'captured_at' => $capturedAt,
                 'data' => $queues,
             ], now()->addMinutes(15));
             
