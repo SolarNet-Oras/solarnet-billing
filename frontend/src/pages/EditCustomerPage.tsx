@@ -5,7 +5,7 @@ import api from '@/services/api';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { routerService, type Router } from '@/services/routerService';
 import type { Customer } from '@/types/api';
-import { Activity, Ban, CheckCircle2, MapPin, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
+import { Activity, Ban, CheckCircle2, Crosshair, MapPin, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
 
 interface DhcpLease {
   id: string;
@@ -127,6 +127,25 @@ const EditCustomerPage: React.FC = () => {
       return next;
     });
     setError('');
+  };
+
+  const useCurrentLocation = (): void => {
+    if (!navigator.geolocation) {
+      setError('This browser cannot provide location. Enter the coordinates manually.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFormData((previous) => ({
+          ...previous,
+          coordinates: `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
+        }));
+        setNotice(`Coordinates filled from this device (accuracy approximately ${Math.round(position.coords.accuracy)} meters).`);
+        setError('');
+      },
+      () => setError('Location permission was not granted. Enter the coordinates manually.'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -289,7 +308,10 @@ const EditCustomerPage: React.FC = () => {
             <h2 className="text-xl font-semibold text-foreground mb-4">Installation Location</h2>
             <Field label="Coordinates" name="coordinates" value={formData.coordinates} onChange={handleChange} placeholder="11.123456, 125.123456" testId="edit-coordinates" />
             <p className="mt-2 text-xs text-muted-foreground">Enter latitude and longitude separated by a comma.</p>
-            {formData.coordinates.includes(',') && <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(formData.coordinates)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><MapPin className="h-4 w-4" /> Navigate to this location</a>}
+            <div className="mt-3 flex flex-wrap gap-3">
+              <button type="button" onClick={useCurrentLocation} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><Crosshair className="h-4 w-4" /> Use this device location</button>
+              {formData.coordinates.includes(',') && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.coordinates)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><MapPin className="h-4 w-4" /> Pin on Google Maps</a>}
+            </div>
           </section>
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Basic Information</h2>
