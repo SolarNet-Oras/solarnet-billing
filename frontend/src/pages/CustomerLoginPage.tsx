@@ -24,8 +24,9 @@ const CustomerLoginPage: React.FC = () => {
       localStorage.setItem('customer_token', result.access_token);
       localStorage.setItem('customer_data', JSON.stringify(result.customer));
       
-      // Navigate to customer dashboard
-      navigate('/customer/dashboard');
+      // Temporary-password users must set a personal password before they can
+      // open the dashboard or suspended-account payment page.
+      navigate(result.customer.portal_password_change_required ? '/customer/change-password' : '/customer/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {

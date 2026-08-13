@@ -35,12 +35,15 @@ const CustomerDashboardPage: React.FC = () => {
   const fetchDashboardData = async () => {
     try {
       const data = await customerPortalService.getDashboard();
+      if (data.customer?.portal_password_change_required) {
+        navigate('/customer/change-password', { replace: true });
+        return;
+      }
       if (data.status === 'payment_required' && data.payment_required) {
         navigate(`/payment-required/${data.payment_required.customer_id}`);
         return;
       }
       setCustomer(data.customer);
-      if (data.customer?.portal_password_change_required) setShowPasswordForm(true);
       setStats(data.stats);
     } catch (error) {
       console.error('Error fetching dashboard:', error);
