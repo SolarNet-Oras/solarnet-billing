@@ -417,6 +417,51 @@ class CustomerController extends Controller
         return response()->json($stats);
     }
 
+    /** Admin-only list of customer portal accounts. Password hashes are never returned. */
+    public function portalAccounts(Request $request): JsonResponse
+    {
+        $search = trim((string) $request->input('search', ''));
+        $query = Customer::query()->select([
+            'id', 'account_number', 'full_name', 'email', 'contact_number', 'status',
+            'portal_password', 'portal_password_set_at', 'portal_password_change_required',
+        ]);
+        if ($search !== '') {
+            $query->search($search);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $query->orderBy('full_name')->get()->map(fn (Customer $customer) => [
+                'id' => $customer->id,
+                'account_number' => $customer->account_number,
+                'full_name' => $customer->full_name,
+                'email' => $customer->email,
+                'contact_number' => $customer->contact_number,
+                'status' => $customer->status,
+                'password_status' => !$customer->portal_password
+                    ? 'not_set'
+                    : ($customer->portal_password_change_required ? 'temporary_change_required' : 'customer_set'),
+                'password_set_at' => $customer->portal_password_set_at,
+            ]),
+        ]);
+    }
+
+    /** Reset a portal account to the documented temporary password. */
+    public function resetPortalPassword(string $id): JsonResponse
+    {
+        $customer = Customer::findOrFail($id);
+        if (!$customer->email) {
+            return response()->json(['status' => 'error', 'message' => 'This customer has no registered email address.'], 422);
+        }
+
+        app(CustomerAccountService::class)->provisionPortalCredentials($customer);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Portal password reset. The customer must sign in with the temporary password and choose a new one.',
+        ]);
+    }
+
     /**
      * Manually sync queue for a customer
      */

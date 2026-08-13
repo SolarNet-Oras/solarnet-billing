@@ -69,6 +69,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['role:admin|super_admin'])->group(function () {
             Route::apiResource('users', UserController::class);
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
+            Route::get('customer-portal-accounts', [CustomerController::class, 'portalAccounts']);
+            Route::post('customer-portal-accounts/{id}/reset-password', [CustomerController::class, 'resetPortalPassword']);
         });
         
         // Role routes (admin only)

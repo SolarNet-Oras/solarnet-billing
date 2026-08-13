@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
-import { Users as UsersIcon, Plus, Search, Loader2, Shield, X, CheckCircle2, XCircle, Mail, Phone } from 'lucide-react';
+import { Users as UsersIcon, Plus, Search, Loader2, Shield, X, CheckCircle2, XCircle, Mail, Phone, KeyRound, RotateCcw } from 'lucide-react';
 
 interface Role {
   id: string;
@@ -27,6 +27,16 @@ interface UserForm {
   roles: string[];
   is_active: boolean;
 }
+interface ClientPortalAccount {
+  id: string;
+  account_number: string;
+  full_name: string;
+  email: string | null;
+  contact_number: string | null;
+  status: string;
+  password_status: 'not_set' | 'temporary_change_required' | 'customer_set';
+  password_set_at: string | null;
+}
 
 const emptyForm: UserForm = {
   name: '',
@@ -41,6 +51,7 @@ const emptyForm: UserForm = {
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [clientAccounts, setClientAccounts] = useState<ClientPortalAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -52,12 +63,14 @@ export default function UsersPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [uRes, rRes] = await Promise.all([
+      const [uRes, rRes, cRes] = await Promise.all([
         api.get('/users', { params: { search: search || undefined, per_page: 50 } }),
         api.get('/roles').catch(() => ({ data: { data: [] } })),
+        api.get('/customer-portal-accounts').catch(() => ({ data: { data: [] } })),
       ]);
       setUsers(uRes.data?.data || []);
       setRoles(rRes.data?.data || []);
+      setClientAccounts(cRes.data?.data || []);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load users');
     } finally {
@@ -144,6 +157,35 @@ export default function UsersPage() {
     } catch (err: any) {
       alert(err.response?.data?.message || 'Delete failed');
     }
+  };
+
+  const resetClientPassword = async (client: ClientPortalAccount): Promise<void> => {
+    if (!client.email) {
+      alert('This client has no registered email. Add an email on the customer record first.');
+      return;
+    }
+    if (!confirm(`Reset ${client.full_name}'s customer portal password? They will have to use the temporary password and create a new one.`)) return;
+    try {
+      await api.post(`/customer-portal-accounts/${client.id}/reset-password`);
+      await load();
+      alert('Portal password reset. The client must use the temporary password and change it after sign-in.');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Could not reset the portal password.');
+    }
+  };
+
+  const passwordStatus = (client: ClientPortalAccount): JSX.Element => {
+    const labels = {
+      not_set: 'Not set',
+      temporary_change_required: 'Temporary — change required',
+      customer_set: 'Customer password set',
+    };
+    const classes = {
+      not_set: 'text-rose-600',
+      temporary_change_required: 'text-amber-700',
+      customer_set: 'text-emerald-700',
+    };
+    return <span className={`text-xs font-medium ${classes[client.password_status]}`}>{labels[client.password_status]}</span>;
   };
 
   const filtered = users.filter(
@@ -266,6 +308,35 @@ export default function UsersPage() {
             </table>
           </div>
         )}
+
+        <section className="pt-4" data-testid="client-portal-accounts">
+          <div className="mb-3 flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-primary" />
+            <div>
+              <h2 className="font-semibold text-foreground">Client Portal Accounts</h2>
+              <p className="text-sm text-muted-foreground">Customer sign-in emails and password status. Customer-created passwords cannot be viewed; reset access returns to the temporary password.</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr><th className="px-4 py-3 text-left">Client</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-left">Password status</th><th className="px-4 py-3 text-left">Temporary password</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {clientAccounts.map((client) => (
+                  <tr key={client.id} className="hover:bg-muted/20">
+                    <td className="px-4 py-3"><div className="font-medium">{client.full_name}</div><div className="text-xs text-muted-foreground">{client.account_number} · {client.status}</div></td>
+                    <td className="px-4 py-3">{client.email || <span className="text-rose-600">No email</span>}</td>
+                    <td className="px-4 py-3">{passwordStatus(client)}</td>
+                    <td className="px-4 py-3"><code className="rounded bg-muted px-2 py-1 text-xs">Solarnet123</code></td>
+                    <td className="px-4 py-3 text-right"><button onClick={() => void resetClientPassword(client)} className="inline-flex items-center gap-1 text-sm text-primary hover:underline"><RotateCcw className="h-3.5 w-3.5" /> Reset</button></td>
+                  </tr>
+                ))}
+                {clientAccounts.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No client portal accounts found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       {/* Modal */}
