@@ -16,9 +16,25 @@ import {
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
-import type { Invoice, Customer } from '../types/api';
+import type { Invoice, Customer, Payment } from '../types/api';
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
+
+const paymentMethodLabels: Record<Payment['payment_method'], string> = {
+  cash: 'Cash',
+  bank_transfer: 'Bank Transfer',
+  mobile_money: 'GCash',
+  credit_card: 'Credit Card',
+  debit_card: 'Debit Card',
+  other: 'Other',
+};
+
+function PaymentMethod({ methods }: { methods: Payment[] }): React.JSX.Element {
+  if (methods.length === 0) return <span className="text-gray-400">Not paid</span>;
+
+  const labels = [...new Set(methods.map((payment) => paymentMethodLabels[payment.payment_method] ?? payment.payment_method))];
+  return <span className="font-medium">{labels.join(', ')}</span>;
+}
 
 const InvoicesPage: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -280,6 +296,9 @@ const InvoicesPage: React.FC = () => {
                 Balance
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Payment Method
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -290,13 +309,13 @@ const InvoicesPage: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                   Loading invoices...
                 </td>
               </tr>
             ) : filteredInvoices.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                   No invoices found
                 </td>
               </tr>
@@ -321,6 +340,9 @@ const InvoicesPage: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {formatPHP(invoice.balance)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <PaymentMethod methods={invoice.payments ?? []} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(invoice.status)}
