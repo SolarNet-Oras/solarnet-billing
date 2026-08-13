@@ -484,7 +484,7 @@ class CustomerController extends Controller
             return response()->json(['status' => 'error', 'message' => 'This request has already been reviewed.'], 422);
         }
 
-        DB::transaction(function () use ($change) {
+        $customer = DB::transaction(function () use ($change) {
             $customer = Customer::findOrFail($change->customer_id);
             $updates = [];
             if ($change->requested_full_name) {
@@ -502,9 +502,23 @@ class CustomerController extends Controller
                 'reviewed_by' => auth()->id(),
                 'reviewed_at' => now(),
             ]);
+
+            return $customer->fresh(['servicePlan', 'router']);
         });
 
-        return response()->json(['status' => 'success', 'message' => 'Client profile change approved and applied.']);
+        // A plan change must take effect immediately at the router. The
+        // observer also queues a retry in the background, but do the first
+        // Simple Queue update synchronously so an inactive worker cannot leave
+        // the client on their old bandwidth limit.
+        $queueSync = $this->queueService->syncCustomerQueue($customer);
+
+        return response()->json([
+            'status' => $queueSync['success'] ? 'success' : 'partial',
+            'message' => $queueSync['success']
+                ? 'Client profile change approved and MikroTik speed limit updated.'
+                : 'Client profile change was approved, but MikroTik did not accept the speed update. Use Sync with MikroTik after checking the router connection.',
+            'queue_sync' => $queueSync,
+        ], $queueSync['success'] ? 200 : 202);
     }
 
     public function rejectProfileChangeRequest(Request $request, string $id): JsonResponse
