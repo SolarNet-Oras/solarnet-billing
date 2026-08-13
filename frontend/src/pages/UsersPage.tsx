@@ -175,8 +175,9 @@ export default function UsersPage() {
     if (decision === 'reject' && reviewNotes === null) return;
     if (!confirm(`${decision === 'approve' ? 'Approve and apply' : 'Reject'} the requested changes for ${change.customer.full_name}?`)) return;
     try {
-      await api.post(`/customer-profile-change-requests/${change.id}/${decision}`, decision === 'reject' ? { review_notes: reviewNotes || undefined } : {});
+      const response = await api.post(`/customer-profile-change-requests/${change.id}/${decision}`, decision === 'reject' ? { review_notes: reviewNotes || undefined } : {});
       await load();
+      alert(response.data?.message || 'Client change request reviewed.');
     } catch (err: any) {
       alert(err.response?.data?.message || 'Could not review this request.');
     }
