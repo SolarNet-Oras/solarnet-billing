@@ -152,20 +152,42 @@ class CustomerPortalController extends Controller
             if ($plan) $monthlyFee = $plan->price;
         }
 
-        $customer = Customer::create([
-            'account_number'    => $accountNumber,
-            'full_name'         => $request->full_name,
-            'email'             => strtolower($request->email),
-            'contact_number'    => $request->contact_number,
-            'address'           => $request->address,
-            'service_plan_id'   => $request->service_plan_id,
-            'monthly_fee'       => $monthlyFee,
-            'installation_date' => now(),
-            'status'            => 'pending',
-            'notes'             => $request->notes,
-        ]);
+        $existingCustomer = $this->findEligibleExistingCustomer($request->full_name);
+        $mergedExistingCustomer = $existingCustomer !== null;
+
+        if ($existingCustomer) {
+            // A router record already exists for this subscriber. Preserve its
+            // account number, service, status, invoices and network identity;
+            // add only the self-service contact details that were missing.
+            $customer = DB::transaction(function () use ($existingCustomer, $request) {
+                $notes = trim((string) $existingCustomer->notes . "\nCustomer completed self-service portal signup.");
+                $existingCustomer->forceFill([
+                    'email' => strtolower($request->email),
+                    'contact_number' => $this->isPlaceholder($existingCustomer->contact_number) ? $request->contact_number : $existingCustomer->contact_number,
+                    'address' => $this->isPlaceholder($existingCustomer->address) ? $request->address : $existingCustomer->address,
+                    'notes' => $notes,
+                ])->save();
+                return $existingCustomer->fresh();
+            });
+        } else {
+            $customer = Customer::create([
+                'account_number'    => $accountNumber,
+                'full_name'         => $request->full_name,
+                'email'             => strtolower($request->email),
+                'contact_number'    => $request->contact_number,
+                'address'           => $request->address,
+                'service_plan_id'   => $request->service_plan_id,
+                'monthly_fee'       => $monthlyFee,
+                'installation_date' => now(),
+                'status'            => 'pending',
+                'notes'             => $request->notes,
+            ]);
+        }
 
         $accountService = app(\App\Services\CustomerAccountService::class);
+        // The submitted email is becoming the portal contact for this record;
+        // issue a fresh temporary credential and force the client to choose a
+        // private password after their first sign-in.
         $plain = $accountService->provisionPortalCredentials($customer);
         $accountService->sendWelcomeEmail($customer, $plain);
 
@@ -173,7 +195,9 @@ class CustomerPortalController extends Controller
         // its MikroTik comment is an unambiguous normalized name match. This
         // intentionally does NOT activate service or modify RouterOS: staff
         // still reviews the pending account before activation.
-        $leaseBinding = $this->bindPendingSignupToUniqueLease($customer);
+        $leaseBinding = $mergedExistingCustomer
+            ? ['linked' => true, 'message' => 'Your portal account was connected to the existing SolarNet customer record.']
+            : $this->bindPendingSignupToUniqueLease($customer);
 
         return response()->json([
             'status'  => 'success',
@@ -185,6 +209,7 @@ class CustomerPortalController extends Controller
                 'portal_url'     => rtrim(config('app.url'), '/') . '/customer/login',
                 'dhcp_lease_linked' => $leaseBinding['linked'],
                 'dhcp_lease_message' => $leaseBinding['message'],
+                'existing_customer_merged' => $mergedExistingCustomer,
             ],
         ], 201);
     }
@@ -251,6 +276,29 @@ class CustomerPortalController extends Controller
     {
         $value = function_exists('mb_strtolower') ? mb_strtolower(trim($value)) : strtolower(trim($value));
         return preg_replace('/[^\p{L}\p{N}]+/u', '', $value) ?? '';
+    }
+
+    /**
+     * Only merge an applicant into a single existing customer whose email is
+     * empty. This avoids allowing a name-only signup to take over an existing
+     * portal account that already has a registered email.
+     */
+    private function findEligibleExistingCustomer(string $fullName): ?Customer
+    {
+        $normalized = $this->normalizeLeaseName($fullName);
+        if ($normalized === '') return null;
+
+        $matches = Customer::query()->get()->filter(fn (Customer $customer) =>
+            $this->normalizeLeaseName($customer->full_name) === $normalized
+            && $this->isPlaceholder($customer->email)
+        )->values();
+
+        return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    private function isPlaceholder(?string $value): bool
+    {
+        return blank($value) || in_array(strtolower(trim((string) $value)), ['n/a', 'na', 'to be updated'], true);
     }
 
     /**
