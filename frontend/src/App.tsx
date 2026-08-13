@@ -9,6 +9,7 @@ import NewDashboardPage from '@/pages/NewDashboardPage';
 import CustomersPage from '@/pages/CustomersPage';
 import CreateCustomerPage from '@/pages/CreateCustomerPage';
 import EditCustomerPage from '@/pages/EditCustomerPage';
+import CustomerDetailPage from '@/pages/CustomerDetailPage';
 import { NetworkDevicesPage } from '@/pages/NetworkDevicesPage';
 import { ServicePlansPage } from '@/pages/ServicePlansPage';
 import InvoicesPage from '@/pages/InvoicesPage';
@@ -74,6 +75,10 @@ const App: React.FC = (): JSX.Element => {
                     <CreateCustomerPage />
                   </ProtectedRoute>
                 }
+              />
+              <Route
+                path="/customers/:id"
+                element={<ProtectedRoute><CustomerDetailPage /></ProtectedRoute>}
               />
               <Route
                 path="/customers/:id/edit"

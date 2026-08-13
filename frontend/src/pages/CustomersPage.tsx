@@ -316,6 +316,7 @@ const CustomersPage: React.FC = () => {
                         >
                           View
                         </Link>
+                        {customer.gps_coordinates && <a href={`https://www.google.com/maps/dir/?api=1&destination=${customer.gps_coordinates.latitude},${customer.gps_coordinates.longitude}`} target="_blank" rel="noreferrer" className="mr-3 inline-flex items-center gap-1 text-primary hover:underline"><MapPin className="h-3.5 w-3.5" /> Navigate</a>}
                         <Link
                           to={`/customers/${customer.id}/edit`}
                           className="text-primary hover:underline mr-3"

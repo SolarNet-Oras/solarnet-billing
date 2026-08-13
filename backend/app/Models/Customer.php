@@ -112,6 +112,12 @@ class Customer extends Model
         return $this->hasMany(CustomerProfileChangeRequest::class);
     }
 
+    public function invoices(): HasMany { return $this->hasMany(Invoice::class); }
+
+    public function payments(): HasMany { return $this->hasMany(Payment::class); }
+
+    public function locationEvents(): HasMany { return $this->hasMany(CustomerLocationEvent::class); }
+
     /**
      * Scope a query to only include active customers.
      */
