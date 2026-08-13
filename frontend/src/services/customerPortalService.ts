@@ -158,7 +158,11 @@ export const customerPortalService = {
     return response.data;
   },
 
-  startGcashCheckout: async (invoiceId: string): Promise<{ checkout_url: string; reference_number: string }> => {
+  startGcashCheckout: async (invoiceId: string): Promise<{
+    checkout_url: string;
+    reference_number: string;
+    temporary_payment_access?: { success: boolean; granted: boolean; message: string };
+  }> => {
     const response = await api.post(`/customer-portal/invoices/${invoiceId}/gcash-checkout`);
     return response.data.data;
   },

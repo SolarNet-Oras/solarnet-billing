@@ -46,7 +46,12 @@ export default function CustomerBillingPage(): React.JSX.Element {
         return;
       }
       paymentWindow.opener = null;
-      setNotice('GCash checkout opened in a new tab. Your account stays signed in here. Your invoice is updated only after PayMongo confirms payment.');
+      const accessNotice = checkout.temporary_payment_access?.granted
+        ? ' Payment access is enabled for 15 minutes while you complete checkout.'
+        : checkout.temporary_payment_access && !checkout.temporary_payment_access.success
+          ? ' If checkout does not load, contact SolarNet because temporary payment access could not be enabled.'
+          : '';
+      setNotice('GCash checkout opened in a new tab. Your account stays signed in here. Your invoice is updated only after PayMongo confirms payment.' + accessNotice);
       setPayingInvoiceId(null);
     } catch (requestError: any) {
       setError(requestError.response?.data?.message || 'Could not start GCash payment.');

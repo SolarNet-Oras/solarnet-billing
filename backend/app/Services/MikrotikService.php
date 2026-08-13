@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\Router;
 use RouterOS\Client;
 use RouterOS\Config;
@@ -15,6 +16,7 @@ class MikrotikService
     private const BILLING_RULE_PREFIX = 'Solarnet Billing: suspended';
     private const SUSPENDED_ADDRESS_LIST = 'suspended_customers';
     private const PAYMENT_PORTAL_ADDRESS_LIST = 'solarnet_payment_portal';
+    private const PAYMENT_SESSION_ADDRESS_LIST = 'solarnet_payment_sessions';
     private const PAYMENT_PORTAL_COMMENT_PREFIX = 'Solarnet Billing payment portal';
     /**
      * Customers are sent to this PayMongo-hosted page to choose GCash and
@@ -868,6 +870,7 @@ class MikrotikService
             // `place-before` values over the API. Add the managed rules, then
             // explicitly move them into their required order below.
             $rules = [
+                ['protocol' => null,  'dst_port' => null,     'dst_address' => null,       'src_address_list' => self::PAYMENT_SESSION_ADDRESS_LIST, 'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow temporary payment checkout'],
                 ['protocol' => null,  'dst_port' => null,     'dst_address' => null,       'action' => 'drop',   'comment' => self::BILLING_RULE_PREFIX . ' block internet'],
                 ['protocol' => 'tcp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS TCP'],
                 ['protocol' => 'udp', 'dst_port' => '53',     'dst_address' => null,       'action' => 'accept', 'comment' => self::BILLING_RULE_PREFIX . ' allow DNS UDP'],
@@ -877,7 +880,7 @@ class MikrotikService
             foreach ($rules as $rule) {
                 $query = (new Query('/ip/firewall/filter/add'))
                     ->equal('chain', 'forward')
-                    ->equal('src-address-list', self::SUSPENDED_ADDRESS_LIST)
+                    ->equal('src-address-list', $rule['src_address_list'] ?? self::SUSPENDED_ADDRESS_LIST)
                     ->equal('action', $rule['action'])
                     ->equal('comment', $rule['comment']);
                 if ($rule['protocol']) $query->equal('protocol', $rule['protocol']);
@@ -896,7 +899,7 @@ class MikrotikService
                 'payment_portal_host' => $host,
                 'payment_portal_ip' => $allowedHosts[$host][0],
                 'allowed_payment_hosts' => array_keys($allowedHosts),
-                'rules_installed' => 4,
+                'rules_installed' => 5,
             ];
         } catch (Throwable $e) {
             Log::warning('Failed to install billing firewall rules', ['router_id' => $router->id, 'error' => $e->getMessage()]);
@@ -913,7 +916,7 @@ class MikrotikService
             $audit = $this->billingNetworkAudit($client);
             return [
                 'success' => true,
-                'installed' => count($rules) === 4 && count($paymentPortalEntries) >= 1 + count(self::PAYMENT_CHECKOUT_HOSTS),
+                'installed' => count($rules) === 5 && count($paymentPortalEntries) >= 1 + count(self::PAYMENT_CHECKOUT_HOSTS),
                 'rule_count' => count($rules),
                 'payment_portal_entries' => array_map(fn (array $entry) => [
                     'address' => $entry['address'] ?? null,
@@ -984,6 +987,7 @@ class MikrotikService
     private function orderBillingFilterRules(Client $client): void
     {
         $order = [
+            self::BILLING_RULE_PREFIX . ' allow temporary payment checkout',
             self::BILLING_RULE_PREFIX . ' allow payment portal',
             self::BILLING_RULE_PREFIX . ' allow DNS UDP',
             self::BILLING_RULE_PREFIX . ' allow DNS TCP',
@@ -1016,6 +1020,44 @@ class MikrotikService
                     ->equal('disabled', 'true')
                     ->equal('comment', 'Solarnet Billing placeholder - do not enable')
             )->read();
+        }
+    }
+
+    /** Grant a short full-access window only after a suspended client starts GCash checkout. */
+    public function grantTemporaryPaymentCheckoutAccess(Customer $customer, int $minutes = 15): array
+    {
+        if (!in_array($customer->status, ['suspended', 'expired'], true)) {
+            return ['success' => true, 'granted' => false, 'message' => 'Temporary payment access is not needed for this customer status.'];
+        }
+
+        $router = $customer->router;
+        $ipAddress = $customer->ip_address;
+        if (!$router || !filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return ['success' => false, 'granted' => false, 'message' => 'The customer does not have a valid router and IPv4 address for payment access.'];
+        }
+
+        $minutes = max(1, min($minutes, 30));
+        $comment = 'Solarnet Billing temporary payment checkout ' . $customer->id;
+        try {
+            $client = new Client($this->makeConfig($router));
+            $entries = $client->query((new Query('/ip/firewall/address-list/print'))->where('list', self::PAYMENT_SESSION_ADDRESS_LIST))->read();
+            foreach ($entries as $entry) {
+                if (($entry['comment'] ?? '') === $comment && !empty($entry['.id'])) {
+                    $client->query((new Query('/ip/firewall/address-list/remove'))->equal('.id', $entry['.id']))->read();
+                }
+            }
+            $client->query(
+                (new Query('/ip/firewall/address-list/add'))
+                    ->equal('list', self::PAYMENT_SESSION_ADDRESS_LIST)
+                    ->equal('address', $ipAddress)
+                    ->equal('timeout', $minutes . 'm')
+                    ->equal('comment', $comment)
+            )->read();
+
+            return ['success' => true, 'granted' => true, 'message' => "Temporary payment access was granted for {$minutes} minutes."];
+        } catch (Throwable $e) {
+            Log::warning('Failed to grant temporary PayMongo checkout access', ['customer_id' => $customer->id, 'router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'granted' => false, 'message' => 'Could not grant temporary payment access.'];
         }
     }
 

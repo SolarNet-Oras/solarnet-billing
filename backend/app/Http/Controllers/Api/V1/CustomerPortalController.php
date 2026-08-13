@@ -419,7 +419,11 @@ class CustomerPortalController extends Controller
         if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
         $invoice = Invoice::where('customer_id', $customer->id)->findOrFail($id);
         try {
-            return response()->json(['status' => 'success', 'data' => $paymongo->createGcashCheckout($invoice->load('customer'))]);
+            $checkout = $paymongo->createGcashCheckout($invoice->load('customer'));
+            $checkout['temporary_payment_access'] = app(\App\Services\MikrotikService::class)
+                ->grantTemporaryPaymentCheckoutAccess($customer);
+
+            return response()->json(['status' => 'success', 'data' => $checkout]);
         } catch (\RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         }
