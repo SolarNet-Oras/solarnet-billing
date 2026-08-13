@@ -75,7 +75,7 @@ const LoginPage: React.FC = () => {
                 onChange={handleChange}
                 required
                 className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="admin@ispbilling.local"
+                placeholder="you@company.com"
                 autoComplete="email"
               />
             </div>
