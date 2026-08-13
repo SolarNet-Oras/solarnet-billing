@@ -220,6 +220,7 @@ Route::prefix('v1')->group(function () {
             Route::get('invoices/{id}', [CustomerPortalController::class, 'invoice']);
             Route::get('payments', [CustomerPortalController::class, 'payments']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
+            Route::put('password', [CustomerPortalController::class, 'changePassword']);
         });
     });
 });

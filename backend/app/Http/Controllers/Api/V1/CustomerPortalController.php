@@ -310,6 +310,34 @@ class CustomerPortalController extends Controller
         ]);
     }
 
+    /** Change the portal password for the currently authenticated customer. */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:10|confirmed',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        if (!$customer->portal_password || !Hash::check($request->string('current_password')->toString(), $customer->portal_password)) {
+            return response()->json(['status' => 'error', 'message' => 'Your current password is incorrect.'], 422);
+        }
+
+        $customer->forceFill([
+            'portal_password' => Hash::make($request->string('password')->toString()),
+            'portal_password_set_at' => now(),
+        ])->save();
+
+        return response()->json(['status' => 'success', 'message' => 'Password changed successfully.']);
+    }
+
     /**
      * Get authenticated customer from token with signature verification
      */

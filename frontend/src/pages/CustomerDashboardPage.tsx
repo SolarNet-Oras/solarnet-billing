@@ -9,6 +9,7 @@ import {
   DollarSign,
   Calendar,
   AlertCircle,
+  KeyRound,
   Wifi,
 } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
@@ -21,6 +22,11 @@ const CustomerDashboardPage: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current_password: '', password: '', password_confirmation: '' });
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -60,6 +66,23 @@ const CustomerDashboardPage: React.FC = () => {
     localStorage.removeItem('customer_token');
     localStorage.removeItem('customer_data');
     navigate('/customer/login');
+  };
+
+  const changePassword = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    setPasswordMessage('');
+    setPasswordError('');
+    setPasswordSaving(true);
+    try {
+      const response = await customerPortalService.changePassword(passwordForm);
+      setPasswordMessage(response.message);
+      setPasswordForm({ current_password: '', password: '', password_confirmation: '' });
+      setShowPasswordForm(false);
+    } catch (error: any) {
+      setPasswordError(error.response?.data?.message || 'Could not change your password.');
+    } finally {
+      setPasswordSaving(false);
+    }
   };
 
   if (loading) {
@@ -188,6 +211,30 @@ const CustomerDashboardPage: React.FC = () => {
                 <span className="text-sm font-bold text-blue-600">
                   {formatPHP(customer?.service_plan?.price)}
                 </span>
+              </div>
+              <div className="pt-2">
+                <button type="button" onClick={() => { setShowPasswordForm((current) => !current); setPasswordError(''); }}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700">
+                  <KeyRound className="h-4 w-4" /> Change portal password
+                </button>
+                {passwordMessage && <p className="mt-2 text-xs text-green-700">{passwordMessage}</p>}
+                {showPasswordForm && (
+                  <form onSubmit={changePassword} className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <input type="password" required value={passwordForm.current_password} placeholder="Current password"
+                      onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+                    <input type="password" required minLength={10} value={passwordForm.password} placeholder="New password (10+ characters)"
+                      onChange={(e) => setPasswordForm({ ...passwordForm, password: e.target.value })}
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+                    <input type="password" required minLength={10} value={passwordForm.password_confirmation} placeholder="Confirm new password"
+                      onChange={(e) => setPasswordForm({ ...passwordForm, password_confirmation: e.target.value })}
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+                    {passwordError && <p className="text-xs text-red-700">{passwordError}</p>}
+                    <button type="submit" disabled={passwordSaving} className="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                      {passwordSaving ? 'Saving…' : 'Save new password'}
+                    </button>
+                  </form>
+                )}
               </div>
             </div>
           </div>

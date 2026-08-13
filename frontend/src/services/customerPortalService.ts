@@ -5,13 +5,14 @@ export const customerPortalService = {
   /**
    * Customer login
    */
-  login: async (email: string, accountNumber: string): Promise<{
+  login: async (email: string, password?: string, accountNumber?: string): Promise<{
     customer: Customer;
     access_token: string;
     token_type: string;
   }> => {
     const response = await api.post('/customer-portal/login', {
       email,
+      password,
       account_number: accountNumber,
     });
     return response.data.data;
@@ -141,6 +142,11 @@ export const customerPortalService = {
     gps_coordinates?: { latitude: number; longitude: number };
   }): Promise<{ customer: Customer }> => {
     const response = await api.put('/customer-portal/profile', data);
+    return response.data;
+  },
+
+  changePassword: async (data: { current_password: string; password: string; password_confirmation: string }): Promise<{ status: string; message: string }> => {
+    const response = await api.put('/customer-portal/password', data);
     return response.data;
   },
 };

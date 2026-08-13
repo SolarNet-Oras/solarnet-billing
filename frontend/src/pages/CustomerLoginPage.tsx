@@ -7,7 +7,7 @@ const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
-    accountNumber: '',
+    password: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -18,7 +18,7 @@ const CustomerLoginPage: React.FC = () => {
     setError('');
 
     try {
-      const result = await customerPortalService.login(formData.email, formData.accountNumber);
+      const result = await customerPortalService.login(formData.email, formData.password);
       
       // Store token and customer data
       localStorage.setItem('customer_token', result.access_token);
@@ -70,14 +70,14 @@ const CustomerLoginPage: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Account Number
+                Password
               </label>
               <input
-                type="text"
-                value={formData.accountNumber}
-                onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="CUST-001"
+                placeholder="Your portal password"
                 required
               />
             </div>
@@ -100,6 +100,10 @@ const CustomerLoginPage: React.FC = () => {
               )}
             </button>
           </form>
+
+          <p className="mt-4 text-center text-xs text-gray-500">
+            Your initial password is sent to your registered email. Change it after your first sign-in.
+          </p>
 
           <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
             <p className="text-center text-sm text-gray-600">

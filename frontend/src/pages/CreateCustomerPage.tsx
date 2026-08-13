@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { MapPin } from 'lucide-react';
 import api from '@/services/api';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { routerService, type Router } from '@/services/routerService';
@@ -56,6 +57,8 @@ const CreateCustomerPage: React.FC = () => {
     portal_url: string;
     welcome_email_sent: boolean;
   } | null>(null);
+  const [locationMessage, setLocationMessage] = useState('');
+  const [locating, setLocating] = useState(false);
 
   const [formData, setFormData] = useState<CustomerFormData>({
     // Business rule: account number is exactly 10 digits, no letters.
@@ -139,6 +142,33 @@ const CreateCustomerPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const captureLocation = (): void => {
+    if (!navigator.geolocation) {
+      setLocationMessage('This device/browser does not support location capture.');
+      return;
+    }
+    setLocating(true);
+    setLocationMessage('Requesting location permission…');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFormData((prev) => ({
+          ...prev,
+          gps_coordinates: {
+            latitude: Number(position.coords.latitude.toFixed(6)),
+            longitude: Number(position.coords.longitude.toFixed(6)),
+          },
+        }));
+        setLocationMessage('Location captured for this customer.');
+        setLocating(false);
+      },
+      () => {
+        setLocationMessage('Location was not captured. Check the device permission and try again.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
   };
 
   return (
@@ -288,6 +318,20 @@ const CreateCustomerPage: React.FC = () => {
                   className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   data-testid="input-address"
                 />
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={captureLocation} disabled={locating}
+                    className="inline-flex items-center gap-2 rounded-md border border-primary px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
+                    <MapPin className="h-3.5 w-3.5" /> {locating ? 'Capturing location…' : 'Capture installation location'}
+                  </button>
+                  {formData.gps_coordinates && (
+                    <a className="text-xs text-primary hover:underline" target="_blank" rel="noreferrer"
+                      href={`https://www.google.com/maps/search/?api=1&query=${formData.gps_coordinates.latitude},${formData.gps_coordinates.longitude}`}>
+                      View captured location
+                    </a>
+                  )}
+                  {locationMessage && <span className="text-xs text-muted-foreground">{locationMessage}</span>}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">Ask the customer/installer for permission before capturing the installation location.</p>
               </div>
 
               <div>
@@ -304,15 +348,17 @@ const CreateCustomerPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Email</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Email *</label>
                 <input
                   type="email"
                   name="email"
                   value={formData.email || ''}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   data-testid="input-email"
                 />
+                <p className="text-xs text-muted-foreground mt-1">The customer receives their initial portal password at this address.</p>
               </div>
             </div>
           </div>

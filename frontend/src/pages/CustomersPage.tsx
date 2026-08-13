@@ -5,6 +5,7 @@ import api from '@/services/api';
 import { customerService } from '@/services/customerService';
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
+import { MapPin } from 'lucide-react';
 
 const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -237,6 +238,9 @@ const CustomersPage: React.FC = () => {
                       Contact
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
+                      Address
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
                       Service Plan
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
@@ -276,6 +280,15 @@ const CustomersPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                         <div>{customer.contact_number}</div>
                         {customer.email && <div className="text-xs">{customer.email}</div>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground min-w-56">
+                        <div className="max-w-56 truncate" title={customer.address}>{customer.address}</div>
+                        {customer.gps_coordinates && (
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${customer.gps_coordinates.latitude},${customer.gps_coordinates.longitude}`}
+                            target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            <MapPin className="h-3 w-3" /> Open map
+                          </a>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                         {customer.service_plan ? (
