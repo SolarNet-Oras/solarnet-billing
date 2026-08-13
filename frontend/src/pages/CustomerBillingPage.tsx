@@ -11,6 +11,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,10 +34,20 @@ export default function CustomerBillingPage(): React.JSX.Element {
   }, [navigate]);
 
   const payWithGcash = async (invoiceId: string): Promise<void> => {
-    setError(''); setPayingInvoiceId(invoiceId);
+    setError(''); setNotice(''); setPayingInvoiceId(invoiceId);
     try {
       const checkout = await customerPortalService.startGcashCheckout(invoiceId);
-      window.location.assign(checkout.checkout_url);
+      // Keep the signed-in customer portal open. PayMongo owns the separate
+      // checkout tab; cancelling it has no effect on the customer session.
+      const paymentWindow = window.open(checkout.checkout_url, '_blank');
+      if (!paymentWindow) {
+        setError('Your browser blocked the secure GCash checkout window. Allow pop-ups for this site and try again.');
+        setPayingInvoiceId(null);
+        return;
+      }
+      paymentWindow.opener = null;
+      setNotice('GCash checkout opened in a new tab. Your account stays signed in here. Your invoice is updated only after PayMongo confirms payment.');
+      setPayingInvoiceId(null);
     } catch (requestError: any) {
       setError(requestError.response?.data?.message || 'Could not start GCash payment.');
       setPayingInvoiceId(null);
@@ -49,6 +60,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8">
         <div><h1 className="text-3xl font-bold text-slate-900">Invoices & payments</h1><p className="mt-1 text-slate-600">Your account billing history and recorded payments.</p></div>
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+        {notice && <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">{notice}</div>}
         {loading ? <div className="py-16 text-center text-slate-500">Loading billing history…</div> : <>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b px-5 py-4"><FileText className="h-5 w-5 text-blue-600" /><h2 className="font-semibold text-slate-900">Invoices</h2></div>
