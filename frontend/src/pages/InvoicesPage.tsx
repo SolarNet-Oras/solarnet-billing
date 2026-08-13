@@ -6,7 +6,7 @@ import {
   Filter, 
   Download, 
   Loader2,
-  DollarSign, 
+  PhilippinePeso, 
   Send,
   Eye,
   Clock,
@@ -393,7 +393,7 @@ const InvoicesPage: React.FC = () => {
                           className="text-indigo-600 hover:text-indigo-900"
                           title="Record Payment"
                         >
-                          <DollarSign className="w-4 h-4" />
+                          <PhilippinePeso className="w-4 h-4" />
                         </button>
                       )}
                     </div>
