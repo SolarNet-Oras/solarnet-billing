@@ -305,30 +305,21 @@ class InvoiceService
 
             $invoice->save();
 
-            // A fully settled account can be restored automatically, but only
-            // when it has no other invoice past the configured suspension grace
-            // period. Saving the customer triggers the normal queue sync.
+            // Any recorded payment, including a partial cash payment, restores
+            // a billing-suspended customer. The suspension service recognises
+            // the payment on this invoice, so it will not immediately suspend
+            // the customer again for the same billing period.
             $customer = $invoice->customer;
-            if ($customer && $customer->status === 'suspended' && $customer->suspension_source === 'automation') {
-                $graceCutoff = now()->subDays((int) Setting::get('billing.auto_suspend_days', 15))->startOfDay();
-                $hasPastDueBalance = Invoice::where('customer_id', $customer->id)
-                    ->where('balance', '>', 0)
-                    ->where('due_date', '<', $graceCutoff)
-                    ->whereIn('status', ['sent', 'partial', 'overdue'])
-                    ->exists();
-
-                if (!$hasPastDueBalance) {
-                    $customer->update(['status' => 'active']);
-                    Log::info('Customer restored after payment', ['customer_id' => $customer->id]);
-                }
-            }
-
             if ($customer) {
-                DB::afterCommit(function () use ($customer) {
+                $restoreAfterPayment = in_array($customer->status, ['suspended', 'expired'], true);
+                DB::afterCommit(function () use ($customer, $restoreAfterPayment) {
                     try {
-                        app(BillingSuspensionService::class)->syncCustomerMikrotikStatus(
-                            $customer->fresh(['servicePlan', 'router'])
-                        );
+                        $freshCustomer = $customer->fresh(['servicePlan', 'router']);
+                        if ($restoreAfterPayment) {
+                            app(BillingSuspensionService::class)->restoreCustomer($freshCustomer, 'payment_recorded');
+                        } else {
+                            app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($freshCustomer);
+                        }
                     } catch (\Throwable $e) {
                         Log::warning('Deferred customer network sync after payment failed', [
                             'customer_id' => $customer->id,

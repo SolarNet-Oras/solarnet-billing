@@ -113,7 +113,15 @@ class BillingSuspensionService
                             ->whereColumn('invoices.customer_id', 'customers.id')
                             ->where('invoices.balance', '>', 0)
                             ->where('invoices.due_date', '<', $cutoff)
-                            ->whereIn('invoices.status', ['sent', 'partial', 'overdue']);
+                            ->whereIn('invoices.status', ['sent', 'partial', 'overdue'])
+                            // A partial payment restores service for this
+                            // billing period. A later unpaid invoice can still
+                            // trigger automation after its own grace period.
+                            ->whereNotExists(function ($paymentQuery) {
+                                $paymentQuery->selectRaw('1')
+                                    ->from('payments')
+                                    ->whereColumn('payments.invoice_id', 'invoices.id');
+                            });
                     });
             })
             ->get();
@@ -324,13 +332,24 @@ class BillingSuspensionService
             ->value('due_date');
 
         $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
-        $shouldSuspend = $outstanding > 0
-            && $oldestDue !== null
-            && Carbon::parse($oldestDue)->startOfDay()->lt(now()->subDays($graceDays)->startOfDay());
+        $oldestUnpaidDue = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->where('balance', '>', 0)
+            ->whereIn('status', ['sent', 'partial', 'overdue'])
+            ->whereNotExists(function ($paymentQuery) {
+                $paymentQuery->selectRaw('1')
+                    ->from('payments')
+                    ->whereColumn('payments.invoice_id', 'invoices.id');
+            })
+            ->orderBy('due_date')
+            ->value('due_date');
+        $shouldSuspend = $oldestUnpaidDue !== null
+            && Carbon::parse($oldestUnpaidDue)->startOfDay()->lt(now()->subDays($graceDays)->startOfDay());
 
         return [
             'outstanding_balance' => $outstanding,
             'oldest_due_date' => $oldestDue,
+            'oldest_unpaid_due_date' => $oldestUnpaidDue,
             'should_suspend' => $shouldSuspend,
         ];
     }
