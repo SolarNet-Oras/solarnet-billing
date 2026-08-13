@@ -30,7 +30,7 @@ class FinancialEntryController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate(['type' => 'required|in:sale,expense', 'description' => 'required|string|max:255', 'category' => 'nullable|string|max:100', 'amount' => 'required|numeric|min:0.01', 'entry_date' => 'required|date', 'payment_method' => 'required|in:cash,gcash,bank,other', 'reference' => 'nullable|string|max:100', 'notes' => 'nullable|string|max:1000']);
+        $data = $request->validate(['type' => 'required|in:sale,expense', 'description' => 'required|string|max:255', 'category' => 'nullable|string|max:100', 'amount' => 'required|numeric|min:0.01', 'entry_date' => 'required|date', 'payment_method' => 'required|in:cash,gcash,bank,bank_bpi,bank_landbank,add_to_cash,add_to_gcash,deposit_to_bpi,deposit_to_landbank,other', 'reference' => 'nullable|string|max:100', 'notes' => 'nullable|string|max:1000']);
         $data['recorded_by'] = optional($request->user())->id;
         return response()->json(['data' => FinancialEntry::create($data)], 201);
     }
@@ -38,9 +38,9 @@ class FinancialEntryController extends Controller
     private function walletFor(?string $method): string
     {
         return match (strtolower((string) $method)) {
-            'cash' => 'cash',
-            'bank', 'bank_transfer', 'transfer' => 'bank',
-            'gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya' => 'ewallet',
+            'cash', 'add_to_cash' => 'cash',
+            'bank', 'bank_transfer', 'transfer', 'bank_bpi', 'bank_landbank', 'deposit_to_bpi', 'deposit_to_landbank' => 'bank',
+            'gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya', 'add_to_gcash' => 'ewallet',
             default => 'other',
         };
     }
