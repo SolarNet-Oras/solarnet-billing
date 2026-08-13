@@ -52,7 +52,9 @@ export const api: AxiosInstance = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
     // Customer portal requests use their own token (stored at portal login)
-    const isCustomerPortal = (config.url ?? '').includes('customer-portal');
+    // Match only the actual customer portal API namespace. Admin endpoints
+    // such as /customer-portal-accounts must continue using the staff token.
+    const isCustomerPortal = (config.url ?? '').startsWith('/customer-portal/');
     const token = isCustomerPortal
       ? localStorage.getItem('customer_token')
       : tokenStorage.getToken();
@@ -93,7 +95,7 @@ api.interceptors.response.use(
 
     // Handle 401 Unauthorized - User session expired
     if (error.response?.status === HTTP_STATUS.UNAUTHORIZED) {
-      const isCustomerPortal = (originalRequest?.url ?? '').includes('customer-portal');
+      const isCustomerPortal = (originalRequest?.url ?? '').startsWith('/customer-portal/');
 
       if (isCustomerPortal) {
         // Customer portal session expired - send back to the portal login
