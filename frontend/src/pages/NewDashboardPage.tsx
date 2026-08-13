@@ -231,7 +231,7 @@ const NewDashboardPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto max-w-7xl space-y-6 pb-10">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 pb-10">
         <section className="relative overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-slate-950 via-slate-900 to-primary/90 px-6 py-7 text-white shadow-2xl shadow-primary/15 md:px-8">
           <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:22px_22px]" />
           <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-400/30 blur-3xl" />
@@ -309,7 +309,7 @@ const NewDashboardPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+        <section className="order-last rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operations log</p><h2 className="mt-1 text-xl font-semibold text-foreground">Billing updates & warnings</h2></div>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Activity className="h-5 w-5" /></div>
