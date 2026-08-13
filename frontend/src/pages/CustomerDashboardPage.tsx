@@ -290,7 +290,7 @@ const CustomerDashboardPage: React.FC = () => {
           <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <button
-              onClick={() => navigate('/customer/invoices')}
+              onClick={() => navigate('/customer/billing')}
               className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
             >
               <FileText className="w-6 h-6 text-blue-600" />
@@ -301,7 +301,7 @@ const CustomerDashboardPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => navigate('/customer/payments')}
+              onClick={() => navigate('/customer/billing')}
               className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
             >
               <CreditCard className="w-6 h-6 text-green-600" />
