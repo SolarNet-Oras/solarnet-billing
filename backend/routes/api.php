@@ -175,6 +175,7 @@ Route::prefix('v1')->group(function () {
             Route::get('payments/{id}', [PaymentController::class, 'show']);
         });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
+        Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');
         
         // Ticket routes (require permission)
