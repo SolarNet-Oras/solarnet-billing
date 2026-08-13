@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\BillingSuspensionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class CustomerPortalController extends Controller
@@ -167,6 +169,12 @@ class CustomerPortalController extends Controller
         $plain = $accountService->provisionPortalCredentials($customer);
         $accountService->sendWelcomeEmail($customer, $plain);
 
+        // A self-service application may be linked to a DHCP lease only when
+        // its MikroTik comment is an unambiguous normalized name match. This
+        // intentionally does NOT activate service or modify RouterOS: staff
+        // still reviews the pending account before activation.
+        $leaseBinding = $this->bindPendingSignupToUniqueLease($customer);
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Signup received. We\'ll be in touch shortly to confirm your installation.',
@@ -175,8 +183,74 @@ class CustomerPortalController extends Controller
                 'email'          => $customer->email,
                 'password'       => $plain, // shown once on success page
                 'portal_url'     => rtrim(config('app.url'), '/') . '/customer/login',
+                'dhcp_lease_linked' => $leaseBinding['linked'],
+                'dhcp_lease_message' => $leaseBinding['message'],
             ],
         ], 201);
+    }
+
+    /**
+     * Link one, and only one, current unregistered DHCP lease whose comment
+     * matches the applicant name ignoring case, spaces and punctuation.
+     */
+    private function bindPendingSignupToUniqueLease(Customer $customer): array
+    {
+        $normalizedName = $this->normalizeLeaseName($customer->full_name);
+        if ($normalizedName === '') {
+            return ['linked' => false, 'message' => 'No DHCP lease was linked.'];
+        }
+
+        $candidates = DhcpLease::query()
+            ->unmatched()
+            ->active()
+            ->presentOnRouter()
+            ->whereNotNull('comment')
+            ->where('comment', '!=', '')
+            ->get()
+            ->filter(fn (DhcpLease $lease) => $this->normalizeLeaseName((string) $lease->comment) === $normalizedName)
+            ->values();
+
+        if ($candidates->count() !== 1) {
+            return [
+                'linked' => false,
+                'message' => $candidates->isEmpty()
+                    ? 'No matching unregistered DHCP lease was found.'
+                    : 'More than one matching DHCP lease was found. Staff review is required.',
+            ];
+        }
+
+        $lease = $candidates->first();
+        $linked = DB::transaction(function () use ($lease, $customer): bool {
+            $lockedLease = DhcpLease::lockForUpdate()->find($lease->id);
+            if (!$lockedLease || $lockedLease->is_matched || $lockedLease->customer_id || !$lockedLease->is_current || $lockedLease->status !== 'bound') {
+                return false;
+            }
+
+            $lockedLease->update([
+                'customer_id' => $customer->id,
+                'is_matched' => true,
+            ]);
+            $customer->forceFill([
+                'router_id' => $lockedLease->router_id,
+                'mac_address' => $lockedLease->mac_address,
+                'ip_address' => $lockedLease->ip_address,
+                'notes' => trim((string) $customer->notes . "\nPending self-signup linked to DHCP lease comment: {$lockedLease->comment}"),
+            ])->save();
+            return true;
+        });
+
+        return [
+            'linked' => $linked,
+            'message' => $linked
+                ? 'Your application was linked to the matching network record and is awaiting staff approval.'
+                : 'The DHCP lease changed before it could be linked. Staff review is required.',
+        ];
+    }
+
+    private function normalizeLeaseName(string $value): string
+    {
+        $value = function_exists('mb_strtolower') ? mb_strtolower(trim($value)) : strtolower(trim($value));
+        return preg_replace('/[^\p{L}\p{N}]+/u', '', $value) ?? '';
     }
 
     /**

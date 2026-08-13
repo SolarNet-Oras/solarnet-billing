@@ -20,6 +20,8 @@ interface SignupSuccess {
   email: string;
   password: string;
   portal_url: string;
+  dhcp_lease_linked?: boolean;
+  dhcp_lease_message?: string;
 }
 
 export default function SignupPage() {
@@ -104,6 +106,11 @@ export default function SignupPage() {
           <p className="text-xs text-slate-500 mb-4">
             Save these credentials — this password will not be shown again. You can change it after your first login.
           </p>
+          {success.dhcp_lease_message && (
+            <div className={`mb-4 rounded-lg p-3 text-sm ${success.dhcp_lease_linked ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
+              {success.dhcp_lease_message}
+            </div>
+          )}
 
           <div className="flex gap-3">
             <button
