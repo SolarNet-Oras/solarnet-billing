@@ -40,7 +40,11 @@ class CustomerPortalController extends Controller
             ], 422);
         }
 
-        $customer = Customer::where('email', $request->email)->first();
+        // Customer email addresses are case-insensitive in normal use. Trim
+        // accidental spaces too, so the portal does not reject a valid record
+        // simply because staff stored mixed-case email text.
+        $email = strtolower(trim($request->string('email')->toString()));
+        $customer = Customer::whereRaw('LOWER(email) = ?', [$email])->first();
 
         if (!$customer) {
             return response()->json(['status' => 'error', 'message' => 'Invalid credentials'], 401);
