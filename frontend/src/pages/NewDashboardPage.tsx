@@ -135,15 +135,15 @@ const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history:
 };
 
 const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string | number; Icon: LucideIcon; tone: string }) => (
-  <div className="group relative overflow-hidden rounded-lg border border-border/70 bg-card p-2.5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
+  <div className="group relative overflow-hidden rounded-md border border-border/70 bg-card p-2 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
     <div className={`absolute -right-5 -top-5 h-16 w-16 rounded-full opacity-20 blur-2xl ${tone}`} />
     <div className="relative flex items-start justify-between gap-3">
       <div>
-        <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
-        <p className="mt-0.5 text-lg font-bold tracking-tight text-foreground tabular-nums">{value}</p>
+        <p className="text-[8px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+        <p className="mt-0.5 text-base font-bold tracking-tight text-foreground tabular-nums">{value}</p>
       </div>
-      <div className={`flex h-7 w-7 items-center justify-center rounded-md text-white shadow-md ${tone}`}>
-        <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+      <div className={`flex h-6 w-6 items-center justify-center rounded-md text-white shadow-md ${tone}`}>
+        <Icon className="h-3 w-3" strokeWidth={2.25} />
       </div>
     </div>
   </div>
@@ -253,37 +253,37 @@ const NewDashboardPage: React.FC = () => {
         </section>
 
         <section className="grid gap-2 lg:grid-cols-2">
-          <div className="rounded-lg border border-border/70 bg-card p-3 shadow-sm">
+          <div className="rounded-md border border-border/70 bg-card p-2.5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Collection</p>
-                <h2 className="mt-0.5 text-base font-semibold text-foreground">Revenue pulse</h2>
+                <h2 className="mt-0.5 text-sm font-semibold text-foreground">Revenue pulse</h2>
               </div>
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CircleDollarSign className="h-4 w-4" /></div>
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <div><p className="text-[10px] text-muted-foreground">Today</p><p className="mt-0.5 text-sm font-semibold tabular-nums">{peso(metrics?.today_revenue ?? 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">This month</p><p className="mt-0.5 text-sm font-semibold tabular-nums">{peso(metrics?.monthly_revenue ?? 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Overdue</p><p className="mt-0.5 text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">{metrics?.overdue_invoices ?? 0}</p></div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <div><p className="text-[9px] text-muted-foreground">Today</p><p className="mt-0.5 text-xs font-semibold tabular-nums">{peso(metrics?.today_revenue ?? 0)}</p></div>
+              <div><p className="text-[9px] text-muted-foreground">This month</p><p className="mt-0.5 text-xs font-semibold tabular-nums">{peso(metrics?.monthly_revenue ?? 0)}</p></div>
+              <div><p className="text-[9px] text-muted-foreground">Overdue</p><p className="mt-0.5 text-xs font-semibold tabular-nums text-rose-600 dark:text-rose-400">{metrics?.overdue_invoices ?? 0}</p></div>
             </div>
-            <div className="mt-3">
+            <div className="mt-2">
               <div className="mb-1 flex items-center justify-between text-xs"><span className="text-muted-foreground">Collection rate</span><span className="font-bold tabular-nums">{collectionRate}%</span></div>
               <div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-700" style={{ width: `${collectionRate}%` }} /></div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-border/70 bg-card p-3 shadow-sm">
+          <div className="rounded-md border border-border/70 bg-card p-2.5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
-              <div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Billing summary</p><h2 className="mt-0.5 text-base font-semibold text-foreground">Account position</h2></div>
+              <div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Billing summary</p><h2 className="mt-0.5 text-sm font-semibold text-foreground">Account position</h2></div>
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Gauge className="h-4 w-4" /></div>
             </div>
-            <div className="mt-2 divide-y divide-border/70">
+            <div className="mt-1.5 divide-y divide-border/70">
               {[
                 ['Total billed', peso(metrics?.total_billed ?? 0)],
                 ['Paid', peso(metrics?.total_paid ?? 0)],
                 ['Partial', peso(metrics?.partial_paid ?? 0)],
                 ['Outstanding', peso(metrics?.collectible ?? 0)],
-              ].map(([label, value]) => <div key={label} className="flex items-center justify-between py-1.5 text-xs"><span className="text-muted-foreground">{label}</span><span className="font-semibold tabular-nums text-foreground">{value}</span></div>)}
+              ].map(([label, value]) => <div key={label} className="flex items-center justify-between py-1 text-[11px]"><span className="text-muted-foreground">{label}</span><span className="font-semibold tabular-nums text-foreground">{value}</span></div>)}
             </div>
           </div>
         </section>
