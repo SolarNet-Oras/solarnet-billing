@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
-import { Users as UsersIcon, Plus, Search, Loader2, Shield, X, CheckCircle2, XCircle, Mail, Phone, KeyRound, RotateCcw } from 'lucide-react';
+import { Users as UsersIcon, Plus, Search, Loader2, Shield, X, CheckCircle2, XCircle, Mail, Phone, KeyRound, RotateCcw, ClipboardCheck } from 'lucide-react';
 
 interface Role {
   id: string;
@@ -37,6 +37,14 @@ interface ClientPortalAccount {
   password_status: 'not_set' | 'temporary_change_required' | 'customer_set';
   password_set_at: string | null;
 }
+interface ProfileChangeRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_full_name: string | null;
+  requested_service_plan: { id: string; name: string; price: number } | null;
+  customer: { account_number: string; full_name: string; email: string | null; service_plan?: { name: string; price: number } | null };
+  created_at: string;
+}
 
 const emptyForm: UserForm = {
   name: '',
@@ -52,6 +60,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [clientAccounts, setClientAccounts] = useState<ClientPortalAccount[]>([]);
+  const [profileChanges, setProfileChanges] = useState<ProfileChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -63,14 +72,16 @@ export default function UsersPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [uRes, rRes, cRes] = await Promise.all([
+      const [uRes, rRes, cRes, pRes] = await Promise.all([
         api.get('/users', { params: { search: search || undefined, per_page: 50 } }),
         api.get('/roles').catch(() => ({ data: { data: [] } })),
         api.get('/customer-portal-accounts').catch(() => ({ data: { data: [] } })),
+        api.get('/customer-profile-change-requests').catch(() => ({ data: { data: [] } })),
       ]);
       setUsers(uRes.data?.data || []);
       setRoles(rRes.data?.data || []);
       setClientAccounts(cRes.data?.data || []);
+      setProfileChanges(pRes.data?.data || []);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load users');
     } finally {
@@ -156,6 +167,18 @@ export default function UsersPage() {
       await load();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Delete failed');
+    }
+  };
+
+  const reviewProfileChange = async (change: ProfileChangeRequest, decision: 'approve' | 'reject'): Promise<void> => {
+    const reviewNotes = decision === 'reject' ? window.prompt('Optional reason for rejecting this request:') : null;
+    if (decision === 'reject' && reviewNotes === null) return;
+    if (!confirm(`${decision === 'approve' ? 'Approve and apply' : 'Reject'} the requested changes for ${change.customer.full_name}?`)) return;
+    try {
+      await api.post(`/customer-profile-change-requests/${change.id}/${decision}`, decision === 'reject' ? { review_notes: reviewNotes || undefined } : {});
+      await load();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Could not review this request.');
     }
   };
 
@@ -336,6 +359,17 @@ export default function UsersPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="pt-2" data-testid="client-profile-change-requests">
+          <div className="mb-3 flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-primary" />
+            <div><h2 className="font-semibold text-foreground">Client Change Requests</h2><p className="text-sm text-muted-foreground">Approve a requested name or service-plan change before it affects a customer record or MikroTik queue.</p></div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm"><table className="w-full text-sm"><thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3 text-left">Client</th><th className="px-4 py-3 text-left">Requested change</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">
+            {profileChanges.map((change) => <tr key={change.id} className="hover:bg-muted/20"><td className="px-4 py-3"><div className="font-medium">{change.customer.full_name}</div><div className="text-xs text-muted-foreground">{change.customer.account_number}</div></td><td className="px-4 py-3"><div>{change.requested_full_name && <>Name: <strong>{change.requested_full_name}</strong></>}</div>{change.requested_service_plan && <div className="text-xs text-muted-foreground">Plan: {change.requested_service_plan.name} · ₱{Number(change.requested_service_plan.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}/mo</div>}</td><td className="px-4 py-3 capitalize">{change.status}</td><td className="px-4 py-3 text-xs text-muted-foreground">{new Date(change.created_at).toLocaleString()}</td><td className="px-4 py-3 text-right">{change.status === 'pending' ? <><button onClick={() => void reviewProfileChange(change, 'approve')} className="mr-3 text-emerald-700 hover:underline">Approve</button><button onClick={() => void reviewProfileChange(change, 'reject')} className="text-rose-600 hover:underline">Reject</button></> : '—'}</td></tr>)}
+            {profileChanges.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No client change requests found.</td></tr>}
+          </tbody></table></div>
         </section>
       </div>
 

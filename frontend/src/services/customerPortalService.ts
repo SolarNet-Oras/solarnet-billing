@@ -145,10 +145,30 @@ export const customerPortalService = {
     return response.data;
   },
 
+  getProfileChangeRequests: async (): Promise<{ data: CustomerProfileChangeRequest[] }> => {
+    const response = await api.get('/customer-portal/profile-change-requests');
+    return response.data;
+  },
+
+  requestProfileChange: async (data: { full_name?: string; service_plan_id?: string }): Promise<{ status: string; message: string; data: CustomerProfileChangeRequest }> => {
+    const response = await api.post('/customer-portal/profile-change-requests', data);
+    return response.data;
+  },
+
   changePassword: async (data: { current_password: string; password: string; password_confirmation: string }): Promise<{ status: string; message: string }> => {
     const response = await api.put('/customer-portal/password', data);
     return response.data;
   },
 };
+
+export interface CustomerProfileChangeRequest {
+  id: string;
+  requested_full_name: string | null;
+  requested_service_plan: { id: string; name: string; price: number } | null;
+  status: 'pending' | 'approved' | 'rejected';
+  review_notes: string | null;
+  created_at: string | null;
+  reviewed_at: string | null;
+}
 
 export default customerPortalService;

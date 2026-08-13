@@ -71,6 +71,9 @@ Route::prefix('v1')->group(function () {
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
             Route::get('customer-portal-accounts', [CustomerController::class, 'portalAccounts']);
             Route::post('customer-portal-accounts/{id}/reset-password', [CustomerController::class, 'resetPortalPassword']);
+            Route::get('customer-profile-change-requests', [CustomerController::class, 'profileChangeRequests']);
+            Route::post('customer-profile-change-requests/{id}/approve', [CustomerController::class, 'approveProfileChangeRequest']);
+            Route::post('customer-profile-change-requests/{id}/reject', [CustomerController::class, 'rejectProfileChangeRequest']);
         });
         
         // Role routes (admin only)
@@ -222,6 +225,8 @@ Route::prefix('v1')->group(function () {
             Route::get('invoices/{id}', [CustomerPortalController::class, 'invoice']);
             Route::get('payments', [CustomerPortalController::class, 'payments']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
+            Route::get('profile-change-requests', [CustomerPortalController::class, 'profileChangeRequests']);
+            Route::post('profile-change-requests', [CustomerPortalController::class, 'submitProfileChangeRequest']);
             Route::put('password', [CustomerPortalController::class, 'changePassword']);
         });
     });

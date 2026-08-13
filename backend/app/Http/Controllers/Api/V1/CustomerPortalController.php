@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -449,6 +450,73 @@ class CustomerPortalController extends Controller
         ]);
     }
 
+    /**
+     * Submit a name or service-plan change for staff approval. Passwords are
+     * intentionally not included: a customer changes their own password using
+     * the dedicated authenticated password endpoint.
+     */
+    public function submitProfileChangeRequest(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'full_name' => 'nullable|string|max:255',
+            'service_plan_id' => 'nullable|uuid|exists:service_plans,id',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $requestedName = $request->filled('full_name') ? trim((string) $request->input('full_name')) : null;
+        $requestedPlanId = $request->input('service_plan_id');
+        if ((!$requestedName || $requestedName === $customer->full_name)
+            && (!$requestedPlanId || $requestedPlanId === $customer->service_plan_id)) {
+            return response()->json(['status' => 'error', 'message' => 'Choose a different name or service plan to request a change.'], 422);
+        }
+
+        if ($requestedPlanId && !\App\Models\ServicePlan::whereKey($requestedPlanId)->where('is_active', true)->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'The selected service plan is no longer available.'], 422);
+        }
+
+        $change = CustomerProfileChangeRequest::updateOrCreate(
+            ['customer_id' => $customer->id, 'status' => 'pending'],
+            [
+                'requested_full_name' => $requestedName && $requestedName !== $customer->full_name ? $requestedName : null,
+                'requested_service_plan_id' => $requestedPlanId && $requestedPlanId !== $customer->service_plan_id ? $requestedPlanId : null,
+                'reviewed_by' => null,
+                'reviewed_at' => null,
+                'review_notes' => null,
+            ],
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Your requested account changes were sent to SolarNet for approval.',
+            'data' => $this->profileChangePayload($change->fresh('requestedServicePlan')),
+        ], 201);
+    }
+
+    /** Return the authenticated customer’s profile-change request history. */
+    public function profileChangeRequests(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => CustomerProfileChangeRequest::with('requestedServicePlan:id,name,price')
+                ->where('customer_id', $customer->id)
+                ->latest()
+                ->get()
+                ->map(fn (CustomerProfileChangeRequest $change) => $this->profileChangePayload($change)),
+        ]);
+    }
+
     /** Change the portal password for the currently authenticated customer. */
     public function changePassword(Request $request): JsonResponse
     {
@@ -476,6 +544,23 @@ class CustomerPortalController extends Controller
         ])->save();
 
         return response()->json(['status' => 'success', 'message' => 'Password changed successfully.']);
+    }
+
+    protected function profileChangePayload(CustomerProfileChangeRequest $change): array
+    {
+        return [
+            'id' => $change->id,
+            'requested_full_name' => $change->requested_full_name,
+            'requested_service_plan' => $change->requestedServicePlan ? [
+                'id' => $change->requestedServicePlan->id,
+                'name' => $change->requestedServicePlan->name,
+                'price' => $change->requestedServicePlan->price,
+            ] : null,
+            'status' => $change->status,
+            'review_notes' => $change->review_notes,
+            'created_at' => $change->created_at?->toIso8601String(),
+            'reviewed_at' => $change->reviewed_at?->toIso8601String(),
+        ];
     }
 
 

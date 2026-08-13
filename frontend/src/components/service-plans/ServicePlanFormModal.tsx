@@ -121,7 +121,7 @@ export function ServicePlanFormModal({ isOpen, onClose, onSave, plan }: ServiceP
                   Monthly Price <span className="text-red-600">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2 text-muted-foreground">$</span>
+                  <span className="absolute left-3 top-2 text-muted-foreground">₱</span>
                   <input
                     type="number"
                     step="0.01"

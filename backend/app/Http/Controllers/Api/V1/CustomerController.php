@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
 use App\Services\CustomerAccountService;
 use App\Services\BillingSuspensionService;
@@ -460,6 +461,70 @@ class CustomerController extends Controller
             'status' => 'success',
             'message' => 'Portal password reset. The customer must sign in with the temporary password and choose a new one.',
         ]);
+    }
+
+    /** List client-requested name and service-plan changes for staff review. */
+    public function profileChangeRequests(): JsonResponse
+    {
+        $requests = CustomerProfileChangeRequest::with([
+            'customer:id,account_number,full_name,email,service_plan_id',
+            'customer.servicePlan:id,name,price',
+            'requestedServicePlan:id,name,price',
+            'reviewer:id,name',
+        ])->latest()->get();
+
+        return response()->json(['status' => 'success', 'data' => $requests]);
+    }
+
+    /** Apply a client request only after an administrator explicitly approves it. */
+    public function approveProfileChangeRequest(string $id): JsonResponse
+    {
+        $change = CustomerProfileChangeRequest::with('requestedServicePlan')->findOrFail($id);
+        if ($change->status !== 'pending') {
+            return response()->json(['status' => 'error', 'message' => 'This request has already been reviewed.'], 422);
+        }
+
+        DB::transaction(function () use ($change) {
+            $customer = Customer::findOrFail($change->customer_id);
+            $updates = [];
+            if ($change->requested_full_name) {
+                $updates['full_name'] = $change->requested_full_name;
+            }
+            if ($change->requested_service_plan_id && $change->requestedServicePlan) {
+                $updates['service_plan_id'] = $change->requested_service_plan_id;
+                $updates['monthly_fee'] = $change->requestedServicePlan->price;
+            }
+            if ($updates) {
+                $customer->update($updates);
+            }
+            $change->update([
+                'status' => 'approved',
+                'reviewed_by' => auth()->id(),
+                'reviewed_at' => now(),
+            ]);
+        });
+
+        return response()->json(['status' => 'success', 'message' => 'Client profile change approved and applied.']);
+    }
+
+    public function rejectProfileChangeRequest(Request $request, string $id): JsonResponse
+    {
+        $change = CustomerProfileChangeRequest::findOrFail($id);
+        if ($change->status !== 'pending') {
+            return response()->json(['status' => 'error', 'message' => 'This request has already been reviewed.'], 422);
+        }
+        $validator = Validator::make($request->all(), ['review_notes' => 'nullable|string|max:1000']);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+        $change->update([
+            'status' => 'rejected',
+            'reviewed_by' => auth()->id(),
+            'reviewed_at' => now(),
+            'review_notes' => $request->input('review_notes'),
+        ]);
+
+        return response()->json(['status' => 'success', 'message' => 'Client profile change request rejected.']);
     }
 
     /**
