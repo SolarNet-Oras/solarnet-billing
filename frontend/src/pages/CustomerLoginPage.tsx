@@ -102,10 +102,10 @@ const CustomerLoginPage: React.FC = () => {
           </form>
 
           <p className="mt-4 text-center text-xs text-gray-500">
-            Your initial password is sent to your registered email. Change it after your first sign-in.
+            New accounts use a temporary password and must change it after their first sign-in.
           </p>
           <p className="mt-2 text-center text-xs text-gray-500">
-            Existing accounts without a password can use the temporary format <strong>CUST-[your account number]</strong>, then change it immediately.
+            If you have not created your own password yet, use <strong>Solarnet123</strong>, then change it immediately.
           </p>
 
           <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">

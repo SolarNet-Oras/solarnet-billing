@@ -16,6 +16,12 @@ use Illuminate\Support\Str;
 class CustomerAccountService
 {
     /**
+     * Temporary onboarding password selected by SolarNet. Every account is
+     * marked as requiring a password change immediately after first sign-in.
+     */
+    public const TEMPORARY_PORTAL_PASSWORD = 'Solarnet123';
+
+    /**
      * Generate a random human-friendly portal password.
      */
     public function generatePlainPassword(int $length = 10): string
@@ -35,7 +41,7 @@ class CustomerAccountService
      */
     public function provisionPortalCredentials(Customer $customer): string
     {
-        $plain = $this->generatePlainPassword();
+        $plain = self::TEMPORARY_PORTAL_PASSWORD;
         $customer->forceFill([
             'portal_password'        => Hash::make($plain),
             'portal_password_set_at' => now(),
