@@ -24,7 +24,7 @@ class QueueService
      * @param Customer $customer
      * @return array
      */
-    public function syncCustomerQueue(Customer $customer): array
+    public function syncCustomerQueue(Customer $customer, bool $forceConnectionAttempt = false): array
     {
         // Load relationships
         $customer->load(['servicePlan', 'router']);
@@ -34,7 +34,7 @@ class QueueService
         // (e.g. Add Client / Convert Lease) against an offline router hangs
         // the request for the full TCP timeout and, worse, aborts the
         // enclosing DB::transaction when the connection is refused.
-        if (!$customer->router || in_array($customer->router->connection_status, ['offline', 'unknown', null], true)) {
+        if (!$forceConnectionAttempt && (!$customer->router || in_array($customer->router->connection_status, ['offline', 'unknown', null], true))) {
             return [
                 'success' => true,
                 'message' => 'Skipped queue sync — router is not online',
@@ -43,7 +43,7 @@ class QueueService
         }
 
         // Check if customer should have a queue
-        if (!$this->shouldHaveQueue($customer)) {
+        if (!$this->shouldHaveQueue($customer, $forceConnectionAttempt)) {
             return $this->removeCustomerQueue($customer);
         }
 
@@ -63,7 +63,7 @@ class QueueService
      * @param Customer $customer
      * @return bool
      */
-    protected function shouldHaveQueue(Customer $customer): bool
+    protected function shouldHaveQueue(Customer $customer, bool $forceConnectionAttempt = false): bool
     {
         // Must have service plan
         if (!$customer->service_plan_id || !$customer->servicePlan) {
@@ -82,7 +82,7 @@ class QueueService
 
         // Never touch a router that has never connected or is offline —
         // otherwise a dead router hangs synchronous customer-create requests.
-        if (in_array($customer->router->connection_status, ['offline', 'unknown', null], true)) {
+        if (!$forceConnectionAttempt && in_array($customer->router->connection_status, ['offline', 'unknown', null], true)) {
             return false;
         }
 

@@ -510,7 +510,7 @@ class CustomerController extends Controller
         // observer also queues a retry in the background, but do the first
         // Simple Queue update synchronously so an inactive worker cannot leave
         // the client on their old bandwidth limit.
-        $queueSync = $this->queueService->syncCustomerQueue($customer);
+        $queueSync = $this->queueService->syncCustomerQueue($customer, true);
 
         return response()->json([
             'status' => $queueSync['success'] ? 'success' : 'partial',
@@ -555,7 +555,7 @@ class CustomerController extends Controller
             ], 404);
         }
 
-        $result = $this->queueService->syncCustomerQueue($customer);
+        $result = $this->queueService->syncCustomerQueue($customer, true);
 
         return response()->json($result);
     }
