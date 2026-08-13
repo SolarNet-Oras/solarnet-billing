@@ -84,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {navItems.map((item) => {
             if (!hasPermission(item.permission)) return null;
             const Icon = item.icon;
-            const active = location.pathname === item.path;
+            const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 
             return (
               <Link
@@ -92,11 +92,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 to={item.path}
                 onClick={onClose}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground hover:bg-secondary'
+                  active
+                    ? 'bg-sky-600 text-white shadow-sm hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400'
+                    : 'text-slate-800 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-100 dark:hover:bg-slate-800 dark:hover:text-white'
                 }`}
               >
                 <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                  active ? 'bg-primary-foreground/15' : 'bg-secondary/70'
+                  active ? 'bg-white/20 dark:bg-slate-950/15' : 'bg-slate-100 dark:bg-slate-800'
                 }`}>
                   <Icon className="h-4 w-4" strokeWidth={1.8} />
                 </span>
