@@ -53,8 +53,8 @@ const TRANSACTION_TYPES: Record<string, string[]> = {
   'Training Expenses': ['Registration Pay', 'Travel Expenses'],
 };
 
-const PAYMENT_METHODS: PaymentOption[] = [
-  ['cash', 'Cash'], ['gcash', 'GCash'], ['bank_bpi', 'BPI / Bank'], ['bank_landbank', 'Landbank'], ['add_to_cash', 'Add to Cash'], ['add_to_gcash', 'Add to GCash'], ['deposit_to_bpi', 'Deposit to BPI'], ['deposit_to_landbank', 'Deposit to Landbank'], ['other', 'Other'],
+const EXPENSE_PAYMENT_METHODS: PaymentOption[] = [
+  ['cash', 'Cash'], ['gcash', 'GCash'], ['bank_bpi', 'BPI / Bank'], ['bank_landbank', 'Landbank'], ['other', 'Other'],
 ];
 
 export default function OperationsLedgerPage(): React.JSX.Element {
@@ -65,7 +65,7 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const [customDescription, setCustomDescription] = useState(false);
   const [form, setForm] = useState({ amount: '', payment_method: 'cash' });
   const [error, setError] = useState('');
-  const paymentOptions = useMemo(() => category === 'Cash In' ? (CASH_IN_DESTINATIONS[description] ?? []) : PAYMENT_METHODS, [category, description]);
+  const paymentOptions = useMemo(() => category === 'Cash In' ? (CASH_IN_DESTINATIONS[description] ?? []) : EXPENSE_PAYMENT_METHODS, [category, description]);
 
   const load = async (): Promise<void> => {
     try { setData((await api.get('/financial-entries', { params: { date } })).data.data); }
