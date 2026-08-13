@@ -217,6 +217,7 @@ Route::prefix('v1')->group(function () {
         Route::post('signup', [CustomerPortalController::class, 'signup'])->middleware('throttle:3,1');
         Route::get('payment-reminder/{customerId}', [CustomerPortalController::class, 'paymentReminder']);
         Route::post('payment-reminder/resolve', [CustomerPortalController::class, 'resolvePaymentReminder']);
+        Route::post('paymongo/webhook', [CustomerPortalController::class, 'paymongoWebhook']);
         // Public list of active plans (for the signup page dropdown)
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
         Route::get('branding', [SettingsController::class, 'publicBranding']);
@@ -227,6 +228,8 @@ Route::prefix('v1')->group(function () {
             Route::get('invoices', [CustomerPortalController::class, 'invoices']);
             Route::get('invoices/{id}', [CustomerPortalController::class, 'invoice']);
             Route::get('payments', [CustomerPortalController::class, 'payments']);
+            Route::post('invoices/{id}/gcash-checkout', [CustomerPortalController::class, 'startGcashCheckout']);
+            Route::post('gcash-checkouts/{id}/reconcile', [CustomerPortalController::class, 'reconcileGcashCheckout']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
             Route::get('profile-change-requests', [CustomerPortalController::class, 'profileChangeRequests']);
             Route::post('profile-change-requests', [CustomerPortalController::class, 'submitProfileChangeRequest']);

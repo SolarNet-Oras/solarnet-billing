@@ -8,6 +8,8 @@ use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymongoCheckout;
+use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -408,6 +410,56 @@ class CustomerPortalController extends Controller
                           ->paginate($request->get('per_page', 10));
 
         return response()->json($payments);
+    }
+
+    /** Create a PayMongo-hosted GCash checkout for the authenticated customer's invoice. */
+    public function startGcashCheckout(Request $request, string $id, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $invoice = Invoice::where('customer_id', $customer->id)->findOrFail($id);
+        try {
+            return response()->json(['status' => 'success', 'data' => $paymongo->createGcashCheckout($invoice->load('customer'))]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** Reconcile a specific checkout with PayMongo after the customer returns. */
+    public function reconcileGcashCheckout(Request $request, string $id, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $checkout = PaymongoCheckout::where('customer_id', $customer->id)->where('checkout_session_id', $id)->firstOrFail();
+        $paid = $paymongo->reconcileCheckout($checkout->checkout_session_id);
+        return response()->json(['status' => 'success', 'paid' => $paid, 'checkout_status' => $checkout->fresh()->status]);
+    }
+
+    /** PayMongo webhook endpoint. The event is signed, then payment state is re-read from PayMongo. */
+    public function paymongoWebhook(Request $request, PaymongoService $paymongo): JsonResponse
+    {
+        $secret = config('services.paymongo.webhook_secret');
+        if (!$secret || !$this->validPaymongoSignature($request->getContent(), (string) $request->header('Paymongo-Signature'), $secret)) {
+            return response()->json(['status' => 'error'], 401);
+        }
+        $payload = $request->json()->all();
+        $sessionId = data_get($payload, 'data.attributes.data.id')
+            ?? data_get($payload, 'data.attributes.data.attributes.checkout_session_id')
+            ?? data_get($payload, 'data.attributes.data.attributes.metadata.checkout_session_id');
+        if ($sessionId) $paymongo->reconcileCheckout((string) $sessionId);
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function validPaymongoSignature(string $payload, string $header, string $secret): bool
+    {
+        $parts = [];
+        foreach (explode(',', $header) as $part) {
+            [$key, $value] = array_pad(explode('=', trim($part), 2), 2, null);
+            if ($key && $value) $parts[$key] = $value;
+        }
+        if (empty($parts['t']) || empty($parts['te'])) return false;
+        $expected = hash_hmac('sha256', $parts['t'] . '.' . $payload, $secret);
+        return hash_equals($expected, $parts['te']);
     }
 
     /**

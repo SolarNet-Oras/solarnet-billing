@@ -158,6 +158,11 @@ export const customerPortalService = {
     return response.data;
   },
 
+  startGcashCheckout: async (invoiceId: string): Promise<{ checkout_url: string; reference_number: string }> => {
+    const response = await api.post(`/customer-portal/invoices/${invoiceId}/gcash-checkout`);
+    return response.data.data;
+  },
+
   getProfileChangeRequests: async (): Promise<{ data: CustomerProfileChangeRequest[] }> => {
     const response = await api.get('/customer-portal/profile-change-requests');
     return response.data;

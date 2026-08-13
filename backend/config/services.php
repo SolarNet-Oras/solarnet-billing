@@ -45,4 +45,11 @@ return [
         'default_country_code' => env('SMS_DEFAULT_COUNTRY_CODE', '+63'),
     ],
 
+    // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.
+    'paymongo' => [
+        'secret_key' => env('PAYMONGO_SECRET_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+        'base_url' => env('PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1'),
+    ],
+
 ];
