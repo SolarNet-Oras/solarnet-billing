@@ -210,6 +210,14 @@ class RouterController extends Controller
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
+    /** Read-only network safety audit before billing access is installed. */
+    public function billingAccessAudit(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->billingAccessAudit($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     /** Remove only firewall rules whose comments belong to Solarnet billing. */
     public function removeBillingAccess(string $id): JsonResponse
     {

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { type Router, routerService } from '@/services/routerService';
-import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal } from 'lucide-react';
+import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal, Network } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
 import { RouterConsoleModal } from './RouterConsoleModal';
 
@@ -103,6 +103,26 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
       });
     } catch (error: any) {
       setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to verify billing access rules.' });
+    } finally {
+      setBillingActionId(null);
+    }
+  };
+
+  const handleAuditBillingAccess = async (router: Router) => {
+    setBillingActionId(router.id);
+    setBillingResult(null);
+    try {
+      const result = await routerService.billingAccessAudit(router.id);
+      const interfaces = result.audit.customer_interfaces
+        .map((item) => `${item.interface}${item.gateway ? ` (${item.gateway})` : ''}`)
+        .join(', ');
+      setBillingResult({
+        id: router.id,
+        success: true,
+        message: `Safety audit: ${result.audit.dhcp_server_count} DHCP server(s) on ${interfaces || 'no detected customer interfaces'}. ${result.audit.safety_note}`,
+      });
+    } catch (error: any) {
+      setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to audit router configuration.' });
     } finally {
       setBillingActionId(null);
     }
@@ -242,6 +262,16 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                       ) : (
                         <ShieldCheck className="h-4 w-4" />
                       )}
+                    </button>
+                    <button
+                      onClick={() => handleAuditBillingAccess(router)}
+                      disabled={billingActionId === router.id}
+                      className="p-2 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded transition-colors disabled:opacity-50"
+                      title="Read network safety audit"
+                      aria-label="Read network safety audit"
+                      data-testid="router-billing-audit-btn"
+                    >
+                      <Network className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => handleVerifyBillingAccess(router)}

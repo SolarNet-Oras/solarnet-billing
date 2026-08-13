@@ -90,6 +90,11 @@ export const routerService = {
     return response.data;
   },
 
+  async billingAccessAudit(id: string): Promise<{ success: boolean; audit: { dhcp_server_count: number; customer_interfaces: Array<{ interface: string; gateway: string | null }>; hotspot_count: number; hotspot_interfaces: string[]; recommended_mode: string; hotspot_change_required: boolean; safety_note: string } }> {
+    const response = await api.get(`/routers/${id}/billing-access/audit`);
+    return response.data;
+  },
+
   async removeBillingAccess(id: string): Promise<{ success: boolean; message: string; removed?: number }> {
     const response = await api.delete(`/routers/${id}/billing-access`);
     return response.data;

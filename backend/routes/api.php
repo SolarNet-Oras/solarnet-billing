@@ -101,6 +101,7 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);
             Route::post('routers/{id}/billing-access/install', [RouterController::class, 'installBillingAccess']);
             Route::get('routers/{id}/billing-access', [RouterController::class, 'billingAccessStatus']);
+            Route::get('routers/{id}/billing-access/audit', [RouterController::class, 'billingAccessAudit']);
             Route::delete('routers/{id}/billing-access', [RouterController::class, 'removeBillingAccess']);
             Route::post('routers/{id}/console/script', [RouterController::class, 'runConsoleScript']);
             Route::post('routers/{id}/console/ping', [RouterController::class, 'consolePing']);

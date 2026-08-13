@@ -844,10 +844,12 @@ class MikrotikService
         try {
             $client = new Client($this->makeConfig($router));
             $rules = $this->billingFilterRules($client);
+            $audit = $this->billingNetworkAudit($client);
             return [
                 'success' => true,
                 'installed' => count($rules) === 4,
                 'rule_count' => count($rules),
+                'audit' => $audit,
                 'rules' => array_map(fn (array $rule) => [
                     'id' => $rule['.id'] ?? null,
                     'action' => $rule['action'] ?? null,
@@ -860,6 +862,21 @@ class MikrotikService
             ];
         } catch (Throwable $e) {
             return ['success' => false, 'message' => 'Failed to verify billing firewall rules: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Read-only safety inspection. The billing policy is address-list based,
+     * so it protects all detected customer DHCP VLANs without enabling a
+     * RouterOS Hotspot on an interface.
+     */
+    public function billingAccessAudit(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            return ['success' => true, 'audit' => $this->billingNetworkAudit($client)];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to read router network configuration: ' . $e->getMessage()];
         }
     }
 
@@ -904,6 +921,39 @@ class MikrotikService
                     ->equal('comment', 'Solarnet Billing placeholder - do not enable')
             )->read();
         }
+    }
+
+    private function billingNetworkAudit(Client $client): array
+    {
+        $dhcpServers = $client->query(new Query('/ip/dhcp-server/print'))->read();
+        $addresses = $client->query(new Query('/ip/address/print'))->read();
+        $hotspots = $client->query(new Query('/ip/hotspot/print'))->read();
+        $dhcpInterfaces = array_values(array_unique(array_filter(array_map(
+            fn (array $server) => $server['interface'] ?? null,
+            $dhcpServers,
+        ))));
+        $addressByInterface = [];
+        foreach ($addresses as $address) {
+            $interface = $address['interface'] ?? null;
+            if ($interface && in_array($interface, $dhcpInterfaces, true)) {
+                $addressByInterface[$interface] = $address['address'] ?? null;
+            }
+        }
+
+        return [
+            'dhcp_server_count' => count($dhcpServers),
+            'customer_interfaces' => array_map(fn (string $interface) => [
+                'interface' => $interface,
+                'gateway' => $addressByInterface[$interface] ?? null,
+            ], $dhcpInterfaces),
+            'hotspot_count' => count($hotspots),
+            'hotspot_interfaces' => array_values(array_filter(array_map(fn (array $hotspot) => $hotspot['interface'] ?? null, $hotspots))),
+            'recommended_mode' => 'address-list firewall policy',
+            'hotspot_change_required' => false,
+            'safety_note' => count($hotspots) > 0
+                ? 'Existing Hotspot configuration was detected and will not be changed.'
+                : 'No Hotspot configuration will be created. The policy is limited to suspended IP addresses only.',
+        ];
     }
 
     /** Run a one-time RouterOS script and delete the temporary script afterward. */
