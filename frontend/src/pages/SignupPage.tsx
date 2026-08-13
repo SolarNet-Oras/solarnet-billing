@@ -27,6 +27,7 @@ interface SignupSuccess {
 export default function SignupPage() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<ServicePlanOption[]>([]);
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<SignupSuccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +45,7 @@ export default function SignupPage() {
       .get(`${API_BASE}/api/v1/customer-portal/service-plans`)
       .then((r) => setPlans(r.data?.data || []))
       .catch(() => setPlans([]));
+    axios.get(`${API_BASE}/api/v1/customer-portal/branding`).then((r) => setBranding(r.data?.data || branding)).catch(() => undefined);
   }, []);
 
   const submit = async (e: FormEvent) => {
@@ -138,11 +140,11 @@ export default function SignupPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-              <Wifi className="h-6 w-6 text-blue-400" />
+            <div className="h-10 w-10 overflow-hidden rounded-lg bg-blue-500/20 flex items-center justify-center">
+              {branding.logo_url ? <img src={branding.logo_url} alt={branding.name} className="h-full w-full object-contain" /> : <Wifi className="h-6 w-6 text-blue-400" />}
             </div>
             <div>
-              <h1 className="text-xl font-bold">Solarnet Internet</h1>
+              <h1 className="text-xl font-bold">{branding.name}</h1>
               <p className="text-xs text-slate-400">Sign up for service</p>
             </div>
           </div>

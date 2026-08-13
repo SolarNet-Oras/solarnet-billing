@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import customerPortalService from '@/services/customerPortalService';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   
   const [formData, setFormData] = useState({
     email: '',
@@ -12,6 +14,8 @@ const LoginPage: React.FC = () => {
   });
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+
+  useEffect(() => { void customerPortalService.getBranding().then(setBranding).catch(() => undefined); }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setFormData({
@@ -41,9 +45,8 @@ const LoginPage: React.FC = () => {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            ISP Billing System
-          </h1>
+          <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
+          <h1 className="text-3xl font-bold text-foreground mb-2">{branding.name}</h1>
           <p className="text-muted-foreground">
             Sign in to your account
           </p>

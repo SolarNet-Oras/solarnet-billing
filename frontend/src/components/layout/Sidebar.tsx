@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
+import customerPortalService from '@/services/customerPortalService';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -48,6 +49,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
+
+  React.useEffect(() => {
+    void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
+  }, []);
 
   const hasPermission = (permission?: string): boolean =>
     !permission || user?.permissions?.includes(permission) || false;
@@ -63,9 +69,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <Link to="/dashboard" className="flex min-w-0 items-center gap-3">
-            <img src="/solarnet-mark.svg" alt="" className="h-9 w-9 shrink-0" />
+            <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="h-9 w-9 shrink-0 object-contain" />
             <div className="min-w-0">
-              <p className="text-sm font-semibold tracking-tight text-foreground">SOLARNET</p>
+              <p className="truncate text-sm font-semibold tracking-tight text-foreground">{branding.name}</p>
               <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Billing</p>
             </div>
           </Link>
