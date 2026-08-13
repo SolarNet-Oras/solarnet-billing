@@ -47,7 +47,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
       }
       paymentWindow.opener = null;
       const accessNotice = checkout.temporary_payment_access?.granted
-        ? ' Payment access is enabled for 15 minutes while you complete checkout.'
+        ? ' Payment access is enabled for up to 24 hours while you complete checkout.'
         : checkout.temporary_payment_access && !checkout.temporary_payment_access.success
           ? ' If checkout does not load, contact SolarNet because temporary payment access could not be enabled.'
           : '';

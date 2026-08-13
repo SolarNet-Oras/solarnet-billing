@@ -211,7 +211,7 @@ const InvoicesPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="p-6">
+      <div className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
@@ -228,14 +228,14 @@ const InvoicesPage: React.FC = () => {
               placeholder="Search invoices..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full bg-white pl-10 pr-4 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
           </div>
 
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="bg-white px-4 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="all">All Status</option>
             <option value="draft">Draft</option>
@@ -401,7 +401,7 @@ const InvoicesPage: React.FC = () => {
       {/* Create Invoice Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white text-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Generate New Invoice</h2>
               <form onSubmit={handleCreateInvoice}>
@@ -411,7 +411,7 @@ const InvoicesPage: React.FC = () => {
                     <select
                       value={formData.customer_id}
                       onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full bg-white px-3 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     >
                       <option value="">Select a customer</option>

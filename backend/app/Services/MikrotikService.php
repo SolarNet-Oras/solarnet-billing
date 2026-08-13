@@ -1023,8 +1023,8 @@ class MikrotikService
         }
     }
 
-    /** Grant a short full-access window only after a suspended client starts GCash checkout. */
-    public function grantTemporaryPaymentCheckoutAccess(Customer $customer, int $minutes = 15): array
+    /** Grant time-limited full access only after a suspended client starts GCash checkout. */
+    public function grantTemporaryPaymentCheckoutAccess(Customer $customer, int $minutes = 1440): array
     {
         if (!in_array($customer->status, ['suspended', 'expired'], true)) {
             return ['success' => true, 'granted' => false, 'message' => 'Temporary payment access is not needed for this customer status.'];
@@ -1036,7 +1036,9 @@ class MikrotikService
             return ['success' => false, 'granted' => false, 'message' => 'The customer does not have a valid router and IPv4 address for payment access.'];
         }
 
-        $minutes = max(1, min($minutes, 30));
+        // A full day is convenient for payment retries but still expires on
+        // RouterOS automatically; never create a permanent bypass.
+        $minutes = max(1, min($minutes, 1440));
         $comment = 'Solarnet Billing temporary payment checkout ' . $customer->id;
         try {
             $client = new Client($this->makeConfig($router));

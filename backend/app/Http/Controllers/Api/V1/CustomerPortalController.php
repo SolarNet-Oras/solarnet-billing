@@ -421,7 +421,7 @@ class CustomerPortalController extends Controller
         try {
             $checkout = $paymongo->createGcashCheckout($invoice->load('customer'));
             $checkout['temporary_payment_access'] = app(\App\Services\MikrotikService::class)
-                ->grantTemporaryPaymentCheckoutAccess($customer);
+                ->grantTemporaryPaymentCheckoutAccess($customer, (int) \App\Models\Setting::get('network.payment_checkout_access_minutes', 1440));
 
             return response()->json(['status' => 'success', 'data' => $checkout]);
         } catch (\RuntimeException $e) {
