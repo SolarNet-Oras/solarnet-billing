@@ -174,6 +174,7 @@ const NewDashboardPage: React.FC = () => {
   const [query, setQuery] = useState('');
   const [clientMonitor, setClientMonitor] = useState<ClientMonitor[]>([]);
   const [monitorUpdatedAt, setMonitorUpdatedAt] = useState<string | null>(null);
+  const [monitorPolling, setMonitorPolling] = useState(false);
   const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
@@ -194,8 +195,14 @@ const NewDashboardPage: React.FC = () => {
     if (monitorRequestInFlight.current) return;
 
     monitorRequestInFlight.current = true;
+    setMonitorPolling(true);
     try {
-      const response = await api.get<{ data: ClientMonitor[]; refreshed_at: string }>('/dashboard/client-monitor');
+      // The timestamp prevents an intermediary from returning a cached queue
+      // snapshot. The backend polls the actual RouterOS Simple Queue counters.
+      const response = await api.get<{ data: ClientMonitor[]; refreshed_at: string }>('/dashboard/client-monitor', {
+        params: { _: Date.now() },
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       setClientMonitor(response.data.data ?? []);
       setMonitorUpdatedAt(response.data.refreshed_at ?? new Date().toISOString());
     } catch (error) {
@@ -203,6 +210,7 @@ const NewDashboardPage: React.FC = () => {
       logger.error('Failed to refresh client queue monitor', error);
     } finally {
       monitorRequestInFlight.current = false;
+      setMonitorPolling(false);
     }
   }, []);
 
@@ -329,7 +337,7 @@ const NewDashboardPage: React.FC = () => {
           <div className="flex flex-col gap-4 border-b border-border/70 p-5 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live queue & lease monitor</h2></div>
-              <p className="mt-1 text-sm text-muted-foreground">Matched DHCP leases with Simple Queue traffic. Refreshes every 5 seconds{monitorUpdatedAt ? ` · updated ${new Date(monitorUpdatedAt).toLocaleTimeString()}` : ''}.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Live Simple Queue traffic · polls MikroTik every 5 seconds without reloading this page{monitorUpdatedAt ? ` · last checked ${new Date(monitorUpdatedAt).toLocaleTimeString()}` : ''}{monitorPolling ? ' · checking…' : ''}.</p>
             </div>
             <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent clients" className="h-10 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>

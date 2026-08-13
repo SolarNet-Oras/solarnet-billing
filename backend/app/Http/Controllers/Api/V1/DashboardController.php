@@ -198,7 +198,8 @@ class DashboardController extends Controller
             'status' => 'success',
             'data' => $this->matchedLeaseMonitor(),
             'refreshed_at' => now()->toIso8601String(),
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+          ->header('Pragma', 'no-cache');
     }
 
     /** Build a compact dashboard monitor from matched DHCP leases and queue snapshots. */
