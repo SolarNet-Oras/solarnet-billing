@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CustomerPortalController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
 use App\Http\Controllers\Api\V1\InvoiceController;
+use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -173,6 +174,8 @@ Route::prefix('v1')->group(function () {
             Route::get('payments-statistics', [PaymentController::class, 'statistics']);
             Route::get('payments/{id}', [PaymentController::class, 'show']);
         });
+        Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
+        Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');
         
         // Ticket routes (require permission)
         Route::middleware(['permission:view-tickets'])->group(function () {

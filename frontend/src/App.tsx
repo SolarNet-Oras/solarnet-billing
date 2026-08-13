@@ -13,6 +13,7 @@ import CustomerDetailPage from '@/pages/CustomerDetailPage';
 import { NetworkDevicesPage } from '@/pages/NetworkDevicesPage';
 import { ServicePlansPage } from '@/pages/ServicePlansPage';
 import InvoicesPage from '@/pages/InvoicesPage';
+import OperationsLedgerPage from '@/pages/OperationsLedgerPage';
 import TicketsPage from '@/pages/TicketsPage';
 import ReportsPage from '@/pages/ReportsPage';
 import CustomerLoginPage from '@/pages/CustomerLoginPage';
@@ -129,6 +130,10 @@ const App: React.FC = (): JSX.Element => {
                 }
               />
               
+              <Route
+                path="/operations"
+                element={<ProtectedRoute><OperationsLedgerPage /></ProtectedRoute>}
+              />
               <Route
                 path="/tickets"
                 element={
