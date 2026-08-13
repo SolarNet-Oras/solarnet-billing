@@ -2,6 +2,10 @@ import api from './api';
 import type { Customer, Invoice, Payment, PaginatedResponse } from '../types/api';
 
 export const customerPortalService = {
+  getBranding: async (): Promise<{ name: string; logo_url: string }> => {
+    const response = await api.get('/customer-portal/branding');
+    return response.data.data;
+  },
   /**
    * Customer login
    */

@@ -18,4 +18,14 @@ export const settingsService = {
     const res = await api.put<{ status: string; keys: string[] }>('/settings', { settings: items });
     return { keys: res.data.keys };
   },
+  async uploadCompanyLogo(file: File): Promise<{ logo_url: string; message: string }> {
+    const form = new FormData();
+    form.append('logo', file);
+    const res = await api.post('/settings/company-logo', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return res.data;
+  },
+  async removeCompanyLogo(): Promise<{ message: string }> {
+    const res = await api.delete('/settings/company-logo');
+    return res.data;
+  },
 };

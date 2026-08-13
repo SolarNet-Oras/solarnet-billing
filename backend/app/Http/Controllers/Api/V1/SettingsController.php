@@ -7,6 +7,8 @@ use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -23,6 +25,7 @@ class SettingsController extends Controller
         'company.contact'      => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Number',      'default' => ''],
         'company.email'        => ['cast' => 'string', 'group' => 'company', 'label' => 'Contact Email',       'default' => ''],
         'company.timezone'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Timezone',            'default' => 'Asia/Manila'],
+        'company.logo_url'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Company Logo',        'default' => ''],
         'company.currency'     => ['cast' => 'string', 'group' => 'company', 'label' => 'Currency Symbol',     'default' => '₱'],
 
         // Billing
@@ -60,7 +63,7 @@ class SettingsController extends Controller
                 'cast'        => $meta['cast'],
                 'group'       => $meta['group'],
                 'label'       => $meta['label'],
-                'is_readonly' => $key === 'ai.model',
+                'is_readonly' => in_array($key, ['ai.model', 'company.logo_url'], true),
             ];
         }
 
@@ -131,5 +134,46 @@ class SettingsController extends Controller
             'message' => 'Saved ' . count($applied) . ' setting(s)',
             'keys'    => $applied,
         ]);
+    }
+
+    /** Upload an approved image type for company branding. */
+    public function uploadCompanyLogo(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['logo' => 'required|image|mimes:jpg,jpeg,png,webp|max:2048']);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Upload a PNG, JPEG, or WebP logo no larger than 2 MB.', 'errors' => $validator->errors()], 422);
+        }
+
+        $oldUrl = (string) Setting::get('company.logo_url', '');
+        $path = $request->file('logo')->storeAs('company-branding', 'logo-' . Str::uuid() . '.' . $request->file('logo')->extension(), 'public');
+        $url = Storage::disk('public')->url($path);
+        Setting::put('company.logo_url', $url);
+        if ($oldPath = $this->storagePathFromUrl($oldUrl)) Storage::disk('public')->delete($oldPath);
+
+        return response()->json(['status' => 'success', 'message' => 'Company logo uploaded.', 'logo_url' => $url]);
+    }
+
+    public function removeCompanyLogo(): JsonResponse
+    {
+        $oldUrl = (string) Setting::get('company.logo_url', '');
+        if ($oldPath = $this->storagePathFromUrl($oldUrl)) Storage::disk('public')->delete($oldPath);
+        Setting::put('company.logo_url', '');
+        return response()->json(['status' => 'success', 'message' => 'Company logo removed.']);
+    }
+
+    public function publicBranding(): JsonResponse
+    {
+        return response()->json(['data' => [
+            'name' => Setting::get('company.name', 'Solarnet Internet'),
+            'logo_url' => Setting::get('company.logo_url', ''),
+        ]]);
+    }
+
+    private function storagePathFromUrl(string $url): ?string
+    {
+        $path = parse_url($url, PHP_URL_PATH) ?: '';
+        $marker = '/storage/company-branding/';
+        $position = strpos($path, $marker);
+        return $position === false ? null : 'company-branding/' . substr($path, $position + strlen($marker));
     }
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { settingsService, type SettingItem } from '@/services/settingsService';
 import { AutomationPanel } from '@/components/automation/AutomationPanel';
-import { Settings as SettingsIcon, Save, CheckCircle2 } from 'lucide-react';
+import { Settings as SettingsIcon, Save, CheckCircle2, ImagePlus, Trash2, Loader2 } from 'lucide-react';
 
 const GROUP_META: Record<string, { label: string; description: string }> = {
   company:    { label: 'Company',     description: 'Business branding shown on invoices, welcome emails, and the customer portal.' },
@@ -98,8 +98,9 @@ const SettingsPage: React.FC = () => {
               {GROUP_META[group]?.description && (
                 <p className="text-sm text-muted-foreground mt-1 mb-5">{GROUP_META[group].description}</p>
               )}
+              {group === 'company' && <CompanyLogoUploader logoUrl={String(rows.find((item) => item.key === 'company.logo_url')?.value || '')} onChanged={() => void load()} onError={setError} onNotice={setNotice} />}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {rows.map((it) => (
+                {rows.filter((it) => it.key !== 'company.logo_url').map((it) => (
                   <SettingField
                     key={it.key}
                     setting={it}
@@ -175,3 +176,46 @@ const SettingField: React.FC<FieldProps> = ({ setting, value, onChange }) => {
 };
 
 export default SettingsPage;
+
+function CompanyLogoUploader({ logoUrl, onChanged, onError, onNotice }: { logoUrl: string; onChanged: () => void; onError: (message: string) => void; onNotice: (message: string) => void }): React.JSX.Element {
+  const [uploading, setUploading] = useState(false);
+
+  const upload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true); onError(''); onNotice('');
+    try {
+      const result = await settingsService.uploadCompanyLogo(file);
+      onNotice(result.message);
+      onChanged();
+    } catch (err: any) {
+      onError(err?.response?.data?.message || 'Could not upload company logo.');
+    } finally { setUploading(false); event.target.value = ''; }
+  };
+
+  const remove = async (): Promise<void> => {
+    if (!confirm('Remove the company logo?')) return;
+    setUploading(true); onError(''); onNotice('');
+    try {
+      const result = await settingsService.removeCompanyLogo();
+      onNotice(result.message);
+      onChanged();
+    } catch (err: any) {
+      onError(err?.response?.data?.message || 'Could not remove company logo.');
+    } finally { setUploading(false); }
+  };
+
+  return <div className="mb-5 rounded-xl border border-dashed border-border bg-muted/20 p-4" data-testid="company-logo-upload">
+    <div className="flex flex-wrap items-center gap-4">
+      <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-background">
+        {logoUrl ? <img src={logoUrl} alt="Company logo" className="h-full w-full object-contain" /> : <ImagePlus className="h-6 w-6 text-muted-foreground" />}
+      </div>
+      <div className="min-w-0 flex-1"><p className="font-medium text-foreground">Company logo</p><p className="mt-0.5 text-sm text-muted-foreground">PNG, JPEG, or WebP. Maximum 2 MB. Used for customer-facing branding.</p></div>
+      <div className="flex items-center gap-2">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"><ImagePlus className="h-4 w-4" /> {uploading ? 'Uploading…' : 'Upload'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void upload(event)} disabled={uploading} className="hidden" /></label>
+        {logoUrl && <button type="button" onClick={() => void remove()} disabled={uploading} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"><Trash2 className="h-4 w-4" /> Remove</button>}
+      </div>
+    </div>
+    {uploading && <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Saving company branding…</p>}
+  </div>;
+}

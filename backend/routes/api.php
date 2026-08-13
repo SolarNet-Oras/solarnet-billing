@@ -137,6 +137,8 @@ Route::prefix('v1')->group(function () {
         // General settings (super_admin or view-settings/edit-settings permissions)
         Route::get('settings',  [SettingsController::class, 'index'])->middleware('permission:view-settings');
         Route::put('settings',  [SettingsController::class, 'update'])->middleware('permission:edit-settings');
+        Route::post('settings/company-logo', [SettingsController::class, 'uploadCompanyLogo'])->middleware('permission:edit-settings');
+        Route::delete('settings/company-logo', [SettingsController::class, 'removeCompanyLogo'])->middleware('permission:edit-settings');
 
         // Scheduled Automations (view logs = view-settings, manual trigger = super_admin only)
         Route::prefix('automation')->group(function () {
@@ -217,6 +219,7 @@ Route::prefix('v1')->group(function () {
         Route::post('payment-reminder/resolve', [CustomerPortalController::class, 'resolvePaymentReminder']);
         // Public list of active plans (for the signup page dropdown)
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
+        Route::get('branding', [SettingsController::class, 'publicBranding']);
 
         // Protected customer routes
         Route::middleware('api')->group(function () {

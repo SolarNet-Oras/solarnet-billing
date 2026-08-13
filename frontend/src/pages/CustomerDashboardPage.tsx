@@ -27,9 +27,11 @@ const CustomerDashboardPage: React.FC = () => {
   const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
 
   useEffect(() => {
     fetchDashboardData();
+    void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
   }, []);
 
   const fetchDashboardData = async () => {
@@ -107,9 +109,9 @@ const CustomerDashboardPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-3">
-              <img src="/solarnet-mark.svg" alt="Solarnet" className="w-10 h-10" />
+              <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="w-10 h-10 object-contain" />
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Solarnet Internet</h1>
+                <h1 className="text-xl font-bold text-gray-900">{branding.name}</h1>
                 <p className="text-xs text-gray-500">Customer Portal</p>
               </div>
             </div>

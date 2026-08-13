@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, CreditCard } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => { void customerPortalService.getBranding().then(setBranding).catch(() => undefined); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +42,8 @@ const CustomerLoginPage: React.FC = () => {
       <div className="max-w-md w-full">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <img src="/solarnet-mark.svg" alt="Solarnet" className="w-16 h-16 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900">Solarnet Internet</h1>
+          <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="w-16 h-16 mx-auto mb-4 object-contain" />
+          <h1 className="text-3xl font-bold text-gray-900">{branding.name}</h1>
           <p className="text-gray-600 mt-2">Customer Portal</p>
         </div>
 
