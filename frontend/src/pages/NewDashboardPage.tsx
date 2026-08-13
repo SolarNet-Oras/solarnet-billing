@@ -123,9 +123,9 @@ const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history:
     return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
   }).join(' ');
 
-  return <div className="min-w-[172px]">
+  return <div className="min-w-[145px]">
     <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium tabular-nums"><span className="text-sky-600 dark:text-sky-400">↓ {formatRate(customer.traffic.download_bps)}</span><span className="text-red-600 dark:text-red-400">↑ {formatRate(customer.traffic.upload_bps)}</span></div>
-    <svg viewBox="0 0 160 48" className="h-12 w-full overflow-visible" role="img" aria-label="Live download and upload traffic graph">
+    <svg viewBox="0 0 160 48" className="h-8 w-full overflow-visible" role="img" aria-label="Live download and upload traffic graph">
       <path d="M0 44 H160" stroke="currentColor" className="text-border" strokeWidth="1" />
       <path d={path('download')} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
       <path d={path('upload')} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
@@ -303,22 +303,22 @@ const NewDashboardPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-border/70 p-5 md:flex-row md:items-center md:justify-between">
+        <section className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-border/70 p-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="flex items-center gap-2"><Radio className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Live queue & lease monitor</h2></div>
+              <div className="flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Live queue & lease monitor</h2></div>
               <p className="mt-1 text-sm text-muted-foreground">Live Simple Queue traffic · polls MikroTik every 5 seconds without reloading this page{monitorUpdatedAt ? ` · last checked ${new Date(monitorUpdatedAt).toLocaleTimeString()}` : ''}{monitorPolling ? ' · checking…' : ''}.</p>
             </div>
-            <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent clients" className="h-10 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+            <label className="relative block md:w-60"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search clients" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-muted/45 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-3">Client</th><th className="px-5 py-3">Lease</th><th className="px-5 py-3">Queue</th><th className="px-5 py-3">Plan</th><th className="px-5 py-3">Traffic</th><th className="px-5 py-3">Status</th></tr></thead>
+              <thead className="bg-muted/45 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Lease</th><th className="px-3 py-2">Queue</th><th className="px-3 py-2">Plan</th><th className="px-3 py-2">Traffic</th><th className="px-3 py-2">Status</th></tr></thead>
               <tbody className="divide-y divide-border/70">
                 {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading client monitor…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matched DHCP client leases yet. Sync a router to populate this monitor.</td></tr> : customers.map((customer) => {
                   const theme = statusTheme(customer.customer_status);
                   const StatusIcon = theme.Icon;
-                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-5 py-4 font-medium text-foreground">{customer.full_name}</td><td className="px-5 py-4 text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-1 text-xs capitalize">{customer.lease_status}</p></td><td className="px-5 py-4 text-muted-foreground"><p className="font-mono text-xs">{customer.queue_name}</p><p className={`mt-1 text-xs ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-5 py-4 text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-5 py-4 text-muted-foreground"><QueueTraffic customer={customer} history={trafficHistory[customer.customer_id] ?? []} /></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${theme.className}`}><StatusIcon className="h-3.5 w-3.5" />{theme.label}</span></td></tr>;
+                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-3 py-2 text-xs font-medium text-foreground">{customer.full_name}</td><td className="px-3 py-2 text-xs text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-0.5 text-[10px] capitalize">{customer.lease_status}</p></td><td className="px-3 py-2 text-muted-foreground"><p className="font-mono text-[10px]">{customer.queue_name}</p><p className={`mt-0.5 text-[10px] ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-3 py-2 text-[10px] text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-3 py-2 text-muted-foreground"><QueueTraffic customer={customer} history={trafficHistory[customer.customer_id] ?? []} /></td><td className="px-3 py-2"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.className}`}><StatusIcon className="h-3 w-3" />{theme.label}</span></td></tr>;
                 })}
               </tbody>
             </table>
