@@ -231,8 +231,8 @@ class DashboardController extends Controller
                 $queueSnapshots[$routerId] = Cache::get("router:queues:{$routerId}", ['data' => [], 'captured_at' => null]);
             }
             $snapshot = $queueSnapshots[$routerId];
-            $queueName = 'customer-' . $lease->customer_id;
-            $queue = collect($snapshot['data'] ?? [])->firstWhere('name', $queueName);
+            $queue = $this->activeQueueForLease($snapshot['data'] ?? [], $lease->customer_id, $lease->ip_address);
+            $queueName = $queue['name'] ?? ('customer-' . $lease->customer_id);
             $rate = $this->trafficPair($queue['rate'] ?? null);
             $bytes = $this->trafficPair($queue['bytes'] ?? null);
             $previousQueue = collect($snapshot['previous_data'] ?? [])->firstWhere('name', $queueName);
@@ -282,6 +282,29 @@ class DashboardController extends Controller
         }
 
         return array_values($monitor);
+    }
+
+    /**
+     * A MikroTik DHCP lease rate-limit creates a dynamic `dhcp-ds<...>` simple
+     * queue. When it coexists with our old `customer-...` queue, RouterOS
+     * charges traffic to the dynamic queue and the old queue remains at 0/0.
+     * Select by the lease target, preferring a queue that has live/cumulative
+     * traffic, so the monitor shows the queue actually handling the service.
+     */
+    protected function activeQueueForLease(array $queues, string $customerId, ?string $ipAddress): ?array
+    {
+        $target = $ipAddress ? $ipAddress . '/32' : null;
+        $candidates = collect($queues)->filter(function (array $queue) use ($customerId, $target): bool {
+            return ($queue['name'] ?? null) === 'customer-' . $customerId
+                || ($target && ($queue['target'] ?? null) === $target);
+        });
+
+        return $candidates->sortByDesc(function (array $queue): int {
+            $rate = $this->trafficPair($queue['rate'] ?? null);
+            $bytes = $this->trafficPair($queue['bytes'] ?? null);
+            return array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $rate)) * 1000000000000
+                + array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $bytes));
+        })->first();
     }
 
     /** Parse RouterOS traffic pairs such as "12345/67890". */
