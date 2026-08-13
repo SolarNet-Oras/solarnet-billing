@@ -53,6 +53,18 @@ class CustomerPortalController extends Controller
             if ($customer->portal_password && Hash::check($request->password, $customer->portal_password)) {
                 $authenticated = true;
             }
+
+            // Existing records created before portal passwords have a safe,
+            // deterministic one-time onboarding password. It is immediately
+            // hashed and the customer is required to change it in the portal.
+            if (!$authenticated && !$customer->portal_password && hash_equals($this->temporaryPassword($customer), $request->string('password')->toString())) {
+                $customer->forceFill([
+                    'portal_password' => Hash::make($this->temporaryPassword($customer)),
+                    'portal_password_set_at' => now(),
+                    'portal_password_change_required' => true,
+                ])->save();
+                $authenticated = true;
+            }
         }
 
         // Legacy account-number fallback (only if the customer has no password yet)
@@ -92,6 +104,7 @@ class CustomerPortalController extends Controller
                     'email' => $customer->email,
                     'contact_number' => $customer->contact_number,
                     'status' => $customer->status,
+                    'portal_password_change_required' => (bool) $customer->portal_password_change_required,
                 ],
                 'access_token' => $token,
                 'token_type' => 'bearer',
@@ -333,9 +346,16 @@ class CustomerPortalController extends Controller
         $customer->forceFill([
             'portal_password' => Hash::make($request->string('password')->toString()),
             'portal_password_set_at' => now(),
+            'portal_password_change_required' => false,
         ])->save();
 
         return response()->json(['status' => 'success', 'message' => 'Password changed successfully.']);
+    }
+
+    private function temporaryPassword(Customer $customer): string
+    {
+        $account = strtoupper(trim((string) $customer->account_number));
+        return str_starts_with($account, 'CUST-') ? $account : 'CUST-' . $account;
     }
 
     /**

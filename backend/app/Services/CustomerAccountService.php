@@ -39,6 +39,7 @@ class CustomerAccountService
         $customer->forceFill([
             'portal_password'        => Hash::make($plain),
             'portal_password_set_at' => now(),
+            'portal_password_change_required' => true,
         ])->save();
         return $plain;
     }

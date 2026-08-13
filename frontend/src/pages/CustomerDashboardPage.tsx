@@ -40,6 +40,7 @@ const CustomerDashboardPage: React.FC = () => {
         return;
       }
       setCustomer(data.customer);
+      if (data.customer?.portal_password_change_required) setShowPasswordForm(true);
       setStats(data.stats);
     } catch (error) {
       console.error('Error fetching dashboard:', error);
@@ -128,6 +129,11 @@ const CustomerDashboardPage: React.FC = () => {
           </h2>
           <p className="text-gray-600">Account: {customer?.account_number}</p>
         </div>
+        {customer?.portal_password_change_required && (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <strong>Change your temporary password now.</strong> This account is using its initial portal password. Open “Change portal password” below before continuing.
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

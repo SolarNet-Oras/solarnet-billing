@@ -46,6 +46,7 @@ export interface PaginatedResponse<T> {
 
 export interface LoginRequest {
   email: string;
+  portal_password_change_required?: boolean;
   password: string;
   remember?: boolean;
 }

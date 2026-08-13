@@ -104,6 +104,9 @@ const CustomerLoginPage: React.FC = () => {
           <p className="mt-4 text-center text-xs text-gray-500">
             Your initial password is sent to your registered email. Change it after your first sign-in.
           </p>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            Existing accounts without a password can use the temporary format <strong>CUST-[your account number]</strong>, then change it immediately.
+          </p>
 
           <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
             <p className="text-center text-sm text-gray-600">

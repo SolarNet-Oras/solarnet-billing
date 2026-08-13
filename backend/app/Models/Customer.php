@@ -16,6 +16,7 @@ class Customer extends Model
     protected $hidden = [
         'portal_password',
         'portal_password_set_at',
+        'portal_password_change_required',
         'welcome_email_sent_at',
     ];
 
@@ -66,6 +67,7 @@ class Customer extends Model
             'monthly_fee' => 'float',
             'installation_date' => 'date',
             'portal_password_set_at' => 'datetime',
+            'portal_password_change_required' => 'boolean',
             'welcome_email_sent_at' => 'datetime',
             'queue_synced' => 'boolean',
             'queue_last_synced_at' => 'datetime',
