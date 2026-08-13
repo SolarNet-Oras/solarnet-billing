@@ -9,14 +9,26 @@ use App\Models\TransactionDefinition;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 
 class FinancialEntryController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $date = $request->date('date')?->toDateString() ?? now()->toDateString();
-        $entries = FinancialEntry::whereDate('entry_date', $date)->latest()->get();
-        $collections = Payment::with('customer:id,full_name,account_number')->whereDate('payment_date', $date)->latest()->get();
+        $request->validate(['date' => 'nullable|date', 'month' => 'nullable|date_format:Y-m']);
+        $month = $request->string('month')->toString();
+        if ($month !== '') {
+            $start = Carbon::createFromFormat('Y-m', $month)->startOfMonth()->toDateString();
+            $end = Carbon::createFromFormat('Y-m', $month)->endOfMonth()->toDateString();
+            $entries = FinancialEntry::whereBetween('entry_date', [$start, $end])->latest()->get();
+            $collections = Payment::with('customer:id,full_name,account_number')->whereBetween('payment_date', [$start, $end])->latest()->get();
+            $period = ['mode' => 'month', 'value' => $month, 'start' => $start, 'end' => $end];
+        } else {
+            $date = $request->date('date')?->toDateString() ?? now()->toDateString();
+            $entries = FinancialEntry::whereDate('entry_date', $date)->latest()->get();
+            $collections = Payment::with('customer:id,full_name,account_number')->whereDate('payment_date', $date)->latest()->get();
+            $period = ['mode' => 'day', 'value' => $date, 'start' => $date, 'end' => $date];
+        }
         $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
 
         foreach ($collections as $collection) {
@@ -42,7 +54,7 @@ class FinancialEntryController extends Controller
         foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'];
 
         return response()->json(['data' => [
-            'date' => $date,
+            'period' => $period,
             'collections' => $collections,
             'cash_in' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'cash_in')->values(),
             'transfers' => $entries->where('effect_type', 'transfer')->values(),
