@@ -189,6 +189,21 @@ export const customerPortalService = {
     const response = await api.put('/customer-portal/password', data);
     return response.data;
   },
+
+  startLocationCapture: async (): Promise<{ token: string; expires_at: string; onu_reference: string }> => {
+    const response = await api.post('/customer-portal/location-capture/start');
+    return response.data.data;
+  },
+
+  captureLocation: async (data: { token: string; latitude: number; longitude: number; accuracy: number }): Promise<{ success: boolean; latitude: number; longitude: number; accuracy: number; message?: string }> => {
+    const response = await api.post('/customer-portal/location-capture/capture', data);
+    return response.data.data;
+  },
+
+  confirmLocationCapture: async (token: string): Promise<{ success: boolean; customer?: Customer; message?: string }> => {
+    const response = await api.post('/customer-portal/location-capture/confirm', { token });
+    return response.data.data;
+  },
 };
 
 export interface CustomerProfileChangeRequest {

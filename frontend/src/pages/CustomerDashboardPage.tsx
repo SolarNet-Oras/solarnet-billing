@@ -11,6 +11,8 @@ import {
   AlertCircle,
   KeyRound,
   Wifi,
+  MapPin,
+  LocateFixed,
 } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
@@ -28,6 +30,11 @@ const CustomerDashboardPage: React.FC = () => {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
+  const [locationToken, setLocationToken] = useState<string | null>(null);
+  const [locationPreview, setLocationPreview] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+  const [locationPrompt, setLocationPrompt] = useState(false);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationMessage, setLocationMessage] = useState('');
 
   useEffect(() => {
     fetchDashboardData();
@@ -72,6 +79,51 @@ const CustomerDashboardPage: React.FC = () => {
     localStorage.removeItem('customer_token');
     localStorage.removeItem('customer_data');
     navigate('/customer/login');
+  };
+
+  const startLocationCapture = async (): Promise<void> => {
+    setLocationMessage('');
+    setLocationBusy(true);
+    try {
+      const capture = await customerPortalService.startLocationCapture();
+      setLocationToken(capture.token);
+      setLocationPrompt(true);
+    } catch (error: any) {
+      setLocationMessage(error.response?.data?.message || 'SolarNet could not safely identify your service connection. Please contact support.');
+    } finally { setLocationBusy(false); }
+  };
+
+  const shareLocation = (): void => {
+    if (!locationToken) return;
+    if (!navigator.geolocation) { setLocationMessage('Location sharing is not available in this browser.'); return; }
+    setLocationBusy(true); setLocationMessage('');
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const preview = await customerPortalService.captureLocation({
+            token: locationToken,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+          });
+          setLocationPreview({ latitude: preview.latitude, longitude: preview.longitude, accuracy: preview.accuracy });
+        } catch (error: any) { setLocationMessage(error.response?.data?.data?.message || 'We could not save this location reading. Please try again.'); }
+        finally { setLocationBusy(false); }
+      },
+      (error) => { setLocationBusy(false); setLocationMessage(error.code === error.PERMISSION_DENIED ? 'Location permission was not granted. SolarNet will not collect your location.' : 'Your location could not be determined. Please try again.'); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const confirmLocation = async (): Promise<void> => {
+    if (!locationToken) return;
+    setLocationBusy(true); setLocationMessage('');
+    try {
+      await customerPortalService.confirmLocationCapture(locationToken);
+      setLocationPrompt(false); setLocationPreview(null); setLocationToken(null);
+      await fetchDashboardData();
+    } catch (error: any) { setLocationMessage(error.response?.data?.data?.message || 'This location request is no longer available.'); }
+    finally { setLocationBusy(false); }
   };
 
   const changePassword = async (event: React.FormEvent): Promise<void> => {
@@ -134,6 +186,12 @@ const CustomerDashboardPage: React.FC = () => {
           </h2>
           <p className="text-gray-600">Account: {customer?.account_number}</p>
         </div>
+        {customer?.location_status !== 'confirmed' && (
+          <section className="mb-6 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-blue-50 p-5 text-slate-900 shadow-sm">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white"><MapPin className="h-5 w-5" /></div><div><h3 className="font-bold">Help us confirm your service location</h3><p className="mt-1 text-sm text-slate-600">Share your phone location once while connected to your SolarNet service. We do not continuously track you.</p></div></div><button type="button" onClick={() => void startLocationCapture()} disabled={locationBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"><LocateFixed className="h-4 w-4" />{locationBusy ? 'Checking connection…' : 'Share location'}</button></div>
+            {locationMessage && <p className="mt-3 text-sm text-rose-700">{locationMessage}</p>}
+          </section>
+        )}
         {customer?.portal_password_change_required && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <strong>Change your temporary password now.</strong> This account is using its initial portal password. Open “Change portal password” below before continuing.
@@ -327,6 +385,7 @@ const CustomerDashboardPage: React.FC = () => {
           <CustomerAppInstallCard />
         </div>
       </div>
+      {locationPrompt && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 p-4 sm:items-center sm:justify-center"><section className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white"><MapPin /></div><h2 className="mt-4 text-xl font-bold text-slate-900">Help us record your service location</h2>{!locationPreview ? <><p className="mt-2 text-sm leading-6 text-slate-600">This is a one-time capture for your Internet installation location. SolarNet will not continuously track your phone.</p><button type="button" onClick={shareLocation} disabled={locationBusy} className="mt-6 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{locationBusy ? 'Getting location…' : 'Share my location'}</button><button type="button" onClick={() => setLocationPrompt(false)} disabled={locationBusy} className="mt-3 w-full rounded-xl px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100">Not now</button></> : <><p className="mt-2 text-sm text-slate-600">Detected location accuracy: approximately <strong>{Math.round(locationPreview.accuracy)} meters</strong>.</p><a className="mt-4 block overflow-hidden rounded-xl border border-slate-200 text-sm font-medium text-blue-700" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${locationPreview.latitude}&mlon=${locationPreview.longitude}#map=18/${locationPreview.latitude}/${locationPreview.longitude}`}>View detected point on map</a><button type="button" onClick={() => void confirmLocation()} disabled={locationBusy} className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{locationBusy ? 'Confirming…' : 'Confirm location'}</button><button type="button" onClick={() => { setLocationPreview(null); setLocationMessage(''); }} disabled={locationBusy} className="mt-3 w-full rounded-xl px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100">Retry</button></>}{locationMessage && <p className="mt-3 text-sm text-rose-700">{locationMessage}</p>}</section></div>}
     </div>
   );
 };

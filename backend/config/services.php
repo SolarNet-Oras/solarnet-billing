@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'location_capture' => [
+        'max_accuracy_meters' => env('LOCATION_CAPTURE_MAX_ACCURACY_METERS', 50),
+    ],
 
     /*
     |--------------------------------------------------------------------------

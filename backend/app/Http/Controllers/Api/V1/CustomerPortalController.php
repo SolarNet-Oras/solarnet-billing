@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\PaymongoCheckout;
 use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
+use App\Services\CustomerLocationCaptureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -513,6 +514,43 @@ class CustomerPortalController extends Controller
             'message' => 'Profile updated successfully',
             'customer' => $customer->fresh(),
         ]);
+    }
+
+    /** Start one explicit, one-time GPS capture after safely binding the portal session to a current lease. */
+    public function startLocationCapture(Request $request, CustomerLocationCaptureService $locationCapture): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+
+        $result = $locationCapture->createRequest($customer, (string) $request->ip());
+        if (!$result['eligible']) return response()->json(['status' => 'unavailable', 'message' => $result['reason']], 409);
+
+        return response()->json(['status' => 'success', 'data' => $result]);
+    }
+
+    /** Store an in-memory-like candidate on the short-lived request. Nothing is applied to the customer yet. */
+    public function captureLocation(Request $request, CustomerLocationCaptureService $locationCapture): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $validated = $request->validate([
+            'token' => 'required|string|size:64',
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+            'accuracy' => 'required|numeric|min:0|max:50000',
+        ]);
+        $result = $locationCapture->capture($customer, $validated['token'], (string) $request->ip(), (float) $validated['latitude'], (float) $validated['longitude'], (float) $validated['accuracy']);
+        return response()->json(['status' => $result['success'] ? 'success' : 'error', 'data' => $result], $result['success'] ? 200 : ($result['status'] ?? 409));
+    }
+
+    /** Confirm the already captured point. This is the only action that writes customer coordinates. */
+    public function confirmLocationCapture(Request $request, CustomerLocationCaptureService $locationCapture): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $validated = $request->validate(['token' => 'required|string|size:64']);
+        $result = $locationCapture->confirm($customer, $validated['token'], (string) $request->ip());
+        return response()->json(['status' => $result['success'] ? 'success' : 'error', 'data' => $result], $result['success'] ? 200 : 409);
     }
 
     /**

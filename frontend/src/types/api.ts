@@ -121,6 +121,12 @@ export interface Customer {
     latitude: number;
     longitude: number;
   } | null;
+  location_status?: 'not_captured' | 'pending' | 'captured' | 'confirmed';
+  location_source?: 'customer_device' | 'installer_device' | null;
+  location_accuracy_meters?: number | null;
+  location_captured_at?: string | null;
+  location_confirmed_at?: string | null;
+  portal_password_change_required?: boolean;
   contact_number: string;
   email: string;
   installation_date: string;

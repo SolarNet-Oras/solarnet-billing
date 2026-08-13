@@ -232,6 +232,9 @@ Route::prefix('v1')->group(function () {
             Route::post('gcash-checkouts/{id}/reconcile', [CustomerPortalController::class, 'reconcileGcashCheckout']);
             Route::post('gcash-checkouts/reconcile-latest', [CustomerPortalController::class, 'reconcileLatestGcashCheckout']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
+            Route::post('location-capture/start', [CustomerPortalController::class, 'startLocationCapture'])->middleware('throttle:3,1');
+            Route::post('location-capture/capture', [CustomerPortalController::class, 'captureLocation'])->middleware('throttle:6,1');
+            Route::post('location-capture/confirm', [CustomerPortalController::class, 'confirmLocationCapture'])->middleware('throttle:3,1');
             Route::get('profile-change-requests', [CustomerPortalController::class, 'profileChangeRequests']);
             Route::post('profile-change-requests', [CustomerPortalController::class, 'submitProfileChangeRequest']);
             Route::put('password', [CustomerPortalController::class, 'changePassword']);
