@@ -82,7 +82,10 @@ class RemittanceController extends Controller
 
         return response()->json([
             'data' => $customers,
-            'service_plans' => ServicePlan::where('is_active', true)->orderBy('price')->get(['id', 'name', 'price', 'download_speed', 'upload_speed']),
+            'service_plans' => ServicePlan::where('is_active', true)
+                ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+                ->orderBy('price')
+                ->get(['id', 'name', 'price', 'download_speed', 'upload_speed']),
         ]);
     }
 
@@ -110,7 +113,10 @@ class RemittanceController extends Controller
         $data = $request->validate(['service_plan_id' => 'required|uuid|exists:service_plans,id']);
         $customer = Customer::findOrFail($customerId);
         abort_if($customer->service_plan_id === $data['service_plan_id'], 422, 'Choose a different service plan.');
-        abort_unless(ServicePlan::whereKey($data['service_plan_id'])->where('is_active', true)->exists(), 422, 'The selected service plan is not available.');
+        abort_unless(ServicePlan::whereKey($data['service_plan_id'])
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->exists(), 422, 'The selected service plan is not available.');
 
         $change = CustomerProfileChangeRequest::updateOrCreate(
             ['customer_id' => $customer->id, 'status' => 'pending'],

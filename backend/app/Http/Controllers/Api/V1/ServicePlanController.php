@@ -32,6 +32,7 @@ class ServicePlanController extends Controller
     public function publicIndex(): JsonResponse
     {
         $plans = ServicePlan::where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
             ->orderBy('price')
             ->get(['id', 'name', 'description', 'download_speed', 'upload_speed', 'price']);
         return response()->json([

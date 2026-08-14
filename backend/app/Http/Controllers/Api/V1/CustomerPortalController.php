@@ -580,7 +580,10 @@ class CustomerPortalController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Choose a different name or service plan to request a change.'], 422);
         }
 
-        if ($requestedPlanId && !\App\Models\ServicePlan::whereKey($requestedPlanId)->where('is_active', true)->exists()) {
+        if ($requestedPlanId && !\App\Models\ServicePlan::whereKey($requestedPlanId)
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->exists()) {
             return response()->json(['status' => 'error', 'message' => 'The selected service plan is no longer available.'], 422);
         }
 
