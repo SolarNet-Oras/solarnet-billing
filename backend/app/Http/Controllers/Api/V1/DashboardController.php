@@ -36,6 +36,12 @@ class DashboardController extends Controller
 
         return response()->json(['clients' => $clients, 'tickets' => $tickets]);
     }
+
+    public function technicianMonitor(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $this->matchedLeaseMonitor($request->user()->id), 'refreshed_at' => now()->toIso8601String()])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    }
     /**
      * Get dashboard metrics — all values come from real DB queries.
      */
@@ -221,9 +227,9 @@ class DashboardController extends Controller
     }
 
     /** Build a compact dashboard monitor from matched DHCP leases and queue snapshots. */
-    protected function matchedLeaseMonitor(): array
+    protected function matchedLeaseMonitor(?string $technicianId = null): array
     {
-        $leases = DhcpLease::query()
+        $query = DhcpLease::query()
             ->where('is_matched', true)
             ->whereNotNull('customer_id')
             ->presentOnRouter()
@@ -233,9 +239,9 @@ class DashboardController extends Controller
                 'customer.servicePlan:id,name,download_speed,upload_speed',
                 'router:id,name',
             ])
-            ->orderByDesc('last_seen_at')
-            ->limit(50)
-            ->get();
+            ->orderByDesc('last_seen_at');
+        if ($technicianId) $query->whereHas('customer', fn ($customers) => $customers->where('technician_id', $technicianId));
+        $leases = $query->limit(50)->get();
 
         $queueSnapshots = [];
         $monitor = [];
