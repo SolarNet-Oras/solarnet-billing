@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Download, FileSpreadsheet, ShieldCheck, Upload } from 'lucide-react';
+import { Check, Download, FileSpreadsheet, ShieldCheck, Upload } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { api, getErrorMessage } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,6 +9,7 @@ type PreviewRow = {
   row: number;
   record: Record<string, string | number | null>;
   match_status: string;
+  lease_id: string | null;
   requires_confirmation: boolean;
 };
 
@@ -22,6 +23,8 @@ const ClientMigrationPage: React.FC = () => {
   const [auditId, setAuditId] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [registeringRow, setRegisteringRow] = useState<number | null>(null);
+  const [registeredRows, setRegisteredRows] = useState<number[]>([]);
 
   if (!loading && !isSuperAdmin(user)) return <Navigate to="/dashboard" replace />;
 
@@ -57,6 +60,24 @@ const ClientMigrationPage: React.FC = () => {
       setPreview([]);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const registerMatch = async (item: PreviewRow): Promise<void> => {
+    if (!item.lease_id || item.match_status !== 'EXACT MAC MATCH') return;
+    setRegisteringRow(item.row);
+    setError('');
+    try {
+      await api.post(`/unregistered-leases/${item.lease_id}/quick-register`, {
+        full_name: item.record.Name,
+        address: item.record.Address,
+        monthly_fee: Number(item.record['Current balance']) || undefined,
+      });
+      setRegisteredRows((rows) => [...rows, item.row]);
+    } catch (requestError) {
+      setError(`Row ${item.row}: ${getErrorMessage(requestError)}`);
+    } finally {
+      setRegisteringRow(null);
     }
   };
 
@@ -99,13 +120,13 @@ const ClientMigrationPage: React.FC = () => {
         {preview.length > 0 && <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
           <div className="border-b border-border p-5">
             <h2 className="font-semibold text-foreground">2. MAC-only preview</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Audit {auditId}. Confirmation/import will be enabled in the next step after review.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Audit {auditId}. Only exact MAC matches can be registered. Every client is registered one at a time.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Row</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">MAC</th><th className="px-4 py-3">Match result</th><th className="px-4 py-3">Review</th></tr></thead>
+              <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Row</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">MAC</th><th className="px-4 py-3">Match result</th><th className="px-4 py-3">Review</th><th className="px-4 py-3">Action</th></tr></thead>
               <tbody className="divide-y divide-border">
-                {preview.map((item) => <tr key={item.row}><td className="px-4 py-3">{item.row}</td><td className="px-4 py-3 font-medium text-foreground">{item.record.Name}</td><td className="px-4 py-3 font-mono text-xs">{item.record.Leases}</td><td className="px-4 py-3">{item.match_status}</td><td className="px-4 py-3">{item.requires_confirmation ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Confirmation required</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">Ready for review</span>}</td></tr>)}
+                {preview.map((item) => <tr key={item.row}><td className="px-4 py-3">{item.row}</td><td className="px-4 py-3 font-medium text-foreground">{item.record.Name}</td><td className="px-4 py-3 font-mono text-xs">{item.record.Leases}</td><td className="px-4 py-3">{item.match_status}</td><td className="px-4 py-3">{item.requires_confirmation ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Confirmation required</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">Ready for review</span>}</td><td className="px-4 py-3">{registeredRows.includes(item.row) ? <span className="inline-flex items-center gap-1 text-emerald-700"><Check className="h-4 w-4" /> Registered</span> : item.match_status === 'EXACT MAC MATCH' ? <button disabled={registeringRow === item.row} onClick={() => void registerMatch(item)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{registeringRow === item.row ? 'Registering…' : 'Register client'}</button> : <span className="text-xs text-muted-foreground">Excluded</span>}</td></tr>)}
               </tbody>
             </table>
           </div>
