@@ -223,8 +223,8 @@ class CustomerPortalController extends Controller
 
             app(\App\Services\TicketService::class)->createTicket([
                 'customer_id' => $customer->id,
-                'subject' => 'New client application — installation and binding required',
-                'description' => "New self-signup application for {$customer->full_name}. Review the submitted address, requested plan, and any DHCP lease match before approving installation or rejecting the application.",
+                'subject' => 'New Installation Application — approval and binding required',
+                'description' => "INSTALLATION APPLICATION (not a repair ticket). New self-signup for {$customer->full_name}. A technician must complete installation and submit the router/ONU MAC address; an administrator then reviews the lease match before registration.",
                 'priority' => 'medium',
                 'category' => 'technical',
             ]);

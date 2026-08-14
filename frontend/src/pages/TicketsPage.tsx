@@ -329,7 +329,7 @@ const TicketsPage: React.FC = () => {
                       {ticket.subject}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                      {ticket.category.replace('_', ' ')}
+                      {ticket.subject.startsWith('New Installation Application') ? 'installation application' : ticket.category.replace('_', ' ')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getPriorityBadge(ticket.priority)}
@@ -493,7 +493,7 @@ const TicketsPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Category</p>
-                      <p className="font-medium capitalize">{selectedTicket.category.replace('_', ' ')}</p>
+                      <p className="font-medium capitalize">{selectedTicket.subject.startsWith('New Installation Application') ? 'Installation application' : selectedTicket.category.replace('_', ' ')}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Created</p>
