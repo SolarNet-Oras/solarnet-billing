@@ -8,6 +8,7 @@ import {
   Package,
   PhilippinePeso,
   WalletCards,
+  Banknote,
   Settings,
   Sun,
   Ticket,
@@ -31,12 +32,14 @@ interface NavItem {
   path: string;
   icon: LucideIcon;
   permission?: string;
+  roles?: string[];
 }
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Customers', path: '/customers', icon: UserRound, permission: 'view-customers' },
   { name: 'Billing', path: '/billing', icon: PhilippinePeso, permission: 'view-invoices' },
+  { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
@@ -57,8 +60,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
   }, []);
 
-  const hasPermission = (permission?: string): boolean =>
-    !permission || user?.permissions?.includes(permission) || false;
+  const hasRole = (role: string): boolean => user?.role === role || user?.roles?.some((item) => typeof item === 'string' ? item === role : item.name === role) || false;
+  const hasPermission = (permission?: string, roles?: string[]): boolean =>
+    (!permission || user?.permissions?.includes(permission) || false) && (!roles || roles.some(hasRole));
 
   return (
     <>
@@ -84,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
           {navItems.map((item) => {
-            if (!hasPermission(item.permission)) return null;
+            if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 

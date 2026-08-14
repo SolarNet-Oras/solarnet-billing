@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\RemittanceController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
@@ -175,6 +176,17 @@ Route::prefix('v1')->group(function () {
         Route::get('payments/{id}', [PaymentController::class, 'show']);
         });
         Route::post('payments/advance', [PaymentController::class, 'recordAdvance'])->middleware('permission:create-payments');
+        // Collector workspace: only due invoices and collection/remittance actions.
+        Route::middleware(['role:collector'])->prefix('collector')->group(function () {
+            Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
+            Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
+            Route::post('remittances', [RemittanceController::class, 'submit']);
+        });
+        // Office staff verify what a collector declares against cash, bank, or GCash received.
+        Route::middleware(['role:super_admin|admin|office_admin'])->prefix('remittances')->group(function () {
+            Route::get('/', [RemittanceController::class, 'index']);
+            Route::post('{id}/receive', [RemittanceController::class, 'receive']);
+        });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
         Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');

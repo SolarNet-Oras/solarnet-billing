@@ -53,6 +53,18 @@ class RoleSeeder extends Seeder
                 ],
             ],
             [
+                'name' => 'office_admin',
+                'display_name' => 'Office Administrator',
+                'description' => 'Office administration and remittance verification',
+                'permissions' => ['view-dashboard', 'view-customers', 'view-invoices', 'view-payments', 'create-payments', 'view-remittances', 'receive-remittances'],
+            ],
+            [
+                'name' => 'collector',
+                'display_name' => 'User Collector',
+                'description' => 'Restricted overdue-account collection and remittance workspace',
+                'permissions' => [],
+            ],
+            [
                 'name' => 'technician',
                 'display_name' => 'Technician',
                 'description' => 'Technical support and installation',

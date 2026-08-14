@@ -282,6 +282,7 @@ class InvoiceService
             $payment = Payment::create([
                 'invoice_id' => $invoice->id,
                 'customer_id' => $invoice->customer_id,
+                'collector_id' => $paymentData['collector_id'] ?? null,
                 'payment_number' => $this->generatePaymentNumber(),
                 'amount' => $paymentData['amount'],
                 'payment_method' => $paymentData['payment_method'],

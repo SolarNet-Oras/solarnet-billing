@@ -31,8 +31,9 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      await login(formData);
-      navigate('/dashboard');
+      const signedInUser = await login(formData);
+      const isCollector = signedInUser.role === 'collector' || signedInUser.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
+      navigate(isCollector ? '/remittances' : '/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {

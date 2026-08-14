@@ -27,6 +27,7 @@ import UsersPage from '@/pages/UsersPage';
 import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
 import SettingsPage from '@/pages/SettingsPage';
 import SuspendedAccountPage from '@/pages/SuspendedAccountPage';
+import RemittancesPage from '@/pages/RemittancesPage';
 
 // ============================================================================
 // Main App Component
@@ -134,6 +135,7 @@ const App: React.FC = (): JSX.Element => {
                 path="/operations"
                 element={<ProtectedRoute><OperationsLedgerPage /></ProtectedRoute>}
               />
+              <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route
                 path="/tickets"
                 element={

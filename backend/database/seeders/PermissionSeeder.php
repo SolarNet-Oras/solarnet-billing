@@ -68,6 +68,8 @@ class PermissionSeeder extends Seeder
             ['name' => 'edit-payments', 'display_name' => 'Edit Payments', 'group' => 'payments', 'description' => 'Edit existing payments'],
             ['name' => 'delete-payments', 'display_name' => 'Delete Payments', 'group' => 'payments', 'description' => 'Delete payments'],
             ['name' => 'refund-payments', 'display_name' => 'Refund Payments', 'group' => 'payments', 'description' => 'Process payment refunds'],
+            ['name' => 'view-remittances', 'display_name' => 'View Remittances', 'group' => 'payments', 'description' => 'View collector remittances'],
+            ['name' => 'receive-remittances', 'display_name' => 'Receive Remittances', 'group' => 'payments', 'description' => 'Verify and receive collector remittances'],
             
             // Tickets
             ['name' => 'view-tickets', 'display_name' => 'View Tickets', 'group' => 'tickets', 'description' => 'View support tickets'],

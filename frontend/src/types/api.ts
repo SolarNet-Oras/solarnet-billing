@@ -95,7 +95,8 @@ export interface User {
   name: string;
   email: string;
   email_verified_at: string | null;
-  role: string;
+  role?: string;
+  roles?: Array<string | { id?: string; name: string; display_name?: string }>;
   permissions: string[];
   created_at: string;
   updated_at: string;

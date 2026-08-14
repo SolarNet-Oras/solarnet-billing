@@ -14,6 +14,8 @@ class Payment extends Model
     protected $fillable = [
         'invoice_id',
         'customer_id',
+        'collector_id',
+        'remittance_id',
         'payment_number',
         'amount',
         'payment_method',
@@ -37,4 +39,7 @@ class Payment extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }
+    public function remittance(): BelongsTo { return $this->belongsTo(Remittance::class); }
 }
