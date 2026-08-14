@@ -10,6 +10,7 @@ type PreviewRow = {
   record: Record<string, string | number | null>;
   match_status: string;
   lease_id: string | null;
+  service_plan: { id: string; name: string; price: number; download_speed: number; upload_speed: number } | null;
   requires_confirmation: boolean;
 };
 
@@ -71,7 +72,8 @@ const ClientMigrationPage: React.FC = () => {
       await api.post(`/unregistered-leases/${item.lease_id}/quick-register`, {
         full_name: item.record.Name,
         address: item.record.Address,
-        monthly_fee: Number(item.record['Current balance']) || undefined,
+        service_plan_id: item.service_plan?.id,
+        monthly_fee: item.service_plan?.price,
       });
       setRegisteredRows((rows) => [...rows, item.row]);
     } catch (requestError) {
@@ -124,9 +126,9 @@ const ClientMigrationPage: React.FC = () => {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Row</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">MAC</th><th className="px-4 py-3">Match result</th><th className="px-4 py-3">Review</th><th className="px-4 py-3">Action</th></tr></thead>
+              <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Row</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">MAC</th><th className="px-4 py-3">Service plan</th><th className="px-4 py-3">Match result</th><th className="px-4 py-3">Review</th><th className="px-4 py-3">Action</th></tr></thead>
               <tbody className="divide-y divide-border">
-                {preview.map((item) => <tr key={item.row}><td className="px-4 py-3">{item.row}</td><td className="px-4 py-3 font-medium text-foreground">{item.record.Name}</td><td className="px-4 py-3 font-mono text-xs">{item.record.Leases}</td><td className="px-4 py-3">{item.match_status}</td><td className="px-4 py-3">{item.requires_confirmation ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Confirmation required</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">Ready for review</span>}</td><td className="px-4 py-3">{registeredRows.includes(item.row) ? <span className="inline-flex items-center gap-1 text-emerald-700"><Check className="h-4 w-4" /> Registered</span> : item.match_status === 'EXACT MAC MATCH' ? <button disabled={registeringRow === item.row} onClick={() => void registerMatch(item)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{registeringRow === item.row ? 'Registering…' : 'Register client'}</button> : <span className="text-xs text-muted-foreground">Excluded</span>}</td></tr>)}
+                {preview.map((item) => <tr key={item.row}><td className="px-4 py-3">{item.row}</td><td className="px-4 py-3 font-medium text-foreground">{item.record.Name}</td><td className="px-4 py-3 font-mono text-xs">{item.record.Leases}</td><td className="px-4 py-3">{item.service_plan ? `${item.service_plan.name} · ₱${item.service_plan.price}` : <span className="text-amber-700">No active plan found</span>}</td><td className="px-4 py-3">{item.match_status}</td><td className="px-4 py-3">{item.requires_confirmation ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Confirmation required</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">Ready for review</span>}</td><td className="px-4 py-3">{registeredRows.includes(item.row) ? <span className="inline-flex items-center gap-1 text-emerald-700"><Check className="h-4 w-4" /> Registered</span> : item.match_status === 'EXACT MAC MATCH' && item.service_plan ? <button disabled={registeringRow === item.row} onClick={() => void registerMatch(item)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{registeringRow === item.row ? 'Registering…' : 'Register client'}</button> : <span className="text-xs text-muted-foreground">Excluded</span>}</td></tr>)}
               </tbody>
             </table>
           </div>

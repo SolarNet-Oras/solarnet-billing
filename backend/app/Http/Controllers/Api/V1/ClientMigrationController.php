@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientMigrationAudit;
+use App\Models\ServicePlan;
 use App\Services\ClientMigrationMatcher;
 use Illuminate\Http\Request;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -59,6 +60,7 @@ class ClientMigrationController extends Controller
 
             $record = array_combine(self::HEADERS, array_pad($row, count(self::HEADERS), null));
             $match = $matcher->find((string) $record['Leases']);
+            $plan = $this->findPlan((string) $record['Promo rates (Mbps)']);
 
             $preview[] = [
                 'row' => $index + 2,
@@ -67,6 +69,13 @@ class ClientMigrationController extends Controller
                 'lease_id' => $match['lease']?->id,
                 'candidate_lease_ids' => $match['candidates']->pluck('id')->values(),
                 'requires_confirmation' => $match['requires_confirmation'] ?? false,
+                'service_plan' => $plan ? [
+                    'id' => $plan->id,
+                    'name' => $plan->name,
+                    'price' => $plan->price,
+                    'download_speed' => $plan->download_speed,
+                    'upload_speed' => $plan->upload_speed,
+                ] : null,
             ];
         }
 
@@ -79,5 +88,19 @@ class ClientMigrationController extends Controller
         ]);
 
         return response()->json(['audit_id' => $audit->id, 'rows' => $preview]);
+    }
+
+    private function findPlan(string $promoRate): ?ServicePlan
+    {
+        $rate = (int) preg_replace('/\D+/', '', $promoRate);
+        if ($rate <= 0) {
+            return null;
+        }
+
+        return ServicePlan::query()
+            ->where('is_active', true)
+            ->where('download_speed', $rate)
+            ->orderByDesc('upload_speed')
+            ->first();
     }
 }
