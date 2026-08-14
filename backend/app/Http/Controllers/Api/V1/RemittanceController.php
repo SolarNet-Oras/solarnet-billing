@@ -15,7 +15,7 @@ class RemittanceController extends Controller
 {
     public function collectorDashboard(Request $request): JsonResponse
     {
-        $invoices = Invoice::with('customer:id,account_number,full_name,contact_number')
+        $invoices = Invoice::with('customer:id,account_number,full_name,address,contact_number')
             ->where('balance', '>', 0)->whereDate('due_date', '<=', today())
             ->whereIn('status', ['sent', 'overdue', 'partial'])
             ->orderBy('due_date')->paginate($request->integer('per_page', 50));
