@@ -421,7 +421,7 @@ const InvoicesPage: React.FC = () => {
                           onClick={() => {
                             setSelectedInvoice(invoice);
                             setIsAdvancePayment(true);
-                            setPaymentData({ ...paymentData, amount: 0 });
+                            setPaymentData({ ...paymentData, amount: 0, payment_method: 'cash', transaction_id: '' });
                             setCashCounts({});
                             setShowPaymentModal(true);
                           }}
@@ -659,7 +659,7 @@ const InvoicesPage: React.FC = () => {
                     />
                   </div>
 
-                  <div>
+                  {!isAdvancePayment && <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
                     <select
                       value={paymentData.payment_method}
@@ -674,7 +674,9 @@ const InvoicesPage: React.FC = () => {
                       <option value="mobile_money">Mobile Money</option>
                       <option value="other">Other</option>
                     </select>
-                  </div>
+                  </div>}
+
+                  {isAdvancePayment && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">Payment method: Cash only · Transaction ID is generated automatically.</div>}
 
                   {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash count required</h3><p className="mt-1 text-xs text-emerald-800">Count the bills before recording this client payment. The count must match the payment amount.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashMatches ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Counted</p><b>{formatPHP(cashCounted)}</b></div></div>
@@ -693,7 +695,7 @@ const InvoicesPage: React.FC = () => {
                     />
                   </div>
 
-                  <div>
+                  {!isAdvancePayment && <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Transaction ID (Optional)</label>
                     <input
                       type="text"
@@ -701,7 +703,7 @@ const InvoicesPage: React.FC = () => {
                       onChange={(e) => setPaymentData({ ...paymentData, transaction_id: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                  </div>
+                  </div>}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Reference (Optional)</label>

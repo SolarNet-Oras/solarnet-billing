@@ -8,13 +8,14 @@ use App\Models\Customer;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
     public function recordAdvance(Request $request, InvoiceService $invoices): JsonResponse
     {
         $data = $request->validate([
-            'customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash,bank_transfer,credit_card,debit_card,mobile_money,other', 'payment_date' => 'nullable|date', 'transaction_id' => 'nullable|string|max:255', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000',
+            'customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash', 'payment_date' => 'nullable|date', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000',
             'cash_breakdown' => 'required_if:payment_method,cash|array',
             'cash_breakdown.*.denomination' => 'required_with:cash_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
             'cash_breakdown.*.count' => 'required_with:cash_breakdown|integer|min:0|max:100000',
@@ -26,6 +27,7 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Cash count must exactly match the advance payment amount.'], 422);
             }
         }
+        $data['transaction_id'] = 'ADV-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(6));
         $data['received_by'] = $request->user()->id;
         $payment = $invoices->recordAdvancePayment(Customer::findOrFail($data['customer_id']), $data);
         return response()->json(['message' => 'Advance payment saved as credit for the next invoice.', 'payment' => $payment], 201);
