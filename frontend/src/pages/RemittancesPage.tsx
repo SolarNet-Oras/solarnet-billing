@@ -55,16 +55,22 @@ export default function RemittancesPage() {
     } finally { setSaving(false); }
   };
 
-  const verifyGcash = async () => {
+  const verifyGcash = async (silent = false) => {
     if (!selected || !checkout) return;
     setSaving(true);
     try {
       const response = await api.post(`/collector/invoices/${selected.id}/gcash-checkouts/${checkout.checkout_session_id}/reconcile`);
       if (response.data.paid) { window.alert('Payment confirmed directly by PayMongo.'); close(); await load(); }
-      else window.alert('PayMongo has not confirmed this payment yet. Ask the client to complete checkout, then check again.');
-    } catch (error: any) { window.alert(error.response?.data?.message || 'Could not check PayMongo payment status.'); }
+      else if (!silent) window.alert('PayMongo has not confirmed this payment yet. Ask the client to complete checkout, then check again.');
+    } catch (error: any) { if (!silent) window.alert(error.response?.data?.message || 'Could not check PayMongo payment status.'); }
     finally { setSaving(false); }
   };
+
+  useEffect(() => {
+    if (!selected || !checkout) return;
+    const interval = window.setInterval(() => { void verifyGcash(true); }, 5000);
+    return () => window.clearInterval(interval);
+  }, [selected, checkout]);
 
   const recordManual = async () => {
     if (!selected) return;

@@ -49,3 +49,10 @@ Schedule::command('automation:auto-suspend')
     ->timezone($tz)
     ->withoutOverlapping()
     ->runInBackground();
+
+// Every minute — settle paid PayMongo checkouts even if the browser return or
+// payment webhook was missed.
+Schedule::command('paymongo:reconcile-pending')
+    ->everyMinute()
+    ->timezone($tz)
+    ->withoutOverlapping();

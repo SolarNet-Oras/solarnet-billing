@@ -74,6 +74,33 @@ class PaymongoService
         return true;
     }
 
+    /**
+     * Reconcile recent pending checkouts even when a customer closes PayMongo
+     * before returning to SolarNet or a webhook is delayed.
+     */
+    public function reconcilePendingCheckouts(): array
+    {
+        $result = ['checked' => 0, 'paid' => 0, 'failed' => 0];
+
+        PaymongoCheckout::query()
+            ->whereIn('status', ['pending', 'processing'])
+            ->where('created_at', '>=', now()->subDays(2))
+            ->orderBy('created_at')
+            ->eachById(function (PaymongoCheckout $checkout) use (&$result): void {
+                $result['checked']++;
+                try {
+                    if ($this->reconcileCheckout($checkout->checkout_session_id)) {
+                        $result['paid']++;
+                    }
+                } catch (\Throwable $e) {
+                    $result['failed']++;
+                    report($e);
+                }
+            });
+
+        return $result;
+    }
+
     /** Verify the authenticated customer's latest checkout after returning from PayMongo. */
     public function reconcileLatestCustomerCheckout(string $customerId): array
     {
