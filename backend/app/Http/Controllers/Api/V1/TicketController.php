@@ -119,6 +119,17 @@ class TicketController extends Controller
         ]);
     }
 
+    /** Technicians can claim unassigned installation applications. */
+    public function claimInstallation(Request $request, string $id): JsonResponse
+    {
+        $ticket = Ticket::findOrFail($id);
+        if (! str_starts_with($ticket->subject, 'New Installation Application') || $ticket->assigned_to) {
+            return response()->json(['message' => 'This installation application is not available to claim.'], 422);
+        }
+        $ticket->update(['assigned_to' => $request->user()->id, 'status' => 'in_progress']);
+        return response()->json(['message' => 'Installation application claimed.', 'ticket' => $ticket->fresh(['customer', 'assignedTo'])]);
+    }
+
     /**
      * Add comment
      */

@@ -218,6 +218,7 @@ Route::prefix('v1')->group(function () {
         Route::put('tickets/{id}', [TicketController::class, 'update'])->middleware('permission:edit-tickets');
         Route::delete('tickets/{id}', [TicketController::class, 'destroy'])->middleware('permission:delete-tickets');
         Route::post('tickets/{id}/assign', [TicketController::class, 'assign'])->middleware('permission:assign-tickets');
+        Route::post('tickets/{id}/claim-installation', [TicketController::class, 'claimInstallation'])->middleware('role:technician');
         Route::post('tickets/{id}/comments', [TicketController::class, 'addComment'])->middleware('permission:edit-tickets');
         Route::patch('tickets/{id}/status', [TicketController::class, 'updateStatus'])->middleware('permission:edit-tickets|close-tickets');
         

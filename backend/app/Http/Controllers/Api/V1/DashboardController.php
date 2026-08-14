@@ -28,7 +28,13 @@ class DashboardController extends Controller
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates']);
         $tickets = Ticket::with('customer:id,account_number,full_name,address,gps_coordinates')
-            ->where('assigned_to', $technicianId)
+            ->where(function ($query) use ($technicianId) {
+                $query->where('assigned_to', $technicianId)
+                    ->orWhere(function ($installation) {
+                        $installation->whereNull('assigned_to')
+                            ->where('subject', 'like', 'New Installation Application%');
+                    });
+            })
             ->whereNotIn('status', ['closed', 'resolved'])
             ->latest()
             ->get(['id', 'ticket_number', 'customer_id', 'subject', 'description', 'status', 'priority', 'category', 'created_at']);
