@@ -276,7 +276,7 @@ const NewDashboardPageContent: React.FC = () => {
       return;
     }
     fetchClientMonitor();
-    const interval = window.setInterval(fetchClientMonitor, 2000);
+    const interval = window.setInterval(fetchClientMonitor, 5000);
     return () => window.clearInterval(interval);
   }, [collector, fetchClientMonitor, fetchLocations]);
 
@@ -428,7 +428,6 @@ const NewDashboardPageContent: React.FC = () => {
           <div className="flex flex-col gap-2 border-b border-border/70 p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Live queue & lease monitor</h2></div>
-              <p className="mt-1 text-sm text-muted-foreground">Live Simple Queue traffic · polls MikroTik every 5 seconds without reloading this page{monitorUpdatedAt ? ` · last checked ${new Date(monitorUpdatedAt).toLocaleTimeString()}` : ''}{monitorPolling ? ' · checking…' : ''}.</p>
             </div>
             <label className="relative block md:w-60"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search clients" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
