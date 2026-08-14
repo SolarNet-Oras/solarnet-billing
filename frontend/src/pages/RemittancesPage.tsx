@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Banknote, Calculator, CheckCircle2, ExternalLink, Landmark, Send, Smartphone, X } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -31,6 +31,11 @@ export default function RemittancesPage() {
   const [receivedAmount, setReceivedAmount] = useState('');
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
+  const signatureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const [drawingSignature, setDrawingSignature] = useState(false);
+  const [signaturePresent, setSignaturePresent] = useState(false);
+  const [familySigner, setFamilySigner] = useState(false);
+  const [familySignerName, setFamilySignerName] = useState('');
 
   const load = async () => {
     const response = collector ? await api.get('/collector/dashboard') : await api.get('/remittances');
@@ -47,8 +52,42 @@ export default function RemittancesPage() {
   const cashCounted = breakdown.reduce((total, line) => total + line.amount, 0);
   const cashMatches = Math.round(cashExpected * 100) === Math.round(cashCounted * 100);
 
-  const closePayment = () => { setPaymentInvoice(null); setCheckout(null); setQrCode(''); };
-  const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrCode(''); };
+  const closePayment = () => { setPaymentInvoice(null); setCheckout(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); };
+  const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); };
+  const signaturePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvas.current;
+    if (!canvas) return null;
+    const bounds = canvas.getBoundingClientRect();
+    return { x: (event.clientX - bounds.left) * (canvas.width / bounds.width), y: (event.clientY - bounds.top) * (canvas.height / bounds.height) };
+  };
+  const startSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvas.current;
+    const point = signaturePoint(event);
+    if (!canvas || !point) return;
+    canvas.setPointerCapture(event.pointerId);
+    const context = canvas.getContext('2d');
+    context?.beginPath();
+    context?.moveTo(point.x, point.y);
+    setDrawingSignature(true);
+  };
+  const drawSignature = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingSignature) return;
+    const point = signaturePoint(event);
+    const context = signatureCanvas.current?.getContext('2d');
+    if (!point || !context) return;
+    context.lineWidth = 5;
+    context.lineCap = 'round';
+    context.strokeStyle = '#0f172a';
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    setSignaturePresent(true);
+  };
+  const endSignature = () => setDrawingSignature(false);
+  const clearSignature = () => {
+    const canvas = signatureCanvas.current;
+    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    setSignaturePresent(false);
+  };
 
   const submitRemittance = async () => {
     if (!window.confirm(`Submit ${peso(unremitted)} to the cashier for validation? Only physical cash requires a bill count.`)) return;
@@ -63,9 +102,18 @@ export default function RemittancesPage() {
     const amount = Number(paymentAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > paymentInvoice.balance) return window.alert(`Enter an amount up to ${peso(paymentInvoice.balance)}.`);
     if (paymentMethod === 'bank_transfer' && !reference.trim()) return window.alert('Enter the bank transaction reference.');
+    if (paymentMethod === 'cash' && !signaturePresent) return window.alert('The client or an authorized family member must sign before confirming cash payment.');
+    if (paymentMethod === 'cash' && familySigner && !familySignerName.trim()) return window.alert('Enter the authorized family member’s name.');
     setBusy(true);
     try {
-      await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, { amount, payment_method: paymentMethod, reference: reference.trim() || undefined });
+      await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, {
+        amount,
+        payment_method: paymentMethod,
+        reference: reference.trim() || undefined,
+        payer_signature: paymentMethod === 'cash' ? signatureCanvas.current?.toDataURL('image/png') : undefined,
+        signature_signer_type: paymentMethod === 'cash' ? (familySigner ? 'family' : 'client') : undefined,
+        signature_signer_name: paymentMethod === 'cash' && familySigner ? familySignerName.trim() : undefined,
+      });
       closePayment();
       await load();
     } catch (error: any) { window.alert(error.response?.data?.message || 'Could not record payment.'); }
@@ -129,5 +177,6 @@ export default function RemittancesPage() {
     {paymentInvoice && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-2xl"><div className="flex justify-between border-b p-5"><div><h2 className="font-bold">Receive payment</h2><p className="text-sm text-muted-foreground">{paymentInvoice.customer?.full_name} · {paymentInvoice.invoice_number}</p></div><button onClick={closePayment}><X /></button></div><div className="space-y-4 p-5"><p className="rounded-xl bg-muted p-3 text-lg font-bold">Balance: {peso(paymentInvoice.balance)}</p><div className="grid grid-cols-3 gap-2"><button onClick={() => { setPaymentMethod('cash'); setCheckout(null); setQrCode(''); }} className={`rounded-xl border p-3 ${paymentMethod === 'cash' ? 'border-primary bg-primary/10' : ''}`}><Banknote className="mx-auto" />Cash</button><button onClick={() => setPaymentMethod('mobile_money')} className={`rounded-xl border p-3 ${paymentMethod === 'mobile_money' ? 'border-primary bg-primary/10' : ''}`}><Smartphone className="mx-auto" />GCash</button><button onClick={() => { setPaymentMethod('bank_transfer'); setCheckout(null); setQrCode(''); }} className={`rounded-xl border p-3 ${paymentMethod === 'bank_transfer' ? 'border-primary bg-primary/10' : ''}`}><Landmark className="mx-auto" />Bank</button></div>{paymentMethod === 'mobile_money' ? <section className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-center"><div><h3 className="font-semibold text-emerald-950">GCash via PayMongo</h3><p className="mt-1 text-xs text-emerald-900">This is linked to {paymentInvoice.customer?.account_number}. Once PayMongo confirms it, the invoice updates automatically. No cash liquidation is needed.</p></div>{qrCode && <img src={qrCode} alt="GCash payment QR code" className="mx-auto h-56 w-56 rounded-xl bg-white p-2" />}{checkout ? <><p className="text-xs text-muted-foreground">Reference: {checkout.reference_number}</p><a href={checkout.checkout_url} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white"><ExternalLink className="h-4 w-4" />Open GCash payment link</a><button disabled={busy} onClick={() => void reconcileGcashCheckout()} className="w-full rounded-xl border border-emerald-600 px-4 py-3 font-semibold text-emerald-800">Check payment status</button></> : <button disabled={busy} onClick={() => void startGcashCheckout()} className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white disabled:opacity-50">{busy ? 'Generating…' : 'Generate QR code and GCash link'}</button>}</section> : <><label className="block text-sm">Amount received<input type="number" min="0.01" max={paymentInvoice.balance} value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label>{paymentMethod === 'bank_transfer' && <label className="block text-sm">Bank reference<input value={reference} onChange={(event) => setReference(event.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label>}<button disabled={busy} onClick={() => void recordPayment()} className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground">Confirm payment</button></>}</div></div></div>}
     {liquidationTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card shadow-2xl"><div className="flex justify-between border-b p-5"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Calculator className="text-primary" />Cash liquidation</h2><p className="mt-1 text-sm text-muted-foreground">Count the physical cash received from {liquidationTarget.collector?.name || 'the collector'}.</p></div><button onClick={() => setLiquidationTarget(null)}><X /></button></div><div className="space-y-4 p-5"><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Recorded cash</p><p className="text-xl font-bold">{peso(cashExpected)}</p></div><div className={`rounded-xl p-3 ${cashMatches ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}><p className="text-xs">Cash counted</p><p className="text-xl font-bold">{peso(cashCounted)}</p><p className="text-xs">{cashMatches ? 'Amounts match' : `Difference: ${peso(cashCounted - cashExpected)}`}</p></div></div><table className="w-full text-sm"><thead className="text-left text-xs uppercase text-muted-foreground"><tr><th className="pb-2">No. of pcs</th><th className="pb-2">Denomination</th><th className="pb-2 text-right">Amount</th></tr></thead><tbody>{DENOMINATIONS.map((denomination) => <tr className="border-t" key={denomination}><td className="py-2"><input min="0" type="number" value={counts[denomination] || ''} onChange={(event) => setCounts((current) => ({ ...current, [denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="w-28 rounded-lg border bg-background px-3 py-2" /></td><td className="py-2 font-medium">₱{denomination.toLocaleString('en-PH')}</td><td className="py-2 text-right font-semibold">{peso(denomination * Number(counts[denomination] || 0))}</td></tr>)}</tbody></table><button disabled={busy || !cashMatches} onClick={() => void liquidate()} className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"><Calculator className="mr-2 inline h-4 w-4" />{busy ? 'Saving…' : 'Confirm cash liquidation'}</button></div></div></div>}
     {verifyTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-2xl"><div className="flex justify-between border-b p-5"><div><h2 className="font-bold">Validate remittance</h2><p className="text-sm text-muted-foreground">Cash has been liquidated. Record the total remittance received.</p></div><button onClick={() => setVerifyTarget(null)}><X /></button></div><div className="space-y-4 p-5"><p className="rounded-xl bg-emerald-50 p-3 text-lg font-bold text-emerald-900">Declared total: {peso(verifyTarget.declared_amount)}</p><label className="block text-sm">Amount received<input type="number" min="0" step="0.01" value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label><button disabled={busy} onClick={() => void validate()} className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground"><CheckCircle2 className="mr-2 inline h-4 w-4" />Validate received remittance</button></div></div></div>}
+    {paymentInvoice && paymentMethod === 'cash' && <aside className="fixed bottom-4 right-4 z-[60] w-[calc(100%-2rem)] max-w-md rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl md:bottom-6 md:right-6"><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Cash payment signature</h3><p className="mt-1 text-xs text-muted-foreground">A signature is required before confirming this cash payment. The first client signature becomes the protected reference on their profile.</p></div><span className={`rounded-full px-2 py-1 text-xs ${signaturePresent ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>{signaturePresent ? 'Captured' : 'Required'}</span></div><label className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg bg-muted/60 p-2 text-sm"><input type="checkbox" checked={familySigner} onChange={(event) => setFamilySigner(event.target.checked)} />Client is unavailable; authorized family member signs</label>{familySigner && <label className="mt-3 block text-sm">Authorized family member’s name<input value={familySignerName} onChange={(event) => setFamilySignerName(event.target.value)} placeholder="Full name" className="mt-1 w-full rounded-lg border bg-background p-2" /></label>}<div className="mt-3 rounded-lg border bg-white"><canvas ref={signatureCanvas} width={640} height={240} onPointerDown={startSignature} onPointerMove={drawSignature} onPointerUp={endSignature} onPointerLeave={endSignature} className="h-32 w-full touch-none cursor-crosshair" aria-label="Signature pad" /></div><div className="mt-2 flex items-center justify-between"><span className="text-xs text-muted-foreground">{signaturePresent ? 'Signature captured' : 'Sign inside the box'}</span><button type="button" onClick={clearSignature} className="text-sm font-medium text-primary">Clear signature</button></div></aside>}
   </main></DashboardLayout>;
 }

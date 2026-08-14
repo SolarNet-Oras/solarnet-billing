@@ -19,6 +19,8 @@ class Customer extends Model
         'portal_password_set_at',
         'portal_password_change_required',
         'welcome_email_sent_at',
+        'cash_signature_reference',
+        'cash_signature_reference_at',
     ];
 
     /**
@@ -54,6 +56,8 @@ class Customer extends Model
         'technician_id',
         'notes',
         'documents',
+        'cash_signature_reference',
+        'cash_signature_reference_at',
         'queue_synced',
         'queue_last_synced_at',
         'queue_sync_status',
@@ -70,6 +74,7 @@ class Customer extends Model
         return [
             'gps_coordinates' => 'array',
             'documents' => 'array',
+            'cash_signature_reference_at' => 'datetime',
             'monthly_fee' => 'float',
             'installation_date' => 'date',
             'location_accuracy_meters' => 'float',

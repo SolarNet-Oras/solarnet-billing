@@ -156,12 +156,23 @@ class RemittanceController extends Controller
             'reference' => 'nullable|string|max:255',
             'transaction_id' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
+            'payer_signature' => 'required_if:payment_method,cash|string|starts_with:data:image/png;base64,|max:500000',
+            'signature_signer_type' => 'required_if:payment_method,cash|in:client,family',
+            'signature_signer_name' => 'required_if:signature_signer_type,family|nullable|string|max:120',
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
         abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may record payment only for a due invoice.');
         abort_if((float) $data['amount'] > (float) $invoice->balance, 422, 'Payment amount exceeds invoice balance.');
         $data['collector_id'] = $request->user()->id;
         $data['payment_date'] = now()->toDateString();
+
+        if ($data['payment_method'] === 'cash' && $invoice->customer && $data['signature_signer_type'] === 'client' && !$invoice->customer->cash_signature_reference) {
+            $invoice->customer->update([
+                'cash_signature_reference' => $data['payer_signature'],
+                'cash_signature_reference_at' => now(),
+            ]);
+        }
+
         $payment = $invoices->recordPayment($invoice, $data);
         return response()->json(['message' => 'Payment received and added to your pending remittance.', 'payment' => $payment], 201);
     }
