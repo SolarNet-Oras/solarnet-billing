@@ -20,15 +20,31 @@ class FinancialEntryController extends Controller
         if ($month !== '') {
             $start = Carbon::createFromFormat('Y-m', $month)->startOfMonth()->toDateString();
             $end = Carbon::createFromFormat('Y-m', $month)->endOfMonth()->toDateString();
-            $entries = FinancialEntry::whereBetween('entry_date', [$start, $end])->latest()->get();
-            $collections = Payment::with('customer:id,full_name,account_number')->whereBetween('payment_date', [$start, $end])->latest()->get();
+            $entries = FinancialEntry::with('recorder:id,name')->whereBetween('entry_date', [$start, $end])->latest()->get();
             $period = ['mode' => 'month', 'value' => $month, 'start' => $start, 'end' => $end];
         } else {
             $date = $request->date('date')?->toDateString() ?? now()->toDateString();
-            $entries = FinancialEntry::whereDate('entry_date', $date)->latest()->get();
-            $collections = Payment::with('customer:id,full_name,account_number')->whereDate('payment_date', $date)->latest()->get();
+            $start = $date;
+            $end = $date;
+            $entries = FinancialEntry::with('recorder:id,name')->whereDate('entry_date', $date)->latest()->get();
             $period = ['mode' => 'day', 'value' => $date, 'start' => $date, 'end' => $date];
         }
+        $paymentRelations = ['customer:id,full_name,account_number', 'collector:id,name', 'remittance.liquidator:id,name'];
+        // Cash collected by a field collector is not company cash until an
+        // office user has counted and liquidated that remittance. It appears
+        // on the liquidation date, rather than the original collection date.
+        $regularCollections = Payment::with($paymentRelations)
+            ->whereBetween('payment_date', [$start, $end])
+            ->where(fn ($query) => $query->where('payment_method', '!=', 'cash')->orWhereNull('collector_id'))
+            ->get();
+        $liquidatedCollectorCash = Payment::with($paymentRelations)
+            ->where('payment_method', 'cash')
+            ->whereNotNull('collector_id')
+            ->whereHas('remittance', fn ($query) => $query->whereNotNull('liquidated_at')->whereBetween('liquidated_at', [Carbon::parse($start)->startOfDay(), Carbon::parse($end)->endOfDay()]))
+            ->get();
+        $collections = $regularCollections->concat($liquidatedCollectorCash)
+            ->sortByDesc(fn (Payment $payment) => $payment->remittance?->liquidated_at ?? $payment->payment_date)
+            ->values();
         $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
 
         foreach ($collections as $collection) {
