@@ -13,11 +13,29 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Services\MikrotikService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
+    /** The technician workspace intentionally exposes only assigned field work. */
+    public function technicianWorkspace(Request $request): JsonResponse
+    {
+        $technicianId = $request->user()->id;
+        $clients = Customer::query()
+            ->where('technician_id', $technicianId)
+            ->whereNotNull('gps_coordinates')
+            ->orderBy('full_name')
+            ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates']);
+        $tickets = Ticket::with('customer:id,account_number,full_name,address,gps_coordinates')
+            ->where('assigned_to', $technicianId)
+            ->whereNotIn('status', ['closed', 'resolved'])
+            ->latest()
+            ->get(['id', 'ticket_number', 'customer_id', 'subject', 'description', 'status', 'priority', 'category', 'created_at']);
+
+        return response()->json(['clients' => $clients, 'tickets' => $tickets]);
+    }
     /**
      * Get dashboard metrics — all values come from real DB queries.
      */

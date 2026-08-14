@@ -23,6 +23,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
+import TechnicianDashboardPage from '@/pages/TechnicianDashboardPage';
 
 interface ClientMonitor {
   customer_id: string;
@@ -175,7 +176,7 @@ const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string
   </div>
 );
 
-const NewDashboardPage: React.FC = () => {
+const NewDashboardPageContent: React.FC = () => {
   const { user } = useAuth();
   const collector = user?.role === 'collector' || user?.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -473,6 +474,12 @@ const NewDashboardPage: React.FC = () => {
       </div>
     </DashboardLayout>
   );
+};
+
+const NewDashboardPage: React.FC = () => {
+  const { user } = useAuth();
+  const technician = user?.role === 'technician' || user?.roles?.some((role) => typeof role === 'string' ? role === 'technician' : role.name === 'technician');
+  return technician ? <TechnicianDashboardPage /> : <NewDashboardPageContent />;
 };
 
 export default NewDashboardPage;

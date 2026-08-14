@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function () {
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
         Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
         Route::get('dashboard/quick-stats', [DashboardController::class, 'quickStats'])->middleware('permission:view-dashboard');
+        Route::get('dashboard/technician', [DashboardController::class, 'technicianWorkspace'])->middleware('role:technician');
         
         // User routes (admin only)
         Route::middleware(['role:admin|super_admin'])->group(function () {
