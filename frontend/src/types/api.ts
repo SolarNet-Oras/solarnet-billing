@@ -385,6 +385,7 @@ export interface RecordPaymentRequest {
   transaction_id?: string;
   reference?: string;
   notes?: string;
+  cash_breakdown?: Array<{ denomination: number; count: number }>;
 }
 
 export interface InvoiceStatistics {

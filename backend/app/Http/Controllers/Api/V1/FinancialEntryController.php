@@ -29,7 +29,7 @@ class FinancialEntryController extends Controller
             $entries = FinancialEntry::with('recorder:id,name')->whereDate('entry_date', $date)->latest()->get();
             $period = ['mode' => 'day', 'value' => $date, 'start' => $date, 'end' => $date];
         }
-        $paymentRelations = ['customer:id,full_name,account_number', 'collector:id,name', 'remittance.liquidator:id,name'];
+        $paymentRelations = ['customer:id,full_name,account_number', 'collector:id,name', 'receiver:id,name', 'remittance.liquidator:id,name'];
         // Cash collected by a field collector is not company cash until an
         // office user has counted and liquidated that remittance. It appears
         // on the liquidation date, rather than the original collection date.

@@ -228,6 +228,9 @@ class InvoiceController extends Controller
             'transaction_id' => 'nullable|string|max:255',
             'reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
+            'cash_breakdown' => 'required_if:payment_method,cash|array',
+            'cash_breakdown.*.denomination' => 'required_with:cash_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
+            'cash_breakdown.*.count' => 'required_with:cash_breakdown|integer|min:0|max:100000',
         ]);
 
         if ($validator->fails()) {
@@ -245,13 +248,33 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        $payment = $this->invoiceService->recordPayment($invoice, $request->all());
+        $paymentData = $request->all();
+        if ($request->input('payment_method') === 'cash') {
+            $paymentData['cash_breakdown'] = $this->normalizedCashBreakdown($request->input('cash_breakdown', []));
+            $paymentData['cash_counted_amount'] = collect($paymentData['cash_breakdown'])->sum('amount');
+            if ((int) round((float) $paymentData['cash_counted_amount'] * 100) !== (int) round((float) $request->amount * 100)) {
+                return response()->json(['message' => 'Cash count must exactly match the payment amount before it can be recorded.'], 422);
+            }
+        }
+        $paymentData['received_by'] = $request->user()->id;
+        $payment = $this->invoiceService->recordPayment($invoice, $paymentData);
 
         return response()->json([
             'message' => 'Payment recorded successfully',
             'payment' => $payment,
             'invoice' => $invoice->fresh(['customer', 'items', 'payments']),
         ], 201);
+    }
+
+    /** Normalize all denominations so every cash payment has an auditable count. */
+    private function normalizedCashBreakdown(array $rows): array
+    {
+        $counts = collect($rows)->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
+        return collect([1000, 500, 200, 100, 50, 20, 10, 5, 1])->map(fn (int $denomination) => [
+            'denomination' => $denomination,
+            'count' => (int) ($counts[$denomination] ?? 0),
+            'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
+        ])->all();
     }
 
     /**

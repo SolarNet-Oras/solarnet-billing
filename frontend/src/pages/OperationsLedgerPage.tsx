@@ -7,6 +7,7 @@ type Entry = {
   id: string; description?: string; category?: string; amount: number; payment_method: string;
   customer?: { full_name: string; account_number: string };
   collector?: { name: string };
+  receiver?: { name: string };
   recorder?: { name: string };
   remittance?: { liquidated_at?: string | null; liquidator?: { name: string } };
 };
@@ -88,6 +89,8 @@ export default function OperationsLedgerPage(): React.JSX.Element {
       ? `Liquidated by ${item.remittance.liquidator.name}`
       : item.collector?.name
         ? `Collected by ${item.collector.name}`
+        : item.receiver?.name
+          ? `Received by ${item.receiver.name}`
         : item.recorder?.name
           ? `Recorded by ${item.recorder.name}`
           : item.payment_method === 'mobile_money' ? 'Online payment' : 'System record';

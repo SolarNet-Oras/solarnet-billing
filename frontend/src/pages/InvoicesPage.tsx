@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileText, 
   Plus, 
@@ -70,6 +70,10 @@ const InvoicesPage: React.FC = () => {
     reference: '',
     notes: '',
   });
+  const [cashCounts, setCashCounts] = useState<Record<number, number>>({});
+  const cashBreakdown = useMemo(() => [1000, 500, 200, 100, 50, 20, 10, 5, 1].map((denomination) => ({ denomination, count: Number(cashCounts[denomination] || 0), amount: denomination * Number(cashCounts[denomination] || 0) })), [cashCounts]);
+  const cashCounted = useMemo(() => cashBreakdown.reduce((total, line) => total + line.amount, 0), [cashBreakdown]);
+  const cashMatches = Math.round(cashCounted * 100) === Math.round(Number(paymentData.amount || 0) * 100);
 
   useEffect(() => {
     fetchInvoices();
@@ -127,8 +131,15 @@ const InvoicesPage: React.FC = () => {
     e.preventDefault();
     if (!selectedInvoice) return;
 
+    if (paymentData.payment_method === 'cash' && !cashMatches) {
+      window.alert('Count the cash bills until the total exactly matches the payment amount.');
+      return;
+    }
     try {
-      await invoiceService.recordPayment(selectedInvoice.id, paymentData);
+      await invoiceService.recordPayment(selectedInvoice.id, {
+        ...paymentData,
+        ...(paymentData.payment_method === 'cash' ? { cash_breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })) } : {}),
+      });
       setShowPaymentModal(false);
       fetchInvoices();
       resetPaymentForm();
@@ -184,6 +195,7 @@ const InvoicesPage: React.FC = () => {
       reference: '',
       notes: '',
     });
+    setCashCounts({});
   };
 
   const addAdditionalItem = () => {
@@ -641,6 +653,12 @@ const InvoicesPage: React.FC = () => {
                     </select>
                   </div>
 
+                  {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash count required</h3><p className="mt-1 text-xs text-emerald-800">Count the bills before recording this client payment. The count must match the payment amount.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashMatches ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Counted</p><b>{formatPHP(cashCounted)}</b></div></div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="rounded border border-emerald-200 bg-white px-2 py-1.5" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div>
+                    <p className={`mt-3 text-xs font-medium ${cashMatches ? 'text-emerald-700' : 'text-amber-800'}`}>{cashMatches ? 'Cash count matches. You may record this payment.' : `Difference: ${formatPHP(cashCounted - Number(paymentData.amount || 0))}.`}</p>
+                  </section>}
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
                     <input
@@ -696,7 +714,8 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    disabled={paymentData.payment_method === 'cash' && !cashMatches}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Record Payment
                   </button>

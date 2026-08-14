@@ -15,9 +15,12 @@ class Payment extends Model
         'invoice_id',
         'customer_id',
         'collector_id',
+        'received_by',
         'remittance_id',
         'payment_number',
         'amount',
+        'cash_counted_amount',
+        'cash_breakdown',
         'payment_method',
         'payment_date',
         'transaction_id',
@@ -27,6 +30,8 @@ class Payment extends Model
 
     protected $casts = [
         'amount' => 'float',
+        'cash_counted_amount' => 'float',
+        'cash_breakdown' => 'array',
         'payment_date' => 'date',
     ];
 
@@ -41,5 +46,6 @@ class Payment extends Model
     }
 
     public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }
+    public function receiver(): BelongsTo { return $this->belongsTo(User::class, 'received_by'); }
     public function remittance(): BelongsTo { return $this->belongsTo(Remittance::class); }
 }
