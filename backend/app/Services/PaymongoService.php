@@ -42,7 +42,7 @@ class PaymongoService
         $checkoutUrl = $data['attributes']['checkout_url'] ?? null;
         if (!$checkoutUrl) throw new RuntimeException('PayMongo did not return a checkout URL.');
         PaymongoCheckout::create(['invoice_id' => $invoice->id, 'customer_id' => $invoice->customer_id, 'account_number' => $accountNumber, 'checkout_session_id' => $data['id'], 'reference_number' => $reference, 'amount' => $invoice->balance]);
-        return ['checkout_url' => $checkoutUrl, 'reference_number' => $reference, 'account_number' => $accountNumber, 'customer_name' => $customer->full_name, 'invoice_number' => $invoice->invoice_number];
+        return ['checkout_url' => $checkoutUrl, 'checkout_session_id' => $data['id'], 'reference_number' => $reference, 'account_number' => $accountNumber, 'customer_name' => $customer->full_name, 'invoice_number' => $invoice->invoice_number];
     }
 
     public function markPaidByCheckoutId(string $sessionId): void

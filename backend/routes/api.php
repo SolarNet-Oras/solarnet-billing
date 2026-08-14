@@ -180,6 +180,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['role:collector'])->prefix('collector')->group(function () {
             Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
             Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
+            Route::post('invoices/{id}/gcash-checkout', [RemittanceController::class, 'startGcashCheckout']);
+            Route::post('invoices/{id}/gcash-checkouts/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileGcashCheckout']);
             Route::post('remittances', [RemittanceController::class, 'submit']);
         });
         // Office staff verify what a collector declares against cash, bank, or GCash received.

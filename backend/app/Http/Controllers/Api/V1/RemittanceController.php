@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Services\InvoiceService;
+use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,6 +50,27 @@ class RemittanceController extends Controller
         $data['payment_date'] = now()->toDateString();
         $payment = $invoices->recordPayment($invoice, $data);
         return response()->json(['message' => 'Payment received and added to your pending remittance.', 'payment' => $payment], 201);
+    }
+
+    /** Start a client-specific GCash checkout. The API secret remains server-side. */
+    public function startGcashCheckout(string $invoiceId, PaymongoService $paymongo): JsonResponse
+    {
+        $invoice = Invoice::with('customer')->findOrFail($invoiceId);
+        abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may request online payment only for a due invoice.');
+
+        try {
+            return response()->json(['message' => 'PayMongo GCash checkout created.', 'checkout' => $paymongo->createGcashCheckout($invoice)]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** Re-read PayMongo rather than trusting a browser return or payment screenshot. */
+    public function reconcileGcashCheckout(string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $checkout = PaymongoCheckout::where('invoice_id', $invoiceId)->where('checkout_session_id', $checkoutId)->firstOrFail();
+        $paid = $paymongo->reconcileCheckout($checkout->checkout_session_id);
+        return response()->json(['paid' => $paid, 'checkout_status' => $checkout->fresh()->status]);
     }
 
     public function submit(Request $request): JsonResponse
