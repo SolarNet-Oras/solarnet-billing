@@ -10,15 +10,27 @@ import {
   CheckCircle,
   AlertCircle,
   XCircle,
+  ClipboardCheck,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import api from '@/services/api';
 import ticketService from '../services/ticketService';
 import { customerService } from '../services/customerService';
 import type { Ticket, Customer } from '../types/api';
 
+interface ProfileChangeRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_full_name: string | null;
+  requested_service_plan: { id: string; name: string; price: number } | null;
+  customer: { account_number: string; full_name: string; email: string | null };
+  created_at: string;
+}
+
 const TicketsPage: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [profileChanges, setProfileChanges] = useState<ProfileChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -38,6 +50,7 @@ const TicketsPage: React.FC = () => {
   useEffect(() => {
     fetchTickets();
     fetchCustomers();
+    fetchProfileChanges();
   }, [statusFilter, priorityFilter]);
 
   const fetchTickets = async () => {
@@ -58,6 +71,33 @@ const TicketsPage: React.FC = () => {
       console.error('Error fetching tickets:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProfileChanges = async () => {
+    try {
+      const response = await api.get('/customer-profile-change-requests');
+      setProfileChanges(response.data?.data || []);
+    } catch (error) {
+      console.error('Error fetching client change requests:', error);
+      setProfileChanges([]);
+    }
+  };
+
+  const reviewProfileChange = async (change: ProfileChangeRequest, decision: 'approve' | 'reject') => {
+    const reviewNotes = decision === 'reject' ? window.prompt('Optional reason for rejecting this request:') : null;
+    if (decision === 'reject' && reviewNotes === null) return;
+    if (!window.confirm(`${decision === 'approve' ? 'Approve and apply' : 'Reject'} the requested changes for ${change.customer.full_name}?`)) return;
+
+    try {
+      const response = await api.post(
+        `/customer-profile-change-requests/${change.id}/${decision}`,
+        decision === 'reject' ? { review_notes: reviewNotes || undefined } : {},
+      );
+      await fetchProfileChanges();
+      window.alert(response.data?.message || 'Client change request reviewed.');
+    } catch (error: any) {
+      window.alert(error.response?.data?.message || 'Could not review this request.');
     }
   };
 
@@ -202,6 +242,35 @@ const TicketsPage: React.FC = () => {
             New Ticket
           </button>
         </div>
+
+        <section className="mb-6" data-testid="client-profile-change-requests">
+          <div className="mb-3 flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-blue-600" />
+            <div>
+              <h2 className="font-semibold text-gray-900">Client Change Requests</h2>
+              <p className="text-sm text-gray-600">Approve a requested name or service-plan change before it affects a customer record or MikroTik queue.</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
+                <tr><th className="px-4 py-3 text-left">Client</th><th className="px-4 py-3 text-left">Requested change</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {profileChanges.map((change) => (
+                  <tr key={change.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3"><div className="font-medium text-gray-900">{change.customer.full_name}</div><div className="text-xs text-gray-500">{change.customer.account_number}</div></td>
+                    <td className="px-4 py-3 text-gray-800"><div>{change.requested_full_name && <>Name: <strong>{change.requested_full_name}</strong></>}</div>{change.requested_service_plan && <div className="text-xs text-gray-500">Plan: {change.requested_service_plan.name} · ₱{Number(change.requested_service_plan.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}/mo</div>}</td>
+                    <td className="px-4 py-3 capitalize text-gray-700">{change.status}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{new Date(change.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">{change.status === 'pending' ? <><button onClick={() => void reviewProfileChange(change, 'approve')} className="mr-3 text-emerald-700 hover:underline">Approve</button><button onClick={() => void reviewProfileChange(change, 'reject')} className="text-rose-600 hover:underline">Reject</button></> : '—'}</td>
+                  </tr>
+                ))}
+                {profileChanges.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">No client change requests found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         {/* Tickets Table */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
