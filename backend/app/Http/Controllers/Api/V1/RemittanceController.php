@@ -157,6 +157,7 @@ class RemittanceController extends Controller
             'transaction_id' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
             'payer_signature' => 'required_if:payment_method,cash|string|starts_with:data:image/png;base64,|max:500000',
+            'payer_signature_fingerprint' => 'required_if:payment_method,cash|string|regex:/^[01]{32}$/',
             'signature_signer_type' => 'required_if:payment_method,cash|in:client,family',
             'signature_signer_name' => 'required_if:signature_signer_type,family|nullable|string|max:120',
         ]);
@@ -166,15 +167,36 @@ class RemittanceController extends Controller
         $data['collector_id'] = $request->user()->id;
         $data['payment_date'] = now()->toDateString();
 
-        if ($data['payment_method'] === 'cash' && $invoice->customer && $data['signature_signer_type'] === 'client' && !$invoice->customer->cash_signature_reference) {
-            $invoice->customer->update([
-                'cash_signature_reference' => $data['payer_signature'],
-                'cash_signature_reference_at' => now(),
-            ]);
+        if ($data['payment_method'] === 'cash' && $invoice->customer && $data['signature_signer_type'] === 'client') {
+            $reference = $invoice->customer->cash_signature_fingerprint;
+            if ($reference) {
+                $data['payer_signature_similarity'] = $this->signatureSimilarity($reference, $data['payer_signature_fingerprint']);
+                abort_if($data['payer_signature_similarity'] < 0.5, 422, 'The client signature does not match the saved reference closely enough. Ask the client to sign again or select the authorized family signer option.');
+            } else {
+                $invoice->customer->update([
+                    'cash_signature_reference' => $data['payer_signature'],
+                    'cash_signature_fingerprint' => $data['payer_signature_fingerprint'],
+                    'cash_signature_reference_at' => now(),
+                ]);
+                $data['payer_signature_similarity'] = 1;
+            }
         }
 
         $payment = $invoices->recordPayment($invoice, $data);
         return response()->json(['message' => 'Payment received and added to your pending remittance.', 'payment' => $payment], 201);
+    }
+
+    private function signatureSimilarity(string $reference, string $candidate): float
+    {
+        $overlap = 0;
+        $ink = 0;
+        for ($index = 0; $index < 32; $index++) {
+            $a = $reference[$index] ?? '0';
+            $b = $candidate[$index] ?? '0';
+            if ($a === '1' || $b === '1') $ink++;
+            if ($a === '1' && $b === '1') $overlap++;
+        }
+        return $ink ? $overlap / $ink : 0.0;
     }
 
     /** Start a client-specific GCash checkout. The API secret remains server-side. */

@@ -20,6 +20,7 @@ class Customer extends Model
         'portal_password_change_required',
         'welcome_email_sent_at',
         'cash_signature_reference',
+        'cash_signature_fingerprint',
         'cash_signature_reference_at',
     ];
 

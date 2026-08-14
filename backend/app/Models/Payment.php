@@ -22,6 +22,7 @@ class Payment extends Model
         'cash_counted_amount',
         'cash_breakdown',
         'payer_signature',
+        'payer_signature_similarity',
         'signature_signer_type',
         'signature_signer_name',
         'payment_method',
@@ -35,6 +36,7 @@ class Payment extends Model
         'amount' => 'float',
         'cash_counted_amount' => 'float',
         'cash_breakdown' => 'array',
+        'payer_signature_similarity' => 'float',
         'payment_date' => 'date',
     ];
 

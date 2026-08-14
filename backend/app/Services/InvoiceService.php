@@ -289,6 +289,7 @@ class InvoiceService
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payer_signature' => $paymentData['payer_signature'] ?? null,
+                'payer_signature_similarity' => $paymentData['payer_signature_similarity'] ?? null,
                 'signature_signer_type' => $paymentData['signature_signer_type'] ?? null,
                 'signature_signer_name' => $paymentData['signature_signer_name'] ?? null,
                 'payment_method' => $paymentData['payment_method'],
