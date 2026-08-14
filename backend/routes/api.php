@@ -192,6 +192,7 @@ Route::prefix('v1')->group(function () {
         // Office staff verify what a collector declares against cash, bank, or GCash received.
         Route::middleware(['role:super_admin|admin|office_admin'])->prefix('remittances')->group(function () {
             Route::get('/', [RemittanceController::class, 'index']);
+            Route::post('{id}/liquidate', [RemittanceController::class, 'liquidate']);
             Route::post('{id}/receive', [RemittanceController::class, 'receive']);
         });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');

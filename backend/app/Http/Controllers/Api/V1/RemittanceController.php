@@ -189,15 +189,34 @@ class RemittanceController extends Controller
 
     public function submit(Request $request): JsonResponse
     {
+        $data = $request->validate(['notes' => 'nullable|string|max:1000']);
+        $remittance = DB::transaction(function () use ($request, $data) {
+            $payments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->lockForUpdate()->get();
+            abort_if($payments->isEmpty(), 422, 'There are no unremitted collector payments.');
+            $remittance = Remittance::create([
+                'collector_id' => $request->user()->id,
+                'declared_amount' => $payments->sum('amount'),
+                'notes' => $data['notes'] ?? null,
+                'submitted_at' => now(),
+            ]);
+            Payment::whereIn('id', $payments->pluck('id'))->update(['remittance_id' => $remittance->id]);
+            return $remittance->load('payments');
+        });
+        return response()->json(['message' => 'Remittance submitted. An administrator or cashier must liquidate the cash before validation.', 'remittance' => $remittance], 201);
+    }
+
+    /** Physical cash is counted by the receiving office, never by the collector. */
+    public function liquidate(Request $request, string $id): JsonResponse
+    {
         $data = $request->validate([
-            'notes' => 'nullable|string|max:1000',
             'cash_breakdown' => 'required|array',
             'cash_breakdown.*.denomination' => 'required|integer|in:1000,500,200,100,50,20,10,5,1',
             'cash_breakdown.*.count' => 'required|integer|min:0|max:100000',
         ]);
-        $remittance = DB::transaction(function () use ($request, $data) {
-            $payments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->lockForUpdate()->get();
-            abort_if($payments->isEmpty(), 422, 'There are no unremitted collector payments.');
+
+        $remittance = DB::transaction(function () use ($request, $id, $data) {
+            $remittance = Remittance::with('payments')->lockForUpdate()->findOrFail($id);
+            abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been validated.');
             $denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
             $counts = collect($data['cash_breakdown'])->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
             $breakdown = collect($denominations)->map(fn (int $denomination) => [
@@ -206,23 +225,19 @@ class RemittanceController extends Controller
                 'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
             ])->all();
             $cashCounted = collect($breakdown)->sum('amount');
-            $cashExpected = (float) $payments->where('payment_method', 'cash')->sum('amount');
+            $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
             abort_unless((int) round($cashCounted * 100) === (int) round($cashExpected * 100), 422, "Cash count must match collected cash of ₱" . number_format($cashExpected, 2) . '.');
 
-            $remittance = Remittance::create([
-                'collector_id' => $request->user()->id,
+            $remittance->update([
                 'liquidated_by' => $request->user()->id,
-                'declared_amount' => $payments->sum('amount'),
                 'cash_counted_amount' => $cashCounted,
                 'cash_breakdown' => $breakdown,
-                'notes' => $data['notes'] ?? null,
-                'submitted_at' => now(),
                 'liquidated_at' => now(),
             ]);
-            Payment::whereIn('id', $payments->pluck('id'))->update(['remittance_id' => $remittance->id]);
-            return $remittance->load('payments');
+            return $remittance->fresh(['collector', 'liquidator', 'payments']);
         });
-        return response()->json(['message' => 'Cash liquidation matches. Remittance submitted for office verification.', 'remittance' => $remittance], 201);
+
+        return response()->json(['message' => 'Cash liquidation matches the collector cash total. You may now validate this remittance.', 'remittance' => $remittance]);
     }
 
     public function index(): JsonResponse
@@ -233,8 +248,11 @@ class RemittanceController extends Controller
     public function receive(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['received_amount' => 'required|numeric|min:0', 'notes' => 'nullable|string|max:1000']);
-        $remittance = Remittance::findOrFail($id);
+        $remittance = Remittance::with('payments')->findOrFail($id);
         abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been verified.');
+        abort_unless($remittance->liquidated_at && $remittance->liquidated_by, 422, 'Cash must be liquidated by an administrator or cashier before validation.');
+        $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
+        abort_unless((int) round((float) $remittance->cash_counted_amount * 100) === (int) round($cashExpected * 100), 422, 'The stored cash liquidation does not match recorded cash payments.');
         $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (float) $data['received_amount'] === (float) $remittance->declared_amount ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
         return response()->json(['message' => $remittance->status === 'received' ? 'Remittance received and verified.' : 'Remittance recorded with a discrepancy for review.', 'remittance' => $remittance]);
     }
