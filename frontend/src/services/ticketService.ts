@@ -6,6 +6,7 @@ export const ticketService = {
     status?: string;
     priority?: string;
     category?: string;
+    ticket_type?: string;
     assigned_to?: string;
     unassigned?: boolean;
     page?: number;

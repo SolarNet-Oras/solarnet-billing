@@ -277,16 +277,45 @@ export interface Ticket {
   assigned_to: string | null;
   customer?: Customer;
   assignedTo?: User;
+  assigned_technician?: User;
   subject: string;
   description: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   category: 'technical' | 'billing' | 'general' | 'network_issue';
+  ticket_type: 'repair' | 'installation' | 'other';
+  workflow_status: 'unclaimed' | 'claimed' | 'open' | 'in_progress' | 'resolved' | 'closed' | 'waiting_admin_approval' | 'returned_for_correction' | 'registered';
+  claimed_at: string | null;
+  started_at: string | null;
+  resolution_notes: string | null;
+  repair_details: Record<string, string> | null;
+  installation_mac: string | null;
+  installation_notes: string | null;
+  submitted_for_approval_at: string | null;
+  approved_at: string | null;
+  return_reason: string | null;
+  returned_at: string | null;
+  registered_at: string | null;
   resolved_at: string | null;
   closed_at: string | null;
   comments?: TicketComment[];
+  histories?: TicketHistory[];
   created_at: string;
   updated_at: string;
+}
+
+export interface TicketHistory {
+  id: string;
+  ticket_id: string;
+  user_id: string | null;
+  user?: User | null;
+  role: string | null;
+  action: string;
+  previous_status: string | null;
+  new_status: string | null;
+  notes: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface CreateTicketRequest {

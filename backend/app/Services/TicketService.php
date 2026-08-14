@@ -43,9 +43,13 @@ class TicketService
                 'priority' => $data['priority'] ?? 'medium',
                 'category' => $data['category'] ?? 'general',
                 'status' => 'open',
+                'ticket_type' => $this->inferType($data['subject'], $data['category'] ?? 'general'),
+                'workflow_status' => $this->inferType($data['subject'], $data['category'] ?? 'general') === 'installation' ? 'unclaimed' : 'open',
             ]);
 
-            return $ticket->fresh(['customer', 'assignedTo', 'comments']);
+            app(TicketWorkflowService::class)->history($ticket, auth()->user(), 'ticket_created', null, $ticket->workflow_status);
+
+            return $ticket->fresh(['customer', 'assignedTechnician', 'comments']);
         });
     }
 
@@ -54,12 +58,16 @@ class TicketService
      */
     public function assignTicket(Ticket $ticket, string $userId): Ticket
     {
+        $previous = $ticket->workflow_status;
         $ticket->update([
             'assigned_to' => $userId,
-            'status' => 'in_progress',
+            'status' => $ticket->ticket_type === 'repair' ? 'open' : $ticket->status,
+            'workflow_status' => $ticket->ticket_type === 'repair' ? 'open' : $ticket->workflow_status,
         ]);
 
-        return $ticket->fresh(['customer', 'assignedTo', 'comments']);
+        app(TicketWorkflowService::class)->history($ticket, auth()->user(), 'ticket_assigned', $previous, $ticket->workflow_status, null, ['assigned_to' => $userId]);
+
+        return $ticket->fresh(['customer', 'assignedTechnician', 'comments']);
     }
 
     /**
@@ -81,7 +89,8 @@ class TicketService
      */
     public function updateStatus(Ticket $ticket, string $status): Ticket
     {
-        $updateData = ['status' => $status];
+        $previous = $ticket->workflow_status;
+        $updateData = ['status' => $status, 'workflow_status' => $status];
 
         if ($status === 'resolved' && !$ticket->resolved_at) {
             $updateData['resolved_at'] = now();
@@ -91,6 +100,15 @@ class TicketService
 
         $ticket->update($updateData);
 
-        return $ticket->fresh(['customer', 'assignedTo', 'comments']);
+        app(TicketWorkflowService::class)->history($ticket, auth()->user(), 'status_updated', $previous, $status);
+
+        return $ticket->fresh(['customer', 'assignedTechnician', 'comments']);
+    }
+
+    private function inferType(string $subject, string $category): string
+    {
+        if (str_starts_with($subject, 'New Installation Application')) return 'installation';
+        if (in_array($category, ['technical', 'network_issue'], true)) return 'repair';
+        return 'other';
     }
 }

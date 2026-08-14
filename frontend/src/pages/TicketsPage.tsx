@@ -1,11 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Ticket as TicketIcon,
   Plus,
   Search,
-  Filter,
-  MessageSquare,
-  User,
   Clock,
   CheckCircle,
   AlertCircle,
@@ -13,6 +9,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import ticketService from '../services/ticketService';
 import { customerService } from '../services/customerService';
@@ -28,7 +25,12 @@ interface ProfileChangeRequest {
 }
 
 const TicketsPage: React.FC = () => {
+  const { user } = useAuth();
+  const canApproveInstallations = ['admin', 'super_admin'].some((role) =>
+    user?.role === role || user?.roles?.some((item) => typeof item === 'string' ? item === role : item.name === role),
+  );
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [profileChanges, setProfileChanges] = useState<ProfileChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,11 +49,15 @@ const TicketsPage: React.FC = () => {
     category: 'general' as const,
   });
 
+  // The selected filters are the intended refresh triggers for these API loaders.
+  /* oxlint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     fetchTickets();
+    fetchInstallationApprovals();
     fetchCustomers();
     fetchProfileChanges();
   }, [statusFilter, priorityFilter]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
 
   const fetchTickets = async () => {
     try {
@@ -71,6 +77,16 @@ const TicketsPage: React.FC = () => {
       console.error('Error fetching tickets:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchInstallationApprovals = async () => {
+    try {
+      const response = await ticketService.getTickets({ status: 'waiting_admin_approval', ticket_type: 'installation', per_page: 100 });
+      setInstallationApprovals(response.data);
+    } catch (error) {
+      console.error('Error fetching installation approvals:', error);
+      setInstallationApprovals([]);
     }
   };
 
@@ -131,6 +147,34 @@ const TicketsPage: React.FC = () => {
     }
   };
 
+  const reviewInstallation = async (ticket: Ticket, decision: 'approve' | 'return') => {
+    let payload: Record<string, string> = {};
+    if (decision === 'return') {
+      const reason = window.prompt('Explain what the technician must correct:');
+      if (reason === null) return;
+      if (reason.trim().length < 5) {
+        window.alert('Please enter a clear correction reason.');
+        return;
+      }
+      payload = { reason: reason.trim() };
+    } else if (!window.confirm(`Approve ${ticket.ticket_number}, bind MAC ${ticket.installation_mac}, and register this customer?`)) {
+      return;
+    }
+
+    try {
+      const response = await api.post(`/tickets/${ticket.id}/installation/${decision}`, payload);
+      setShowViewModal(false);
+      setSelectedTicket(null);
+      await fetchTickets();
+      await fetchInstallationApprovals();
+      window.alert(response.data?.message || 'Installation reviewed.');
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const firstError = errors ? Object.values(errors).flat()[0] : null;
+      window.alert(String(firstError || error.response?.data?.message || 'Could not review this installation.'));
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       customer_id: '',
@@ -143,10 +187,15 @@ const TicketsPage: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     const badges = {
+      unclaimed: { bg: 'bg-slate-100', text: 'text-slate-700', icon: AlertCircle },
+      claimed: { bg: 'bg-blue-100', text: 'text-blue-800', icon: Clock },
       open: { bg: 'bg-blue-100', text: 'text-blue-800', icon: AlertCircle },
       in_progress: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
       resolved: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
       closed: { bg: 'bg-gray-100', text: 'text-gray-600', icon: XCircle },
+      waiting_admin_approval: { bg: 'bg-violet-100', text: 'text-violet-800', icon: ClipboardCheck },
+      returned_for_correction: { bg: 'bg-orange-100', text: 'text-orange-800', icon: AlertCircle },
+      registered: { bg: 'bg-emerald-100', text: 'text-emerald-800', icon: CheckCircle },
     };
 
     const badge = badges[status as keyof typeof badges] || badges.open;
@@ -218,6 +267,9 @@ const TicketsPage: React.FC = () => {
               <option value="open">Open</option>
               <option value="in_progress">In Progress</option>
               <option value="resolved">Resolved</option>
+              <option value="waiting_admin_approval">Waiting Admin Approval</option>
+              <option value="returned_for_correction">Returned for Correction</option>
+              <option value="registered">Registered</option>
               <option value="closed">Closed</option>
             </select>
 
@@ -271,6 +323,16 @@ const TicketsPage: React.FC = () => {
             </table>
           </div>
         </section>
+
+        {canApproveInstallations && <section className="mb-6" data-testid="installation-approval-queue">
+          <div className="mb-3 flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-violet-600" />
+            <div><h2 className="font-semibold text-gray-900">Installation Approval</h2><p className="text-sm text-gray-600">Review technician-completed installations before customer registration and MikroTik synchronization.</p></div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-violet-200 bg-white shadow-sm">
+            <table className="w-full text-sm"><thead className="bg-violet-50 text-xs uppercase tracking-wider text-violet-700"><tr><th className="px-4 py-3 text-left">Ticket</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Technician</th><th className="px-4 py-3 text-left">MAC address</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-violet-100">{installationApprovals.map((ticket) => <tr key={ticket.id}><td className="px-4 py-3 font-semibold text-gray-900">{ticket.ticket_number}</td><td className="px-4 py-3"><p className="font-medium">{ticket.customer?.full_name || 'Unknown'}</p><p className="text-xs text-gray-500">{ticket.customer?.address || 'No address'}</p></td><td className="px-4 py-3">{ticket.assigned_technician?.name || 'Unassigned'}</td><td className="px-4 py-3 font-mono">{ticket.installation_mac || 'Not supplied'}</td><td className="px-4 py-3 text-xs text-gray-500">{ticket.submitted_for_approval_at ? new Date(ticket.submitted_for_approval_at).toLocaleString() : '—'}</td><td className="px-4 py-3 text-right"><button onClick={() => { setSelectedTicket(ticket); setShowViewModal(true); }} className="font-semibold text-violet-700 hover:underline">Review</button></td></tr>)}{installationApprovals.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No installations are waiting for approval.</td></tr>}</tbody></table>
+          </div>
+        </section>}
 
         {/* Tickets Table */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
@@ -329,13 +391,13 @@ const TicketsPage: React.FC = () => {
                       {ticket.subject}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                      {ticket.subject.startsWith('New Installation Application') ? 'installation application' : ticket.category.replace('_', ' ')}
+                      {ticket.ticket_type === 'installation' ? 'installation application' : ticket.ticket_type === 'repair' ? 'repair' : ticket.category.replace('_', ' ')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getPriorityBadge(ticket.priority)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(ticket.status)}
+                      {getStatusBadge(ticket.workflow_status || ticket.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(ticket.created_at).toLocaleDateString()}
@@ -482,7 +544,7 @@ const TicketsPage: React.FC = () => {
 
                 <div className="space-y-4">
                   <div className="flex gap-4">
-                    {getStatusBadge(selectedTicket.status)}
+                    {getStatusBadge(selectedTicket.workflow_status || selectedTicket.status)}
                     {getPriorityBadge(selectedTicket.priority)}
                   </div>
 
@@ -493,7 +555,7 @@ const TicketsPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Category</p>
-                      <p className="font-medium capitalize">{selectedTicket.subject.startsWith('New Installation Application') ? 'Installation application' : selectedTicket.category.replace('_', ' ')}</p>
+                      <p className="font-medium capitalize">{selectedTicket.ticket_type === 'installation' ? 'Installation application' : selectedTicket.ticket_type === 'repair' ? 'Repair' : selectedTicket.category.replace('_', ' ')}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Created</p>
@@ -501,7 +563,7 @@ const TicketsPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Assigned To</p>
-                      <p className="font-medium">{selectedTicket.assignedTo?.name || 'Unassigned'}</p>
+                      <p className="font-medium">{selectedTicket.assigned_technician?.name || 'Unassigned'}</p>
                     </div>
                   </div>
 
@@ -510,7 +572,24 @@ const TicketsPage: React.FC = () => {
                     <p className="text-gray-700 whitespace-pre-wrap">{selectedTicket.description}</p>
                   </div>
 
-                  {selectedTicket.status !== 'closed' && (
+                  {selectedTicket.ticket_type === 'installation' && (
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <h3 className="font-semibold text-violet-950">Installation validation</h3>
+                      <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                        <div><dt className="text-violet-700">Workflow</dt><dd className="font-semibold capitalize">{selectedTicket.workflow_status.replaceAll('_', ' ')}</dd></div>
+                        <div><dt className="text-violet-700">Technician</dt><dd className="font-semibold">{selectedTicket.assigned_technician?.name || 'Unclaimed'}</dd></div>
+                        <div><dt className="text-violet-700">Submitted MAC</dt><dd className="font-mono font-semibold">{selectedTicket.installation_mac || 'Not submitted'}</dd></div>
+                        <div><dt className="text-violet-700">Submitted</dt><dd>{selectedTicket.submitted_for_approval_at ? new Date(selectedTicket.submitted_for_approval_at).toLocaleString() : 'Not submitted'}</dd></div>
+                      </dl>
+                      {selectedTicket.installation_notes && <div className="mt-3"><p className="text-xs font-semibold uppercase text-violet-700">Technician notes</p><p className="mt-1 whitespace-pre-wrap text-sm text-violet-950">{selectedTicket.installation_notes}</p></div>}
+                      {selectedTicket.return_reason && <p className="mt-3 rounded-lg bg-orange-100 p-3 text-sm text-orange-900"><strong>Returned correction:</strong> {selectedTicket.return_reason}</p>}
+                      {canApproveInstallations && selectedTicket.workflow_status === 'waiting_admin_approval' && <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => void reviewInstallation(selectedTicket, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">APPROVE &amp; REGISTER CUSTOMER</button><button onClick={() => void reviewInstallation(selectedTicket, 'return')} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">RETURN FOR CORRECTION</button></div>}
+                    </div>
+                  )}
+
+                  {!!selectedTicket.histories?.length && <div><h3 className="mb-2 font-medium text-gray-900">Audit history</h3><ol className="space-y-2">{selectedTicket.histories.map((history) => <li key={history.id} className="border-l-2 border-blue-200 pl-3 text-sm"><p className="font-medium capitalize">{history.action.replaceAll('_', ' ')} · {history.user?.name || 'System'}</p><p className="text-xs text-gray-500">{new Date(history.created_at).toLocaleString()}{history.new_status ? ` · ${history.new_status.replaceAll('_', ' ')}` : ''}</p>{history.notes && <p className="mt-1 text-gray-700">{history.notes}</p>}</li>)}</ol></div>}
+
+                  {selectedTicket.ticket_type === 'other' && selectedTicket.status !== 'closed' && (
                     <div className="flex gap-2 pt-4 border-t">
                       <button
                         onClick={() => handleUpdateStatus(selectedTicket.id, 'in_progress')}

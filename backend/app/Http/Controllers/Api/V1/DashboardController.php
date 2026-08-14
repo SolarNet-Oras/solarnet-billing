@@ -27,20 +27,29 @@ class DashboardController extends Controller
             ->whereNotNull('gps_coordinates')
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates']);
-        $tickets = Ticket::with('customer:id,account_number,full_name,address,gps_coordinates')
+        $tickets = Ticket::with([
+            'customer:id,account_number,full_name,address,gps_coordinates,service_plan_id',
+            'customer.servicePlan:id,name,download_speed,upload_speed,price',
+            'assignedTechnician:id,name,email',
+            'histories.user:id,name,email',
+        ])
             ->where(function ($query) use ($technicianId) {
                 $query->where('assigned_to', $technicianId)
-                    ->orWhere(function ($installation) {
-                        $installation->whereNull('assigned_to')
-                            ->where(function ($fieldWork) {
-                                $fieldWork->where('subject', 'like', 'New Installation Application%')
-                                    ->orWhereIn('category', ['technical', 'network_issue']);
-                            });
+                    ->orWhere(function ($available) {
+                        $available->whereNull('assigned_to')
+                            ->whereIn('ticket_type', ['installation', 'repair'])
+                            ->whereIn('workflow_status', ['unclaimed', 'open']);
                     });
             })
-            ->whereNotIn('status', ['closed', 'resolved'])
-            ->latest()
-            ->get(['id', 'ticket_number', 'customer_id', 'subject', 'description', 'status', 'priority', 'category', 'created_at']);
+            ->latest('updated_at')
+            ->get([
+                'id', 'ticket_number', 'customer_id', 'assigned_to', 'subject', 'description',
+                'status', 'priority', 'category', 'ticket_type', 'workflow_status',
+                'claimed_at', 'started_at', 'resolution_notes', 'repair_details',
+                'installation_mac', 'installation_notes', 'submitted_for_approval_at',
+                'approved_at', 'return_reason', 'returned_at', 'registered_at',
+                'resolved_at', 'closed_at', 'created_at', 'updated_at',
+            ]);
 
         return response()->json(['clients' => $clients, 'tickets' => $tickets]);
     }

@@ -21,6 +21,21 @@ class Ticket extends Model
         'status',
         'priority',
         'category',
+        'ticket_type',
+        'workflow_status',
+        'claimed_at',
+        'started_at',
+        'resolution_notes',
+        'repair_details',
+        'installation_mac',
+        'installation_notes',
+        'submitted_for_approval_at',
+        'approved_by',
+        'approved_at',
+        'return_reason',
+        'returned_at',
+        'registered_at',
+        'closed_by',
         'resolved_at',
         'closed_at',
     ];
@@ -28,6 +43,13 @@ class Ticket extends Model
     protected $casts = [
         'resolved_at' => 'datetime',
         'closed_at' => 'datetime',
+        'claimed_at' => 'datetime',
+        'started_at' => 'datetime',
+        'repair_details' => 'array',
+        'submitted_for_approval_at' => 'datetime',
+        'approved_at' => 'datetime',
+        'returned_at' => 'datetime',
+        'registered_at' => 'datetime',
     ];
 
     public function customer(): BelongsTo
@@ -40,10 +62,20 @@ class Ticket extends Model
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
+    /** Relationship name deliberately avoids colliding with the assigned_to UUID in JSON. */
+    public function assignedTechnician(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
+
     public function comments(): HasMany
     {
         return $this->hasMany(TicketComment::class);
     }
+
+    public function histories(): HasMany { return $this->hasMany(TicketHistory::class)->orderBy('created_at'); }
+    public function approvedBy(): BelongsTo { return $this->belongsTo(User::class, 'approved_by'); }
+    public function closedBy(): BelongsTo { return $this->belongsTo(User::class, 'closed_by'); }
 
     public function scopeOpen($query)
     {
