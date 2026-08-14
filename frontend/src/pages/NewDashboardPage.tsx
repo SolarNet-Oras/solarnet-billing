@@ -9,6 +9,8 @@ import {
   Clock3,
   CreditCard,
   Gauge,
+  MapPin,
+  Navigation,
   Radio,
   RefreshCw,
   Search,
@@ -18,6 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
 
@@ -62,6 +65,16 @@ interface DashboardMetrics {
   router_status: { online: number; offline: number; error: number; total: number };
   automation_activity: Array<{ id: string; job: string; status: 'success' | 'partial' | 'error'; summary: Record<string, unknown> | null; finished_at: string | null }>;
   client_monitor: ClientMonitor[];
+}
+
+interface ClientLocation {
+  id: string;
+  account_number: string;
+  full_name: string;
+  address: string | null;
+  status: string;
+  latitude: number;
+  longitude: number;
 }
 
 const peso = (value: number): string =>
@@ -150,6 +163,8 @@ const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string
 );
 
 const NewDashboardPage: React.FC = () => {
+  const { user } = useAuth();
+  const collector = user?.role === 'collector' || user?.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -158,6 +173,9 @@ const NewDashboardPage: React.FC = () => {
   const [trafficHistory, setTrafficHistory] = useState<Record<string, TrafficSample[]>>({});
   const [monitorUpdatedAt, setMonitorUpdatedAt] = useState<string | null>(null);
   const [monitorPolling, setMonitorPolling] = useState(false);
+  const [locations, setLocations] = useState<ClientLocation[]>([]);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<ClientLocation | null>(null);
   const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
@@ -205,6 +223,17 @@ const NewDashboardPage: React.FC = () => {
     }
   }, []);
 
+  const fetchLocations = useCallback(async (): Promise<void> => {
+    try {
+      const response = await api.get<{ data: ClientLocation[] }>('/collector/locations');
+      const next = response.data.data ?? [];
+      setLocations(next);
+      setSelectedLocation((current) => current ? next.find((location) => location.id === current.id) ?? next[0] ?? null : next[0] ?? null);
+    } catch (error) {
+      logger.error('Failed to fetch collector client locations', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMetrics();
     const interval = window.setInterval(() => fetchMetrics(), 30000);
@@ -212,10 +241,14 @@ const NewDashboardPage: React.FC = () => {
   }, [fetchMetrics]);
 
   useEffect(() => {
+    if (collector) {
+      fetchLocations();
+      return;
+    }
     fetchClientMonitor();
     const interval = window.setInterval(fetchClientMonitor, 5000);
     return () => window.clearInterval(interval);
-  }, [fetchClientMonitor]);
+  }, [collector, fetchClientMonitor, fetchLocations]);
 
   const customers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -228,6 +261,11 @@ const NewDashboardPage: React.FC = () => {
   }, [clientMonitor, query]);
 
   const collectionRate = Math.min(100, Math.max(0, metrics?.collection_rate ?? 0));
+  const locationMatches = useMemo(() => {
+    const term = locationQuery.trim().toLowerCase();
+    return term ? locations.filter((location) => [location.full_name, location.account_number, location.address].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))) : locations;
+  }, [locations, locationQuery]);
+  const openNavigation = (location: ClientLocation) => window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
 
   return (
     <DashboardLayout headerTitle="Client & billing overview" headerSubtitle="A real-time view of your subscribers, collections, and network readiness.">
@@ -288,7 +326,7 @@ const NewDashboardPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="order-last rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+        {!collector && <section className="order-last rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Operations log</p><h2 className="mt-1 text-xl font-semibold text-foreground">Billing updates & warnings</h2></div>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Activity className="h-5 w-5" /></div>
@@ -301,9 +339,9 @@ const NewDashboardPage: React.FC = () => {
               return <div key={activity.id} className="rounded-xl border border-border/70 bg-muted/25 p-4"><div className="flex items-start gap-3"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${hasWarning ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>{hasWarning ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</div><div className="min-w-0"><p className="font-semibold text-foreground">{activityLabel(activity.job)}</p><p className="mt-1 text-sm text-muted-foreground">{detail}</p><p className="mt-2 text-xs text-muted-foreground">{activity.finished_at ? new Date(activity.finished_at).toLocaleString() : 'In progress'}</p></div></div></div>;
             })}
           </div>
-        </section>
+        </section>}
 
-        <section className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+        {!collector && <section className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
           <div className="flex flex-col gap-2 border-b border-border/70 p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Live queue & lease monitor</h2></div>
@@ -323,7 +361,23 @@ const NewDashboardPage: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
+
+        {collector && <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-border/70 p-4 md:flex-row md:items-center md:justify-between">
+            <div><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Client location map</h2></div><p className="mt-1 text-sm text-muted-foreground">Search a client, select their pin, then open Google Maps for directions.</p></div>
+            <label className="relative block md:w-72"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Search client name or account" className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+          </div>
+          <div className="grid lg:grid-cols-[minmax(0,1.6fr)_minmax(240px,0.9fr)]">
+            <div className="min-h-[360px] bg-muted/30">
+              {selectedLocation ? <iframe title={`Google map for ${selectedLocation.full_name}`} className="h-[360px] w-full border-0" src={`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}&z=16&output=embed`} /> : <div className="flex h-[360px] items-center justify-center p-6 text-center text-sm text-muted-foreground">No customer coordinates are available yet. Add coordinates in the customer profile to place a client on this map.</div>}
+            </div>
+            <div className="max-h-[360px] overflow-y-auto border-t border-border/70 lg:border-l lg:border-t-0">
+              {locationMatches.length ? locationMatches.map((location) => <button type="button" key={location.id} onClick={() => setSelectedLocation(location)} className={`flex w-full items-start gap-3 border-b border-border/70 p-3 text-left transition hover:bg-muted/60 ${selectedLocation?.id === location.id ? 'bg-primary/5' : ''}`}><span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><MapPin className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-foreground">{location.full_name}</span><span className="block truncate text-xs text-muted-foreground">{location.account_number} · {location.address || 'Address not recorded'}</span></span><span onClick={(event) => { event.stopPropagation(); openNavigation(location); }} className="rounded-md p-1.5 text-primary hover:bg-primary/10" role="link" aria-label={`Navigate to ${location.full_name}`}><Navigation className="h-4 w-4" /></span></button>) : <p className="p-6 text-center text-sm text-muted-foreground">No client location matches this search.</p>}
+            </div>
+          </div>
+          {selectedLocation && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 p-3 text-sm"><span className="text-muted-foreground">Selected: <b className="text-foreground">{selectedLocation.full_name}</b> · {selectedLocation.latitude.toFixed(6)}, {selectedLocation.longitude.toFixed(6)}</span><button type="button" onClick={() => openNavigation(selectedLocation)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Navigation className="h-3.5 w-3.5" />Open Google Maps</button></div>}
+        </section>}
       </div>
     </DashboardLayout>
   );

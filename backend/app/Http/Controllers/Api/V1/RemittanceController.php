@@ -34,6 +34,33 @@ class RemittanceController extends Controller
         return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted]);
     }
 
+    /** Locations are limited to non-deleted customer records with confirmed coordinates. */
+    public function collectorLocations(): JsonResponse
+    {
+        $customers = \App\Models\Customer::query()
+            ->whereNotNull('gps_coordinates')
+            ->orderBy('full_name')
+            ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates'])
+            ->filter(function (\App\Models\Customer $customer): bool {
+                $coordinates = $customer->gps_coordinates;
+                return is_array($coordinates)
+                    && is_numeric($coordinates['latitude'] ?? null)
+                    && is_numeric($coordinates['longitude'] ?? null);
+            })
+            ->values()
+            ->map(fn (\App\Models\Customer $customer) => [
+                'id' => $customer->id,
+                'account_number' => $customer->account_number,
+                'full_name' => $customer->full_name,
+                'address' => $customer->address,
+                'status' => $customer->status,
+                'latitude' => (float) $customer->gps_coordinates['latitude'],
+                'longitude' => (float) $customer->gps_coordinates['longitude'],
+            ]);
+
+        return response()->json(['data' => $customers]);
+    }
+
     public function collect(Request $request, string $invoiceId, InvoiceService $invoices): JsonResponse
     {
         $data = $request->validate([
