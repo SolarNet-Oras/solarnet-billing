@@ -19,6 +19,15 @@ class RemittanceController extends Controller
             ->where('balance', '>', 0)->whereDate('due_date', '<=', today())
             ->whereIn('status', ['sent', 'overdue', 'partial'])
             ->orderBy('due_date')->paginate($request->integer('per_page', 50));
+        $invoices->getCollection()->transform(function (Invoice $invoice) {
+            $invoice->setAttribute('previous_balance', (float) Invoice::query()
+                ->where('customer_id', $invoice->customer_id)
+                ->whereKeyNot($invoice->id)
+                ->where('balance', '>', 0)
+                ->whereDate('due_date', '<', $invoice->due_date)
+                ->sum('balance'));
+            return $invoice;
+        });
         $unremitted = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->sum('amount');
         return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted]);
     }
