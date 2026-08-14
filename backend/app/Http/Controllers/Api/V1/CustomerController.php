@@ -49,7 +49,10 @@ class CustomerController extends Controller
         $search = $request->input('search');
         $status = $request->input('status');
         
-        $query = Customer::with(['technician:id,name', 'servicePlan:id,name']);
+        // Pending self-service applications are handled through Tickets until
+        // installation/binding approval. They must not appear as clients yet.
+        $query = Customer::with(['technician:id,name', 'servicePlan:id,name'])
+            ->where('status', '!=', 'pending');
         
         // Search
         if ($search) {

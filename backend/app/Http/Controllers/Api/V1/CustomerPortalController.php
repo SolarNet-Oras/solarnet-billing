@@ -220,6 +220,14 @@ class CustomerPortalController extends Controller
                 'location_captured_at' => $request->filled('gps_coordinates') ? now() : null,
                 'location_confirmed_at' => $request->filled('gps_coordinates') ? now() : null,
             ]);
+
+            app(\App\Services\TicketService::class)->createTicket([
+                'customer_id' => $customer->id,
+                'subject' => 'New client application — installation and binding required',
+                'description' => "New self-signup application for {$customer->full_name}. Review the submitted address, requested plan, and any DHCP lease match before approving installation or rejecting the application.",
+                'priority' => 'medium',
+                'category' => 'technical',
+            ]);
         }
 
         $accountService = app(\App\Services\CustomerAccountService::class);
