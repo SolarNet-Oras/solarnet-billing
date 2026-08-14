@@ -349,8 +349,11 @@ class InvoiceService
         return DB::transaction(function () use ($customer, $paymentData) {
             $payment = Payment::create([
                 'customer_id' => $customer->id,
+                'received_by' => $paymentData['received_by'] ?? null,
                 'payment_number' => $this->generatePaymentNumber(),
                 'amount' => $paymentData['amount'],
+                'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
+                'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payment_method' => $paymentData['payment_method'],
                 'payment_date' => $paymentData['payment_date'] ?? now(),
                 'transaction_id' => $paymentData['transaction_id'] ?? null,

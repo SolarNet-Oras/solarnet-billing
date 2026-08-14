@@ -13,9 +13,32 @@ class PaymentController extends Controller
 {
     public function recordAdvance(Request $request, InvoiceService $invoices): JsonResponse
     {
-        $data = $request->validate(['customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash,bank_transfer,credit_card,debit_card,mobile_money,other', 'payment_date' => 'nullable|date', 'transaction_id' => 'nullable|string|max:255', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000']);
+        $data = $request->validate([
+            'customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash,bank_transfer,credit_card,debit_card,mobile_money,other', 'payment_date' => 'nullable|date', 'transaction_id' => 'nullable|string|max:255', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000',
+            'cash_breakdown' => 'required_if:payment_method,cash|array',
+            'cash_breakdown.*.denomination' => 'required_with:cash_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
+            'cash_breakdown.*.count' => 'required_with:cash_breakdown|integer|min:0|max:100000',
+        ]);
+        if ($data['payment_method'] === 'cash') {
+            $data['cash_breakdown'] = $this->normalizedCashBreakdown($data['cash_breakdown'] ?? []);
+            $data['cash_counted_amount'] = collect($data['cash_breakdown'])->sum('amount');
+            if ((int) round((float) $data['cash_counted_amount'] * 100) !== (int) round((float) $data['amount'] * 100)) {
+                return response()->json(['message' => 'Cash count must exactly match the advance payment amount.'], 422);
+            }
+        }
+        $data['received_by'] = $request->user()->id;
         $payment = $invoices->recordAdvancePayment(Customer::findOrFail($data['customer_id']), $data);
         return response()->json(['message' => 'Advance payment saved as credit for the next invoice.', 'payment' => $payment], 201);
+    }
+
+    private function normalizedCashBreakdown(array $rows): array
+    {
+        $counts = collect($rows)->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
+        return collect([1000, 500, 200, 100, 50, 20, 10, 5, 1])->map(fn (int $denomination) => [
+            'denomination' => $denomination,
+            'count' => (int) ($counts[$denomination] ?? 0),
+            'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
+        ])->all();
     }
     /**
      * Get all payments with filters

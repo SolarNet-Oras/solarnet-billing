@@ -85,6 +85,13 @@ export const invoiceService = {
     return response.data;
   },
 
+  recordAdvancePayment: async (
+    data: RecordPaymentRequest & { customer_id: string }
+  ): Promise<{ message: string; payment: Payment }> => {
+    const response = await api.post('/payments/advance', data);
+    return response.data;
+  },
+
   /**
    * Download invoice PDF
    */
