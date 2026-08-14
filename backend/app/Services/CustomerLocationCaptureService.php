@@ -9,7 +9,7 @@ use App\Models\DhcpLease;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** One-time, consent-based installation location capture. */
+/** Consent-based, verified installation location capture and refresh. */
 class CustomerLocationCaptureService
 {
     public const TOKEN_TTL_MINUTES = 30;
@@ -21,10 +21,6 @@ class CustomerLocationCaptureService
      */
     public function createRequest(Customer $customer, string $sourceIp): array
     {
-        if ($customer->location_status === 'confirmed') {
-            return ['eligible' => false, 'reason' => 'Location has already been confirmed.'];
-        }
-
         if (blank($customer->onu_information) || !$customer->router_id) {
             return ['eligible' => false, 'reason' => 'SolarNet could not safely identify your service connection. Please contact support.'];
         }

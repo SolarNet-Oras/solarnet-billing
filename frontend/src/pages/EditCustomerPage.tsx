@@ -134,6 +134,8 @@ const EditCustomerPage: React.FC = () => {
       setError('This browser cannot provide location. Enter the coordinates manually.');
       return;
     }
+    if (!window.confirm(`Proceed only when this device is at ${formData.full_name || 'the customer'}'s exact installation location. The captured point will be saved when you update the customer.`)) return;
+    setNotice('Requesting this device location…');
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setFormData((previous) => ({

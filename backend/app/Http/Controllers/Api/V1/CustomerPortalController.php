@@ -147,6 +147,10 @@ class CustomerPortalController extends Controller
             'address'         => 'required|string|max:1000',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'notes'           => 'nullable|string|max:2000',
+            'gps_coordinates' => 'nullable|array',
+            'gps_coordinates.latitude' => 'required_with:gps_coordinates|numeric|between:-90,90',
+            'gps_coordinates.longitude' => 'required_with:gps_coordinates|numeric|between:-180,180',
+            'location_accuracy_meters' => 'nullable|numeric|min:0|max:50000',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -178,12 +182,23 @@ class CustomerPortalController extends Controller
             // add only the self-service contact details that were missing.
             $customer = DB::transaction(function () use ($existingCustomer, $request) {
                 $notes = trim((string) $existingCustomer->notes . "\nCustomer completed self-service portal signup.");
-                $existingCustomer->forceFill([
+                $updates = [
                     'email' => strtolower($request->email),
                     'contact_number' => $this->isPlaceholder($existingCustomer->contact_number) ? $request->contact_number : $existingCustomer->contact_number,
                     'address' => $this->isPlaceholder($existingCustomer->address) ? $request->address : $existingCustomer->address,
                     'notes' => $notes,
-                ])->save();
+                ];
+                if ($request->filled('gps_coordinates')) {
+                    $updates += [
+                        'gps_coordinates' => $request->input('gps_coordinates'),
+                        'location_status' => 'confirmed',
+                        'location_source' => 'customer_signup',
+                        'location_accuracy_meters' => $request->input('location_accuracy_meters'),
+                        'location_captured_at' => now(),
+                        'location_confirmed_at' => now(),
+                    ];
+                }
+                $existingCustomer->forceFill($updates)->save();
                 return $existingCustomer->fresh();
             });
         } else {
@@ -198,6 +213,12 @@ class CustomerPortalController extends Controller
                 'installation_date' => now(),
                 'status'            => 'pending',
                 'notes'             => $request->notes,
+                'gps_coordinates'   => $request->input('gps_coordinates'),
+                'location_status'   => $request->filled('gps_coordinates') ? 'confirmed' : 'not_captured',
+                'location_source'   => $request->filled('gps_coordinates') ? 'customer_signup' : null,
+                'location_accuracy_meters' => $request->input('location_accuracy_meters'),
+                'location_captured_at' => $request->filled('gps_coordinates') ? now() : null,
+                'location_confirmed_at' => $request->filled('gps_coordinates') ? now() : null,
             ]);
         }
 

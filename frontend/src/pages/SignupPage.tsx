@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { CheckCircle2, Loader2, Wifi, User, Mail, Phone, MapPin, ClipboardCopy } from 'lucide-react';
+import { CheckCircle2, Crosshair, Loader2, Wifi, User, Mail, Phone, MapPin, ClipboardCopy } from 'lucide-react';
 import { formatPHP } from '@/lib/currency';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -24,14 +24,27 @@ interface SignupSuccess {
   dhcp_lease_message?: string;
 }
 
+interface SignupForm {
+  full_name: string;
+  email: string;
+  contact_number: string;
+  address: string;
+  service_plan_id: string;
+  notes: string;
+  gps_coordinates?: { latitude: number; longitude: number };
+  location_accuracy_meters?: number;
+}
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<ServicePlanOption[]>([]);
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState('');
   const [success, setSuccess] = useState<SignupSuccess | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SignupForm>({
     full_name: '',
     email: '',
     contact_number: '',
@@ -39,6 +52,36 @@ export default function SignupPage() {
     service_plan_id: '',
     notes: '',
   });
+
+  const captureSignupLocation = (): void => {
+    if (!navigator.geolocation) {
+      setError('This browser cannot provide location. You can continue without coordinates.');
+      return;
+    }
+    if (!window.confirm('Only continue while you are at the exact installation location. SolarNet will save this device\'s current GPS point with your application.')) return;
+
+    setError(null);
+    setLocationMessage('Requesting your device location…');
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        setForm((current) => ({
+          ...current,
+          gps_coordinates: { latitude, longitude },
+          location_accuracy_meters: accuracy,
+        }));
+        setLocationMessage(`Installation point saved for this application (accuracy approximately ${Math.round(accuracy)} meters).`);
+        setLocating(false);
+      },
+      () => {
+        setError('Location permission was not granted. You can continue without coordinates.');
+        setLocationMessage('');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
+  };
 
   useEffect(() => {
     axios
@@ -250,6 +293,20 @@ export default function SignupPage() {
                   data-testid="signup-address"
                 />
               </div>
+
+              <section className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><MapPin className="h-4 w-4 text-blue-600" /> Installation location <span className="font-normal text-slate-500">(optional)</span></h4>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">At the installation address, you may share this device’s GPS point to help SolarNet locate your service request. You can continue without sharing it.</p>
+                  </div>
+                  <button type="button" onClick={captureSignupLocation} disabled={locating} className="shrink-0 inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60" data-testid="signup-capture-location">
+                    {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />}
+                    {locating ? 'Locating…' : form.gps_coordinates ? 'Update location' : 'Use my location'}
+                  </button>
+                </div>
+                {locationMessage && <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs font-medium text-emerald-800">{locationMessage}</p>}
+              </section>
 
               <div className="mt-4">
                 <label className="block text-xs font-medium text-slate-600 uppercase tracking-wider mb-1">Notes (optional)</label>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, KeyRound, Loader2, UserRound, Wifi } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Crosshair, KeyRound, Loader2, MapPin, UserRound, Wifi } from 'lucide-react';
 import customerPortalService, { type CustomerProfileChangeRequest } from '@/services/customerPortalService';
 import { formatPHP } from '@/lib/currency';
 import type { Customer } from '@/types/api';
@@ -18,6 +18,7 @@ export default function CustomerProfilePage(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [locationBusy, setLocationBusy] = useState(false);
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -65,6 +66,37 @@ export default function CustomerProfilePage(): React.JSX.Element {
     } finally { setSaving(false); }
   };
 
+  const updateInstallationLocation = async (): Promise<void> => {
+    if (!navigator.geolocation) {
+      setError('This browser cannot provide location. Please contact SolarNet for help updating your installation point.');
+      return;
+    }
+    if (!window.confirm('Only continue while you are at your exact installation location. SolarNet will replace the saved installation point with this device\'s current GPS location.')) return;
+
+    setError('');
+    setMessage('');
+    setLocationBusy(true);
+    try {
+      const request = await customerPortalService.startLocationCapture();
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, timeout: 20000, maximumAge: 0,
+      }));
+      await customerPortalService.captureLocation({
+        token: request.token,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      });
+      await customerPortalService.confirmLocationCapture(request.token);
+      setMessage(`Installation location updated (accuracy approximately ${Math.round(position.coords.accuracy)} meters).`);
+      await load();
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || requestError.message || 'Could not update your installation location. Please ensure you are connected through your SolarNet service and try again.');
+    } finally {
+      setLocationBusy(false);
+    }
+  };
+
   if (loading) return <div className="flex min-h-screen items-center justify-center text-slate-600"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading profile…</div>;
 
   const pending = requests.find((item) => item.status === 'pending');
@@ -81,6 +113,12 @@ export default function CustomerProfilePage(): React.JSX.Element {
           <label className="block"><span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><Wifi className="h-4 w-4" /> Requested subscription</span><select value={servicePlanId} onChange={(e) => setServicePlanId(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"><option value="">Select a service plan</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} — {plan.download_speed}/{plan.upload_speed} Mbps — {formatPHP(plan.price)}/month</option>)}</select></label>
           <button type="submit" disabled={saving || Boolean(pending)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> {saving ? 'Submitting…' : pending ? 'Request awaiting approval' : 'Send for approval'}</button>
         </form>
+        <section className="mt-8 border-t border-slate-200 pt-6">
+          <h2 className="flex items-center gap-2 font-semibold text-slate-900"><MapPin className="h-4 w-4" /> Installation location</h2>
+          <p className="mt-1 text-sm text-slate-600">Only update this when you are physically at the exact SolarNet installation point. Your browser asks for permission before any location is collected.</p>
+          {customer?.gps_coordinates && <p className="mt-2 text-xs text-slate-500">Saved point: {Number(customer.gps_coordinates.latitude).toFixed(6)}, {Number(customer.gps_coordinates.longitude).toFixed(6)}</p>}
+          <button type="button" onClick={() => void updateInstallationLocation()} disabled={locationBusy} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"><Crosshair className="h-4 w-4" /> {locationBusy ? 'Updating location…' : customer?.gps_coordinates ? 'Update my installation location' : 'Save my installation location'}</button>
+        </section>
         <div className="mt-8 border-t border-slate-200 pt-6"><h2 className="flex items-center gap-2 font-semibold text-slate-900"><KeyRound className="h-4 w-4" /> Password</h2><p className="mt-1 text-sm text-slate-600">Your password is private. You can change it immediately after confirming your current password.</p><Link to="/customer/change-password" className="mt-3 inline-flex rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Change password</Link></div>
       </div>
       {requests.length > 0 && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="font-semibold text-slate-900">Request history</h2><div className="mt-3 divide-y divide-slate-100">{requests.map((item) => <div key={item.id} className="py-3 text-sm"><div className="flex justify-between gap-3"><span className="font-medium text-slate-800">{item.requested_full_name || ''}{item.requested_full_name && item.requested_service_plan ? ' · ' : ''}{item.requested_service_plan?.name || ''}</span><span className="capitalize text-slate-600">{item.status}</span></div>{item.review_notes && <p className="mt-1 text-slate-600">{item.review_notes}</p>}</div>)}</div></section>}
