@@ -46,6 +46,16 @@ class CustomerPortalController extends Controller
             ], 422);
         }
 
+        if ($request->filled('service_plan_id') && !\App\Models\ServicePlan::whereKey($request->service_plan_id)
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->exists()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'The selected service plan is not available for customer signup.',
+            ], 422);
+        }
+
         // Customer email addresses are case-insensitive in normal use. Trim
         // accidental spaces too, so the portal does not reject a valid record
         // simply because staff stored mixed-case email text.
@@ -152,7 +162,10 @@ class CustomerPortalController extends Controller
         // Look up default monthly fee from the selected plan (if any)
         $monthlyFee = 0;
         if ($request->filled('service_plan_id')) {
-            $plan = \App\Models\ServicePlan::find($request->service_plan_id);
+            $plan = \App\Models\ServicePlan::whereKey($request->service_plan_id)
+                ->where('is_active', true)
+                ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+                ->first();
             if ($plan) $monthlyFee = $plan->price;
         }
 

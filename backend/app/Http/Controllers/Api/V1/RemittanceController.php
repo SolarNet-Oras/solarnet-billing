@@ -95,12 +95,14 @@ class RemittanceController extends Controller
         $data = $request->validate([
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
+            'accuracy_meters' => 'nullable|numeric|min:0|max:5000',
         ]);
         $customer = Customer::findOrFail($customerId);
         $customer->update([
             'gps_coordinates' => ['latitude' => (float) $data['latitude'], 'longitude' => (float) $data['longitude']],
             'location_status' => 'confirmed',
-            'location_source' => 'collector',
+            'location_source' => 'collector_device',
+            'location_accuracy_meters' => $data['accuracy_meters'] ?? null,
             'location_confirmed_at' => now(),
         ]);
 
