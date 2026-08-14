@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Banknote, ExternalLink, Landmark, Send, Smartphone, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Banknote, Calculator, CheckCircle2, ExternalLink, Landmark, Send, Smartphone, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,14 +7,22 @@ import api from '@/services/api';
 
 type Invoice = { id: string; invoice_number: string; due_date: string; balance: number; previous_balance?: number; customer?: { account_number: string; full_name: string; address?: string } };
 type Checkout = { checkout_url: string; reference_number: string; invoice_number: string; checkout_session_id?: string };
-type Remittance = { id: string; declared_amount: number; status: string; submitted_at: string; collector?: { name: string } };
+type CashLine = { denomination: number; count: number; amount: number };
+type Remittance = {
+  id: string; declared_amount: number; cash_counted_amount?: number | null; cash_breakdown?: CashLine[] | null; status: string; submitted_at: string; liquidated_at?: string | null; received_at?: string | null; received_amount?: number | null;
+  collector?: { name: string }; liquidator?: { name: string }; receiver?: { name: string }; payments?: { amount: number; payment_method: 'cash' | 'mobile_money' | 'bank_transfer' }[];
+};
+
+const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1] as const;
 const peso = (value: number) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+const dateTime = (value?: string | null) => value ? new Date(value).toLocaleString('en-PH') : '—';
 
 export default function RemittancesPage() {
   const { user } = useAuth();
   const collector = user?.role === 'collector' || user?.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [unremitted, setUnremitted] = useState(0);
+  const [cashDue, setCashDue] = useState(0);
   const [remittances, setRemittances] = useState<Remittance[]>([]);
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [method, setMethod] = useState<'cash' | 'mobile_money' | 'bank_transfer'>('cash');
@@ -23,73 +31,46 @@ export default function RemittancesPage() {
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
   const [saving, setSaving] = useState(false);
+  const [liquidationOpen, setLiquidationOpen] = useState(false);
+  const [counts, setCounts] = useState<Record<number, number>>({});
+  const [verifyTarget, setVerifyTarget] = useState<Remittance | null>(null);
+  const [receivedAmount, setReceivedAmount] = useState('');
 
   const load = async () => {
     if (collector) {
       const response = await api.get('/collector/dashboard');
       setInvoices(response.data?.invoices?.data || []);
       setUnremitted(Number(response.data?.unremitted_amount || 0));
+      setCashDue(Number(response.data?.unremitted_cash_amount || 0));
     } else {
       const response = await api.get('/remittances');
       setRemittances(response.data?.data || []);
     }
   };
-
   useEffect(() => { void load(); }, [collector]);
 
-  const open = (invoice: Invoice) => {
-    setSelected(invoice); setMethod('cash'); setAmount(String(invoice.balance)); setReference(''); setCheckout(null); setQrCode('');
-  };
+  const cashBreakdown = useMemo<CashLine[]>(() => DENOMINATIONS.map((denomination) => ({ denomination, count: Number(counts[denomination] || 0), amount: denomination * Number(counts[denomination] || 0) })), [counts]);
+  const cashCounted = useMemo(() => cashBreakdown.reduce((sum, line) => sum + line.amount, 0), [cashBreakdown]);
+  const cashMatches = Math.round(cashCounted * 100) === Math.round(cashDue * 100);
+
+  const open = (invoice: Invoice) => { setSelected(invoice); setMethod('cash'); setAmount(String(invoice.balance)); setReference(''); setCheckout(null); setQrCode(''); };
   const close = () => { setSelected(null); setCheckout(null); setQrCode(''); };
-
-  const startGcash = async () => {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      const response = await api.post(`/collector/invoices/${selected.id}/gcash-checkout`);
-      const created = response.data.checkout as Checkout;
-      setCheckout(created);
-      setQrCode(await QRCode.toDataURL(created.checkout_url, { width: 320, margin: 2, errorCorrectionLevel: 'M' }));
-    } catch (error: any) {
-      window.alert(error.response?.data?.message || 'Could not create a PayMongo GCash checkout.');
-    } finally { setSaving(false); }
-  };
-
-  const verifyGcash = async (silent = false) => {
-    if (!selected || !checkout) return;
-    setSaving(true);
-    try {
-      const response = await api.post(`/collector/invoices/${selected.id}/gcash-checkouts/${checkout.checkout_session_id}/reconcile`);
-      if (response.data.paid) { window.alert('Payment confirmed directly by PayMongo.'); close(); await load(); }
-      else if (!silent) window.alert('PayMongo has not confirmed this payment yet. Ask the client to complete checkout, then check again.');
-    } catch (error: any) { if (!silent) window.alert(error.response?.data?.message || 'Could not check PayMongo payment status.'); }
-    finally { setSaving(false); }
-  };
-
-  useEffect(() => {
-    if (!selected || !checkout) return;
-    const interval = window.setInterval(() => { void verifyGcash(true); }, 5000);
-    return () => window.clearInterval(interval);
-  }, [selected, checkout]);
-
-  const recordManual = async () => {
-    if (!selected) return;
-    const received = Number(amount);
-    if (!Number.isFinite(received) || received <= 0 || received > selected.balance) return window.alert(`Enter an amount from ₱0.01 to ${peso(selected.balance)}.`);
-    if (method === 'bank_transfer' && !reference.trim()) return window.alert('Enter the bank transaction reference.');
-    setSaving(true);
-    try { await api.post(`/collector/invoices/${selected.id}/collect`, { amount: received, payment_method: method, reference: reference.trim() || undefined }); close(); await load(); }
-    catch (error: any) { window.alert(error.response?.data?.message || 'Could not record payment.'); }
-    finally { setSaving(false); }
-  };
-  const submit = async () => { if (window.confirm(`Submit ${peso(unremitted)} for office verification?`)) { await api.post('/collector/remittances', {}); await load(); } };
+  const startGcash = async () => { if (!selected) return; setSaving(true); try { const response = await api.post(`/collector/invoices/${selected.id}/gcash-checkout`); const created = response.data.checkout as Checkout; setCheckout(created); setQrCode(await QRCode.toDataURL(created.checkout_url, { width: 320, margin: 2, errorCorrectionLevel: 'M' })); } catch (error: any) { window.alert(error.response?.data?.message || 'Could not create a PayMongo GCash checkout.'); } finally { setSaving(false); } };
+  const verifyGcash = async (silent = false) => { if (!selected || !checkout) return; setSaving(true); try { const response = await api.post(`/collector/invoices/${selected.id}/gcash-checkouts/${checkout.checkout_session_id}/reconcile`); if (response.data.paid) { window.alert('Payment confirmed directly by PayMongo.'); close(); await load(); } else if (!silent) window.alert('PayMongo has not confirmed this payment yet. Ask the client to complete checkout, then check again.'); } catch (error: any) { if (!silent) window.alert(error.response?.data?.message || 'Could not check PayMongo payment status.'); } finally { setSaving(false); } };
+  useEffect(() => { if (!selected || !checkout) return; const interval = window.setInterval(() => { void verifyGcash(true); }, 5000); return () => window.clearInterval(interval); }, [selected, checkout]);
+  const recordManual = async () => { if (!selected) return; const received = Number(amount); if (!Number.isFinite(received) || received <= 0 || received > selected.balance) return window.alert(`Enter an amount from ₱0.01 to ${peso(selected.balance)}.`); if (method === 'bank_transfer' && !reference.trim()) return window.alert('Enter the bank transaction reference.'); setSaving(true); try { await api.post(`/collector/invoices/${selected.id}/collect`, { amount: received, payment_method: method, reference: reference.trim() || undefined }); close(); await load(); } catch (error: any) { window.alert(error.response?.data?.message || 'Could not record payment.'); } finally { setSaving(false); } };
+  const submitLiquidation = async () => { if (!cashMatches) return; setSaving(true); try { const response = await api.post('/collector/remittances', { cash_breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })) }); window.alert(response.data?.message || 'Remittance submitted for verification.'); setLiquidationOpen(false); setCounts({}); await load(); } catch (error: any) { window.alert(error.response?.data?.message || 'Could not submit this remittance.'); } finally { setSaving(false); } };
+  const validateReceived = async () => { if (!verifyTarget) return; const received = Number(receivedAmount); if (!Number.isFinite(received) || received < 0) return window.alert('Enter the amount physically received.'); setSaving(true); try { const response = await api.post(`/remittances/${verifyTarget.id}/receive`, { received_amount: received }); window.alert(response.data?.message || 'Remittance updated.'); setVerifyTarget(null); await load(); } catch (error: any) { window.alert(error.response?.data?.message || 'Could not validate remittance.'); } finally { setSaving(false); } };
+  const paymentTotals = (remittance: Remittance) => (remittance.payments || []).reduce((totals, payment) => ({ ...totals, [payment.payment_method]: (totals[payment.payment_method] || 0) + Number(payment.amount) }), {} as Record<string, number>);
 
   return <DashboardLayout><main className="space-y-6 p-4 md:p-6">
-    <header><h1 className="flex items-center gap-2 text-2xl font-bold"><Banknote className="text-primary" />{collector ? 'Collection Desk' : 'Remittances'}</h1></header>
+    <header><h1 className="flex items-center gap-2 text-2xl font-bold"><Banknote className="text-primary" />{collector ? 'Collection Desk' : 'Remittances'}</h1><p className="mt-1 text-sm text-muted-foreground">{collector ? 'Record client payments, then liquidate physical cash before office submission.' : 'Verify collector cash liquidation and record the staff member who received it.'}</p></header>
     {collector ? <>
-      <section className="flex items-center justify-between rounded-2xl border bg-primary/5 p-5"><div><p className="text-sm text-muted-foreground">Pending remittance</p><p className="text-3xl font-bold">{peso(unremitted)}</p></div><button disabled={!unremitted} onClick={() => void submit()} className="rounded-xl bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"><Send className="mr-2 inline h-4 w-4" />Submit remittance</button></section>
+      <section className="flex flex-col gap-4 rounded-2xl border bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm text-muted-foreground">Pending remittance</p><p className="text-3xl font-bold">{peso(unremitted)}</p><p className="mt-1 text-xs text-muted-foreground">Physical cash to liquidate: <strong>{peso(cashDue)}</strong> · E-wallet and bank payments are recorded separately.</p></div><button disabled={!unremitted} onClick={() => setLiquidationOpen(true)} className="rounded-xl bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"><Calculator className="mr-2 inline h-4 w-4" />Liquidate cash</button></section>
       <section className="overflow-x-auto rounded-2xl border bg-card"><table className="w-full text-sm"><thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground"><tr><th className="p-4">Client</th><th className="p-4">Address</th><th className="p-4">Due Date</th><th className="p-4 text-right">Balance</th><th className="p-4">Collectibles</th><th className="p-4 text-right">Receive / Action</th></tr></thead><tbody>{invoices.map((invoice) => <tr className="border-t" key={invoice.id}><td className="p-4 font-medium">{invoice.customer?.full_name}<small className="block text-muted-foreground">{invoice.customer?.account_number}</small></td><td className="p-4">{invoice.customer?.address || 'To be updated'}</td><td className="p-4">{invoice.due_date.slice(0, 10)}</td><td className="p-4 text-right font-semibold">{peso(invoice.balance)}</td><td className="p-4">{invoice.invoice_number}{Number(invoice.previous_balance || 0) > 0 && <small className="block text-amber-700">Previous balance: {peso(Number(invoice.previous_balance))}</small>}</td><td className="p-4 text-right"><button onClick={() => open(invoice)} className="rounded-lg bg-primary px-3 py-1.5 text-primary-foreground">Receive payment</button></td></tr>)}{!invoices.length && <tr><td className="p-10 text-center text-muted-foreground" colSpan={6}>No due client accounts to collect.</td></tr>}</tbody></table></section>
-    </> : <section className="rounded-2xl border bg-card p-5">{remittances.map((item) => <div className="border-b py-3" key={item.id}>{item.collector?.name} · {peso(item.declared_amount)} · {item.status}</div>)}{!remittances.length && 'No remittances submitted.'}</section>}
+    </> : <section className="space-y-3">{remittances.map((item) => { const totals = paymentTotals(item); const matches = Math.round(Number(item.cash_counted_amount || 0) * 100) === Math.round(Number(totals.cash || 0) * 100); return <article className="rounded-2xl border bg-card p-5" key={item.id}><div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"><div><h2 className="font-semibold text-foreground">{item.collector?.name || 'Collector'} · {peso(item.declared_amount)}</h2><p className="mt-1 text-sm capitalize text-muted-foreground">Status: {item.status}</p><div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3"><span>Cash: {peso(totals.cash || 0)}</span><span>GCash: {peso(totals.mobile_money || 0)}</span><span>Bank: {peso(totals.bank_transfer || 0)}</span></div></div><div className="text-sm md:text-right"><p>Liquidated by <strong>{item.liquidator?.name || item.collector?.name || '—'}</strong></p><p className="text-xs text-muted-foreground">{dateTime(item.liquidated_at)}</p>{item.receiver && <><p className="mt-2">Received by <strong>{item.receiver.name}</strong></p><p className="text-xs text-muted-foreground">{dateTime(item.received_at)}</p></>}</div></div><div className={`mt-4 rounded-xl p-3 text-sm ${matches ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}><strong>Cash liquidation:</strong> {peso(Number(item.cash_counted_amount || 0))} counted {matches ? 'matches recorded cash.' : `does not match recorded cash of ${peso(totals.cash || 0)}.`}</div>{item.cash_breakdown && <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">{item.cash_breakdown.filter((line) => line.count > 0).map((line) => <span key={line.denomination} className="rounded bg-muted px-2 py-1">{line.count} × ₱{line.denomination} = {peso(line.amount)}</span>)}</div>}{item.status === 'submitted' && <button disabled={!matches} onClick={() => { setVerifyTarget(item); setReceivedAmount(String(item.declared_amount)); }} className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"><CheckCircle2 className="mr-2 inline h-4 w-4" />Validate received remittance</button>}</article>; })}{!remittances.length && <section className="rounded-2xl border bg-card p-8 text-center text-muted-foreground">No remittances submitted.</section>}</section>}
+    {liquidationOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card shadow-2xl"><div className="flex items-start justify-between border-b p-5"><div><h2 className="flex items-center gap-2 text-lg font-bold"><Calculator className="text-primary" />Cash liquidation</h2><p className="mt-1 text-sm text-muted-foreground">Count physical cash before submitting this remittance. The counted amount must match cash payments.</p></div><button onClick={() => setLiquidationOpen(false)}><X /></button></div><div className="space-y-4 p-5"><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Recorded cash</p><p className="text-xl font-bold">{peso(cashDue)}</p></div><div className={`rounded-xl p-3 ${cashMatches ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}><p className="text-xs">Cash counted</p><p className="text-xl font-bold">{peso(cashCounted)}</p><p className="text-xs">{cashMatches ? 'Amounts match' : `Difference: ${peso(cashCounted - cashDue)}`}</p></div></div><table className="w-full text-sm"><thead className="text-left text-xs uppercase text-muted-foreground"><tr><th className="pb-2">No. of pcs</th><th className="pb-2">Denomination</th><th className="pb-2 text-right">Amount</th></tr></thead><tbody>{DENOMINATIONS.map((denomination) => <tr className="border-t" key={denomination}><td className="py-2"><input min="0" type="number" value={counts[denomination] || ''} onChange={(event) => setCounts((current) => ({ ...current, [denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="w-28 rounded-lg border bg-background px-3 py-2" /></td><td className="py-2 font-medium">₱{denomination.toLocaleString('en-PH')}</td><td className="py-2 text-right font-semibold">{peso(denomination * Number(counts[denomination] || 0))}</td></tr>)}</tbody></table><button disabled={saving || !cashMatches} onClick={() => void submitLiquidation()} className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"><Send className="mr-2 inline h-4 w-4" />{saving ? 'Submitting…' : 'Confirm cash count & submit remittance'}</button>{!cashMatches && <p className="text-center text-xs text-amber-700">Adjust the denomination counts until the cash total matches the recorded cash collection.</p>}</div></div></div>}
+    {verifyTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-md rounded-2xl bg-card shadow-2xl"><div className="flex items-start justify-between border-b p-5"><div><h2 className="font-bold">Validate remittance</h2><p className="text-sm text-muted-foreground">Record the amount you physically received from {verifyTarget.collector?.name || 'the collector'}.</p></div><button onClick={() => setVerifyTarget(null)}><X /></button></div><div className="space-y-4 p-5"><div className="rounded-xl bg-emerald-50 p-4 text-emerald-900"><p className="text-xs">Declared remittance</p><p className="text-2xl font-bold">{peso(verifyTarget.declared_amount)}</p><p className="mt-1 text-xs">Cash count was liquidated by {verifyTarget.liquidator?.name || verifyTarget.collector?.name || 'the collector'}.</p></div><label className="block text-sm font-medium">Amount received<input type="number" min="0" step="0.01" value={receivedAmount} onChange={(event) => setReceivedAmount(event.target.value)} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><button disabled={saving} onClick={() => void validateReceived()} className="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-primary-foreground disabled:opacity-50"><CheckCircle2 className="mr-2 inline h-4 w-4" />{saving ? 'Validating…' : 'Validate received remittance'}</button></div></div></div>}
     {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-lg rounded-2xl bg-card shadow-2xl"><div className="flex justify-between border-b p-5"><div><h2 className="font-bold">Receive payment</h2><p className="text-sm text-muted-foreground">{selected.customer?.full_name} · {selected.invoice_number}</p></div><button onClick={close}><X /></button></div><div className="space-y-4 p-5"><div className="rounded-xl bg-muted p-4"><p className="text-xs text-muted-foreground">Outstanding balance</p><p className="text-2xl font-bold">{peso(selected.balance)}</p></div><div className="grid grid-cols-3 gap-2"><button onClick={() => setMethod('cash')} className={`rounded-xl border p-3 ${method === 'cash' ? 'border-primary bg-primary/10' : ''}`}><Banknote className="mx-auto" />Cash</button><button onClick={() => setMethod('mobile_money')} className={`rounded-xl border p-3 ${method === 'mobile_money' ? 'border-primary bg-primary/10' : ''}`}><Smartphone className="mx-auto" />GCash</button><button onClick={() => setMethod('bank_transfer')} className={`rounded-xl border p-3 ${method === 'bank_transfer' ? 'border-primary bg-primary/10' : ''}`}><Landmark className="mx-auto" />Bank</button></div>{method === 'mobile_money' ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><p className="font-semibold">PayMongo GCash checkout</p><p className="mt-1 text-sm text-muted-foreground">Generate a QR specific to this client and invoice. It appears here—no popup is needed.</p>{qrCode && <div className="mt-4 rounded-xl bg-white p-4 text-center"><img src={qrCode} alt={`GCash QR for ${selected.invoice_number}`} width="320" height="320" className="mx-auto max-w-full" /><p className="mt-2 text-xs text-slate-600">Scan with GCash to pay {peso(selected.balance)}.</p></div>}{checkout ? <><a href={checkout.checkout_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-primary underline"><ExternalLink className="h-4 w-4" />Open direct payment link</a><button disabled={saving} onClick={() => void verifyGcash()} className="mt-3 block rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">{saving ? 'Checking…' : 'Check PayMongo payment status'}</button></> : <button disabled={saving} onClick={() => void startGcash()} className="mt-3 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">{saving ? 'Generating QR…' : 'Generate GCash QR code'}</button>}</div> : <><label className="block text-sm">Amount received<input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label>{method === 'bank_transfer' && <label className="block text-sm">Bank reference<input value={reference} onChange={(e) => setReference(e.target.value)} className="mt-1 w-full rounded-lg border p-2" required /></label>}<button disabled={saving} onClick={() => void recordManual()} className="rounded-lg bg-primary px-4 py-2 text-primary-foreground">Confirm {method === 'cash' ? 'cash' : 'bank'} payment</button></>}</div></div></div>}
   </main></DashboardLayout>;
 }

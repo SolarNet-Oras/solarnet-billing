@@ -34,8 +34,10 @@ class RemittanceController extends Controller
                 ->sum('balance'));
             return $invoice;
         });
-        $unremitted = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->sum('amount');
-        return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted]);
+        $unremittedPayments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id');
+        $unremitted = (clone $unremittedPayments)->sum('amount');
+        $unremittedCash = (clone $unremittedPayments)->where('payment_method', 'cash')->sum('amount');
+        return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted, 'unremitted_cash_amount' => (float) $unremittedCash]);
     }
 
     /** Locations are limited to non-deleted customer records with confirmed coordinates. */
@@ -187,20 +189,45 @@ class RemittanceController extends Controller
 
     public function submit(Request $request): JsonResponse
     {
-        $data = $request->validate(['notes' => 'nullable|string|max:1000']);
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:1000',
+            'cash_breakdown' => 'required|array',
+            'cash_breakdown.*.denomination' => 'required|integer|in:1000,500,200,100,50,20,10,5,1',
+            'cash_breakdown.*.count' => 'required|integer|min:0|max:100000',
+        ]);
         $remittance = DB::transaction(function () use ($request, $data) {
             $payments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->lockForUpdate()->get();
             abort_if($payments->isEmpty(), 422, 'There are no unremitted collector payments.');
-            $remittance = Remittance::create(['collector_id' => $request->user()->id, 'declared_amount' => $payments->sum('amount'), 'notes' => $data['notes'] ?? null, 'submitted_at' => now()]);
+            $denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+            $counts = collect($data['cash_breakdown'])->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
+            $breakdown = collect($denominations)->map(fn (int $denomination) => [
+                'denomination' => $denomination,
+                'count' => (int) ($counts[$denomination] ?? 0),
+                'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
+            ])->all();
+            $cashCounted = collect($breakdown)->sum('amount');
+            $cashExpected = (float) $payments->where('payment_method', 'cash')->sum('amount');
+            abort_unless((int) round($cashCounted * 100) === (int) round($cashExpected * 100), 422, "Cash count must match collected cash of ₱" . number_format($cashExpected, 2) . '.');
+
+            $remittance = Remittance::create([
+                'collector_id' => $request->user()->id,
+                'liquidated_by' => $request->user()->id,
+                'declared_amount' => $payments->sum('amount'),
+                'cash_counted_amount' => $cashCounted,
+                'cash_breakdown' => $breakdown,
+                'notes' => $data['notes'] ?? null,
+                'submitted_at' => now(),
+                'liquidated_at' => now(),
+            ]);
             Payment::whereIn('id', $payments->pluck('id'))->update(['remittance_id' => $remittance->id]);
             return $remittance->load('payments');
         });
-        return response()->json(['message' => 'Remittance submitted for verification.', 'remittance' => $remittance], 201);
+        return response()->json(['message' => 'Cash liquidation matches. Remittance submitted for office verification.', 'remittance' => $remittance], 201);
     }
 
     public function index(): JsonResponse
     {
-        return response()->json(Remittance::with(['collector:id,name,email', 'receiver:id,name,email', 'payments:id,remittance_id,payment_method,amount,payment_number'])->latest('submitted_at')->paginate(50));
+        return response()->json(Remittance::with(['collector:id,name,email', 'liquidator:id,name,email', 'receiver:id,name,email', 'payments:id,remittance_id,payment_method,amount,payment_number'])->latest('submitted_at')->paginate(50));
     }
 
     public function receive(Request $request, string $id): JsonResponse
