@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class CustomerController extends Controller
@@ -299,6 +300,36 @@ class CustomerController extends Controller
             'payments' => $customer->payments()->with('invoice:id,invoice_number')->latest('payment_date')->limit(20)->get(['id', 'invoice_id', 'amount', 'payment_method', 'payment_date', 'reference', 'transaction_id']),
             'location_events' => $customer->locationEvents()->latest()->limit(20)->get(['id', 'source', 'action', 'accuracy_meters', 'created_at']),
         ]);
+    }
+
+    /** Protected cash-signature reference, available only to administrator roles. */
+    public function cashSignature(string $id): JsonResponse
+    {
+        $customer = Customer::findOrFail($id);
+
+        return response()->json([
+            'has_signature' => (bool) $customer->cash_signature_reference,
+            'signature' => $customer->cash_signature_reference,
+            'captured_at' => $customer->cash_signature_reference_at,
+        ]);
+    }
+
+    /** Remove the reference so the next client cash signature becomes the new baseline. */
+    public function resetCashSignature(Request $request, string $id): JsonResponse
+    {
+        $customer = Customer::findOrFail($id);
+        $customer->update([
+            'cash_signature_reference' => null,
+            'cash_signature_fingerprint' => null,
+            'cash_signature_reference_at' => null,
+        ]);
+
+        Log::warning('Customer cash signature reference reset', [
+            'customer_id' => $customer->id,
+            'reset_by' => $request->user()?->id,
+        ]);
+
+        return response()->json(['message' => 'Cash signature reference reset. The next client-signed cash payment will establish a new reference.']);
     }
 
     /**

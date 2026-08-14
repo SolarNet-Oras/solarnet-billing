@@ -95,6 +95,8 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
+        Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
+        Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
         
