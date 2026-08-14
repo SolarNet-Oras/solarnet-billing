@@ -130,6 +130,19 @@ class TicketController extends Controller
         return response()->json(['message' => 'Installation application claimed.', 'ticket' => $ticket->fresh(['customer', 'assignedTo'])]);
     }
 
+    /** Record a technician's installed ONU/router MAC for administrator review. */
+    public function submitInstallation(Request $request, string $id): JsonResponse
+    {
+        $request->validate(['mac_address' => ['required', 'string', 'regex:/^[0-9A-Fa-f]{2}([:-]?[0-9A-Fa-f]{2}){5}$/'], 'notes' => ['nullable', 'string', 'max:2000']]);
+        $ticket = Ticket::findOrFail($id);
+        if ($ticket->assigned_to !== $request->user()->id || ! str_starts_with($ticket->subject, 'New Installation Application')) {
+            return response()->json(['message' => 'Only the assigned technician can submit this installation.'], 403);
+        }
+        $mac = strtoupper(str_replace('-', ':', $request->string('mac_address')->toString()));
+        $ticket->update(['status' => 'resolved', 'description' => trim($ticket->description . "\n\nTECHNICIAN SUBMISSION — MAC: {$mac}\n" . (string) $request->input('notes'))]);
+        return response()->json(['message' => 'Installation submitted for administrator review.', 'ticket' => $ticket->fresh(['customer', 'assignedTo'])]);
+    }
+
     /**
      * Add comment
      */
