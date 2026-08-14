@@ -19,12 +19,11 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
-    /** The technician workspace intentionally exposes only assigned field work. */
+    /** Technicians can reference all client locations; only their tickets are assigned work. */
     public function technicianWorkspace(Request $request): JsonResponse
     {
         $technicianId = $request->user()->id;
         $clients = Customer::query()
-            ->where('technician_id', $technicianId)
             ->whereNotNull('gps_coordinates')
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates']);
@@ -39,7 +38,7 @@ class DashboardController extends Controller
 
     public function technicianMonitor(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->matchedLeaseMonitor($request->user()->id), 'refreshed_at' => now()->toIso8601String()])
+        return response()->json(['data' => $this->matchedLeaseMonitor(), 'refreshed_at' => now()->toIso8601String()])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
     /**
