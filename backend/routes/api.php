@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\AutomationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
@@ -79,6 +80,7 @@ Route::prefix('v1')->group(function () {
             Route::post('customer-profile-change-requests/{id}/approve', [CustomerController::class, 'approveProfileChangeRequest']);
             Route::post('customer-profile-change-requests/{id}/reject', [CustomerController::class, 'rejectProfileChangeRequest']);
         });
+        Route::post('super-admin/client-migrations/preview', [ClientMigrationController::class, 'preview'])->middleware('role:super_admin');
         
         // Role routes (admin only)
         Route::middleware(['role:admin|super_admin'])->group(function () {
