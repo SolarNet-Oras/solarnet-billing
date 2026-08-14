@@ -194,6 +194,7 @@ const NewDashboardPage: React.FC = () => {
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
   const [selectedPlans, setSelectedPlans] = useState<Record<string, string>>({});
   const [collectorActionBusy, setCollectorActionBusy] = useState<string | null>(null);
+  const [locationCaptureTarget, setLocationCaptureTarget] = useState<CollectorClient | null>(null);
   const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
@@ -296,8 +297,10 @@ const NewDashboardPage: React.FC = () => {
     return term ? locations.filter((location) => [location.full_name, location.account_number, location.address].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))) : locations;
   }, [locations, locationQuery]);
   const openNavigation = (location: ClientLocation) => window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
-  const updateCollectorLocation = async (client: CollectorClient) => {
-    if (!window.confirm(`Proceed only when you are at ${client.full_name}'s exact installation location. SolarNet will save this device's current GPS point to the client record.`)) return;
+  const updateCollectorLocation = (client: CollectorClient) => setLocationCaptureTarget(client);
+  const captureCollectorLocation = async () => {
+    const client = locationCaptureTarget;
+    if (!client) return;
     if (!navigator.geolocation) return window.alert('This device does not support GPS location. Use a GPS-enabled phone or browser.');
     setCollectorActionBusy(client.id);
     navigator.geolocation.getCurrentPosition(
@@ -310,6 +313,7 @@ const NewDashboardPage: React.FC = () => {
           });
           window.alert(`Exact location saved for ${client.full_name}. GPS accuracy: approximately ${Math.round(position.coords.accuracy)} meters.`);
           await Promise.all([fetchCollectorClients(collectorSearch), fetchLocations()]);
+          setLocationCaptureTarget(null);
         } catch (error: any) {
           window.alert(error.response?.data?.message || 'Could not update client coordinates.');
         } finally { setCollectorActionBusy(null); }
@@ -456,6 +460,16 @@ const NewDashboardPage: React.FC = () => {
           </div>
           {selectedLocation && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 p-3 text-sm"><span className="text-muted-foreground">Selected: <b className="text-foreground">{selectedLocation.full_name}</b> · {selectedLocation.latitude.toFixed(6)}, {selectedLocation.longitude.toFixed(6)}</span><button type="button" onClick={() => openNavigation(selectedLocation)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Navigation className="h-3.5 w-3.5" />Open Google Maps</button></div>}
         </section>}
+
+        {locationCaptureTarget && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/55 p-4 backdrop-blur-sm sm:items-center sm:justify-center">
+          <section className="w-full max-w-md overflow-hidden rounded-3xl border border-white/15 bg-card shadow-2xl">
+            <div className="relative overflow-hidden bg-gradient-to-br from-primary via-cyan-600 to-blue-700 p-6 text-primary-foreground">
+              <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-white/10 blur-2xl" />
+              <div className="relative flex items-start gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25"><MapPin className="h-6 w-6" /></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/75">Exact installation point</p><h2 className="mt-1 text-xl font-bold">Capture client location</h2><p className="mt-2 text-sm leading-5 text-white/85">Use your current device GPS only while standing at the installation address.</p></div></div>
+            </div>
+            <div className="space-y-4 p-6"><div className="rounded-2xl border border-border bg-muted/40 p-4"><p className="font-semibold text-foreground">{locationCaptureTarget.full_name}</p><p className="mt-1 text-sm text-muted-foreground">{locationCaptureTarget.account_number} · {locationCaptureTarget.address || 'Address not recorded'}</p></div><div className="flex gap-3 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" /><p>SolarNet saves one GPS coordinate and its accuracy for this client. It does not track the collector continuously.</p></div><p className="text-sm leading-6 text-muted-foreground">Confirm only after you have arrived at the client’s exact location. Your browser will ask for location permission if it has not been granted.</p><div className="flex gap-3 pt-1"><button type="button" disabled={collectorActionBusy === locationCaptureTarget.id} onClick={() => setLocationCaptureTarget(null)} className="flex-1 rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">Cancel</button><button type="button" disabled={collectorActionBusy === locationCaptureTarget.id} onClick={() => void captureCollectorLocation()} className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 disabled:opacity-60">{collectorActionBusy === locationCaptureTarget.id ? 'Getting GPS…' : 'Proceed & capture'}</button></div></div>
+          </section>
+        </div>}
       </div>
     </DashboardLayout>
   );
