@@ -35,15 +35,15 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { name: 'Users', path: '/users', icon: Users, permission: 'view-users' },
   { name: 'Customers', path: '/customers', icon: UserRound, permission: 'view-customers' },
-  { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
-  { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
-  { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Billing', path: '/billing', icon: PhilippinePeso, permission: 'view-invoices' },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
+  { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
+  { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
+  { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
+  { name: 'Users', path: '/users', icon: Users, permission: 'view-users' },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
 ];
 
