@@ -185,8 +185,6 @@ const NewDashboardPageContent: React.FC = () => {
   const [query, setQuery] = useState('');
   const [clientMonitor, setClientMonitor] = useState<ClientMonitor[]>([]);
   const [trafficHistory, setTrafficHistory] = useState<Record<string, TrafficSample[]>>({});
-  const [monitorUpdatedAt, setMonitorUpdatedAt] = useState<string | null>(null);
-  const [monitorPolling, setMonitorPolling] = useState(false);
   const [locations, setLocations] = useState<ClientLocation[]>([]);
   const [locationQuery, setLocationQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<ClientLocation | null>(null);
@@ -216,7 +214,6 @@ const NewDashboardPageContent: React.FC = () => {
     if (monitorRequestInFlight.current) return;
 
     monitorRequestInFlight.current = true;
-    setMonitorPolling(true);
     try {
       // The timestamp prevents an intermediary from returning a cached queue
       // snapshot. The backend polls the actual RouterOS Simple Queue counters.
@@ -233,13 +230,11 @@ const NewDashboardPageContent: React.FC = () => {
         });
         return next;
       });
-      setMonitorUpdatedAt(response.data.refreshed_at ?? new Date().toISOString());
     } catch (error) {
       // Preserve the last good counters when a router is temporarily offline.
       logger.error('Failed to refresh client queue monitor', error);
     } finally {
       monitorRequestInFlight.current = false;
-      setMonitorPolling(false);
     }
   }, []);
 
