@@ -80,6 +80,7 @@ Route::prefix('v1')->group(function () {
             Route::post('customer-profile-change-requests/{id}/approve', [CustomerController::class, 'approveProfileChangeRequest']);
             Route::post('customer-profile-change-requests/{id}/reject', [CustomerController::class, 'rejectProfileChangeRequest']);
         });
+        Route::get('super-admin/client-migrations/template', [ClientMigrationController::class, 'template'])->middleware('role:super_admin');
         Route::post('super-admin/client-migrations/preview', [ClientMigrationController::class, 'preview'])->middleware('role:super_admin');
         
         // Role routes (admin only)

@@ -14,6 +14,7 @@ import {
   Ticket,
   UserRound,
   Users,
+  Upload,
   Wifi,
   X,
   type LucideIcon,
@@ -47,6 +48,7 @@ const navItems: NavItem[] = [
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Users', path: '/users', icon: Users, permission: 'view-users' },
+  { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
 ];
 
