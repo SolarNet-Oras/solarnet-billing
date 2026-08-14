@@ -180,6 +180,10 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['role:collector'])->prefix('collector')->group(function () {
             Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
             Route::get('locations', [RemittanceController::class, 'collectorLocations']);
+            Route::get('clients', [RemittanceController::class, 'collectorClients']);
+            Route::put('clients/{id}/location', [RemittanceController::class, 'updateCollectorLocation']);
+            Route::post('clients/{id}/plan-change-request', [RemittanceController::class, 'requestCollectorPlanChange']);
+            Route::post('clients/{id}/early-invoice', [RemittanceController::class, 'createCollectorEarlyInvoice']);
             Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
             Route::post('invoices/{id}/gcash-checkout', [RemittanceController::class, 'startGcashCheckout']);
             Route::post('invoices/{id}/gcash-checkouts/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileGcashCheckout']);

@@ -4,14 +4,18 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\Customer;
+use App\Models\CustomerProfileChangeRequest;
 use App\Models\Payment;
 use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
+use App\Models\ServicePlan;
 use App\Services\InvoiceService;
 use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 
 class RemittanceController extends Controller
 {
@@ -59,6 +63,79 @@ class RemittanceController extends Controller
             ]);
 
         return response()->json(['data' => $customers]);
+    }
+
+    /** Read-only client lookup for collection staff. */
+    public function collectorClients(Request $request): JsonResponse
+    {
+        $term = trim((string) $request->query('q', ''));
+        $customers = Customer::with('servicePlan:id,name,price,download_speed,upload_speed')
+            ->when($term !== '', fn ($query) => $query->where(function ($query) use ($term) {
+                $query->where('full_name', 'ilike', "%{$term}%")
+                    ->orWhere('account_number', 'ilike', "%{$term}%")
+                    ->orWhere('address', 'ilike', "%{$term}%")
+                    ->orWhere('contact_number', 'ilike', "%{$term}%");
+            }))
+            ->orderBy('full_name')
+            ->limit(20)
+            ->get(['id', 'account_number', 'full_name', 'address', 'contact_number', 'status', 'service_plan_id', 'gps_coordinates']);
+
+        return response()->json([
+            'data' => $customers,
+            'service_plans' => ServicePlan::where('is_active', true)->orderBy('price')->get(['id', 'name', 'price', 'download_speed', 'upload_speed']),
+        ]);
+    }
+
+    /** Collectors may update only an installation point, never account status or profile fields. */
+    public function updateCollectorLocation(Request $request, string $customerId): JsonResponse
+    {
+        $data = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+        ]);
+        $customer = Customer::findOrFail($customerId);
+        $customer->update([
+            'gps_coordinates' => ['latitude' => (float) $data['latitude'], 'longitude' => (float) $data['longitude']],
+            'location_status' => 'confirmed',
+            'location_source' => 'collector',
+            'location_confirmed_at' => now(),
+        ]);
+
+        return response()->json(['message' => 'Client installation coordinates updated.', 'customer' => $customer->fresh()]);
+    }
+
+    /** Queue a plan upgrade/downgrade for administrator approval. */
+    public function requestCollectorPlanChange(Request $request, string $customerId): JsonResponse
+    {
+        $data = $request->validate(['service_plan_id' => 'required|uuid|exists:service_plans,id']);
+        $customer = Customer::findOrFail($customerId);
+        abort_if($customer->service_plan_id === $data['service_plan_id'], 422, 'Choose a different service plan.');
+        abort_unless(ServicePlan::whereKey($data['service_plan_id'])->where('is_active', true)->exists(), 422, 'The selected service plan is not available.');
+
+        $change = CustomerProfileChangeRequest::updateOrCreate(
+            ['customer_id' => $customer->id, 'status' => 'pending'],
+            ['requested_full_name' => null, 'requested_service_plan_id' => $data['service_plan_id'], 'reviewed_by' => null, 'reviewed_at' => null, 'review_notes' => null],
+        );
+
+        return response()->json(['message' => 'Plan change request sent for administrator approval.', 'request' => $change->fresh('requestedServicePlan')], 201);
+    }
+
+    /** Create one payable future-period invoice for a client before it becomes due. */
+    public function createCollectorEarlyInvoice(string $customerId, InvoiceService $invoices): JsonResponse
+    {
+        $customer = Customer::with('servicePlan')->findOrFail($customerId);
+        abort_unless($customer->servicePlan || $customer->monthly_fee > 0, 422, 'This client has no billable service plan.');
+        $openInvoice = Invoice::where('customer_id', $customer->id)
+            ->where('balance', '>', 0)
+            ->whereIn('status', ['draft', 'sent', 'partial', 'overdue'])
+            ->first();
+        abort_if($openInvoice, 422, 'This client already has an unpaid invoice. Use that invoice for payment.');
+
+        $start = Carbon::today();
+        $invoice = $invoices->generateInvoice($customer, $start, $start->copy()->addMonthNoOverflow()->subDay(), [], now(), now());
+        $invoice->update(['status' => 'sent', 'notes' => 'Early payment invoice created by collector.']);
+
+        return response()->json(['message' => 'Early payment invoice created.', 'invoice' => $invoice->fresh(['customer', 'items'])], 201);
     }
 
     public function collect(Request $request, string $invoiceId, InvoiceService $invoices): JsonResponse

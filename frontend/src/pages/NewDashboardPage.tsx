@@ -77,6 +77,19 @@ interface ClientLocation {
   longitude: number;
 }
 
+interface CollectorClient {
+  id: string;
+  account_number: string;
+  full_name: string;
+  address: string | null;
+  contact_number: string | null;
+  status: string;
+  gps_coordinates: { latitude: number; longitude: number } | null;
+  service_plan: { id: string; name: string; price: number; download_speed: number; upload_speed: number } | null;
+}
+
+interface PlanOption { id: string; name: string; price: number; download_speed: number; upload_speed: number }
+
 const peso = (value: number): string =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value);
 
@@ -176,6 +189,11 @@ const NewDashboardPage: React.FC = () => {
   const [locations, setLocations] = useState<ClientLocation[]>([]);
   const [locationQuery, setLocationQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<ClientLocation | null>(null);
+  const [collectorSearch, setCollectorSearch] = useState('');
+  const [collectorClients, setCollectorClients] = useState<CollectorClient[]>([]);
+  const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+  const [selectedPlans, setSelectedPlans] = useState<Record<string, string>>({});
+  const [collectorActionBusy, setCollectorActionBusy] = useState<string | null>(null);
   const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
@@ -234,6 +252,16 @@ const NewDashboardPage: React.FC = () => {
     }
   }, []);
 
+  const fetchCollectorClients = useCallback(async (term = ''): Promise<void> => {
+    try {
+      const response = await api.get<{ data: CollectorClient[]; service_plans: PlanOption[] }>('/collector/clients', { params: { q: term } });
+      setCollectorClients(response.data.data ?? []);
+      setPlanOptions(response.data.service_plans ?? []);
+    } catch (error) {
+      logger.error('Failed to search collector clients', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMetrics();
     const interval = window.setInterval(() => fetchMetrics(), 30000);
@@ -249,6 +277,8 @@ const NewDashboardPage: React.FC = () => {
     const interval = window.setInterval(fetchClientMonitor, 5000);
     return () => window.clearInterval(interval);
   }, [collector, fetchClientMonitor, fetchLocations]);
+
+  useEffect(() => { if (collector) void fetchCollectorClients(); }, [collector, fetchCollectorClients]);
 
   const customers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -266,6 +296,31 @@ const NewDashboardPage: React.FC = () => {
     return term ? locations.filter((location) => [location.full_name, location.account_number, location.address].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))) : locations;
   }, [locations, locationQuery]);
   const openNavigation = (location: ClientLocation) => window.open(`https://www.google.com/maps/dir/?api=1&destination=${location.latitude},${location.longitude}`, '_blank', 'noopener,noreferrer');
+  const updateCollectorLocation = async (client: CollectorClient) => {
+    const raw = window.prompt('Enter latitude and longitude, separated by a comma.', client.gps_coordinates ? `${client.gps_coordinates.latitude}, ${client.gps_coordinates.longitude}` : '');
+    if (!raw) return;
+    const [latitude, longitude] = raw.split(',').map((value) => Number(value.trim()));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return window.alert('Enter valid coordinates in this format: 12.345678, 125.678901');
+    setCollectorActionBusy(client.id);
+    try { await api.put(`/collector/clients/${client.id}/location`, { latitude, longitude }); window.alert('Coordinates updated.'); await Promise.all([fetchCollectorClients(collectorSearch), fetchLocations()]); }
+    catch (error: any) { window.alert(error.response?.data?.message || 'Could not update client coordinates.'); }
+    finally { setCollectorActionBusy(null); }
+  };
+  const requestPlanChange = async (client: CollectorClient) => {
+    const servicePlanId = selectedPlans[client.id];
+    if (!servicePlanId) return window.alert('Choose a requested service plan first.');
+    setCollectorActionBusy(client.id);
+    try { await api.post(`/collector/clients/${client.id}/plan-change-request`, { service_plan_id: servicePlanId }); window.alert('Plan change request sent for administrator approval.'); }
+    catch (error: any) { window.alert(error.response?.data?.message || 'Could not submit the plan change request.'); }
+    finally { setCollectorActionBusy(null); }
+  };
+  const createEarlyInvoice = async (client: CollectorClient) => {
+    if (!window.confirm(`Create an early payment invoice for ${client.full_name}?`)) return;
+    setCollectorActionBusy(client.id);
+    try { const response = await api.post(`/collector/clients/${client.id}/early-invoice`); window.alert(`${response.data.message} ${response.data.invoice?.invoice_number ?? ''}`); await fetchCollectorClients(collectorSearch); }
+    catch (error: any) { window.alert(error.response?.data?.message || 'Could not create the early invoice.'); }
+    finally { setCollectorActionBusy(null); }
+  };
 
   return (
     <DashboardLayout headerTitle="Client & billing overview" headerSubtitle="A real-time view of your subscribers, collections, and network readiness.">
@@ -290,7 +345,7 @@ const NewDashboardPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="grid gap-2 lg:grid-cols-2">
+        {!collector && <section className="grid gap-2 lg:grid-cols-2">
           <div className="rounded-md border border-border/70 bg-card p-2.5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -324,7 +379,15 @@ const NewDashboardPage: React.FC = () => {
               ].map(([label, value]) => <div key={label} className="flex items-center justify-between py-1 text-[11px]"><span className="text-muted-foreground">{label}</span><span className="font-semibold tabular-nums text-foreground">{value}</span></div>)}
             </div>
           </div>
-        </section>
+        </section>}
+
+        {collector && <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-border/70 p-4 md:flex-row md:items-center md:justify-between">
+            <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Collection workspace</p><h2 className="mt-1 text-lg font-semibold text-foreground">Search client & status</h2><p className="mt-1 text-sm text-muted-foreground">View account status, capture an installation point, request a speed change, or create an early payment invoice. Status changes remain administrator-only.</p></div>
+            <form onSubmit={(event) => { event.preventDefault(); void fetchCollectorClients(collectorSearch); }} className="relative w-full md:w-80"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={collectorSearch} onChange={(event) => setCollectorSearch(event.target.value)} placeholder="Client name, account, address" className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-16 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /><button className="absolute right-1 top-1 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground">Find</button></form>
+          </div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="bg-muted/45 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">Address</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Current plan</th><th className="px-4 py-3">Collector actions</th></tr></thead><tbody className="divide-y divide-border/70">{collectorClients.map((client) => <tr key={client.id}><td className="px-4 py-3"><p className="font-semibold text-foreground">{client.full_name}</p><p className="text-xs text-muted-foreground">{client.account_number} · {client.contact_number || 'No contact'}</p></td><td className="px-4 py-3 text-xs text-muted-foreground">{client.address || 'Not recorded'}<button type="button" disabled={collectorActionBusy === client.id} onClick={() => void updateCollectorLocation(client)} className="mt-1 block text-primary hover:underline">{client.gps_coordinates ? 'Update coordinates' : 'Add coordinates'}</button></td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs font-semibold capitalize text-foreground">{client.status}</span><p className="mt-1 text-[10px] text-muted-foreground">View only</p></td><td className="px-4 py-3 text-xs"><p className="font-medium text-foreground">{client.service_plan?.name || 'No plan'}</p><p className="text-muted-foreground">{client.service_plan ? `${client.service_plan.download_speed}/${client.service_plan.upload_speed} Mbps · ${peso(client.service_plan.price)}` : '—'}</p></td><td className="px-4 py-3"><div className="flex min-w-[250px] flex-wrap gap-2"><button type="button" disabled={collectorActionBusy === client.id} onClick={() => void createEarlyInvoice(client)} className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60">Create early invoice</button><select value={selectedPlans[client.id] || ''} onChange={(event) => setSelectedPlans((current) => ({ ...current, [client.id]: event.target.value }))} className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs"><option value="">Request plan…</option>{planOptions.filter((plan) => plan.id !== client.service_plan?.id).map((plan) => <option value={plan.id} key={plan.id}>{plan.name} · {peso(plan.price)}</option>)}</select><button type="button" disabled={collectorActionBusy === client.id} onClick={() => void requestPlanChange(client)} className="rounded-lg border border-primary/30 px-2.5 py-1.5 text-xs font-semibold text-primary disabled:opacity-60">Send request</button></div></td></tr>)}{collectorClients.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-muted-foreground">No matching clients found.</td></tr>}</tbody></table></div>
+        </section>}
 
         {!collector && <section className="order-last rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
