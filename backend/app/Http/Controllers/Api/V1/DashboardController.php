@@ -32,7 +32,10 @@ class DashboardController extends Controller
                 $query->where('assigned_to', $technicianId)
                     ->orWhere(function ($installation) {
                         $installation->whereNull('assigned_to')
-                            ->where('subject', 'like', 'New Installation Application%');
+                            ->where(function ($fieldWork) {
+                                $fieldWork->where('subject', 'like', 'New Installation Application%')
+                                    ->orWhereIn('category', ['technical', 'network_issue']);
+                            });
                     });
             })
             ->whereNotIn('status', ['closed', 'resolved'])
