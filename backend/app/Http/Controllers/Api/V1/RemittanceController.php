@@ -152,7 +152,7 @@ class RemittanceController extends Controller
     {
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|in:cash,bank_transfer,mobile_money',
+            'payment_method' => 'required|in:cash,bank_transfer',
             'reference' => 'nullable|string|max:255',
             'transaction_id' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
