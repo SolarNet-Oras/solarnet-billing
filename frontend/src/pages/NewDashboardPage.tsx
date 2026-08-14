@@ -157,7 +157,7 @@ const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history:
       <path d={path('download')} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
       <path d={path('upload')} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
     </svg>
-    <p className="mt-0.5 text-[10px] text-muted-foreground">Blue download · Red upload · 5s samples</p>
+    <p className="mt-0.5 text-[10px] text-muted-foreground">Blue download · Red upload · 2s samples</p>
   </div>;
 };
 
@@ -276,7 +276,7 @@ const NewDashboardPageContent: React.FC = () => {
       return;
     }
     fetchClientMonitor();
-    const interval = window.setInterval(fetchClientMonitor, 5000);
+    const interval = window.setInterval(fetchClientMonitor, 2000);
     return () => window.clearInterval(interval);
   }, [collector, fetchClientMonitor, fetchLocations]);
 
