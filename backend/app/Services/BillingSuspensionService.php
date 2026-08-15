@@ -101,10 +101,17 @@ class BillingSuspensionService
         }
 
         $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
-        $cutoff = now()->subDays($graceDays)->startOfDay();
+        $cutoff = now(config('app.timezone', 'Asia/Manila'))->subDays($graceDays)->startOfDay();
 
         $customers = Customer::query()
             ->with(['servicePlan', 'router'])
+            // New/pending applications must never be suspended by recurring
+            // billing automation. Include existing automated restrictions so
+            // they can be reconciled or restored after a qualifying payment.
+            ->where(function ($query) {
+                $query->where('status', 'active')
+                    ->orWhere('suspension_source', 'automation');
+            })
             ->where(function ($query) use ($cutoff) {
                 $query->where('suspension_source', 'automation')
                     ->orWhereExists(function ($invoiceQuery) use ($cutoff) {
@@ -113,15 +120,7 @@ class BillingSuspensionService
                             ->whereColumn('invoices.customer_id', 'customers.id')
                             ->where('invoices.balance', '>', 0)
                             ->where('invoices.due_date', '<', $cutoff)
-                            ->whereIn('invoices.status', ['sent', 'partial', 'overdue'])
-                            // A partial payment restores service for this
-                            // billing period. A later unpaid invoice can still
-                            // trigger automation after its own grace period.
-                            ->whereNotExists(function ($paymentQuery) {
-                                $paymentQuery->selectRaw('1')
-                                    ->from('payments')
-                                    ->whereColumn('payments.invoice_id', 'invoices.id');
-                            });
+                            ->whereIn('invoices.status', ['sent', 'partial', 'overdue']);
                     });
             })
             ->get();
@@ -145,7 +144,7 @@ class BillingSuspensionService
                     continue;
                 }
 
-                if ($customer->suspension_source === 'automation' && $billingState['outstanding_balance'] <= 0) {
+                if ($customer->suspension_source === 'automation' && !$billingState['should_suspend']) {
                     $this->restoreCustomer($customer, 'payment_confirmed');
                     $summary['restored']++;
                 }
@@ -166,9 +165,11 @@ class BillingSuspensionService
         $customer->loadMissing(['servicePlan', 'router']);
         $billingState = $this->billingState($customer);
 
-        // Status chosen by an operator always wins. Do not restore a manually
-        // suspended/expired client merely because the due date has not passed.
-        if (in_array($customer->status, ['suspended', 'expired'], true)) {
+        // Status chosen by an operator always wins. Automated suspensions are
+        // different: they may be restored only after no invoice is still past
+        // its configurable grace period.
+        if (in_array($customer->status, ['suspended', 'expired'], true)
+            && $customer->suspension_source !== 'automation') {
             return $this->suspendCustomer(
                 $customer,
                 $billingState,
@@ -332,24 +333,20 @@ class BillingSuspensionService
             ->value('due_date');
 
         $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
-        $oldestUnpaidDue = Invoice::query()
+        $oldestEligibleDue = Invoice::query()
             ->where('customer_id', $customer->id)
             ->where('balance', '>', 0)
             ->whereIn('status', ['sent', 'partial', 'overdue'])
-            ->whereNotExists(function ($paymentQuery) {
-                $paymentQuery->selectRaw('1')
-                    ->from('payments')
-                    ->whereColumn('payments.invoice_id', 'invoices.id');
-            })
             ->orderBy('due_date')
             ->value('due_date');
-        $shouldSuspend = $oldestUnpaidDue !== null
-            && Carbon::parse($oldestUnpaidDue)->startOfDay()->lt(now()->subDays($graceDays)->startOfDay());
+        $shouldSuspend = $oldestEligibleDue !== null
+            && Carbon::parse($oldestEligibleDue, config('app.timezone', 'Asia/Manila'))->startOfDay()
+                ->lt(now(config('app.timezone', 'Asia/Manila'))->subDays($graceDays)->startOfDay());
 
         return [
             'outstanding_balance' => $outstanding,
             'oldest_due_date' => $oldestDue,
-            'oldest_unpaid_due_date' => $oldestUnpaidDue,
+            'oldest_unpaid_due_date' => $oldestEligibleDue,
             'should_suspend' => $shouldSuspend,
         ];
     }

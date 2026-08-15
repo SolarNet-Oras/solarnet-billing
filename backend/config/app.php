@@ -65,7 +65,9 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Billing dates, anniversary cycles, due dates, and scheduled commands are
+    // business dates. Keep their default clock aligned with the Philippines.
+    'timezone' => env('APP_TIMEZONE', 'Asia/Manila'),
 
     /*
     |--------------------------------------------------------------------------

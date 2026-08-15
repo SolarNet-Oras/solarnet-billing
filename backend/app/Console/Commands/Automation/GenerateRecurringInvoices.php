@@ -13,7 +13,7 @@ use Illuminate\Console\Command;
 
 /**
  * Creates one sent invoice each month on the customer's installation-day
- * anniversary. For example: installed June 1 -> the July 1 invoice is due July 1.
+ * anniversary. Due dates use the configurable billing.due_days setting.
  */
 class GenerateRecurringInvoices extends Command
 {
@@ -46,23 +46,35 @@ class GenerateRecurringInvoices extends Command
             return ['skipped' => true, 'reason' => 'Recurring billing automation is disabled'];
         }
 
+        $timezone = config('app.timezone', 'Asia/Manila');
         $dateOption = $this->option('date');
-        $billingDate = $dateOption ? Carbon::createFromFormat('Y-m-d', $dateOption)->startOfDay() : now()->startOfDay();
+        $billingDate = $dateOption
+            ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()
+            : now($timezone)->startOfDay();
         $dryRun = (bool) $this->option('dry-run');
 
         $customers = Customer::active()
             ->whereNotNull('installation_date')
-            ->whereDay('installation_date', $billingDate->day)
             ->whereDate('installation_date', '<=', $billingDate)
             ->with('servicePlan')
-            ->get();
+            ->get()
+            // An installation on the 29th–31st bills on the final valid day of
+            // a shorter month. This is the normal anniversary rule and avoids
+            // silently skipping customers in February.
+            ->filter(fn (Customer $customer) => min(
+                $customer->installation_date->day,
+                $billingDate->daysInMonth,
+            ) === $billingDate->day);
 
         $generated = [];
         $skipped = 0;
         $errors = [];
         foreach ($customers as $customer) {
-            // A customer can only receive one invoice for the same due date.
-            if (Invoice::where('customer_id', $customer->id)->whereDate('due_date', $billingDate)->exists()) {
+            // The recurring-cycle key is authoritative. Do not use a generic
+            // due date here: an early/manual invoice may legitimately share it.
+            if (Invoice::where('customer_id', $customer->id)
+                ->whereDate('recurring_cycle_date', $billingDate)
+                ->exists()) {
                 $skipped++;
                 continue;
             }
@@ -81,7 +93,7 @@ class GenerateRecurringInvoices extends Command
                         $billingDate,
                         [],
                         $billingDate,
-                        $billingDate,
+                        $billingDate->copy()->addDays((int) Setting::get('billing.due_days', 7)),
                         $billingDate,
                     );
                     $invoices->markAsSent($invoice);

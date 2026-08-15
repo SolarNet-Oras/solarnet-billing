@@ -50,8 +50,8 @@ class InvoiceService
             $invoice = Invoice::create([
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'customer_id' => $customer->id,
-                'issue_date' => $issueDate ?? now(),
-                'due_date' => $dueDate ?? now()->addDays((int) Setting::get('billing.due_days', 7)),
+                'issue_date' => $issueDate ?? now(config('app.timezone', 'Asia/Manila')),
+                'due_date' => $dueDate ?? now(config('app.timezone', 'Asia/Manila'))->addDays((int) Setting::get('billing.due_days', 7)),
                 'billing_period_start' => $billingPeriodStart,
                 'billing_period_end' => $billingPeriodEnd,
                 'recurring_cycle_date' => $recurringCycleDate,
@@ -132,14 +132,20 @@ class InvoiceService
      */
     public function generateRecurringInvoices(?Carbon $billingDate = null): array
     {
-        $billingDate = $billingDate ?? now();
-        $billingPeriodStart = $billingDate->copy()->startOfMonth();
-        $billingPeriodEnd = $billingDate->copy()->endOfMonth();
+        $billingDate = ($billingDate ?? now(config('app.timezone', 'Asia/Manila')))
+            ->copy()
+            ->setTimezone(config('app.timezone', 'Asia/Manila'))
+            ->startOfDay();
 
         $customers = Customer::where('status', 'active')
-                           ->whereNotNull('service_plan_id')
+                           ->whereNotNull('installation_date')
+                           ->whereDate('installation_date', '<=', $billingDate)
                            ->with('servicePlan')
-                           ->get();
+                           ->get()
+                           ->filter(fn (Customer $customer) => min(
+                               $customer->installation_date->day,
+                               $billingDate->daysInMonth,
+                           ) === $billingDate->day);
 
         $results = [
             'total' => $customers->count(),
@@ -150,10 +156,15 @@ class InvoiceService
 
         foreach ($customers as $customer) {
             try {
-                // Check if invoice already exists for this period
+                if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
+                    $results['skipped']++;
+                    continue;
+                }
+
+                // The recurring-cycle date is an idempotency key. A one-off
+                // invoice must not prevent the normal monthly cycle.
                 $existingInvoice = Invoice::where('customer_id', $customer->id)
-                    ->where('billing_period_start', $billingPeriodStart)
-                    ->where('billing_period_end', $billingPeriodEnd)
+                    ->whereDate('recurring_cycle_date', $billingDate)
                     ->first();
 
                 if ($existingInvoice) {
@@ -161,7 +172,16 @@ class InvoiceService
                     continue;
                 }
 
-                $this->generateInvoice($customer, $billingPeriodStart, $billingPeriodEnd, [], null, null, $billingDate->copy()->startOfDay());
+                $invoice = $this->generateInvoice(
+                    $customer,
+                    $billingDate->copy()->subMonthNoOverflow(),
+                    $billingDate,
+                    [],
+                    $billingDate,
+                    $billingDate->copy()->addDays((int) Setting::get('billing.due_days', 7)),
+                    $billingDate,
+                );
+                $this->markAsSent($invoice);
                 $results['generated']++;
 
             } catch (\Exception $e) {
@@ -221,8 +241,8 @@ class InvoiceService
      */
     public function updateOverdueInvoices(): int
     {
-        return Invoice::where('status', 'sent')
-            ->where('due_date', '<', now())
+        return Invoice::whereIn('status', ['sent', 'partial'])
+            ->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->where('balance', '>', 0)
             ->update(['status' => 'overdue']);
     }
@@ -313,21 +333,16 @@ class InvoiceService
 
             $invoice->save();
 
-            // Any recorded payment, including a partial cash payment, restores
-            // a billing-suspended customer. The suspension service recognises
-            // the payment on this invoice, so it will not immediately suspend
-            // the customer again for the same billing period.
+            // A payment is not automatically a reason to restore service. The
+            // suspension service re-evaluates every unpaid invoice after the
+            // transaction commits, so another eligible overdue balance keeps
+            // the customer restricted.
             $customer = $invoice->customer;
             if ($customer) {
-                $restoreAfterPayment = in_array($customer->status, ['suspended', 'expired'], true);
-                DB::afterCommit(function () use ($customer, $restoreAfterPayment) {
+                DB::afterCommit(function () use ($customer) {
                     try {
                         $freshCustomer = $customer->fresh(['servicePlan', 'router']);
-                        if ($restoreAfterPayment) {
-                            app(BillingSuspensionService::class)->restoreCustomer($freshCustomer, 'payment_recorded');
-                        } else {
-                            app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($freshCustomer);
-                        }
+                        app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($freshCustomer);
                     } catch (\Throwable $e) {
                         Log::warning('Deferred customer network sync after payment failed', [
                             'customer_id' => $customer->id,
