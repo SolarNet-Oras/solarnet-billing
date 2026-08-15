@@ -8,6 +8,7 @@ import {
 } from '@/services/historicalCleanupService';
 
 const MODULES: Array<{ value: HistoricalCleanupModule; label: string; detail: string }> = [
+  { value: 'past_transactions', label: 'Past transactions', detail: 'Only standalone payments without an invoice, remittance, or customer credit.' },
   { value: 'daily_operations', label: 'Daily-operation records', detail: 'Historical operational entries only.' },
   { value: 'invoices', label: 'Cancelled invoices', detail: 'Only cancelled invoices without payments.' },
   { value: 'tickets', label: 'Closed repair tickets', detail: 'Closed repair tickets and their child comments/history.' },

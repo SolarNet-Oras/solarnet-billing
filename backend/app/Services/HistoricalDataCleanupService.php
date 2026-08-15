@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\FinancialEntry;
 use App\Models\HistoricalCleanupAudit;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Remittance;
 use App\Models\Ticket;
 use App\Models\User;
@@ -26,6 +28,7 @@ class HistoricalDataCleanupService
     private const TOKEN_TTL_SECONDS = 600;
 
     public const MODULES = [
+        'past_transactions' => 'Past transaction records',
         'daily_operations' => 'Daily-operation entries',
         'invoices' => 'Cancelled unpaid invoices',
         'tickets' => 'Closed repair tickets',
@@ -153,6 +156,11 @@ class HistoricalDataCleanupService
         $scopes = [];
         foreach ($modules as $module) {
             $scopes[$module] = match ($module) {
+                'past_transactions' => Payment::query()
+                    ->whereNull('invoice_id')
+                    ->whereNull('remittance_id')
+                    ->whereNotIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'))
+                    ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()]),
                 'daily_operations' => FinancialEntry::query()->whereBetween('entry_date', [$from->toDateString(), $to->toDateString()]),
                 'invoices' => Invoice::query()->where('status', 'cancelled')->whereDoesntHave('payments')->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]),
                 'tickets' => Ticket::query()->where('ticket_type', '!=', 'installation')->where('status', 'closed')->whereBetween('closed_at', [$from, $to]),
@@ -166,6 +174,13 @@ class HistoricalDataCleanupService
     private function blockedCount(string $module, Carbon $from, Carbon $to): int
     {
         return match ($module) {
+            'past_transactions' => Payment::query()
+                ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
+                ->where(function ($query) {
+                    $query->whereNotNull('invoice_id')
+                        ->orWhereNotNull('remittance_id')
+                        ->orWhereIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'));
+                })->count(),
             'invoices' => Invoice::query()->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])->where(fn ($q) => $q->where('status', '!=', 'cancelled')->orWhereHas('payments'))->count(),
             'liquidations' => Remittance::query()->whereBetween('submitted_at', [$from, $to])->whereHas('payments')->count(),
             default => 0,
