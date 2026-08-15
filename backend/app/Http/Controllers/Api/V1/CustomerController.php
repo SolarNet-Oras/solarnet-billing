@@ -187,11 +187,10 @@ class CustomerController extends Controller
             $emailSent = $this->accountService->sendWelcomeEmail($customer, $plainPassword);
         }
 
-        // A newly registered active customer is immediately part of the
-        // billing ledger. If their installation-day anniversary is today (or
-        // has already passed this month), create the missing monthly invoice
-        // now instead of making staff wait for tonight's scheduled run.
-        $billingInvoice = $this->createCurrentBillingInvoice($customer);
+        // The first month is used before it is billed. Create the initial
+        // invoice now for visibility, but its due/cycle date is the *next*
+        // installation anniversary (e.g. Aug 14 installation -> Sep 14 due).
+        $billingInvoice = $this->createInitialBillingInvoice($customer);
 
         // CustomerObserver queues the MikroTik work after the transaction.
         // Never wait for a router/VPN connection in this HTTP request.
@@ -237,8 +236,8 @@ class CustomerController extends Controller
         ], 201);
     }
 
-    /** Create the current installation-anniversary invoice when one is due. */
-    private function createCurrentBillingInvoice(Customer $customer): ?Invoice
+    /** Create the first invoice with the next monthly anniversary as its due date. */
+    private function createInitialBillingInvoice(Customer $customer): ?Invoice
     {
         if ($customer->status !== 'active' || !$customer->installation_date) {
             return null;
@@ -250,10 +249,11 @@ class CustomerController extends Controller
             return null;
         }
 
-        $dueDate = $today->copy()->setDay(min($installationDate->day, $today->daysInMonth));
-        if ($dueDate->isAfter($today) || Invoice::where('customer_id', $customer->id)->whereDate('due_date', $dueDate)->exists()) {
-            return null;
+        $dueDate = $installationDate->copy()->addMonthNoOverflow();
+        while ($dueDate->lte($today)) {
+            $dueDate->addMonthNoOverflow();
         }
+        if (Invoice::where('customer_id', $customer->id)->whereDate('recurring_cycle_date', $dueDate)->exists()) return null;
 
         $customer->loadMissing('servicePlan');
         if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
@@ -265,7 +265,7 @@ class CustomerController extends Controller
             $dueDate->copy()->subMonthNoOverflow(),
             $dueDate,
             [],
-            $dueDate,
+            $today,
             $dueDate,
             $dueDate,
         );
