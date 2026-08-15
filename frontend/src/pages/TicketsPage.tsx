@@ -157,8 +157,12 @@ const TicketsPage: React.FC = () => {
         return;
       }
       payload = { reason: reason.trim() };
-    } else if (!window.confirm(`Approve ${ticket.ticket_number}, bind MAC ${ticket.installation_mac}, and register this customer?`)) {
-      return;
+    } else {
+      if (!ticket.installation_validation?.can_approve) {
+        window.alert(ticket.installation_validation?.message || 'The MAC address must match one current bound DHCP lease before registration.');
+        return;
+      }
+      if (!window.confirm(`Approve ${ticket.ticket_number}, bind MAC ${ticket.installation_mac}, and register this customer?`)) return;
     }
 
     try {
@@ -172,6 +176,16 @@ const TicketsPage: React.FC = () => {
       const errors = error.response?.data?.errors;
       const firstError = errors ? Object.values(errors).flat()[0] : null;
       window.alert(String(firstError || error.response?.data?.message || 'Could not review this installation.'));
+    }
+  };
+
+  const refreshInstallationValidation = async (ticket: Ticket) => {
+    try {
+      const refreshed = await ticketService.getTicket(ticket.id);
+      setSelectedTicket(refreshed);
+      setInstallationApprovals((current) => current.map((item) => item.id === refreshed.id ? refreshed : item));
+    } catch (error: any) {
+      window.alert(error.response?.data?.message || 'Could not refresh the MAC validation status.');
     }
   };
 
@@ -330,7 +344,7 @@ const TicketsPage: React.FC = () => {
             <div><h2 className="font-semibold text-gray-900">Installation Approval</h2><p className="text-sm text-gray-600">Review technician-completed installations before customer registration and MikroTik synchronization.</p></div>
           </div>
           <div className="overflow-x-auto rounded-xl border border-violet-200 bg-white shadow-sm">
-            <table className="w-full text-sm"><thead className="bg-violet-50 text-xs uppercase tracking-wider text-violet-700"><tr><th className="px-4 py-3 text-left">Ticket</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Technician</th><th className="px-4 py-3 text-left">MAC address</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-violet-100">{installationApprovals.map((ticket) => <tr key={ticket.id}><td className="px-4 py-3 font-semibold text-gray-900">{ticket.ticket_number}</td><td className="px-4 py-3"><p className="font-medium">{ticket.customer?.full_name || 'Unknown'}</p><p className="text-xs text-gray-500">{ticket.customer?.address || 'No address'}</p></td><td className="px-4 py-3">{ticket.assigned_technician?.name || 'Unassigned'}</td><td className="px-4 py-3 font-mono">{ticket.installation_mac || 'Not supplied'}</td><td className="px-4 py-3 text-xs text-gray-500">{ticket.submitted_for_approval_at ? new Date(ticket.submitted_for_approval_at).toLocaleString() : '—'}</td><td className="px-4 py-3 text-right"><button onClick={() => { setSelectedTicket(ticket); setShowViewModal(true); }} className="font-semibold text-violet-700 hover:underline">Review</button></td></tr>)}{installationApprovals.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No installations are waiting for approval.</td></tr>}</tbody></table>
+            <table className="w-full text-sm"><thead className="bg-violet-50 text-xs uppercase tracking-wider text-violet-700"><tr><th className="px-4 py-3 text-left">Ticket</th><th className="px-4 py-3 text-left">Customer</th><th className="px-4 py-3 text-left">Technician</th><th className="px-4 py-3 text-left">MAC address</th><th className="px-4 py-3 text-left">Lease status</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-violet-100">{installationApprovals.map((ticket) => <tr key={ticket.id}><td className="px-4 py-3 font-semibold text-gray-900">{ticket.ticket_number}</td><td className="px-4 py-3"><p className="font-medium">{ticket.customer?.full_name || 'Unknown'}</p><p className="text-xs text-gray-500">{ticket.customer?.address || 'No address'}</p></td><td className="px-4 py-3">{ticket.assigned_technician?.name || 'Unassigned'}</td><td className="px-4 py-3 font-mono">{ticket.installation_mac || 'Not supplied'}</td><td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${ticket.installation_validation?.can_approve ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{ticket.installation_validation?.can_approve ? 'MATCHED' : 'NOT MATCHED'}</span></td><td className="px-4 py-3 text-xs text-gray-500">{ticket.submitted_for_approval_at ? new Date(ticket.submitted_for_approval_at).toLocaleString() : '—'}</td><td className="px-4 py-3 text-right"><button onClick={() => { setSelectedTicket(ticket); setShowViewModal(true); }} className="font-semibold text-violet-700 hover:underline">Review</button></td></tr>)}{installationApprovals.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No installations are waiting for approval.</td></tr>}</tbody></table>
           </div>
         </section>}
 
@@ -583,7 +597,8 @@ const TicketsPage: React.FC = () => {
                       </dl>
                       {selectedTicket.installation_notes && <div className="mt-3"><p className="text-xs font-semibold uppercase text-violet-700">Technician notes</p><p className="mt-1 whitespace-pre-wrap text-sm text-violet-950">{selectedTicket.installation_notes}</p></div>}
                       {selectedTicket.return_reason && <p className="mt-3 rounded-lg bg-orange-100 p-3 text-sm text-orange-900"><strong>Returned correction:</strong> {selectedTicket.return_reason}</p>}
-                      {canApproveInstallations && selectedTicket.workflow_status === 'waiting_admin_approval' && <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => void reviewInstallation(selectedTicket, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">APPROVE &amp; REGISTER CUSTOMER</button><button onClick={() => void reviewInstallation(selectedTicket, 'return')} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">RETURN FOR CORRECTION</button></div>}
+                      {selectedTicket.workflow_status === 'waiting_admin_approval' && <div className={`mt-4 rounded-xl border p-4 ${selectedTicket.installation_validation?.can_approve ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className={`font-bold ${selectedTicket.installation_validation?.can_approve ? 'text-emerald-800' : 'text-rose-800'}`}>{selectedTicket.installation_validation?.can_approve ? '✓ MAC MATCHED — READY TO REGISTER' : '✕ MAC NOT READY — REGISTRATION BLOCKED'}</p><p className="mt-1 text-sm text-gray-700">{selectedTicket.installation_validation?.message || 'Checking the current DHCP lease record is required.'}</p></div><button onClick={() => void refreshInstallationValidation(selectedTicket)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Refresh MAC check</button></div>{selectedTicket.installation_validation?.lease && <dl className="mt-3 grid gap-2 border-t border-black/10 pt-3 text-sm sm:grid-cols-2"><div><dt className="text-gray-500">Lease IP</dt><dd className="font-semibold">{selectedTicket.installation_validation.lease.ip_address || '—'}</dd></div><div><dt className="text-gray-500">Router</dt><dd className="font-semibold">{selectedTicket.installation_validation.lease.router_name || '—'}</dd></div><div><dt className="text-gray-500">DHCP hostname</dt><dd>{selectedTicket.installation_validation.lease.hostname || '—'}</dd></div><div><dt className="text-gray-500">DHCP comment</dt><dd>{selectedTicket.installation_validation.lease.comment || '—'}</dd></div></dl>}</div>}
+                      {canApproveInstallations && selectedTicket.workflow_status === 'waiting_admin_approval' && <div className="mt-4 flex flex-wrap gap-2"><button disabled={!selectedTicket.installation_validation?.can_approve} title={!selectedTicket.installation_validation?.can_approve ? 'A unique current bound DHCP lease match is required.' : undefined} onClick={() => void reviewInstallation(selectedTicket, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-400">APPROVE &amp; REGISTER CUSTOMER</button><button onClick={() => void reviewInstallation(selectedTicket, 'return')} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">RETURN FOR CORRECTION</button></div>}
                     </div>
                   )}
 

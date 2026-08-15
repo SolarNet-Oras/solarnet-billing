@@ -291,6 +291,25 @@ export interface Ticket {
   repair_details: Record<string, string> | null;
   installation_mac: string | null;
   installation_notes: string | null;
+  installation_validation?: {
+    can_approve: boolean;
+    status: string;
+    message: string;
+    normalized_mac: string | null;
+    match_count: number;
+    lease: {
+      id: string;
+      ip_address: string | null;
+      mac_address: string | null;
+      hostname: string | null;
+      comment: string | null;
+      router_name: string | null;
+      last_seen_at: string | null;
+      is_unregistered: boolean;
+      linked_to_application: boolean;
+    } | null;
+    existing_customer?: { id: string; account_number: string; full_name: string };
+  };
   submitted_for_approval_at: string | null;
   approved_at: string | null;
   return_reason: string | null;

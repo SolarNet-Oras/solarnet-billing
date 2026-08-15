@@ -179,6 +179,101 @@ class TicketWorkflowService
         return $result;
     }
 
+    /**
+     * Read-only preflight shown to administrators before registration.
+     * Approval repeats these checks under database locks, so this status can
+     * never replace the transaction-level safety checks below.
+     */
+    public function installationValidation(Ticket $ticket): array
+    {
+        $mac = $this->normalizeMac($ticket->installation_mac);
+        $base = [
+            'can_approve' => false,
+            'status' => 'invalid_mac',
+            'message' => 'The submitted MAC address is invalid.',
+            'normalized_mac' => $mac,
+            'match_count' => 0,
+            'lease' => null,
+        ];
+
+        if ($ticket->ticket_type !== 'installation' || $ticket->workflow_status !== 'waiting_admin_approval') {
+            return [...$base, 'status' => 'not_waiting', 'message' => 'This installation is not waiting for administrator approval.'];
+        }
+
+        if (! $mac) {
+            return $base;
+        }
+
+        $customer = Customer::withTrashed()->find($ticket->customer_id);
+        if (! $customer) {
+            return [...$base, 'status' => 'customer_missing', 'message' => 'The pending customer record no longer exists.'];
+        }
+
+        $duplicate = Customer::withTrashed()
+            ->where('id', '!=', $customer->id)
+            ->whereNotNull('mac_address')
+            ->get(['id', 'account_number', 'full_name', 'mac_address'])
+            ->first(fn (Customer $item) => $this->normalizeMac($item->mac_address) === $mac);
+
+        if ($duplicate) {
+            return [
+                ...$base,
+                'status' => 'registered_elsewhere',
+                'message' => "MAC address is already registered to {$duplicate->full_name} ({$duplicate->account_number}).",
+                'existing_customer' => $duplicate->only(['id', 'account_number', 'full_name']),
+            ];
+        }
+
+        $matches = DhcpLease::query()
+            ->with('router:id,name')
+            ->where('is_current', true)
+            ->where('status', 'bound')
+            ->get(['id', 'router_id', 'customer_id', 'mac_address', 'ip_address', 'hostname', 'comment', 'status', 'is_current', 'is_matched', 'last_seen_at'])
+            ->filter(fn (DhcpLease $lease) => $this->normalizeMac($lease->mac_address) === $mac)
+            ->values();
+
+        if ($matches->isEmpty()) {
+            return [...$base, 'status' => 'lease_not_found', 'message' => 'MAC not found in the current bound DHCP leases. Sync the correct MikroTik router, then check again.'];
+        }
+
+        if ($matches->count() > 1) {
+            return [...$base, 'status' => 'multiple_leases', 'message' => 'More than one current bound DHCP lease uses this MAC. Resolve the duplicate lease before approval.', 'match_count' => $matches->count()];
+        }
+
+        /** @var DhcpLease $lease */
+        $lease = $matches->first();
+        $leaseData = [
+            'id' => $lease->id,
+            'ip_address' => $lease->ip_address,
+            'mac_address' => $this->normalizeMac($lease->mac_address),
+            'hostname' => $lease->hostname,
+            'comment' => $lease->comment,
+            'router_name' => $lease->router?->name,
+            'last_seen_at' => $lease->last_seen_at?->toIso8601String(),
+            'is_unregistered' => ! $lease->customer_id,
+            'linked_to_application' => $lease->customer_id === $customer->id,
+        ];
+
+        if ($lease->customer_id && $lease->customer_id !== $customer->id) {
+            return [...$base, 'status' => 'lease_owned_elsewhere', 'message' => 'The matching DHCP lease is linked to another customer.', 'match_count' => 1, 'lease' => $leaseData];
+        }
+
+        if (! $customer->service_plan_id) {
+            return [...$base, 'status' => 'service_plan_missing', 'message' => 'Select a service plan for the pending customer before approval.', 'match_count' => 1, 'lease' => $leaseData];
+        }
+
+        return [
+            ...$base,
+            'can_approve' => true,
+            'status' => 'matched',
+            'message' => $lease->customer_id
+                ? 'MAC matched the current bound DHCP lease already linked to this application. Registration is safe to proceed.'
+                : 'MAC matched one unregistered current bound DHCP lease. Registration is safe to proceed.',
+            'match_count' => 1,
+            'lease' => $leaseData,
+        ];
+    }
+
     public function history(Ticket $ticket, ?User $user, string $action, ?string $previous, ?string $new, ?string $notes = null, array $metadata = []): void
     {
         TicketHistory::create([

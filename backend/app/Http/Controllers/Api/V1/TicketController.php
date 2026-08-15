@@ -23,12 +23,23 @@ class TicketController extends Controller
         if ($request->filled('category')) $query->where('category', $request->category);
         if ($request->filled('assigned_to')) $query->where('assigned_to', $request->assigned_to);
         if ($request->boolean('unassigned')) $query->whereNull('assigned_to');
-        return response()->json($query->latest()->paginate(min((int) $request->get('per_page', 15), 100)));
+        $tickets = $query->latest()->paginate(min((int) $request->get('per_page', 15), 100));
+        $tickets->getCollection()->each(function (Ticket $ticket): void {
+            if ($ticket->ticket_type === 'installation' && $ticket->workflow_status === 'waiting_admin_approval') {
+                $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));
+            }
+        });
+
+        return response()->json($tickets);
     }
 
     public function show(string $id): JsonResponse
     {
-        return response()->json(Ticket::with(['customer.servicePlan', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id));
+        $ticket = Ticket::with(['customer.servicePlan', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
+        if ($ticket->ticket_type === 'installation' && $ticket->workflow_status === 'waiting_admin_approval') {
+            $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));
+        }
+        return response()->json($ticket);
     }
 
     public function store(Request $request): JsonResponse
