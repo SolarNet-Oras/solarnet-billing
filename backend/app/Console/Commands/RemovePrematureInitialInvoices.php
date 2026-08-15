@@ -10,6 +10,7 @@ class RemovePrematureInitialInvoices extends Command
 {
     protected $signature = 'billing:remove-premature-initial-invoices
                             {--date= : Installation/issue date to repair (YYYY-MM-DD)}
+                            {--invoice=* : Exact unpaid invoice number(s) to remove}
                             {--apply : Persist the previewed removals}';
 
     protected $description = 'Remove unpaid invoices that were incorrectly created on installation day';
@@ -21,9 +22,11 @@ class RemovePrematureInitialInvoices extends Command
             ->whereNotIn('status', ['paid', 'partial'])
             ->whereDoesntHave('payments');
         if ($date = $this->option('date')) $query->whereDate('issue_date', $date);
+        if ($numbers = $this->option('invoice')) $query->whereIn('invoice_number', $numbers);
 
-        $invoices = $query->get()->filter(fn (Invoice $invoice) =>
-            $invoice->customer?->installation_date?->isSameDay($invoice->issue_date)
+        $invoices = $query->get()->filter(fn (Invoice $invoice) => $this->option('invoice')
+            ? true
+            : $invoice->customer?->installation_date?->isSameDay($invoice->issue_date)
         );
 
         foreach ($invoices as $invoice) {
