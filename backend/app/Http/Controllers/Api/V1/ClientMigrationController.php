@@ -66,6 +66,13 @@ class ClientMigrationController extends Controller
             $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
             $match = $matcher->find((string) $record['Leases']);
             $plan = $this->findPlan((string) $record['Promo rates (Mbps)']);
+            $exclusionReasons = [];
+            if ($match['status'] !== 'EXACT MAC MATCH') $exclusionReasons[] = 'A full exact DHCP lease MAC match is required.';
+            if (! $plan) $exclusionReasons[] = 'No active service plan matches the spreadsheet Promo rates value.';
+            if (! $record['Installation Date']) $exclusionReasons[] = 'Installation Date is missing or invalid.';
+            if ((float) $record['Current balance'] + (float) $record['Previous balance'] > 0 && ! $record['Due Date']) {
+                $exclusionReasons[] = 'Due Date is required when a migrated balance is supplied.';
+            }
 
             $preview[] = [
                 'row' => $index + 2,
@@ -74,6 +81,8 @@ class ClientMigrationController extends Controller
                 'lease_id' => $match['lease']?->id,
                 'candidate_lease_ids' => $match['candidates']->pluck('id')->values(),
                 'requires_confirmation' => $match['requires_confirmation'] ?? false,
+                'registration_eligible' => $exclusionReasons === [],
+                'exclusion_reasons' => $exclusionReasons,
                 'service_plan' => $plan ? [
                     'id' => $plan->id,
                     'name' => $plan->name,
