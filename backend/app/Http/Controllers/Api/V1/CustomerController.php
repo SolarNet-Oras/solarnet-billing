@@ -11,8 +11,6 @@ use App\Services\BillingSuspensionService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
 use App\Services\InvoiceService;
-use App\Models\Invoice;
-use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -187,10 +185,10 @@ class CustomerController extends Controller
             $emailSent = $this->accountService->sendWelcomeEmail($customer, $plainPassword);
         }
 
-        // The first month is used before it is billed. Create the initial
-        // invoice now for visibility, but its due/cycle date is the *next*
-        // installation anniversary (e.g. Aug 14 installation -> Sep 14 due).
-        $billingInvoice = $this->createInitialBillingInvoice($customer);
+        // The first month is used before billing. The recurring scheduler
+        // creates the first invoice only when it reaches the configured lead
+        // window (normally 7 days before the next installation anniversary).
+        $billingInvoice = null;
 
         // CustomerObserver queues the MikroTik work after the transaction.
         // Never wait for a router/VPN connection in this HTTP request.
@@ -234,45 +232,6 @@ class CustomerController extends Controller
             'mikrotik_sync' => $mikrotikSync,
             'billing_invoice' => $billingInvoice,
         ], 201);
-    }
-
-    /** Create the first invoice with the next monthly anniversary as its due date. */
-    private function createInitialBillingInvoice(Customer $customer): ?Invoice
-    {
-        if ($customer->status !== 'active' || !$customer->installation_date) {
-            return null;
-        }
-
-        $today = now()->startOfDay();
-        $installationDate = Carbon::parse($customer->installation_date)->startOfDay();
-        if ($installationDate->isAfter($today)) {
-            return null;
-        }
-
-        $dueDate = $installationDate->copy()->addMonthNoOverflow();
-        while ($dueDate->lte($today)) {
-            $dueDate->addMonthNoOverflow();
-        }
-        if (Invoice::where('customer_id', $customer->id)->whereDate('recurring_cycle_date', $dueDate)->exists()) return null;
-
-        $customer->loadMissing('servicePlan');
-        if ($customer->hasCompanyOwnedPlan()) return null;
-        if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
-            return null;
-        }
-
-        $invoice = $this->invoiceService->generateInvoice(
-            $customer,
-            $dueDate->copy()->subMonthNoOverflow(),
-            $dueDate,
-            [],
-            $today,
-            $dueDate,
-            $dueDate,
-        );
-        $this->invoiceService->markAsSent($invoice);
-
-        return $invoice->fresh(['items']);
     }
 
     /**
