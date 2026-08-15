@@ -134,6 +134,17 @@ Route::prefix('v1')->group(function () {
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
         });
         Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
+        Route::middleware('role:super_admin|admin')->group(function () {
+            Route::get('routers/{id}/qos/status', [RouterController::class, 'qosStatus']);
+            Route::get('routers/{id}/qos/config', [RouterController::class, 'qosConfig']);
+            Route::get('routers/{id}/qos/clients', [RouterController::class, 'qosClients']);
+            Route::post('routers/{id}/qos/preview', [RouterController::class, 'qosPreview']);
+            Route::get('routers/{id}/qos/metrics', [RouterController::class, 'qosMetrics']);
+            Route::post('routers/{id}/qos/test', [RouterController::class, 'qosTest']);
+            Route::post('routers/{id}/qos/apply', [RouterController::class, 'qosApply']);
+            Route::post('routers/{id}/qos/rollback', [RouterController::class, 'qosRollback']);
+            Route::post('routers/{id}/qos/disable', [RouterController::class, 'qosDisable']);
+        });
         Route::get('system/network-info', [RouterController::class, 'networkInfo'])->middleware('permission:view-routers');
         Route::post('routers/{id}/sync-dhcp', [RouterController::class, 'syncDhcpLeases'])->middleware('permission:sync-dhcp');
         Route::get('routers/{id}/unmatched-leases', [RouterController::class, 'getUnmatchedLeases'])->middleware('permission:view-dhcp');

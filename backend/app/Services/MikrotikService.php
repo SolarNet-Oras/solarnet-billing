@@ -20,6 +20,7 @@ class MikrotikService
     private const PAYMENT_PORTAL_COMMENT_PREFIX = 'Solarnet Billing payment portal';
     private const THREAT_FEED_ADDRESS_LIST = 'solarnet_threat_feed';
     private const THREAT_FEED_RULE_PREFIX = 'SolarNet Threat Feed: manual block';
+    private const QOS_OWNER_PREFIX = 'SolarNet-QoS:v1';
     /**
      * Customers are sent to this PayMongo-hosted page to choose GCash and
      * complete payment. Keep this deliberately narrow: allowing arbitrary
@@ -171,6 +172,313 @@ class MikrotikService
             Log::warning('Router monitoring read failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
             return ['success' => false, 'message' => 'Monitoring read failed: ' . $e->getMessage(), 'data' => null];
         }
+    }
+
+    /**
+     * Read and summarise the RouterOS configuration required for a QoS safety
+     * decision. This method is deliberately read-only; it never calls add,
+     * set, remove, move, or disable on the router.
+     */
+    public function qosInspection(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $readErrors = [];
+            $read = function (string $path) use ($client, &$readErrors): array {
+                try {
+                    return $client->query(new Query($path))->read();
+                } catch (Throwable $e) {
+                    $readErrors[] = ['path' => $path, 'message' => $e->getMessage()];
+                    return [];
+                }
+            };
+
+            // All calls below mirror the safe-inspection list in the QoS UI.
+            $resource = $read('/system/resource/print')[0] ?? [];
+            $packages = $read('/system/package/print');
+            $interfaces = $read('/interface/print');
+            $bridges = $read('/interface/bridge/print');
+            $vlans = $read('/interface/vlan/print');
+            $addresses = $read('/ip/address/print');
+            $routes = $read('/ip/route/print');
+            $filters = $read('/ip/firewall/filter/print');
+            $mangles = $read('/ip/firewall/mangle/print');
+            $nat = $read('/ip/firewall/nat/print');
+            $connections = $read('/ip/firewall/connection/print');
+            $dhcpServers = $read('/ip/dhcp-server/print');
+            $dhcpLeases = $read('/ip/dhcp-server/lease/print');
+            $simpleQueues = $read('/queue/simple/print');
+            $queueTrees = $read('/queue/tree/print');
+            $queueTypes = $read('/queue/type/print');
+            $routingRules = $read('/routing/rule/print');
+            $ethernet = $read('/interface/ethernet/print');
+            $wireguard = $read('/interface/wireguard/print');
+
+            $interfaceNames = array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $interfaces)));
+            $dhcpInterfaces = array_values(array_unique(array_filter(array_map(fn (array $item) => $item['interface'] ?? null, $dhcpServers))));
+            $bridgeNames = array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $bridges)));
+            $vlanNames = array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $vlans)));
+            $defaultRoutes = array_values(array_filter($routes, fn (array $route) => in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true) && ($route['disabled'] ?? 'false') !== 'true'));
+            $fastTrackRules = array_values(array_filter($filters, fn (array $rule) => ($rule['disabled'] ?? 'false') !== 'true' && ($rule['action'] ?? '') === 'fasttrack-connection'));
+            $billingQueues = array_values(array_filter($simpleQueues, fn (array $queue) => str_starts_with((string) ($queue['name'] ?? ''), 'customer-')));
+            $managedQosTrees = array_values(array_filter($queueTrees, fn (array $queue) => str_starts_with((string) ($queue['comment'] ?? ''), self::QOS_OWNER_PREFIX)));
+
+            $queueCapabilities = [
+                'cake' => [],
+                'fq_codel' => [],
+                'pcq' => [],
+            ];
+            foreach ($queueTypes as $queueType) {
+                $name = (string) ($queueType['name'] ?? '');
+                $kind = (string) ($queueType['kind'] ?? '');
+                $haystack = strtolower($name . ' ' . $kind);
+                if (str_contains($haystack, 'cake')) $queueCapabilities['cake'][] = $name;
+                if (str_contains($haystack, 'fq-codel') || str_contains($haystack, 'fqcodel')) $queueCapabilities['fq_codel'][] = $name;
+                if (str_contains($haystack, 'pcq')) $queueCapabilities['pcq'][] = $name;
+            }
+
+            $candidateGateways = [];
+            foreach ($defaultRoutes as $route) {
+                $gateway = (string) ($route['gateway'] ?? $route['immediate-gw'] ?? '');
+                $interface = null;
+                if (preg_match('/%([^\s,]+)/', $gateway, $match) === 1) $interface = $match[1];
+                if ($interface === null && in_array($gateway, $interfaceNames, true)) $interface = $gateway;
+                $candidateGateways[] = [
+                    'gateway' => $gateway ?: null,
+                    'interface' => $interface,
+                    'distance' => $route['distance'] ?? null,
+                    'routing_table' => $route['routing-table'] ?? 'main',
+                ];
+            }
+
+            $clientSubnets = [];
+            foreach ($addresses as $address) {
+                if (in_array($address['interface'] ?? null, $dhcpInterfaces, true) && isset($address['address'])) {
+                    $clientSubnets[] = ['interface' => $address['interface'], 'address' => $address['address']];
+                }
+            }
+
+            $warnings = [];
+            if ($fastTrackRules !== []) $warnings[] = 'FastTrack is enabled. SolarNet QoS deployment is blocked until an administrator intentionally resolves FastTrack outside this automatic workflow.';
+            if (count($defaultRoutes) > 1) $warnings[] = 'Multiple active default routes were detected. A QoS profile must be explicitly scoped to one verified WAN path.';
+            if (count($dhcpInterfaces) > 1 || count($vlanNames) > 1) $warnings[] = 'Multiple client-facing DHCP/VLAN interfaces were detected. A single global download queue would be unsafe, so the preview requires explicit parent interfaces.';
+            if ($managedQosTrees !== []) $warnings[] = 'SolarNet-owned QoS queue trees already exist. The system will not stack another QoS deployment on top of them.';
+            if ($queueCapabilities['fq_codel'] === [] && $queueCapabilities['pcq'] === []) $warnings[] = 'No FQ-CoDel or PCQ queue type was detected. QoS deployment is blocked rather than guessing a queue type.';
+
+            return [
+                'success' => true,
+                'data' => [
+                    'routeros_version' => $resource['version'] ?? null,
+                    'board_name' => $resource['board-name'] ?? null,
+                    'architecture' => $resource['architecture-name'] ?? null,
+                    'cpu_load' => (int) ($resource['cpu-load'] ?? 0),
+                    'free_memory' => (int) ($resource['free-memory'] ?? 0),
+                    'total_memory' => (int) ($resource['total-memory'] ?? 0),
+                    'uptime' => $resource['uptime'] ?? null,
+                    'packages' => array_map(fn (array $package) => ['name' => $package['name'] ?? null, 'version' => $package['version'] ?? null, 'disabled' => ($package['disabled'] ?? 'false') === 'true'], $packages),
+                    'interfaces' => array_map(fn (array $interface) => ['name' => $interface['name'] ?? null, 'type' => $interface['type'] ?? null, 'running' => ($interface['running'] ?? 'false') === 'true', 'disabled' => ($interface['disabled'] ?? 'false') === 'true'], $interfaces),
+                    'bridge_interfaces' => $bridgeNames,
+                    'vlan_interfaces' => $vlanNames,
+                    'client_interfaces' => $dhcpInterfaces,
+                    'client_subnets' => $clientSubnets,
+                    'wan_candidates' => $candidateGateways,
+                    'multi_wan_detected' => count($defaultRoutes) > 1,
+                    'fasttrack' => ['enabled' => $fastTrackRules !== [], 'count' => count($fastTrackRules)],
+                    'existing_queues' => [
+                        'simple_total' => count($simpleQueues),
+                        'billing_customer_queues' => count($billingQueues),
+                        'other_simple_queues' => count($simpleQueues) - count($billingQueues),
+                        'queue_tree_total' => count($queueTrees),
+                        'solarnet_qos_trees' => count($managedQosTrees),
+                    ],
+                    'queue_capabilities' => $queueCapabilities,
+                    'mangle_rule_count' => count($mangles),
+                    'firewall_filter_count' => count($filters),
+                    'firewall_nat_count' => count($nat),
+                    'routing_rule_count' => count($routingRules),
+                    'active_connections' => count($connections),
+                    'dhcp_lease_count' => count($dhcpLeases),
+                    'ethernet_interface_count' => count($ethernet),
+                    'wireguard_interface_count' => count($wireguard),
+                    'warnings' => $warnings,
+                    'inspection_errors' => $readErrors,
+                    'inspected_at' => now()->toIso8601String(),
+                ],
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Router QoS inspection failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'QoS inspection failed: ' . $e->getMessage(), 'data' => null];
+        }
+    }
+
+    /** Create a RouterOS binary backup and verify that the router reports the file. */
+    public function createQosBackup(Router $router, string $backupName): array
+    {
+        $safeName = preg_replace('/[^A-Za-z0-9_-]/', '-', $backupName) ?: 'solarnet-qos-backup';
+
+        try {
+            $client = new Client($this->makeConfig($router));
+            $client->query((new Query('/system/backup/save'))->equal('name', $safeName))->read();
+            usleep(500000);
+            $files = $client->query(new Query('/file/print'))->read();
+            $file = collect($files)->first(fn (array $item) => in_array((string) ($item['name'] ?? ''), [$safeName, $safeName . '.backup'], true));
+            if (!$file) return ['success' => false, 'message' => 'RouterOS did not confirm the QoS backup file. Deployment was blocked.'];
+
+            return [
+                'success' => true,
+                'backup_file' => $file['name'],
+                'message' => 'RouterOS configuration backup created and verified.',
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Router QoS backup failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'QoS backup failed. Deployment was blocked: ' . $e->getMessage()];
+        }
+    }
+
+    /** Add the two SolarNet-owned interface queue trees, preserving every existing queue/rule. */
+    public function applyManagedQosTrees(Router $router, string $deploymentId, array $configuration): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $existing = $client->query(new Query('/queue/tree/print'))->read();
+            if (array_filter($existing, fn (array $queue) => str_starts_with((string) ($queue['comment'] ?? ''), self::QOS_OWNER_PREFIX))) {
+                return ['success' => false, 'message' => 'SolarNet QoS queue trees already exist. No second QoS deployment was created.'];
+            }
+
+            $shortId = substr($deploymentId, 0, 8);
+            $definitions = [
+                ['name' => self::QOS_OWNER_PREFIX . ':' . $shortId . ':download', 'parent' => $configuration['download_parent'], 'max_limit' => $configuration['download_limit'], 'comment' => self::QOS_OWNER_PREFIX . ' deployment ' . $shortId . ' download shaping'],
+                ['name' => self::QOS_OWNER_PREFIX . ':' . $shortId . ':upload', 'parent' => $configuration['upload_parent'], 'max_limit' => $configuration['upload_limit'], 'comment' => self::QOS_OWNER_PREFIX . ' deployment ' . $shortId . ' upload shaping'],
+            ];
+            $created = [];
+
+            try {
+                foreach ($definitions as $definition) {
+                    $client->query(
+                        (new Query('/queue/tree/add'))
+                            ->equal('name', $definition['name'])
+                            ->equal('parent', $definition['parent'])
+                            ->equal('max-limit', $definition['max_limit'])
+                            ->equal('queue', $configuration['queue_type'])
+                            ->equal('comment', $definition['comment'])
+                    )->read();
+                    $created[] = $definition;
+                }
+            } catch (Throwable $applyError) {
+                $this->removeManagedQosTreesFromClient($client);
+                throw $applyError;
+            }
+
+            $verification = $this->verifyManagedQosTreesFromClient($client, $created, $configuration['queue_type']);
+            if (!$verification['success']) {
+                $this->removeManagedQosTreesFromClient($client);
+                return ['success' => false, 'message' => 'QoS verification failed; the SolarNet-owned QoS trees were removed.', 'verification' => $verification];
+            }
+
+            return ['success' => true, 'message' => 'SolarNet QoS queue trees applied and verified.', 'verification' => $verification];
+        } catch (Throwable $e) {
+            Log::warning('QoS queue tree deployment failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'QoS deployment failed without changing existing customer queues: ' . $e->getMessage()];
+        }
+    }
+
+    /** Remove only queue trees whose comment is owned by SolarNet QoS. */
+    public function removeManagedQosTrees(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $removed = $this->removeManagedQosTreesFromClient($client);
+            return ['success' => true, 'message' => "Removed {$removed} SolarNet-owned QoS queue tree(s). Existing customer queues were preserved.", 'removed' => $removed];
+        } catch (Throwable $e) {
+            Log::warning('QoS tree removal failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Could not remove only SolarNet QoS trees: ' . $e->getMessage()];
+        }
+    }
+
+    /** Actual RouterOS metrics only; latency/loss are reported only after an explicit ping test. */
+    public function qosMetrics(Router $router): array
+    {
+        $monitoring = $this->monitoringSnapshot($router);
+        if (!$monitoring['success']) return $monitoring;
+
+        try {
+            $client = new Client($this->makeConfig($router));
+            $connections = $client->query(new Query('/ip/firewall/connection/print'))->read();
+            $trees = $client->query(new Query('/queue/tree/print'))->read();
+            $drops = 0;
+            foreach ($trees as $tree) {
+                foreach (explode('/', (string) ($tree['dropped'] ?? '0/0')) as $part) $drops += (int) trim($part);
+            }
+
+            return [
+                'success' => true,
+                'data' => array_merge($monitoring['data'], [
+                    'active_connections' => count($connections),
+                    'queue_tree_count' => count($trees),
+                    'queue_drops' => $drops,
+                    'latency_ms' => null,
+                    'packet_loss_percent' => null,
+                    'latency_note' => 'Run Test QoS to collect a real ping latency and packet-loss sample.',
+                    'measured_at' => now()->toIso8601String(),
+                ]),
+            ];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'QoS metrics read failed: ' . $e->getMessage(), 'data' => null];
+        }
+    }
+
+    /** Run a bounded RouterOS ping for a real latency/loss snapshot. */
+    public function qosPingTest(Router $router, string $target): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $rows = $client->query((new Query('/ping'))->equal('address', $target)->equal('count', '5'))->read();
+            $times = [];
+            foreach ($rows as $row) {
+                if (preg_match('/([0-9.]+)ms/', (string) ($row['time'] ?? ''), $match) === 1) $times[] = (float) $match[1];
+            }
+            $sent = max(5, count($rows));
+            $received = count($times);
+            return [
+                'success' => true,
+                'data' => [
+                    'target' => $target,
+                    'sent' => $sent,
+                    'received' => $received,
+                    'packet_loss_percent' => round((($sent - $received) / $sent) * 100, 2),
+                    'latency_ms' => $times === [] ? null : round(array_sum($times) / count($times), 2),
+                    'minimum_latency_ms' => $times === [] ? null : min($times),
+                    'maximum_latency_ms' => $times === [] ? null : max($times),
+                    'tested_at' => now()->toIso8601String(),
+                ],
+            ];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'QoS ping test failed: ' . $e->getMessage(), 'data' => null];
+        }
+    }
+
+    private function removeManagedQosTreesFromClient(Client $client): int
+    {
+        $trees = $client->query(new Query('/queue/tree/print'))->read();
+        $managed = array_values(array_filter($trees, fn (array $tree) => str_starts_with((string) ($tree['comment'] ?? ''), self::QOS_OWNER_PREFIX)));
+        foreach ($managed as $tree) {
+            if (!empty($tree['.id'])) $client->query((new Query('/queue/tree/remove'))->equal('.id', $tree['.id']))->read();
+        }
+        return count($managed);
+    }
+
+    private function verifyManagedQosTreesFromClient(Client $client, array $definitions, string $queueType): array
+    {
+        $trees = $client->query(new Query('/queue/tree/print'))->read();
+        $verified = [];
+        foreach ($definitions as $definition) {
+            $tree = collect($trees)->first(fn (array $item) => ($item['name'] ?? null) === $definition['name']);
+            if (!$tree || ($tree['parent'] ?? null) !== $definition['parent'] || ($tree['queue'] ?? null) !== $queueType) {
+                return ['success' => false, 'message' => 'A managed QoS queue tree was absent or did not verify.', 'verified' => $verified];
+            }
+            $verified[] = ['name' => $tree['name'], 'parent' => $tree['parent'], 'queue' => $tree['queue'], 'max_limit' => $tree['max-limit'] ?? null];
+        }
+        return ['success' => true, 'verified' => $verified];
     }
 
     /**

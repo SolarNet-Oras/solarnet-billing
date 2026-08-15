@@ -77,6 +77,77 @@ export interface RouterThreatObservation {
   reviewer?: { id: string; name: string; email: string } | null;
 }
 
+export interface RouterQosInspection {
+  routeros_version: string | null;
+  board_name: string | null;
+  architecture: string | null;
+  cpu_load: number;
+  free_memory: number;
+  total_memory: number;
+  uptime: string | null;
+  interfaces: Array<{ name: string; type: string | null; running: boolean; disabled: boolean }>;
+  bridge_interfaces: string[];
+  vlan_interfaces: string[];
+  client_interfaces: string[];
+  client_subnets: Array<{ interface: string; address: string }>;
+  wan_candidates: Array<{ gateway: string | null; interface: string | null; distance: string | null; routing_table: string }>;
+  multi_wan_detected: boolean;
+  fasttrack: { enabled: boolean; count: number };
+  existing_queues: { simple_total: number; billing_customer_queues: number; other_simple_queues: number; queue_tree_total: number; solarnet_qos_trees: number };
+  queue_capabilities: { cake: string[]; fq_codel: string[]; pcq: string[] };
+  mangle_rule_count: number;
+  firewall_filter_count: number;
+  firewall_nat_count: number;
+  routing_rule_count: number;
+  active_connections: number;
+  dhcp_lease_count: number;
+  ethernet_interface_count: number;
+  wireguard_interface_count: number;
+  warnings: string[];
+  inspection_errors: Array<{ path: string; message: string }>;
+  inspected_at: string;
+}
+
+export interface RouterQosDeployment {
+  id: string;
+  router_id: string;
+  configuration_version: number;
+  status: 'previewed' | 'refused' | 'applying' | 'active' | 'failed' | 'rolled_back' | 'disabled';
+  strategy: string | null;
+  queue_type: string | null;
+  configuration: Record<string, unknown> | null;
+  backup_filename: string | null;
+  backup_verified_at: string | null;
+  verification: Record<string, unknown> | null;
+  failure_reason: string | null;
+  created_at: string;
+  applied_at: string | null;
+}
+
+export interface RouterQosMetrics extends RouterMonitoringSnapshot {
+  active_connections: number;
+  queue_tree_count: number;
+  queue_drops: number;
+  queue_drop_delta: number | null;
+  memory_used_percent: number | null;
+  latency_ms: number | null;
+  packet_loss_percent: number | null;
+  latency_note: string;
+  warnings: string[];
+  freshness: 'live' | 'stale';
+  measured_at: string;
+}
+
+export interface RouterQosPreview {
+  ready: boolean;
+  errors: string[];
+  warnings: string[];
+  configuration: { download_limit: string; upload_limit: string; queue_type: string | null; strategy: string | null; [key: string]: unknown };
+  recommendation: { strategy: string | null; queue_type: string | null; cake_available_but_not_selected: string[]; reason: string };
+  preservation: { customer_simple_queues_preserved: number; administrator_simple_queues_preserved: number; firewall_rules_changed: number; mangle_rules_changed: number; queue_types_created: number; queue_trees_to_create: number };
+  risk: 'low' | 'medium' | 'blocked';
+}
+
 export const routerService = {
   async getAll(): Promise<Router[]> {
     const response = await api.get<{ success: boolean; data: Router[] }>('/routers');
@@ -130,6 +201,51 @@ export const routerService = {
   async reviewThreatObservation(routerId: string, observationId: string, decision: 'approve_block' | 'dismiss'): Promise<{ message: string; data: RouterThreatObservation }> {
     const response = await api.post<{ success: boolean; message: string; data: RouterThreatObservation }>(`/routers/${routerId}/threat-observations/${observationId}/review`, { decision });
     return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosStatus(id: string): Promise<{ inspection: RouterQosInspection; active_deployment: RouterQosDeployment | null }> {
+    const response = await api.get<{ success: boolean; data: { inspection: RouterQosInspection; active_deployment: RouterQosDeployment | null } }>(`/routers/${id}/qos/status`);
+    return response.data.data;
+  },
+
+  async qosConfig(id: string): Promise<RouterQosDeployment[]> {
+    const response = await api.get<{ success: boolean; data: RouterQosDeployment[] }>(`/routers/${id}/qos/config`);
+    return response.data.data;
+  },
+
+  async qosClients(id: string): Promise<{ data: Array<{ customer_id: string; account_number: string; full_name: string; ip_address: string | null; mac_address: string | null; status: string; plan: { name: string; download_speed: number; upload_speed: number; priority: number; qos_priority_level: 'Critical' | 'High' | 'Normal' | 'Low' } | null; queue: { name: string; max_limit: string | null; rate: string | null; dropped: string | null; disabled: boolean } | null }>; queue_read_warning: string | null }> {
+    const response = await api.get<{ success: boolean; data: Array<any>; queue_read_warning: string | null }>(`/routers/${id}/qos/clients`);
+    return { data: response.data.data, queue_read_warning: response.data.queue_read_warning };
+  },
+
+  async qosPreview(id: string, data: { download_capacity_mbps: number; upload_capacity_mbps: number; ceiling_percent: number; download_parent: string; upload_parent: string; mode?: 'production' | 'test' }): Promise<{ message: string; data: { deployment: RouterQosDeployment; preview: RouterQosPreview } }> {
+    const response = await api.post<{ success: boolean; message: string; data: { deployment: RouterQosDeployment; preview: RouterQosPreview } }>(`/routers/${id}/qos/preview`, data);
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosApply(id: string, deploymentId: string): Promise<{ message: string; data: RouterQosDeployment }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterQosDeployment }>(`/routers/${id}/qos/apply`, { deployment_id: deploymentId, confirm_apply: true });
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosRollback(id: string, deploymentId: string): Promise<{ message: string; data: RouterQosDeployment }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterQosDeployment }>(`/routers/${id}/qos/rollback`, { deployment_id: deploymentId, confirm_rollback: true });
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosDisable(id: string): Promise<{ message: string; data: RouterQosDeployment }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterQosDeployment }>(`/routers/${id}/qos/disable`, { confirm_disable: true });
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosMetrics(id: string): Promise<RouterQosMetrics> {
+    const response = await api.get<{ success: boolean; data: RouterQosMetrics }>(`/routers/${id}/qos/metrics`);
+    return response.data.data;
+  },
+
+  async qosTest(id: string, target: string): Promise<{ target: string; sent: number; received: number; packet_loss_percent: number; latency_ms: number | null; minimum_latency_ms: number | null; maximum_latency_ms: number | null; tested_at: string }> {
+    const response = await api.post<{ success: boolean; data: { target: string; sent: number; received: number; packet_loss_percent: number; latency_ms: number | null; minimum_latency_ms: number | null; maximum_latency_ms: number | null; tested_at: string } }>(`/routers/${id}/qos/test`, { target });
+    return response.data.data;
   },
 
   async installBillingAccess(id: string): Promise<{ success: boolean; message: string; rules_installed?: number }> {

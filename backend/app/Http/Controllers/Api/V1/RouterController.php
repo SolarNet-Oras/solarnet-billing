@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Router;
+use App\Models\RouterQosDeployment;
 use App\Models\RouterThreatObservation;
 use App\Models\Setting;
 use App\Services\MikrotikService;
 use App\Services\MikrotikScriptGenerator;
+use App\Services\RouterQosService;
 use App\Services\ThreatFeedService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,12 +21,14 @@ class RouterController extends Controller
     protected MikrotikService $mikrotikService;
     protected MikrotikScriptGenerator $scriptGenerator;
     protected ThreatFeedService $threatFeedService;
+    protected RouterQosService $routerQosService;
 
-    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService)
+    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService, RouterQosService $routerQosService)
     {
         $this->mikrotikService = $mikrotikService;
         $this->scriptGenerator = $scriptGenerator;
         $this->threatFeedService = $threatFeedService;
+        $this->routerQosService = $routerQosService;
     }
 
     /**
@@ -253,6 +257,90 @@ class RouterController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => $result['message'], 'data' => $candidate->fresh('reviewer:id,name,email')]);
+    }
+
+    /** Read-only RouterOS configuration discovery for the QoS safety workflow. */
+    public function qosStatus(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->routerQosService->status($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosConfig(string $id): JsonResponse
+    {
+        return response()->json($this->routerQosService->configurations(Router::findOrFail($id)));
+    }
+
+    /** Existing customer queue/plan data for visibility only. */
+    public function qosClients(string $id): JsonResponse
+    {
+        return response()->json($this->routerQosService->clients(Router::findOrFail($id)));
+    }
+
+    public function qosPreview(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'download_capacity_mbps' => ['required', 'numeric', 'min:0.1', 'max:100000'],
+            'upload_capacity_mbps' => ['required', 'numeric', 'min:0.1', 'max:100000'],
+            'ceiling_percent' => ['nullable', 'numeric', 'min:50', 'max:99'],
+            'download_parent' => ['required', 'string', 'max:128'],
+            'upload_parent' => ['required', 'string', 'max:128'],
+            'mode' => ['nullable', Rule::in(['production', 'test'])],
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $result = $this->routerQosService->preview($router, $request->user(), $validator->validated());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosApply(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'deployment_id' => ['required', 'uuid'],
+            'confirm_apply' => ['required', 'accepted'],
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit administrator confirmation is required.', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $deployment = RouterQosDeployment::findOrFail($validator->validated()['deployment_id']);
+        $result = $this->routerQosService->apply($router, $deployment, $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosRollback(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['deployment_id' => ['required', 'uuid'], 'confirm_rollback' => ['required', 'accepted']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit rollback confirmation is required.', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $deployment = RouterQosDeployment::findOrFail($validator->validated()['deployment_id']);
+        $result = $this->routerQosService->rollback($router, $deployment, $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosDisable(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['confirm_disable' => ['required', 'accepted']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit emergency-disable confirmation is required.', 'errors' => $validator->errors()], 422);
+
+        $result = $this->routerQosService->disable(Router::findOrFail($id), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosMetrics(string $id): JsonResponse
+    {
+        $result = $this->routerQosService->metrics(Router::findOrFail($id));
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function qosTest(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['target' => ['required', 'string', 'max:253']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A valid QoS test target is required.', 'errors' => $validator->errors()], 422);
+        $result = $this->mikrotikService->qosPingTest(Router::findOrFail($id), $validator->validated()['target']);
+        return response()->json($result, $result['success'] ? 200 : 422);
     }
 
     /**

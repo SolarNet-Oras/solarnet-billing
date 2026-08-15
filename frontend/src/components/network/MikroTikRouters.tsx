@@ -3,6 +3,8 @@ import { Activity, AlertTriangle, Plus, RefreshCw, ScanSearch, Server, ShieldChe
 import { routerService, type Router, type CreateRouterData, type RouterMonitoringSnapshot, type RouterThreatObservation } from '@/services/routerService';
 import { RouterList } from './RouterList';
 import { RouterFormModal } from './RouterFormModal';
+import { RouterQosMonitor } from './RouterQosMonitor';
+import { useAuth } from '@/hooks/useAuth';
 
 function MetricCard({ label, value, helper, tone, icon: Icon }: { label: string; value: string | number; helper: string; tone: 'violet' | 'emerald' | 'orange' | 'sky'; icon: typeof Server }) {
   const tones = {
@@ -33,6 +35,7 @@ const formatRate = (bps: number | null): string => {
 };
 
 export function MikroTikRouters() {
+  const { user } = useAuth();
   const [routers, setRouters] = useState<Router[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -99,6 +102,8 @@ export function MikroTikRouters() {
   const hasTrafficSample = samples.some((sample) => sample.traffic_sampled);
   const protectedRouters = samples.filter((sample) => sample.threat_status === 'protected').length;
   const threatSignals = samples.reduce((total, sample) => total + sample.threat_signal_rules + sample.threat_address_list_entries, 0);
+  const roleNames = (user?.roles || []).map((role) => typeof role === 'string' ? role : role.name);
+  const mayManageQos = user?.role === 'super_admin' || user?.role === 'admin' || roleNames.includes('super_admin') || roleNames.includes('admin');
   const pendingThreats = Object.values(threatObservations).flat().filter((observation) => observation.status === 'pending');
 
   const scanThreatFeed = async (router: Router) => {
@@ -187,6 +192,8 @@ export function MikroTikRouters() {
           })}
         </div>
       </section>
+
+      {mayManageQos && <RouterQosMonitor routers={routers} />}
 
       <section className="mt-5 rounded-2xl border border-amber-400/20 bg-slate-950/70 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="flex items-center gap-2 font-semibold text-amber-100"><AlertTriangle className="h-4 w-4 text-amber-300" /> Threat-feed review</h3><p className="mt-1 text-xs text-slate-400">Scan compares current RouterOS connections with the Feodo Tracker botnet/C2 feed. A match is logged first; it is never blocked automatically.</p></div><span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100">Manual approval required</span></div>
