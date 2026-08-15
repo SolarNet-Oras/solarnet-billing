@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientMigrationAudit;
+use App\Models\ClientMigrationDateCorrection;
 use App\Models\Customer;
+use App\Models\DhcpLease;
 use App\Models\ServicePlan;
+use App\Services\HistoricalInstallationDate;
 use App\Services\ClientMigrationMatcher;
 use Illuminate\Http\Request;
-use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
@@ -40,7 +42,7 @@ class ClientMigrationController extends Controller
         ]);
     }
 
-    public function preview(Request $request, ClientMigrationMatcher $matcher)
+    public function preview(Request $request, ClientMigrationMatcher $matcher, HistoricalInstallationDate $historicalDate)
     {
         $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv|max:10240']);
 
@@ -64,8 +66,8 @@ class ClientMigrationController extends Controller
                 array_fill_keys(self::HEADERS, null),
                 array_combine($headers, array_pad($row, count($headers), null)),
             );
-            $record['Installation Date'] = $this->normaliseDate($record['Installation Date']);
-            $record['Due Date'] = $this->normaliseDate($record['Due Date']);
+            $record['Installation Date'] = $historicalDate->parse($record['Installation Date']);
+            $record['Due Date'] = $historicalDate->parse($record['Due Date']);
             $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
             $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
             $match = $matcher->find((string) $record['Leases']);
@@ -74,6 +76,7 @@ class ClientMigrationController extends Controller
                 ?? $this->findPlanByLeaseRate($match['lease']?->rate_limit);
             $exclusionReasons = [];
             if ($match['status'] !== 'EXACT MAC MATCH') $exclusionReasons[] = 'A full exact DHCP lease MAC match is required.';
+            if (! $record['Installation Date']) $exclusionReasons[] = 'Historical Installation Date is missing or invalid. Requires review; migration will not assign today.';
 
             $preview[] = [
                 'row' => $index + 2,
@@ -85,6 +88,8 @@ class ClientMigrationController extends Controller
                 'registration_eligible' => $exclusionReasons === [] && ! $existingCustomer,
                 'update_eligible' => $exclusionReasons === [] && (bool) $existingCustomer,
                 'exclusion_reasons' => $exclusionReasons,
+                'historical_installation_date_valid' => (bool) $record['Installation Date'],
+                'action' => $exclusionReasons !== [] ? 'REQUIRES REVIEW' : ($existingCustomer ? 'UPDATE' : 'REGISTER'),
                 'existing_customer' => $existingCustomer ? [
                     'id' => $existingCustomer->id,
                     'account_number' => $existingCustomer->account_number,
@@ -112,25 +117,51 @@ class ClientMigrationController extends Controller
     }
 
     /** Apply spreadsheet-supplied profile details to an already matched customer. */
-    public function updateExisting(Request $request, Customer $customer)
+    public function updateExisting(Request $request, Customer $customer, HistoricalInstallationDate $historicalDate)
     {
         $validated = $request->validate([
             'full_name' => 'nullable|string|max:255',
             'address' => 'nullable|string',
-            'installation_date' => 'nullable|date',
+            'installation_date' => 'required',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'monthly_fee' => 'nullable|numeric|min:0',
+            'lease_id' => 'required|exists:dhcp_leases,id',
+            'audit_id' => 'required|exists:client_migration_audits,id',
         ]);
 
+        $installationDate = $historicalDate->parse($validated['installation_date']);
+        if (! $installationDate) {
+            return response()->json(['message' => 'Historical Installation Date is missing or invalid. The migration did not change this customer.'], 422);
+        }
+
+        $lease = DhcpLease::query()->whereKey($validated['lease_id'])->where('is_current', true)->firstOrFail();
+        if ($lease->customer_id !== $customer->id) {
+            return response()->json(['message' => 'The selected current DHCP lease is not linked to this customer.'], 422);
+        }
+        $audit = ClientMigrationAudit::query()->whereKey($validated['audit_id'])->where('user_id', $request->user()->id)->firstOrFail();
+
         $updates = [];
-        foreach (['full_name', 'address', 'installation_date', 'service_plan_id', 'monthly_fee'] as $field) {
+        foreach (['full_name', 'address', 'service_plan_id', 'monthly_fee'] as $field) {
             if ($request->filled($field)) {
                 $updates[$field] = $validated[$field];
             }
         }
+        // Excel is authoritative for historical migration dates, even when different from created_at.
+        $updates['installation_date'] = $installationDate;
 
-        if ($updates) {
-            $customer->update($updates);
+        $oldInstallationDate = $customer->installation_date?->toDateString();
+
+        $customer->update($updates);
+        if ($oldInstallationDate !== $installationDate) {
+            ClientMigrationDateCorrection::create([
+                'client_migration_audit_id' => $audit->id,
+                'customer_id' => $customer->id,
+                'user_id' => $request->user()->id,
+                'customer_name' => $customer->full_name,
+                'old_installation_date' => $oldInstallationDate,
+                'new_installation_date' => $installationDate,
+                'source' => 'Excel migration',
+            ]);
         }
 
         return response()->json([
@@ -161,15 +192,6 @@ class ClientMigrationController extends Controller
         if ($unit === 'K') $speed /= 1000;
         if ($unit === 'G') $speed *= 1000;
         return ServicePlan::query()->where('is_active', true)->where('download_speed', round($speed))->orderByDesc('upload_speed')->first();
-    }
-
-    private function normaliseDate(mixed $value): ?string
-    {
-        if ($value === null || trim((string) $value) === '') return null;
-        try {
-            if (is_numeric($value)) return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)->format('Y-m-d');
-            return Carbon::parse((string) $value)->toDateString();
-        } catch (\Throwable) { return null; }
     }
 
     private function normaliseAmount(mixed $value): float

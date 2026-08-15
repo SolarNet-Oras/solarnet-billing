@@ -139,12 +139,19 @@ class UnregisteredLeaseController extends Controller
             'migration_previous_balance' => 'nullable|numeric|min:0',
             'migration_current_balance' => 'nullable|numeric|min:0',
             'migration_due_date' => 'nullable|date|after_or_equal:installation_date',
+            'historical_migration' => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors'  => $validator->errors(),
+            ], 422);
+        }
+        if ($request->boolean('historical_migration') && ! $request->filled('installation_date')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Historical Installation Date is required for an Excel migration. The system will not use today as a fallback.',
             ], 422);
         }
 
