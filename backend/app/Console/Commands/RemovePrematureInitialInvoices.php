@@ -30,7 +30,8 @@ class RemovePrematureInitialInvoices extends Command
         );
 
         foreach ($invoices as $invoice) {
-            $this->line("{$invoice->invoice_number}: {$invoice->customer->account_number} due {$invoice->due_date->toDateString()} ({$invoice->total})");
+            $accountNumber = $invoice->customer?->account_number ?? 'orphaned customer record';
+            $this->line("{$invoice->invoice_number}: {$accountNumber} due {$invoice->due_date->toDateString()} ({$invoice->total})");
             if ($this->option('apply')) $invoice->delete();
         }
 
