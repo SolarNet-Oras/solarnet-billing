@@ -15,16 +15,22 @@ class HistoricalInstallationDate
         }
 
         try {
+            if ($value instanceof \DateTimeInterface) {
+                return $value->format('Y-m-d');
+            }
             if (is_numeric($value)) {
                 return ExcelDate::excelToDateTimeObject((float) $value)->format('Y-m-d');
             }
 
             $date = trim((string) $value);
-            if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $matches)) {
+            if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/', $date, $matches)) {
                 return $this->calendarDate((int) $matches[1], (int) $matches[2], (int) $matches[3]);
             }
-            if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $date, $matches)) {
+            if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+.*)?$/', $date, $matches)) {
                 return $this->calendarDate((int) $matches[3], (int) $matches[1], (int) $matches[2]);
+            }
+            if (preg_match('/^(\d{1,2})-([A-Za-z]{3,9})-(\d{4})$/', $date)) {
+                return Carbon::createFromFormat('!d-M-Y', $date)->toDateString();
             }
         } catch (\Throwable) {
             // Historical source dates must be reviewed, never replaced with today.

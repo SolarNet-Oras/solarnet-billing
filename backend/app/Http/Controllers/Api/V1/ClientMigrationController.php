@@ -66,7 +66,8 @@ class ClientMigrationController extends Controller
                 array_fill_keys(self::HEADERS, null),
                 array_combine($headers, array_pad($row, count($headers), null)),
             );
-            $record['Installation Date'] = $historicalDate->parse($record['Installation Date']);
+            $rawInstallationDate = $record['Installation Date'];
+            $record['Installation Date'] = $historicalDate->parse($rawInstallationDate);
             $record['Due Date'] = $historicalDate->parse($record['Due Date']);
             $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
             $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
@@ -89,6 +90,7 @@ class ClientMigrationController extends Controller
                 'update_eligible' => $exclusionReasons === [] && (bool) $existingCustomer,
                 'exclusion_reasons' => $exclusionReasons,
                 'historical_installation_date_valid' => (bool) $record['Installation Date'],
+                'raw_installation_date' => $rawInstallationDate,
                 'action' => $exclusionReasons !== [] ? 'REQUIRES REVIEW' : ($existingCustomer ? 'UPDATE' : 'REGISTER'),
                 'existing_customer' => $existingCustomer ? [
                     'id' => $existingCustomer->id,

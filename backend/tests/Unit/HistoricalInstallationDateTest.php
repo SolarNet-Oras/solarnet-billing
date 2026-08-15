@@ -12,6 +12,7 @@ class HistoricalInstallationDateTest extends TestCase
         $parser = new HistoricalInstallationDate();
 
         $this->assertSame('2026-08-10', $parser->parse('8/10/2026'));
+        $this->assertSame('2026-08-10', $parser->parse('08/10/2026'));
         $this->assertNotSame('2026-08-15', $parser->parse('8/10/2026'));
     }
 
@@ -20,6 +21,7 @@ class HistoricalInstallationDateTest extends TestCase
         $parser = new HistoricalInstallationDate();
 
         $this->assertSame('2026-08-10', $parser->parse('2026-08-10'));
+        $this->assertSame('2026-08-10', $parser->parse('2026-08-10 00:00:00'));
         $this->assertSame('2026-08-10', $parser->parse(46244));
     }
 
