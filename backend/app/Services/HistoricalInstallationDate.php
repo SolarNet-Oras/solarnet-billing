@@ -29,6 +29,11 @@ class HistoricalInstallationDate
             if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+.*)?$/', $date, $matches)) {
                 return $this->calendarDate((int) $matches[3], (int) $matches[1], (int) $matches[2]);
             }
+            // Spreadsheet locale formatting can emit values such as "1212122026年8月5日".
+            // The trailing year/month/day portion is the source calendar date.
+            if (preg_match('/(\d{4})年(\d{1,2})月(\d{1,2})日/u', $date, $matches)) {
+                return $this->calendarDate((int) $matches[1], (int) $matches[2], (int) $matches[3]);
+            }
             if (preg_match('/^(\d{1,2})-([A-Za-z]{3,9})-(\d{4})$/', $date)) {
                 return Carbon::createFromFormat('!d-M-Y', $date)->toDateString();
             }
