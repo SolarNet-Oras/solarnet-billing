@@ -131,11 +131,22 @@ class BillingSuspensionService
             'evaluated' => $customers->count(),
             'suspended' => 0,
             'restored' => 0,
+            'skipped_company_owned' => 0,
             'errors' => [],
         ];
 
         foreach ($customers as $customer) {
             try {
+                if ($customer->hasCompanyOwnedPlan()) {
+                    // A previously automated restriction is removed as soon
+                    // as a customer is assigned to a Company Owned plan.
+                    if ($customer->suspension_source === 'automation') {
+                        $this->restoreCustomer($customer, 'company_owned_plan');
+                        $summary['restored']++;
+                    }
+                    $summary['skipped_company_owned']++;
+                    continue;
+                }
                 $billingState = $this->billingState($customer);
 
                 if ($billingState['should_suspend'] && $customer->status === 'active') {
@@ -282,6 +293,20 @@ class BillingSuspensionService
     public function buildPaymentReminderData(Customer $customer): array
     {
         $customer->loadMissing(['servicePlan']);
+        if ($customer->hasCompanyOwnedPlan()) {
+            return [
+                'customer_id' => $customer->id,
+                'account_number' => $customer->account_number,
+                'full_name' => $customer->full_name,
+                'status' => $customer->status,
+                'due_date' => null,
+                'balance' => 0.0,
+                'payment_url' => null,
+                'suspended_speed_kbps' => null,
+                'company_owned' => true,
+                'service_plan' => ['name' => $customer->servicePlan->name, 'download_speed' => $customer->servicePlan->download_speed, 'upload_speed' => $customer->servicePlan->upload_speed],
+            ];
+        }
         $invoice = Invoice::query()
             ->where('customer_id', $customer->id)
             ->where('balance', '>', 0)
@@ -319,6 +344,10 @@ class BillingSuspensionService
 
     protected function billingState(Customer $customer): array
     {
+        $customer->loadMissing('servicePlan');
+        if ($customer->hasCompanyOwnedPlan()) {
+            return ['outstanding_balance' => 0.0, 'oldest_due_date' => null, 'oldest_unpaid_due_date' => null, 'should_suspend' => false, 'company_owned' => true];
+        }
         $outstanding = (float) Invoice::query()
             ->where('customer_id', $customer->id)
             ->where('balance', '>', 0)

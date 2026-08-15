@@ -256,6 +256,7 @@ class CustomerController extends Controller
         if (Invoice::where('customer_id', $customer->id)->whereDate('recurring_cycle_date', $dueDate)->exists()) return null;
 
         $customer->loadMissing('servicePlan');
+        if ($customer->hasCompanyOwnedPlan()) return null;
         if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
             return null;
         }

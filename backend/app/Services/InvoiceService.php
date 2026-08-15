@@ -34,6 +34,9 @@ class InvoiceService
         ?Carbon $dueDate = null,
         ?Carbon $recurringCycleDate = null,
     ): Invoice {
+        if ($customer->hasCompanyOwnedPlan()) {
+            throw new \LogicException('Company Owned plans are excluded from invoices and recurring billing.');
+        }
         try {
             return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate) {
             if ($recurringCycleDate) {
@@ -159,6 +162,10 @@ class InvoiceService
 
         foreach ($customers as $customer) {
             try {
+                if ($customer->hasCompanyOwnedPlan()) {
+                    $results['skipped']++;
+                    continue;
+                }
                 if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
                     $results['skipped']++;
                     continue;
@@ -252,6 +259,7 @@ class InvoiceService
         return Invoice::whereIn('status', ['sent', 'partial'])
             ->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->where('balance', '>', 0)
+            ->whereHas('customer', fn ($customer) => $customer->whereDoesntHave('servicePlan', fn ($plan) => $plan->whereRaw('LOWER(name) LIKE ?', ['%company owned%'])))
             ->update(['status' => 'overdue']);
     }
 

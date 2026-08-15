@@ -113,6 +113,14 @@ class Customer extends Model
         return $this->belongsTo(ServicePlan::class);
     }
 
+    /** Company-owned connections are operational accounts, not billable subscribers. */
+    public function hasCompanyOwnedPlan(): bool
+    {
+        $this->loadMissing('servicePlan');
+        return $this->servicePlan !== null
+            && str_contains(mb_strtolower((string) $this->servicePlan->name), 'company owned');
+    }
+
     public function profileChangeRequests(): HasMany
     {
         return $this->hasMany(CustomerProfileChangeRequest::class);

@@ -98,6 +98,9 @@ class InvoiceController extends Controller
         }
 
         $customer = Customer::with('servicePlan')->findOrFail($request->customer_id);
+        if ($customer->hasCompanyOwnedPlan()) {
+            return response()->json(['message' => 'Company Owned plans cannot receive invoices.'], 422);
+        }
 
         $billingPeriodStart = Carbon::parse($request->billing_period_start);
         $billingPeriodEnd = Carbon::parse($request->billing_period_end);

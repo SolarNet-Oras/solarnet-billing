@@ -65,6 +65,9 @@ class SendInvoiceReminders extends Command
             if (!$customer) {
                 continue;
             }
+            if ($customer->hasCompanyOwnedPlan()) {
+                continue;
+            }
 
             $diffDays = $today->diffInDays($invoice->due_date->copy()->startOfDay(), false);
             $kind = $diffDays === $beforeDays

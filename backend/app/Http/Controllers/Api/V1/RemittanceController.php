@@ -134,6 +134,7 @@ class RemittanceController extends Controller
     public function createCollectorEarlyInvoice(string $customerId, InvoiceService $invoices): JsonResponse
     {
         $customer = Customer::with('servicePlan')->findOrFail($customerId);
+        abort_if($customer->hasCompanyOwnedPlan(), 422, 'Company Owned plans do not use early-payment invoices.');
         abort_unless($customer->servicePlan || $customer->monthly_fee > 0, 422, 'This client has no billable service plan.');
         $openInvoice = Invoice::where('customer_id', $customer->id)
             ->where('balance', '>', 0)

@@ -73,6 +73,10 @@ class GenerateRecurringInvoices extends Command
         $covered = 0;
         $errors = [];
         foreach ($customers as $customer) {
+            if ($customer->hasCompanyOwnedPlan()) {
+                $skipped++;
+                continue;
+            }
             // The recurring-cycle key is authoritative. Do not use a generic
             // due date here: an early/manual invoice may legitimately share it.
             if (Invoice::where('customer_id', $customer->id)
