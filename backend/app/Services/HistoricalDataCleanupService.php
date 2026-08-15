@@ -30,9 +30,9 @@ class HistoricalDataCleanupService
     public const MODULES = [
         'past_transactions' => 'Past transaction records',
         'daily_operations' => 'Daily-operation entries',
-        'invoices' => 'Cancelled unpaid invoices',
+        'invoices' => 'Historical paid/cancelled invoices',
         'tickets' => 'Closed repair tickets',
-        'liquidations' => 'Unlinked completed remittances',
+        'liquidations' => 'Historical submitted/received remittances',
         'installation_applications' => 'Finished/rejected installation applications',
     ];
 
@@ -122,7 +122,7 @@ class HistoricalDataCleanupService
             $items[$module] = [
                 'label' => self::MODULES[$module],
                 'eligible' => (clone $scope)->count(),
-                'blocked' => $this->blockedCount($module, $from, $to),
+                'blocked' => $this->blockedCount($module, $modules, $from, $to),
             ];
         }
 
@@ -131,23 +131,36 @@ class HistoricalDataCleanupService
             'to_date' => $to->toDateString(),
             'modules' => $items,
             'customer_records_deleted' => 0,
-            'warning' => 'Only the eligible closed or cancelled records shown here can be removed. Payments, active invoices, customers, users, routers, leases, and configuration are never deleted.',
+            'warning' => 'Customers, users, routers, leases, configuration, active invoices, and advance-credit payments are never deleted. To remove linked test payments, select Past transactions together with the matching Invoices and/or Liquidations module.',
         ];
     }
 
     private function deleteEligible(array $modules, Carbon $from, Carbon $to): array
     {
         $deleted = [];
-        foreach ($this->scopes($modules, $from, $to) as $module => $scope) {
-            $count = 0;
-            $scope->chunkById(200, function ($models) use (&$count) {
-                foreach ($models as $model) {
-                    $model->delete();
-                    $count++;
-                }
-            });
-            $deleted[$module] = $count;
+        $scopes = $this->scopes($modules, $from, $to);
+
+        // Child/history tables first. A Ticket delete only cascades to its own
+        // comments/history; it can never cascade upward to a customer or user.
+        foreach (['daily_operations', 'tickets', 'installation_applications'] as $module) {
+            if (isset($scopes[$module])) $deleted[$module] = $this->deleteScope($scopes[$module]);
         }
+
+        // A remittance with payments can be deleted only in coordinated test-data
+        // cleanup, so payment rows are not left pointing to a removed header.
+        if (isset($scopes['liquidations'])) $deleted['liquidations'] = $this->deleteScope($scopes['liquidations']);
+
+        // After the remittance headers are deleted, eligible linked payments have
+        // a null remittance_id and can be removed. Invoiced payments require the
+        // Invoices module too; this prevents stale paid_amount/balance values.
+        if (isset($scopes['past_transactions'])) {
+            $deleted['past_transactions'] = $this->deleteScope($this->transactionScope($modules, $from, $to));
+        }
+
+        // Paid test invoices are eligible only after their selected-range payments
+        // were removed above. Current/partial/unpaid invoices remain protected.
+        if (isset($scopes['invoices'])) $deleted['invoices'] = $this->deleteScope($this->invoiceScope($modules, $from, $to));
+
         return $deleted;
     }
 
@@ -156,35 +169,75 @@ class HistoricalDataCleanupService
         $scopes = [];
         foreach ($modules as $module) {
             $scopes[$module] = match ($module) {
-                'past_transactions' => Payment::query()
-                    ->whereNull('invoice_id')
-                    ->whereNull('remittance_id')
-                    ->whereNotIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'))
-                    ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()]),
+                'past_transactions' => $this->transactionScope($modules, $from, $to),
                 'daily_operations' => FinancialEntry::query()->whereBetween('entry_date', [$from->toDateString(), $to->toDateString()]),
-                'invoices' => Invoice::query()->where('status', 'cancelled')->whereDoesntHave('payments')->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]),
+                'invoices' => $this->invoiceScope($modules, $from, $to),
                 'tickets' => Ticket::query()->where('ticket_type', '!=', 'installation')->where('status', 'closed')->whereBetween('closed_at', [$from, $to]),
-                'liquidations' => Remittance::query()->whereIn('status', ['received', 'discrepancy'])->whereDoesntHave('payments')->whereBetween('submitted_at', [$from, $to]),
+                'liquidations' => $this->liquidationScope($modules, $from, $to),
                 'installation_applications' => Ticket::query()->where('ticket_type', 'installation')->whereIn('workflow_status', ['registered', 'rejected', 'cancelled'])->whereBetween('created_at', [$from, $to]),
             };
         }
         return $scopes;
     }
 
-    private function blockedCount(string $module, Carbon $from, Carbon $to): int
+    private function blockedCount(string $module, array $modules, Carbon $from, Carbon $to): int
     {
         return match ($module) {
-            'past_transactions' => Payment::query()
-                ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
-                ->where(function ($query) {
-                    $query->whereNotNull('invoice_id')
-                        ->orWhereNotNull('remittance_id')
-                        ->orWhereIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'));
-                })->count(),
-            'invoices' => Invoice::query()->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])->where(fn ($q) => $q->where('status', '!=', 'cancelled')->orWhereHas('payments'))->count(),
-            'liquidations' => Remittance::query()->whereBetween('submitted_at', [$from, $to])->whereHas('payments')->count(),
+            'past_transactions' => Payment::query()->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
+                ->whereNotIn('id', $this->transactionScope($modules, $from, $to)->select('id'))->count(),
+            'invoices' => Invoice::query()->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])
+                ->whereNotIn('id', $this->invoiceScope($modules, $from, $to)->select('id'))->count(),
+            'liquidations' => Remittance::query()->whereBetween('submitted_at', [$from, $to])
+                ->whereNotIn('id', $this->liquidationScope($modules, $from, $to)->select('id'))->count(),
             default => 0,
         };
+    }
+
+    private function transactionScope(array $modules, Carbon $from, Carbon $to)
+    {
+        return Payment::query()
+            ->whereNotIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'))
+            ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
+            ->where(function ($query) use ($modules, $from, $to) {
+                $query->whereNull('invoice_id');
+                if (in_array('invoices', $modules, true)) {
+                    $query->orWhereHas('invoice', fn ($invoice) => $invoice->whereIn('status', ['paid', 'cancelled']));
+                }
+            })
+            ->where(function ($query) use ($modules, $from, $to) {
+                $query->whereNull('remittance_id');
+                if (in_array('liquidations', $modules, true)) {
+                    $query->orWhereHas('remittance', fn ($remittance) => $remittance->whereBetween('submitted_at', [$from, $to]));
+                }
+            });
+    }
+
+    private function invoiceScope(array $modules, Carbon $from, Carbon $to)
+    {
+        $scope = Invoice::query()->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
+        if (in_array('past_transactions', $modules, true)) {
+            return $scope->whereIn('status', ['paid', 'cancelled'])
+                ->whereDoesntHave('payments', fn ($payment) => $payment->whereNotIn('id', $this->transactionScope($modules, $from, $to)->select('id')));
+        }
+        return $scope->where('status', 'cancelled')->whereDoesntHave('payments');
+    }
+
+    private function liquidationScope(array $modules, Carbon $from, Carbon $to)
+    {
+        $scope = Remittance::query()->whereIn('status', ['submitted', 'received', 'discrepancy'])->whereBetween('submitted_at', [$from, $to]);
+        if (in_array('past_transactions', $modules, true)) {
+            return $scope->whereDoesntHave('payments', fn ($payment) => $payment->whereNotIn('id', $this->transactionScope($modules, $from, $to)->select('id')));
+        }
+        return $scope->whereDoesntHave('payments');
+    }
+
+    private function deleteScope($scope): int
+    {
+        $count = 0;
+        $scope->chunkById(200, function ($models) use (&$count) {
+            foreach ($models as $model) { $model->delete(); $count++; }
+        });
+        return $count;
     }
 
     private function validatedModules(array $modules): array

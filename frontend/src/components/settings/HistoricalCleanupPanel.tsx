@@ -8,11 +8,11 @@ import {
 } from '@/services/historicalCleanupService';
 
 const MODULES: Array<{ value: HistoricalCleanupModule; label: string; detail: string }> = [
-  { value: 'past_transactions', label: 'Past transactions', detail: 'Only standalone payments without an invoice, remittance, or customer credit.' },
+  { value: 'past_transactions', label: 'Past transactions', detail: 'Select with Invoices and Liquidations to remove linked test payment bundles.' },
   { value: 'daily_operations', label: 'Daily-operation records', detail: 'Historical operational entries only.' },
-  { value: 'invoices', label: 'Cancelled invoices', detail: 'Only cancelled invoices without payments.' },
+  { value: 'invoices', label: 'Historical invoices', detail: 'Paid/cancelled invoices whose selected-range payments are also removed.' },
   { value: 'tickets', label: 'Closed repair tickets', detail: 'Closed repair tickets and their child comments/history.' },
-  { value: 'liquidations', label: 'Completed unlinked liquidations', detail: 'No remittance with linked payments is removed.' },
+  { value: 'liquidations', label: 'Historical remittances', detail: 'Select with Past transactions to remove its linked test payments safely.' },
   { value: 'installation_applications', label: 'Finished or rejected installation applications', detail: 'The application ticket only; never the customer.' },
 ];
 
