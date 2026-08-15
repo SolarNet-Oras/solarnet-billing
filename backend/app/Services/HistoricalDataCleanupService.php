@@ -201,7 +201,9 @@ class HistoricalDataCleanupService
             ->where(function ($query) use ($modules, $from, $to) {
                 $query->whereNull('invoice_id');
                 if (in_array('invoices', $modules, true)) {
-                    $query->orWhereHas('invoice', fn ($invoice) => $invoice->whereIn('status', ['paid', 'cancelled']));
+                    $query->orWhereHas('invoice', fn ($invoice) => $invoice
+                        ->whereIn('status', ['paid', 'cancelled'])
+                        ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]));
                 }
             })
             ->where(function ($query) use ($modules, $from, $to) {
