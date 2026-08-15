@@ -7,6 +7,7 @@ use App\Models\ClientMigrationAudit;
 use App\Models\ServicePlan;
 use App\Services\ClientMigrationMatcher;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
@@ -59,6 +60,10 @@ class ClientMigrationController extends Controller
             }
 
             $record = array_combine(self::HEADERS, array_pad($row, count(self::HEADERS), null));
+            $record['Installation Date'] = $this->normaliseDate($record['Installation Date']);
+            $record['Due Date'] = $this->normaliseDate($record['Due Date']);
+            $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
+            $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
             $match = $matcher->find((string) $record['Leases']);
             $plan = $this->findPlan((string) $record['Promo rates (Mbps)']);
 
@@ -102,5 +107,19 @@ class ClientMigrationController extends Controller
             ->where('download_speed', $rate)
             ->orderByDesc('upload_speed')
             ->first();
+    }
+
+    private function normaliseDate(mixed $value): ?string
+    {
+        if ($value === null || trim((string) $value) === '') return null;
+        try {
+            if (is_numeric($value)) return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)->format('Y-m-d');
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) { return null; }
+    }
+
+    private function normaliseAmount(mixed $value): float
+    {
+        return max(0, (float) preg_replace('/[^0-9.\-]/', '', (string) $value));
     }
 }

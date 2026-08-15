@@ -10,6 +10,7 @@ use App\Models\ServicePlan;
 use App\Services\CustomerAccountService;
 use App\Services\DhcpSyncService;
 use App\Services\MikrotikService;
+use App\Services\InvoiceService;
 use App\Services\QueueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,7 +32,7 @@ class UnregisteredLeaseController extends Controller
     protected CustomerAccountService $accountService;
     protected QueueService $queueService;
 
-    public function __construct(CustomerAccountService $accountService, QueueService $queueService)
+    public function __construct(CustomerAccountService $accountService, QueueService $queueService, protected InvoiceService $invoiceService)
     {
         $this->accountService = $accountService;
         $this->queueService   = $queueService;
@@ -134,6 +135,10 @@ class UnregisteredLeaseController extends Controller
             'address'         => 'nullable|string',
             'email'           => 'nullable|email|max:255',
             'monthly_fee'     => 'nullable|numeric|min:0',
+            'installation_date' => 'nullable|date',
+            'migration_previous_balance' => 'nullable|numeric|min:0',
+            'migration_current_balance' => 'nullable|numeric|min:0',
+            'migration_due_date' => 'nullable|date|after_or_equal:installation_date',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -166,14 +171,15 @@ class UnregisteredLeaseController extends Controller
             : ($lease->rate_limit ?: null);
 
         try {
-            $customer = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment) {
+            $registration = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment) {
+                $installationDate = $request->filled('installation_date') ? \Carbon\Carbon::parse($request->input('installation_date'))->startOfDay() : now()->startOfDay();
                 $customer = Customer::create([
                     'account_number'    => $this->generateAccountNumber(),
                     'full_name'         => $fullName,
                     'address'           => $request->input('address', $lease->hostname ?: 'To be updated'),
                     'contact_number'    => $request->input('contact_number', 'N/A'),
                     'email'             => $request->input('email'),
-                    'installation_date' => now()->toDateString(),
+                    'installation_date' => $installationDate->toDateString(),
                     'router_id'         => $lease->router_id,
                     'service_plan_id'   => $planId,
                     'monthly_fee'       => $monthlyFee,
@@ -188,8 +194,18 @@ class UnregisteredLeaseController extends Controller
                     'is_matched'  => true,
                 ]);
 
-                return $customer;
+                $openingInvoice = $this->invoiceService->createMigrationOpeningBalanceInvoice(
+                    $customer,
+                    (float) $request->input('migration_previous_balance', 0),
+                    (float) $request->input('migration_current_balance', 0),
+                    $installationDate,
+                    $request->filled('migration_due_date') ? \Carbon\Carbon::parse($request->input('migration_due_date'))->startOfDay() : null,
+                );
+
+                return ['customer' => $customer, 'opening_invoice' => $openingInvoice];
             });
+            $customer = $registration['customer'];
+            $openingInvoice = $registration['opening_invoice'];
         } catch (\Throwable $e) {
             Log::error('Failed to convert lease to customer', [
                 'lease_id' => $lease->id,
@@ -268,6 +284,7 @@ class UnregisteredLeaseController extends Controller
             'data'               => $customer->load(['servicePlan', 'router']),
             'portal_credentials' => $portalCreds,
             'mikrotik_sync'      => $mikrotikResult,
+            'migration_opening_invoice' => $openingInvoice?->fresh(['items']),
             'business_rule'      => [
                 'was_static_commented'   => $wasStaticCommented,
                 'mikrotik_comment_kept'  => $wasStaticCommented,

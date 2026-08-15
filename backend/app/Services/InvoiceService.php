@@ -17,6 +17,47 @@ use Illuminate\Database\QueryException;
 class InvoiceService
 {
     /**
+     * Creates a one-time opening balance from a verified client-migration row.
+     * It deliberately has no recurring cycle, so normal monthly billing remains
+     * anchored to the customer's installation anniversary.
+     */
+    public function createMigrationOpeningBalanceInvoice(Customer $customer, float $previousBalance, float $currentBalance, Carbon $installationDate, ?Carbon $dueDate): ?Invoice
+    {
+        $previousBalance = round(max(0, $previousBalance), 2);
+        $currentBalance = round(max(0, $currentBalance), 2);
+        $total = round($previousBalance + $currentBalance, 2);
+        if ($total <= 0 || $customer->hasCompanyOwnedPlan()) return null;
+
+        return DB::transaction(function () use ($customer, $previousBalance, $currentBalance, $total, $installationDate, $dueDate) {
+            $existing = Invoice::query()->where('customer_id', $customer->id)
+                ->where('notes', 'like', 'Migrated opening balance%')->first();
+            if ($existing) return $existing;
+
+            $invoice = Invoice::create([
+                'invoice_number' => $this->generateInvoiceNumber(),
+                'customer_id' => $customer->id,
+                'issue_date' => $installationDate,
+                'due_date' => $dueDate ?? $installationDate,
+                'billing_period_start' => $installationDate,
+                'billing_period_end' => $dueDate ?? $installationDate,
+                'subtotal' => $total,
+                'tax' => 0,
+                'discount' => 0,
+                'total' => $total,
+                'paid_amount' => 0,
+                'balance' => $total,
+                'status' => 'sent',
+                'sent_at' => now(),
+                'notes' => 'Migrated opening balance. Previous: '.number_format($previousBalance, 2, '.', '').'; Current: '.number_format($currentBalance, 2, '.', ''),
+            ]);
+            if ($previousBalance > 0) InvoiceItem::create(['invoice_id' => $invoice->id, 'description' => 'Migrated previous balance', 'quantity' => 1, 'unit_price' => $previousBalance, 'total' => $previousBalance]);
+            if ($currentBalance > 0) InvoiceItem::create(['invoice_id' => $invoice->id, 'description' => 'Migrated current balance', 'quantity' => 1, 'unit_price' => $currentBalance, 'total' => $currentBalance]);
+
+            return $invoice;
+        });
+    }
+
+    /**
      * Generate invoice for a customer
      * 
      * @param Customer $customer
