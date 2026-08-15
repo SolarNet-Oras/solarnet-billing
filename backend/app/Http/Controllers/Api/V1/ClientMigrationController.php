@@ -17,10 +17,6 @@ class ClientMigrationController extends Controller
         'Name', 'Address', 'Installation Date', 'Due Date',
         'Previous balance', 'Current balance', 'Leases', 'Promo rates (Mbps)',
     ];
-    private const REQUIRED_HEADERS = [
-        'Name', 'Address', 'Installation Date', 'Due Date',
-        'Previous balance', 'Current balance', 'Leases',
-    ];
 
     public function template()
     {
@@ -51,10 +47,9 @@ class ClientMigrationController extends Controller
         $rows = IOFactory::load($file->getRealPath())->getActiveSheet()->toArray(null, true, true, false);
         $headers = array_map('trim', array_shift($rows) ?? []);
 
-        $hasPromoRates = count($headers) === count(self::HEADERS) && $headers === self::HEADERS;
-        if ((! $hasPromoRates && $headers !== self::REQUIRED_HEADERS)) {
+        if (! in_array('Leases', $headers, true)) {
             return response()->json([
-                'message' => 'Invalid headers. Use the seven required headers; Promo rates (Mbps) is optional.',
+                'message' => 'The spreadsheet must include a Leases column containing the client MAC address. All other migration columns are optional.',
             ], 422);
         }
 
@@ -64,8 +59,10 @@ class ClientMigrationController extends Controller
                 continue;
             }
 
-            $record = array_combine($headers, array_pad($row, count($headers), null));
-            $record['Promo rates (Mbps)'] ??= null;
+            $record = array_replace(
+                array_fill_keys(self::HEADERS, null),
+                array_combine($headers, array_pad($row, count($headers), null)),
+            );
             $record['Installation Date'] = $this->normaliseDate($record['Installation Date']);
             $record['Due Date'] = $this->normaliseDate($record['Due Date']);
             $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
@@ -75,11 +72,6 @@ class ClientMigrationController extends Controller
                 ?? $this->findPlanByLeaseRate($match['lease']?->rate_limit);
             $exclusionReasons = [];
             if ($match['status'] !== 'EXACT MAC MATCH') $exclusionReasons[] = 'A full exact DHCP lease MAC match is required.';
-            if (! $plan) $exclusionReasons[] = 'No active service plan matches the spreadsheet speed or matched DHCP lease rate-limit.';
-            if (! $record['Installation Date']) $exclusionReasons[] = 'Installation Date is missing or invalid.';
-            if ((float) $record['Current balance'] + (float) $record['Previous balance'] > 0 && ! $record['Due Date']) {
-                $exclusionReasons[] = 'Due Date is required when a migrated balance is supplied.';
-            }
 
             $preview[] = [
                 'row' => $index + 2,
