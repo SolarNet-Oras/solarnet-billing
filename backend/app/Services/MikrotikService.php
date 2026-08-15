@@ -18,6 +18,8 @@ class MikrotikService
     private const PAYMENT_PORTAL_ADDRESS_LIST = 'solarnet_payment_portal';
     private const PAYMENT_SESSION_ADDRESS_LIST = 'solarnet_payment_sessions';
     private const PAYMENT_PORTAL_COMMENT_PREFIX = 'Solarnet Billing payment portal';
+    private const THREAT_FEED_ADDRESS_LIST = 'solarnet_threat_feed';
+    private const THREAT_FEED_RULE_PREFIX = 'SolarNet Threat Feed: manual block';
     /**
      * Customers are sent to this PayMongo-hosted page to choose GCash and
      * complete payment. Keep this deliberately narrow: allowing arbitrary
@@ -168,6 +170,133 @@ class MikrotikService
         } catch (Throwable $e) {
             Log::warning('Router monitoring read failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
             return ['success' => false, 'message' => 'Monitoring read failed: ' . $e->getMessage(), 'data' => null];
+        }
+    }
+
+    /**
+     * Compare the router's current connection table with a supplied set of
+     * IPv4 indicators. This is intentionally read-only: it never changes
+     * RouterOS firewall state and is run only from a user-triggered scan.
+     *
+     * @param array<string, true> $indicators
+     */
+    public function threatFeedConnections(Router $router, array $indicators): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $limit = max(1, (int) config('threat-monitor.connection_limit', 5000));
+            $connections = array_slice($client->query(new Query('/ip/firewall/connection/print'))->read(), 0, $limit);
+            $matches = [];
+
+            foreach ($connections as $connection) {
+                foreach (['source' => $connection['src-address'] ?? null, 'destination' => $connection['dst-address'] ?? null] as $direction => $address) {
+                    $ip = $this->ipv4FromRouterAddress($address);
+                    if ($ip === null || !isset($indicators[$ip])) continue;
+
+                    $matches[$ip]['remote_ip'] = $ip;
+                    $matches[$ip]['directions'][$direction] = true;
+                }
+            }
+
+            return [
+                'success' => true,
+                'connections_checked' => count($connections),
+                'matches' => array_values(array_map(fn (array $match) => [
+                    'remote_ip' => $match['remote_ip'],
+                    'directions' => array_keys($match['directions']),
+                ], $matches)),
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Router threat-feed connection read failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Could not read active RouterOS connections: ' . $e->getMessage(), 'matches' => []];
+        }
+    }
+
+    /**
+     * Add one reviewed indicator to a SolarNet-owned address list and ensure
+     * the two dedicated forward-chain drop rules exist. No unrelated list or
+     * firewall rule is changed. This is invoked only after administrator
+     * approval of a pending threat observation.
+     */
+    public function blockReviewedThreat(Router $router, string $remoteIp, string $feedName): array
+    {
+        if (!filter_var($remoteIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return ['success' => false, 'message' => 'Only a valid IPv4 threat indicator can be blocked.'];
+        }
+
+        try {
+            $client = new Client($this->makeConfig($router));
+            $entries = $client->query(
+                (new Query('/ip/firewall/address-list/print'))
+                    ->where('list', self::THREAT_FEED_ADDRESS_LIST)
+                    ->where('address', $remoteIp)
+            )->read();
+
+            if (empty($entries)) {
+                $client->query(
+                    (new Query('/ip/firewall/address-list/add'))
+                        ->equal('list', self::THREAT_FEED_ADDRESS_LIST)
+                        ->equal('address', $remoteIp)
+                        ->equal('comment', self::THREAT_FEED_RULE_PREFIX . ' — ' . $feedName)
+                )->read();
+            }
+
+            $this->ensureThreatFeedBlockRules($client);
+
+            return [
+                'success' => true,
+                'message' => "{$remoteIp} was added to the SolarNet threat-feed block list after manual approval.",
+                'address_list' => self::THREAT_FEED_ADDRESS_LIST,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Could not apply reviewed threat block', ['router_id' => $router->id, 'remote_ip' => $remoteIp, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'No threat block was applied: ' . $e->getMessage()];
+        }
+    }
+
+    private function ipv4FromRouterAddress(mixed $address): ?string
+    {
+        if (!is_string($address) || preg_match('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', $address, $match) !== 1) return null;
+        return filter_var($match[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $match[0] : null;
+    }
+
+    /**
+     * The comments are the ownership boundary. Existing customer, VPN and
+     * billing rules are neither moved nor edited. Both directions are blocked
+     * because a C2 address can be seen as source or destination in RouterOS.
+     */
+    private function ensureThreatFeedBlockRules(Client $client): void
+    {
+        $definitions = [
+            ['direction' => 'dst-address-list', 'comment' => self::THREAT_FEED_RULE_PREFIX . ' outbound'],
+            ['direction' => 'src-address-list', 'comment' => self::THREAT_FEED_RULE_PREFIX . ' inbound'],
+        ];
+
+        foreach ($definitions as $position => $definition) {
+            $rules = $client->query((new Query('/ip/firewall/filter/print'))->where('comment', $definition['comment']))->read();
+            $ruleId = $rules[0]['.id'] ?? null;
+            if ($ruleId === null) {
+                $response = $client->query(
+                    (new Query('/ip/firewall/filter/add'))
+                        ->equal('chain', 'forward')
+                        ->equal($definition['direction'], self::THREAT_FEED_ADDRESS_LIST)
+                        ->equal('action', 'drop')
+                        ->equal('comment', $definition['comment'])
+                )->read();
+                $ruleId = $response[0]['ret'] ?? null;
+                if ($ruleId === null) {
+                    $created = $client->query((new Query('/ip/firewall/filter/print'))->where('comment', $definition['comment']))->read();
+                    $ruleId = $created[0]['.id'] ?? null;
+                }
+            }
+
+            if ($ruleId === null) throw new \RuntimeException('Could not identify the SolarNet threat-feed firewall rule after creation.');
+
+            $client->query(
+                (new Query('/ip/firewall/filter/move'))
+                    ->equal('numbers', $ruleId)
+                    ->equal('destination', (string) $position)
+            )->read();
         }
     }
 

@@ -120,6 +120,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['permission:manage-routers'])->group(function () {
             Route::post('routers/{id}/test-connection', [RouterController::class, 'testConnection']);
             Route::get('routers/{id}/monitoring', [RouterController::class, 'monitoring']);
+            Route::post('routers/{id}/threat-scan', [RouterController::class, 'scanThreatFeed']);
+            Route::get('routers/{id}/threat-observations', [RouterController::class, 'threatObservations']);
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);
             Route::post('routers/{id}/billing-access/install', [RouterController::class, 'installBillingAccess']);
             Route::get('routers/{id}/billing-access', [RouterController::class, 'billingAccessStatus']);
@@ -131,6 +133,7 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
         });
+        Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
         Route::get('system/network-info', [RouterController::class, 'networkInfo'])->middleware('permission:view-routers');
         Route::post('routers/{id}/sync-dhcp', [RouterController::class, 'syncDhcpLeases'])->middleware('permission:sync-dhcp');
         Route::get('routers/{id}/unmatched-leases', [RouterController::class, 'getUnmatchedLeases'])->middleware('permission:view-dhcp');

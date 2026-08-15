@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Router;
+use App\Models\RouterThreatObservation;
 use App\Models\Setting;
 use App\Services\MikrotikService;
 use App\Services\MikrotikScriptGenerator;
+use App\Services\ThreatFeedService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -16,11 +18,13 @@ class RouterController extends Controller
 {
     protected MikrotikService $mikrotikService;
     protected MikrotikScriptGenerator $scriptGenerator;
+    protected ThreatFeedService $threatFeedService;
 
-    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator)
+    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService)
     {
         $this->mikrotikService = $mikrotikService;
         $this->scriptGenerator = $scriptGenerator;
+        $this->threatFeedService = $threatFeedService;
     }
 
     /**
@@ -180,6 +184,75 @@ class RouterController extends Controller
         $router = Router::findOrFail($id);
         $result = $this->mikrotikService->monitoringSnapshot($router);
         return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Run an operator-triggered, read-only comparison with the configured threat feed. */
+    public function scanThreatFeed(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->threatFeedService->scanRouter($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Return audit observations; a pending record is never a firewall change by itself. */
+    public function threatObservations(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $observations = RouterThreatObservation::query()
+            ->where('router_id', $router->id)
+            ->with('reviewer:id,name,email')
+            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->latest('last_observed_at')
+            ->limit(100)
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $observations]);
+    }
+
+    /** An administrator can dismiss a candidate or explicitly approve its dedicated block. */
+    public function reviewThreatObservation(Request $request, string $id, string $observation): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'decision' => ['required', Rule::in(['approve_block', 'dismiss'])],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $router = Router::findOrFail($id);
+        $candidate = RouterThreatObservation::query()
+            ->where('id', $observation)
+            ->where('router_id', $router->id)
+            ->firstOrFail();
+
+        if ($candidate->status === 'blocked') {
+            return response()->json(['success' => false, 'message' => 'This threat candidate has already been manually blocked.'], 422);
+        }
+
+        $data = $validator->validated();
+        if ($data['decision'] === 'approve_block') {
+            $result = $this->mikrotikService->blockReviewedThreat($router, $candidate->remote_ip, $candidate->feed_name);
+            if (!$result['success']) return response()->json($result, 422);
+
+            $candidate->update([
+                'status' => 'blocked',
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+                'review_note' => $data['note'] ?? null,
+                'blocked_at' => now(),
+            ]);
+        } else {
+            $candidate->update([
+                'status' => 'dismissed',
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+                'review_note' => $data['note'] ?? null,
+            ]);
+            $result = ['success' => true, 'message' => 'Threat candidate dismissed. No RouterOS change was made.'];
+        }
+
+        return response()->json(['success' => true, 'message' => $result['message'], 'data' => $candidate->fresh('reviewer:id,name,email')]);
     }
 
     /**

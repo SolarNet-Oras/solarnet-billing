@@ -62,6 +62,21 @@ export interface RouterMonitoringSnapshot {
   scanned_at: string;
 }
 
+export interface RouterThreatObservation {
+  id: string;
+  router_id: string;
+  feed_name: string;
+  remote_ip: string;
+  connection_directions: string[] | null;
+  status: 'pending' | 'dismissed' | 'blocked';
+  first_observed_at: string;
+  last_observed_at: string;
+  reviewed_at: string | null;
+  review_note: string | null;
+  blocked_at: string | null;
+  reviewer?: { id: string; name: string; email: string } | null;
+}
+
 export const routerService = {
   async getAll(): Promise<Router[]> {
     const response = await api.get<{ success: boolean; data: Router[] }>('/routers');
@@ -100,6 +115,21 @@ export const routerService = {
   async monitoring(id: string): Promise<RouterMonitoringSnapshot> {
     const response = await api.get<{ success: boolean; data: RouterMonitoringSnapshot }>(`/routers/${id}/monitoring`);
     return response.data.data;
+  },
+
+  async scanThreatFeed(id: string): Promise<{ message: string; data: { indicators_loaded: number; connections_checked: number; matches: RouterThreatObservation[]; scanned_at: string } }> {
+    const response = await api.post<{ success: boolean; message: string; data: { indicators_loaded: number; connections_checked: number; matches: RouterThreatObservation[]; scanned_at: string } }>(`/routers/${id}/threat-scan`);
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async threatObservations(id: string): Promise<RouterThreatObservation[]> {
+    const response = await api.get<{ success: boolean; data: RouterThreatObservation[] }>(`/routers/${id}/threat-observations`);
+    return response.data.data;
+  },
+
+  async reviewThreatObservation(routerId: string, observationId: string, decision: 'approve_block' | 'dismiss'): Promise<{ message: string; data: RouterThreatObservation }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterThreatObservation }>(`/routers/${routerId}/threat-observations/${observationId}/review`, { decision });
+    return { message: response.data.message, data: response.data.data };
   },
 
   async installBillingAccess(id: string): Promise<{ success: boolean; message: string; rules_installed?: number }> {

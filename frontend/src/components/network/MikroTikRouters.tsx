@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Network, Plus, RefreshCw, Server, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
-import { routerService, type Router, type CreateRouterData, type RouterMonitoringSnapshot } from '@/services/routerService';
+import { Activity, AlertTriangle, Plus, RefreshCw, ScanSearch, Server, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { routerService, type Router, type CreateRouterData, type RouterMonitoringSnapshot, type RouterThreatObservation } from '@/services/routerService';
 import { RouterList } from './RouterList';
 import { RouterFormModal } from './RouterFormModal';
 
@@ -39,6 +39,9 @@ export function MikroTikRouters() {
   const [editingRouter, setEditingRouter] = useState<Router | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [monitoring, setMonitoring] = useState<Record<string, RouterMonitoringSnapshot>>({});
+  const [threatObservations, setThreatObservations] = useState<Record<string, RouterThreatObservation[]>>({});
+  const [scanningRouterId, setScanningRouterId] = useState<string | null>(null);
+  const [reviewingObservationId, setReviewingObservationId] = useState<string | null>(null);
 
   const loadRouters = async (showRefresh = false) => {
     try {
@@ -72,6 +75,18 @@ export function MikroTikRouters() {
     return () => { disposed = true; };
   }, [routers]);
 
+  const loadThreatObservations = async (routerList = routers) => {
+    const results = await Promise.all(routerList.map(async (router) => {
+      try { return [router.id, await routerService.threatObservations(router.id)] as const; }
+      catch { return null; }
+    }));
+    setThreatObservations((current) => ({ ...current, ...Object.fromEntries(results.filter((result): result is readonly [string, RouterThreatObservation[]] => result !== null)) }));
+  };
+
+  useEffect(() => {
+    if (routers.length) void loadThreatObservations();
+  }, [routers]);
+
   const online = routers.filter((router) => router.connection_status === 'online').length;
   const offline = routers.filter((router) => router.connection_status === 'offline').length;
   const unknown = routers.length - online - offline;
@@ -84,6 +99,35 @@ export function MikroTikRouters() {
   const hasTrafficSample = samples.some((sample) => sample.traffic_sampled);
   const protectedRouters = samples.filter((sample) => sample.threat_status === 'protected').length;
   const threatSignals = samples.reduce((total, sample) => total + sample.threat_signal_rules + sample.threat_address_list_entries, 0);
+  const pendingThreats = Object.values(threatObservations).flat().filter((observation) => observation.status === 'pending');
+
+  const scanThreatFeed = async (router: Router) => {
+    try {
+      setScanningRouterId(router.id);
+      const result = await routerService.scanThreatFeed(router.id);
+      await loadThreatObservations([router]);
+      window.alert(result.message);
+    } catch (error: any) {
+      window.alert(error?.response?.data?.message || 'Threat scan failed. No RouterOS firewall change was made.');
+    } finally {
+      setScanningRouterId(null);
+    }
+  };
+
+  const reviewThreat = async (router: Router, observation: RouterThreatObservation, decision: 'approve_block' | 'dismiss') => {
+    const action = decision === 'approve_block' ? 'block this IP on this router' : 'dismiss this candidate';
+    if (!window.confirm(`Confirm: ${action}?\n\n${observation.remote_ip}\nFeed: ${observation.feed_name}\n\n${decision === 'approve_block' ? 'This will add only SolarNet-owned threat-feed firewall entries to this router.' : 'No RouterOS firewall change will be made.'}`)) return;
+    try {
+      setReviewingObservationId(observation.id);
+      const result = await routerService.reviewThreatObservation(router.id, observation.id, decision);
+      await loadThreatObservations([router]);
+      window.alert(result.message);
+    } catch (error: any) {
+      window.alert(error?.response?.data?.message || 'Could not review this threat candidate.');
+    } finally {
+      setReviewingObservationId(null);
+    }
+  };
 
   const handleSave = async (data: CreateRouterData) => {
     if (editingRouter) await routerService.update(editingRouter.id, data);
@@ -124,15 +168,38 @@ export function MikroTikRouters() {
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_1.35fr]">
         <article className="rounded-2xl border border-slate-700/80 bg-slate-950/65 p-5">
-          <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/10 text-sky-300"><Activity className="h-5 w-5" /></span><div><h3 className="font-semibold text-white">Live data traffic</h3><p className="text-xs text-slate-400">Aggregate RouterOS interface counters; refreshes every 5 seconds.</p></div></div>
+          <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/10 text-sky-300"><Activity className="h-5 w-5" /></span><div><h3 className="font-semibold text-white">All-router data traffic</h3><p className="text-xs text-slate-400">Combined total only. Individual router traffic is shown below.</p></div></div>
           <div className="mt-5 grid grid-cols-2 gap-3 text-center"><div className="rounded-xl bg-sky-500/10 p-3"><p className="text-xl font-bold text-sky-300">{formatRate(hasTrafficSample ? rxBps : null)}</p><p className="text-xs text-slate-400">RX traffic</p></div><div className="rounded-xl bg-violet-500/10 p-3"><p className="text-xl font-bold text-violet-300">{formatRate(hasTrafficSample ? txBps : null)}</p><p className="text-xs text-slate-400">TX traffic</p></div></div>
           <p className="mt-5 border-t border-slate-800 pt-4 text-xs text-slate-400">Last router sync: <span className="font-medium text-slate-200">{lastSyncLabel}</span></p>
         </article>
         <article className="rounded-2xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/10 via-slate-950/70 to-slate-950/70 p-5">
-          <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300"><ShieldCheck className="h-5 w-5" /></span><div><h3 className="font-semibold text-emerald-200">Virus & threat monitor</h3><p className="mt-1 text-sm text-slate-400">Read-only RouterOS firewall signals: enabled drop rules plus threat-named rules and address lists. This does not claim endpoint antivirus or change firewall configuration.</p></div></div>
-          <div className="mt-5 flex flex-wrap gap-2"><span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">{protectedRouters}/{samples.length || active} routers protected</span><span className="rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200">{threatSignals} threat signals</span></div>
+          <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-300"><ShieldCheck className="h-5 w-5" /></span><div><h3 className="font-semibold text-emerald-200">Virus & threat monitor</h3><p className="mt-1 text-sm text-slate-400">RouterOS firewall signals plus optional threat-feed connection scans. This is network detection, not endpoint antivirus.</p></div></div>
+          <div className="mt-5 flex flex-wrap gap-2"><span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">{protectedRouters}/{samples.length || active} routers protected</span><span className="rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200">{threatSignals} firewall signals</span><span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">{pendingThreats.length} pending review</span></div>
         </article>
       </div>
+
+      <section className="mt-5 rounded-2xl border border-sky-400/20 bg-slate-950/70 p-5">
+        <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-sky-200">Traffic by MikroTik router</h3><p className="text-xs text-slate-400">Each card is a separate RouterOS read. RX/TX counters refresh every 5 seconds.</p></div><span className="text-xs text-slate-500">No router configuration changes</span></div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {routers.map((router) => {
+            const snapshot = monitoring[router.id];
+            return <article key={router.id} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{router.name}</p><p className="text-xs text-slate-400">{router.host}:{router.port}</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${router.connection_status === 'online' ? 'bg-emerald-500/15 text-emerald-300' : router.connection_status === 'offline' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-300'}`}>{router.connection_status}</span></div><div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-lg bg-sky-500/10 p-2.5"><p className="text-sm font-bold text-sky-300">{formatRate(snapshot?.traffic_sampled ? snapshot.rx_bps : null)}</p><p className="mt-1 text-xs text-slate-400">RX</p></div><div className="rounded-lg bg-violet-500/10 p-2.5"><p className="text-sm font-bold text-violet-300">{formatRate(snapshot?.traffic_sampled ? snapshot.tx_bps : null)}</p><p className="mt-1 text-xs text-slate-400">TX</p></div></div><p className="mt-3 text-xs text-slate-500">{snapshot ? `${snapshot.running_interfaces} running interfaces · CPU ${snapshot.cpu_load}%` : 'Waiting for a read-only monitoring sample…'}</p></article>;
+          })}
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-2xl border border-amber-400/20 bg-slate-950/70 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="flex items-center gap-2 font-semibold text-amber-100"><AlertTriangle className="h-4 w-4 text-amber-300" /> Threat-feed review</h3><p className="mt-1 text-xs text-slate-400">Scan compares current RouterOS connections with the Feodo Tracker botnet/C2 feed. A match is logged first; it is never blocked automatically.</p></div><span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100">Manual approval required</span></div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {routers.map((router) => {
+            const observations = threatObservations[router.id] || [];
+            const pending = observations.filter((observation) => observation.status === 'pending');
+            return <article key={router.id} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-white">{router.name}</p><p className="text-xs text-slate-400">{pending.length} pending candidate{pending.length === 1 ? '' : 's'}</p></div><button type="button" disabled={scanningRouterId === router.id || router.connection_status === 'offline'} onClick={() => void scanThreatFeed(router)} className="inline-flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"><ScanSearch className={`h-4 w-4 ${scanningRouterId === router.id ? 'animate-pulse' : ''}`} />{scanningRouterId === router.id ? 'Scanning...' : 'Scan connections'}</button></div>
+              {pending.length === 0 ? <p className="mt-4 text-xs text-slate-500">No pending candidate. A scan is read-only until an administrator chooses Block.</p> : <div className="mt-4 space-y-2">{pending.map((observation) => <div key={observation.id} className="rounded-lg border border-amber-400/15 bg-amber-500/5 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-mono text-sm font-semibold text-amber-100">{observation.remote_ip}</p><p className="text-xs text-slate-400">{observation.feed_name} · seen as {(observation.connection_directions || []).join(' / ') || 'connection'}</p></div><div className="flex gap-2"><button type="button" disabled={reviewingObservationId === observation.id} onClick={() => void reviewThreat(router, observation, 'dismiss')} className="rounded-md border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50">Dismiss</button><button type="button" disabled={reviewingObservationId === observation.id} onClick={() => void reviewThreat(router, observation, 'approve_block')} className="rounded-md bg-red-500/90 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50">Block after review</button></div></div></div>)}</div>}
+            </article>;
+          })}
+        </div>
+      </section>
 
       <div className="mt-6 rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-1 shadow-[0_0_35px_-20px_rgba(34,211,238,0.9)]">
         <div className="flex items-center justify-between gap-3 px-4 py-4"><div><h3 className="font-semibold text-cyan-200">Router list</h3><p className="text-xs text-slate-400">All existing MikroTik actions remain available for every router.</p></div><span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">Secure connection</span></div>
