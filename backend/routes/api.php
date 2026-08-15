@@ -83,6 +83,7 @@ Route::prefix('v1')->group(function () {
         });
         Route::get('super-admin/client-migrations/template', [ClientMigrationController::class, 'template'])->middleware('role:super_admin');
         Route::post('super-admin/client-migrations/preview', [ClientMigrationController::class, 'preview'])->middleware('role:super_admin');
+        Route::patch('super-admin/client-migrations/customers/{customer}', [ClientMigrationController::class, 'updateExisting'])->middleware('role:super_admin');
         Route::middleware('role:super_admin')->prefix('super-admin/historical-cleanup')->group(function () {
             Route::get('audits', [HistoricalCleanupController::class, 'index']);
             Route::post('preview', [HistoricalCleanupController::class, 'preview']);

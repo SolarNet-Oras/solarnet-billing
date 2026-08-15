@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientMigrationAudit;
+use App\Models\Customer;
 use App\Models\ServicePlan;
 use App\Services\ClientMigrationMatcher;
 use Illuminate\Http\Request;
@@ -68,6 +69,7 @@ class ClientMigrationController extends Controller
             $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
             $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
             $match = $matcher->find((string) $record['Leases']);
+            $existingCustomer = $match['lease']?->customer;
             $plan = $this->findPlan((string) $record['Promo rates (Mbps)'])
                 ?? $this->findPlanByLeaseRate($match['lease']?->rate_limit);
             $exclusionReasons = [];
@@ -80,8 +82,14 @@ class ClientMigrationController extends Controller
                 'lease_id' => $match['lease']?->id,
                 'candidate_lease_ids' => $match['candidates']->pluck('id')->values(),
                 'requires_confirmation' => $match['requires_confirmation'] ?? false,
-                'registration_eligible' => $exclusionReasons === [],
+                'registration_eligible' => $exclusionReasons === [] && ! $existingCustomer,
+                'update_eligible' => $exclusionReasons === [] && (bool) $existingCustomer,
                 'exclusion_reasons' => $exclusionReasons,
+                'existing_customer' => $existingCustomer ? [
+                    'id' => $existingCustomer->id,
+                    'account_number' => $existingCustomer->account_number,
+                    'installation_date' => $existingCustomer->installation_date?->toDateString(),
+                ] : null,
                 'service_plan' => $plan ? [
                     'id' => $plan->id,
                     'name' => $plan->name,
@@ -101,6 +109,34 @@ class ClientMigrationController extends Controller
         ]);
 
         return response()->json(['audit_id' => $audit->id, 'rows' => $preview]);
+    }
+
+    /** Apply spreadsheet-supplied profile details to an already matched customer. */
+    public function updateExisting(Request $request, Customer $customer)
+    {
+        $validated = $request->validate([
+            'full_name' => 'nullable|string|max:255',
+            'address' => 'nullable|string',
+            'installation_date' => 'nullable|date',
+            'service_plan_id' => 'nullable|exists:service_plans,id',
+            'monthly_fee' => 'nullable|numeric|min:0',
+        ]);
+
+        $updates = [];
+        foreach (['full_name', 'address', 'installation_date', 'service_plan_id', 'monthly_fee'] as $field) {
+            if ($request->filled($field)) {
+                $updates[$field] = $validated[$field];
+            }
+        }
+
+        if ($updates) {
+            $customer->update($updates);
+        }
+
+        return response()->json([
+            'message' => 'Imported client details updated.',
+            'customer' => $customer->fresh(['servicePlan']),
+        ]);
     }
 
     private function findPlan(string $promoRate): ?ServicePlan
