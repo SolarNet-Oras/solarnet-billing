@@ -17,6 +17,10 @@ class ClientMigrationController extends Controller
         'Name', 'Address', 'Installation Date', 'Due Date',
         'Previous balance', 'Current balance', 'Leases', 'Promo rates (Mbps)',
     ];
+    private const REQUIRED_HEADERS = [
+        'Name', 'Address', 'Installation Date', 'Due Date',
+        'Previous balance', 'Current balance', 'Leases',
+    ];
 
     public function template()
     {
@@ -47,9 +51,10 @@ class ClientMigrationController extends Controller
         $rows = IOFactory::load($file->getRealPath())->getActiveSheet()->toArray(null, true, true, false);
         $headers = array_map('trim', array_shift($rows) ?? []);
 
-        if ($headers !== self::HEADERS) {
+        $hasPromoRates = count($headers) === count(self::HEADERS) && $headers === self::HEADERS;
+        if ((! $hasPromoRates && $headers !== self::REQUIRED_HEADERS)) {
             return response()->json([
-                'message' => 'Invalid headers. Download and use the migration template.',
+                'message' => 'Invalid headers. Use the seven required headers; Promo rates (Mbps) is optional.',
             ], 422);
         }
 
@@ -59,16 +64,18 @@ class ClientMigrationController extends Controller
                 continue;
             }
 
-            $record = array_combine(self::HEADERS, array_pad($row, count(self::HEADERS), null));
+            $record = array_combine($headers, array_pad($row, count($headers), null));
+            $record['Promo rates (Mbps)'] ??= null;
             $record['Installation Date'] = $this->normaliseDate($record['Installation Date']);
             $record['Due Date'] = $this->normaliseDate($record['Due Date']);
             $record['Previous balance'] = $this->normaliseAmount($record['Previous balance']);
             $record['Current balance'] = $this->normaliseAmount($record['Current balance']);
             $match = $matcher->find((string) $record['Leases']);
-            $plan = $this->findPlan((string) $record['Promo rates (Mbps)']);
+            $plan = $this->findPlan((string) $record['Promo rates (Mbps)'])
+                ?? $this->findPlanByLeaseRate($match['lease']?->rate_limit);
             $exclusionReasons = [];
             if ($match['status'] !== 'EXACT MAC MATCH') $exclusionReasons[] = 'A full exact DHCP lease MAC match is required.';
-            if (! $plan) $exclusionReasons[] = 'No active service plan matches the spreadsheet Promo rates value.';
+            if (! $plan) $exclusionReasons[] = 'No active service plan matches the spreadsheet speed or matched DHCP lease rate-limit.';
             if (! $record['Installation Date']) $exclusionReasons[] = 'Installation Date is missing or invalid.';
             if ((float) $record['Current balance'] + (float) $record['Previous balance'] > 0 && ! $record['Due Date']) {
                 $exclusionReasons[] = 'Due Date is required when a migrated balance is supplied.';
@@ -116,6 +123,16 @@ class ClientMigrationController extends Controller
             ->where('download_speed', $rate)
             ->orderByDesc('upload_speed')
             ->first();
+    }
+
+    private function findPlanByLeaseRate(?string $rateLimit): ?ServicePlan
+    {
+        if (! $rateLimit || ! preg_match('/^([\d.]+)\s*([KMGkmg]?)\s*\//', $rateLimit, $match)) return null;
+        $speed = (float) $match[1];
+        $unit = strtoupper($match[2]);
+        if ($unit === 'K') $speed /= 1000;
+        if ($unit === 'G') $speed *= 1000;
+        return ServicePlan::query()->where('is_active', true)->where('download_speed', round($speed))->orderByDesc('upload_speed')->first();
     }
 
     private function normaliseDate(mixed $value): ?string
