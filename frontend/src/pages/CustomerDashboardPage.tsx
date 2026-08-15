@@ -234,6 +234,21 @@ const CustomerDashboardPage: React.FC = () => {
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <CreditCard className="w-6 h-6 text-emerald-600" />
+              </div>
+              <span className="text-2xl font-bold text-gray-900">
+                {formatPHP(stats?.advance_credit?.available_credit || 0)}
+              </span>
+            </div>
+            <h3 className="text-sm font-medium text-gray-600">Available Advance Credit</h3>
+            {stats?.advance_credit?.covered_cycles?.length > 0 && (
+              <p className="text-xs text-emerald-700 mt-1">Future billing cycle payment reserved.</p>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                 <CreditCard className="w-6 h-6 text-green-600" />
               </div>

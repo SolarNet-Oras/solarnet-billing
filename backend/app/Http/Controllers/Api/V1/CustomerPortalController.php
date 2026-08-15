@@ -384,6 +384,7 @@ class CustomerPortalController extends Controller
                 'total_invoices' => $totalInvoices,
                 'unpaid_invoices' => $unpaidInvoices,
                 'total_outstanding' => (float) $totalOutstanding,
+                'advance_credit' => app(\App\Services\InvoiceService::class)->creditSummary($customer),
                 'last_payment' => $lastPayment ? [
                     'amount' => $lastPayment->amount,
                     'date' => $lastPayment->payment_date->format('Y-m-d'),

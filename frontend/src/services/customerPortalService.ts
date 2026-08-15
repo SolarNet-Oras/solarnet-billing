@@ -40,6 +40,15 @@ export const customerPortalService = {
       total_invoices: number;
       unpaid_invoices: number;
       total_outstanding: number;
+      advance_credit: {
+        available_credit: number;
+        covered_cycles: Array<{
+          cycle_date: string | null;
+          amount: number;
+          remaining_amount: number;
+          status: string;
+        }>;
+      };
       last_payment: {
         amount: number;
         date: string;

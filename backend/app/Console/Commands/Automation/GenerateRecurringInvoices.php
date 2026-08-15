@@ -18,7 +18,7 @@ use Illuminate\Console\Command;
 class GenerateRecurringInvoices extends Command
 {
     protected $signature = 'automation:generate-recurring-invoices
-                            {--date= : Billing date in YYYY-MM-DD (defaults to today)}
+                            {--date= : Scheduler run date in YYYY-MM-DD (defaults to today)}
                             {--dry-run : Report only, do not create invoices}
                             {--triggered-by=schedule}
                             {--user-id=}';
@@ -51,6 +51,8 @@ class GenerateRecurringInvoices extends Command
         $billingDate = $dateOption
             ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()
             : now($timezone)->startOfDay();
+        $leadDays = (int) Setting::get('billing.invoice_generation_days_before_due', 7);
+        $cycleDate = $billingDate->copy()->addDays($leadDays);
         $dryRun = (bool) $this->option('dry-run');
 
         $customers = Customer::active()
@@ -63,18 +65,25 @@ class GenerateRecurringInvoices extends Command
             // silently skipping customers in February.
             ->filter(fn (Customer $customer) => min(
                 $customer->installation_date->day,
-                $billingDate->daysInMonth,
-            ) === $billingDate->day);
+                $cycleDate->daysInMonth,
+            ) === $cycleDate->day);
 
         $generated = [];
         $skipped = 0;
+        $covered = 0;
         $errors = [];
         foreach ($customers as $customer) {
             // The recurring-cycle key is authoritative. Do not use a generic
             // due date here: an early/manual invoice may legitimately share it.
             if (Invoice::where('customer_id', $customer->id)
-                ->whereDate('recurring_cycle_date', $billingDate)
+                ->whereDate('recurring_cycle_date', $cycleDate)
                 ->exists()) {
+                $skipped++;
+                continue;
+            }
+
+            if ($invoices->isCycleFullyCovered($customer, $cycleDate)) {
+                $covered++;
                 $skipped++;
                 continue;
             }
@@ -89,12 +98,12 @@ class GenerateRecurringInvoices extends Command
                 if (!$dryRun) {
                     $invoice = $invoices->generateInvoice(
                         $customer,
-                        $billingDate->copy()->subMonthNoOverflow(),
-                        $billingDate,
+                        $cycleDate->copy()->subMonthNoOverflow(),
+                        $cycleDate,
                         [],
                         $billingDate,
-                        $billingDate->copy()->addDays((int) Setting::get('billing.due_days', 7)),
-                        $billingDate,
+                        $cycleDate,
+                        $cycleDate,
                     );
                     $invoices->markAsSent($invoice);
                 }
@@ -105,10 +114,12 @@ class GenerateRecurringInvoices extends Command
         }
 
         return [
-            'billing_date' => $billingDate->toDateString(),
+            'run_date' => $billingDate->toDateString(),
+            'billing_cycle_date' => $cycleDate->toDateString(),
             'dry_run' => $dryRun,
             'candidates' => $customers->count(),
             'generated' => count($generated),
+            'covered_by_advance' => $covered,
             'skipped' => $skipped,
             'errors' => $errors,
             'details' => $generated,

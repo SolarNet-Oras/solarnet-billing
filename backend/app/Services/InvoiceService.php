@@ -130,16 +130,18 @@ class InvoiceService
      * @param Carbon|null $billingDate
      * @return array
      */
-    public function generateRecurringInvoices(?Carbon $billingDate = null): array
+    public function generateRecurringInvoices(?Carbon $runDate = null): array
     {
-        $billingDate = ($billingDate ?? now(config('app.timezone', 'Asia/Manila')))
+        $runDate = ($runDate ?? now(config('app.timezone', 'Asia/Manila')))
             ->copy()
             ->setTimezone(config('app.timezone', 'Asia/Manila'))
             ->startOfDay();
+        $leadDays = (int) Setting::get('billing.invoice_generation_days_before_due', 7);
+        $billingDate = $runDate->copy()->addDays($leadDays);
 
         $customers = Customer::where('status', 'active')
                            ->whereNotNull('installation_date')
-                           ->whereDate('installation_date', '<=', $billingDate)
+                           ->whereDate('installation_date', '<=', $runDate)
                            ->with('servicePlan')
                            ->get()
                            ->filter(fn (Customer $customer) => min(
@@ -150,6 +152,7 @@ class InvoiceService
         $results = [
             'total' => $customers->count(),
             'generated' => 0,
+            'covered' => 0,
             'skipped' => 0,
             'errors' => [],
         ];
@@ -172,13 +175,18 @@ class InvoiceService
                     continue;
                 }
 
+                if ($this->isCycleFullyCovered($customer, $billingDate)) {
+                    $results['covered']++;
+                    continue;
+                }
+
                 $invoice = $this->generateInvoice(
                     $customer,
                     $billingDate->copy()->subMonthNoOverflow(),
                     $billingDate,
                     [],
+                    $runDate,
                     $billingDate,
-                    $billingDate->copy()->addDays((int) Setting::get('billing.due_days', 7)),
                     $billingDate,
                 );
                 $this->markAsSent($invoice);
@@ -379,21 +387,134 @@ class InvoiceService
                 'reference' => $paymentData['reference'] ?? null,
                 'notes' => $paymentData['notes'] ?? 'Advance payment for future billing',
             ]);
-            CustomerCredit::create(['customer_id' => $customer->id, 'payment_id' => $payment->id, 'original_amount' => $payment->amount, 'remaining_amount' => $payment->amount, 'notes' => 'Advance payment credit']);
+            $this->createAdvanceCredits(
+                $customer,
+                $payment,
+                (float) $payment->amount,
+                isset($paymentData['covered_cycle_date'])
+                    ? Carbon::parse($paymentData['covered_cycle_date'], config('app.timezone', 'Asia/Manila'))
+                    : null,
+            );
             return $payment;
         });
+    }
+
+    /**
+     * Reserve an advance payment for future anniversary cycles. Each row is a
+     * deliberate allocation, so a September advance cannot be consumed by an
+     * older overdue invoice. Legacy credits retain a null cycle date.
+     */
+    protected function createAdvanceCredits(Customer $customer, Payment $payment, float $amount, ?Carbon $firstCycle): void
+    {
+        $customer->loadMissing('servicePlan');
+        $cycleAmount = $this->customerCycleAmount($customer);
+        $cycleDate = $firstCycle ? $firstCycle->copy()->startOfDay() : $this->nextBillingCycle($customer, Carbon::parse($payment->payment_date));
+
+        if ($cycleAmount <= 0 || !$cycleDate) {
+            CustomerCredit::create([
+                'customer_id' => $customer->id, 'payment_id' => $payment->id,
+                'original_amount' => $amount, 'remaining_amount' => $amount,
+                'status' => 'unallocated', 'notes' => 'Advance payment credit without a billable future cycle',
+            ]);
+            return;
+        }
+
+        foreach ((new AdvancePaymentAllocator())->allocate($amount, $cycleAmount) as $allocation) {
+            $allocated = $allocation['amount'];
+            $fullyCovered = $allocation['fully_covered'];
+            CustomerCredit::create([
+                'customer_id' => $customer->id,
+                'payment_id' => $payment->id,
+                'covered_cycle_date' => $cycleDate,
+                'covered_period_start' => $cycleDate->copy()->subMonthNoOverflow(),
+                'covered_period_end' => $cycleDate,
+                'original_amount' => $allocated,
+                // Fully covered cycles are settled without creating a second
+                // invoice charge. Partial reservations remain available for
+                // the cycle invoice to consume.
+                'remaining_amount' => $fullyCovered ? 0 : $allocated,
+                'status' => $fullyCovered ? 'fully_applied' : 'advance',
+                'applied_at' => $fullyCovered ? now() : null,
+                'notes' => 'Advance payment reserved for billing cycle ' . $cycleDate->toDateString(),
+            ]);
+            $cycleDate->addMonthNoOverflow();
+        }
+    }
+
+    public function isCycleFullyCovered(Customer $customer, Carbon $cycleDate): bool
+    {
+        $cycleAmount = $this->customerCycleAmount($customer);
+        if ($cycleAmount <= 0) return false;
+
+        return (float) CustomerCredit::query()
+            ->where('customer_id', $customer->id)
+            ->whereDate('covered_cycle_date', $cycleDate)
+            ->whereIn('status', ['fully_applied', 'covered'])
+            ->sum('original_amount') >= $cycleAmount;
+    }
+
+    public function isValidFutureBillingCycle(Customer $customer, Carbon $cycleDate, Carbon $paymentDate): bool
+    {
+        if (!$customer->installation_date || !$cycleDate->copy()->startOfDay()->gt($paymentDate->copy()->startOfDay())) {
+            return false;
+        }
+
+        return $cycleDate->day === min($customer->installation_date->day, $cycleDate->daysInMonth);
+    }
+
+    public function creditSummary(Customer $customer): array
+    {
+        $credits = CustomerCredit::query()->where('customer_id', $customer->id)->get();
+        return [
+            'available_credit' => round((float) $credits->sum('remaining_amount'), 2),
+            'covered_cycles' => $credits->whereNotNull('covered_cycle_date')->map(fn (CustomerCredit $credit) => [
+                'cycle_date' => $credit->covered_cycle_date?->toDateString(),
+                'amount' => (float) $credit->original_amount,
+                'remaining_amount' => (float) $credit->remaining_amount,
+                'status' => $credit->status,
+            ])->values()->all(),
+        ];
+    }
+
+    protected function customerCycleAmount(Customer $customer): float
+    {
+        return round((float) ($customer->servicePlan?->price ?? $customer->monthly_fee), 2);
+    }
+
+    protected function nextBillingCycle(Customer $customer, Carbon $fromDate): ?Carbon
+    {
+        if (!$customer->installation_date) return null;
+        $timezone = config('app.timezone', 'Asia/Manila');
+        $fromDate = $fromDate->copy()->setTimezone($timezone)->startOfDay();
+        $day = $customer->installation_date->day;
+        $cycle = $fromDate->copy()->startOfMonth()->setDay(min($day, $fromDate->daysInMonth));
+        return $cycle->lte($fromDate) ? $cycle->addMonthNoOverflow() : $cycle;
     }
 
     private function applyAvailableCredits(Invoice $invoice): void
     {
         $remaining = (float) $invoice->balance;
         if ($remaining <= 0) return;
-        $credits = CustomerCredit::where('customer_id', $invoice->customer_id)->where('remaining_amount', '>', 0)->orderBy('created_at')->lockForUpdate()->get();
+        $credits = CustomerCredit::where('customer_id', $invoice->customer_id)
+            ->where('remaining_amount', '>', 0)
+            ->where(function ($query) use ($invoice) {
+                $query->whereNull('covered_cycle_date')
+                    ->orWhereDate('covered_cycle_date', $invoice->recurring_cycle_date);
+            })
+            ->orderBy('created_at')
+            ->lockForUpdate()
+            ->get();
         foreach ($credits as $credit) {
             if ($remaining <= 0) break;
             $applied = min($remaining, (float) $credit->remaining_amount);
-            Payment::create(['invoice_id' => $invoice->id, 'customer_id' => $invoice->customer_id, 'payment_number' => $this->generatePaymentNumber(), 'amount' => $applied, 'payment_method' => 'other', 'payment_date' => now(), 'notes' => 'Applied advance credit']);
+            Payment::create(['invoice_id' => $invoice->id, 'customer_id' => $invoice->customer_id, 'payment_number' => $this->generatePaymentNumber(), 'amount' => $applied, 'payment_method' => 'other', 'payment_date' => now(), 'notes' => 'Applied advance credit' . ($credit->covered_cycle_date ? ' for cycle ' . $credit->covered_cycle_date->toDateString() : '')]);
             $credit->decrement('remaining_amount', $applied);
+            $credit->refresh();
+            if ((float) $credit->remaining_amount <= 0) {
+                $credit->update(['status' => 'fully_applied', 'applied_at' => now()]);
+            } elseif ($credit->covered_cycle_date) {
+                $credit->update(['status' => 'partially_applied']);
+            }
             $invoice->paid_amount += $applied;
             $remaining -= $applied;
         }

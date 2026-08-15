@@ -122,6 +122,8 @@ class Customer extends Model
 
     public function payments(): HasMany { return $this->hasMany(Payment::class); }
 
+    public function credits(): HasMany { return $this->hasMany(CustomerCredit::class); }
+
     public function locationEvents(): HasMany { return $this->hasMany(CustomerLocationEvent::class); }
 
     /**

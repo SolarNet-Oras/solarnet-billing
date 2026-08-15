@@ -70,6 +70,7 @@ const InvoicesPage: React.FC = () => {
     transaction_id: '',
     reference: '',
     notes: '',
+    covered_cycle_date: '',
   });
   const [cashCounts, setCashCounts] = useState<Record<number, number>>({});
   const cashBreakdown = useMemo(() => [1000, 500, 200, 100, 50, 20, 10, 5, 1].map((denomination) => ({ denomination, count: Number(cashCounts[denomination] || 0), amount: denomination * Number(cashCounts[denomination] || 0) })), [cashCounts]);
@@ -201,6 +202,7 @@ const InvoicesPage: React.FC = () => {
       transaction_id: '',
       reference: '',
       notes: '',
+      covered_cycle_date: '',
     });
     setCashCounts({});
     setIsAdvancePayment(false);
@@ -677,6 +679,12 @@ const InvoicesPage: React.FC = () => {
                   </div>}
 
                   {isAdvancePayment && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">Payment method: Cash only · Transaction ID is generated automatically.</div>}
+
+                  {isAdvancePayment && <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Future billing cycle due date</label>
+                    <input type="date" value={paymentData.covered_cycle_date} onChange={(e) => setPaymentData({ ...paymentData, covered_cycle_date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <p className="mt-1 text-xs text-gray-500">Leave blank to reserve this payment for the next billing anniversary. Larger payments reserve later cycles in order.</p>
+                  </div>}
 
                   {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash count required</h3><p className="mt-1 text-xs text-emerald-800">Count the bills before recording this client payment. The count must match the payment amount.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashMatches ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Counted</p><b>{formatPHP(cashCounted)}</b></div></div>
