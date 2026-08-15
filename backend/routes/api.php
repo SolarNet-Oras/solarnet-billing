@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
+use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\PaymentController;
@@ -82,6 +83,11 @@ Route::prefix('v1')->group(function () {
         });
         Route::get('super-admin/client-migrations/template', [ClientMigrationController::class, 'template'])->middleware('role:super_admin');
         Route::post('super-admin/client-migrations/preview', [ClientMigrationController::class, 'preview'])->middleware('role:super_admin');
+        Route::middleware('role:super_admin')->prefix('super-admin/historical-cleanup')->group(function () {
+            Route::get('audits', [HistoricalCleanupController::class, 'index']);
+            Route::post('preview', [HistoricalCleanupController::class, 'preview']);
+            Route::post('execute', [HistoricalCleanupController::class, 'execute']);
+        });
         
         // Role routes (admin only)
         Route::middleware(['role:admin|super_admin'])->group(function () {

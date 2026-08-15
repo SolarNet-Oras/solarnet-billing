@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { settingsService, type SettingItem } from '@/services/settingsService';
 import { AutomationPanel } from '@/components/automation/AutomationPanel';
+import { HistoricalCleanupPanel } from '@/components/settings/HistoricalCleanupPanel';
+import { useAuth } from '@/hooks/useAuth';
 import { Settings as SettingsIcon, Save, CheckCircle2, ImagePlus, Trash2, Loader2 } from 'lucide-react';
 
 const GROUP_META: Record<string, { label: string; description: string }> = {
@@ -13,6 +15,7 @@ const GROUP_META: Record<string, { label: string; description: string }> = {
 };
 
 const SettingsPage: React.FC = () => {
+  const { user } = useAuth();
   const [items, setItems] = useState<SettingItem[]>([]);
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState<boolean>(true);
@@ -114,6 +117,7 @@ const SettingsPage: React.FC = () => {
         )}
 
         {!loading && <AutomationPanel />}
+        {!loading && (user?.role === 'super_admin' || user?.roles?.some((role) => typeof role === 'string' ? role === 'super_admin' : role.name === 'super_admin')) && <HistoricalCleanupPanel />}
 
         <div className="sticky bottom-4 flex justify-end">
           <button
