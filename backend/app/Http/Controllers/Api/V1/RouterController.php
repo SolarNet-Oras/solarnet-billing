@@ -174,6 +174,14 @@ class RouterController extends Controller
         return response()->json($result, $result['success'] ? 200 : 500);
     }
 
+    /** Read live RouterOS counters and firewall threat signals without changing the router. */
+    public function monitoring(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->monitoringSnapshot($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     /**
      * Trigger manual sync for router
      */

@@ -110,6 +110,68 @@ class MikrotikService
     }
 
     /**
+     * Read-only RouterOS monitoring snapshot. It never creates, removes, or
+     * changes a RouterOS rule. Interface rates are calculated from successive
+     * byte-counter samples kept briefly in the application cache.
+     */
+    public function monitoringSnapshot(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $resource = $client->query(new Query('/system/resource/print'))->read()[0] ?? [];
+            $interfaces = $client->query(new Query('/interface/print'))->read();
+            $filters = $client->query(new Query('/ip/firewall/filter/print'))->read();
+            $addressLists = $client->query(new Query('/ip/firewall/address-list/print'))->read();
+
+            $rxBytes = 0;
+            $txBytes = 0;
+            $runningInterfaces = 0;
+            foreach ($interfaces as $interface) {
+                if (($interface['running'] ?? 'false') === 'true') $runningInterfaces++;
+                $rxBytes += (int) ($interface['rx-byte'] ?? 0);
+                $txBytes += (int) ($interface['tx-byte'] ?? 0);
+            }
+
+            $now = microtime(true);
+            $cacheKey = 'router-monitoring-sample:' . $router->id;
+            $previous = Cache::get($cacheKey);
+            $elapsed = is_array($previous) ? max(0.001, $now - (float) ($previous['at'] ?? $now)) : null;
+            $rxBps = $elapsed ? max(0, (int) (($rxBytes - (int) ($previous['rx_bytes'] ?? $rxBytes)) * 8 / $elapsed)) : null;
+            $txBps = $elapsed ? max(0, (int) (($txBytes - (int) ($previous['tx_bytes'] ?? $txBytes)) * 8 / $elapsed)) : null;
+            Cache::put($cacheKey, ['rx_bytes' => $rxBytes, 'tx_bytes' => $txBytes, 'at' => $now], now()->addMinutes(5));
+
+            $dropRules = array_values(array_filter($filters, fn (array $rule) => ($rule['disabled'] ?? 'false') !== 'true' && ($rule['action'] ?? '') === 'drop'));
+            $keywordPattern = '/virus|malware|threat|infect|botnet|blacklist|block/i';
+            $threatRules = array_values(array_filter($dropRules, fn (array $rule) => preg_match($keywordPattern, (string) ($rule['comment'] ?? '')) === 1));
+            $threatLists = array_values(array_filter($addressLists, fn (array $entry) => preg_match($keywordPattern, (string) ($entry['list'] ?? '')) === 1));
+            $blockedPackets = array_sum(array_map(fn (array $rule) => (int) ($rule['packets'] ?? 0), $threatRules));
+
+            return [
+                'success' => true,
+                'data' => [
+                    'cpu_load' => (int) ($resource['cpu-load'] ?? 0),
+                    'free_memory' => (int) ($resource['free-memory'] ?? 0),
+                    'total_memory' => (int) ($resource['total-memory'] ?? 0),
+                    'uptime' => $resource['uptime'] ?? null,
+                    'running_interfaces' => $runningInterfaces,
+                    'rx_bps' => $rxBps,
+                    'tx_bps' => $txBps,
+                    'traffic_sampled' => $elapsed !== null,
+                    'threat_status' => count($dropRules) > 0 ? 'protected' : 'monitoring',
+                    'firewall_drop_rules' => count($dropRules),
+                    'threat_signal_rules' => count($threatRules),
+                    'threat_address_list_entries' => count($threatLists),
+                    'threat_blocked_packets' => $blockedPackets,
+                    'scanned_at' => now()->toIso8601String(),
+                ],
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Router monitoring read failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Monitoring read failed: ' . $e->getMessage(), 'data' => null];
+        }
+    }
+
+    /**
      * Sync everything from the router — system status, queues, DHCP leases.
      * Persists snapshot counts into the routers row and returns per-item counts.
      */

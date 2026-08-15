@@ -119,6 +119,7 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('routers', RouterController::class)->only(['destroy'])->middleware('permission:delete-routers');
         Route::middleware(['permission:manage-routers'])->group(function () {
             Route::post('routers/{id}/test-connection', [RouterController::class, 'testConnection']);
+            Route::get('routers/{id}/monitoring', [RouterController::class, 'monitoring']);
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);
             Route::post('routers/{id}/billing-access/install', [RouterController::class, 'installBillingAccess']);
             Route::get('routers/{id}/billing-access', [RouterController::class, 'billingAccessStatus']);

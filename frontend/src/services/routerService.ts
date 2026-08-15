@@ -45,6 +45,23 @@ export interface TestConnectionResponse {
   };
 }
 
+export interface RouterMonitoringSnapshot {
+  cpu_load: number;
+  free_memory: number;
+  total_memory: number;
+  uptime: string | null;
+  running_interfaces: number;
+  rx_bps: number | null;
+  tx_bps: number | null;
+  traffic_sampled: boolean;
+  threat_status: 'protected' | 'monitoring';
+  firewall_drop_rules: number;
+  threat_signal_rules: number;
+  threat_address_list_entries: number;
+  threat_blocked_packets: number;
+  scanned_at: string;
+}
+
 export const routerService = {
   async getAll(): Promise<Router[]> {
     const response = await api.get<{ success: boolean; data: Router[] }>('/routers');
@@ -78,6 +95,11 @@ export const routerService = {
   async sync(id: string): Promise<{ success: boolean; message: string }> {
     const response = await api.post<{ success: boolean; message: string }>(`/routers/${id}/sync`);
     return response.data;
+  },
+
+  async monitoring(id: string): Promise<RouterMonitoringSnapshot> {
+    const response = await api.get<{ success: boolean; data: RouterMonitoringSnapshot }>(`/routers/${id}/monitoring`);
+    return response.data.data;
   },
 
   async installBillingAccess(id: string): Promise<{ success: boolean; message: string; rules_installed?: number }> {
