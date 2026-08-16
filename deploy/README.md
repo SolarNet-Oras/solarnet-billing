@@ -154,6 +154,13 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
 
 The command reports provider acceptance only; it does not alter billing, customer records, or MikroTik.
 
+To verify the API token and remaining SMS units without sending a message, use:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
+  php artisan sms:philsms-status
+```
+
 ## 6. Point MikroTik at the new server
 
 Your new **fixed** server IP is what you got from Hetzner in step 1.

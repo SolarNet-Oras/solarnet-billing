@@ -103,6 +103,46 @@ class PhilSmsService
         return $this->lastFailureReason;
     }
 
+    /**
+     * Read the remaining PhilSMS units without creating an SMS message.
+     *
+     * @return array{status: 'available'|'not_configured'|'failed', data?: mixed}
+     */
+    public function balance(): array
+    {
+        $this->lastFailureReason = null;
+
+        if (!$this->isConfigured()) {
+            return ['status' => 'not_configured'];
+        }
+
+        try {
+            $response = Http::acceptJson()
+                ->withToken((string) config('services.sms.philsms_api_token'))
+                ->timeout(15)
+                ->get($this->endpoint('/balance'));
+        } catch (\Throwable $e) {
+            $this->lastFailureReason = 'Network request to PhilSMS failed: ' . $e->getMessage();
+            Log::error('PhilSMS balance request failed', ['error' => $e->getMessage()]);
+
+            return ['status' => 'failed'];
+        }
+
+        if (!$response->successful() || strtolower((string) $response->json('status')) !== 'success') {
+            $providerMessage = trim((string) $response->json('message'));
+            $this->lastFailureReason = 'PhilSMS returned HTTP ' . $response->status()
+                . ($providerMessage === '' ? '.' : ': ' . $providerMessage);
+            Log::error('PhilSMS rejected balance request', [
+                'http_status' => $response->status(),
+                'provider_message' => $providerMessage,
+            ]);
+
+            return ['status' => 'failed'];
+        }
+
+        return ['status' => 'available', 'data' => $response->json('data')];
+    }
+
     public function isConfigured(): bool
     {
         return config('services.sms.driver') === self::DRIVER

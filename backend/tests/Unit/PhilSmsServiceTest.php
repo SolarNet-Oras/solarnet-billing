@@ -47,6 +47,29 @@ class PhilSmsServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_it_reads_the_sms_balance_with_bearer_authentication_without_sending_a_message(): void
+    {
+        config()->set('services.sms.driver', 'philsms');
+        config()->set('services.sms.philsms_api_token', 'test-token');
+        config()->set('services.sms.philsms_sender_id', 'PhilSMS');
+        config()->set('services.sms.philsms_base_url', 'https://dashboard.philsms.com/api/v3');
+
+        Http::fake([
+            'https://dashboard.philsms.com/api/v3/balance' => Http::response([
+                'status' => 'success',
+                'data' => ['remaining' => 42],
+            ]),
+        ]);
+
+        $result = app(PhilSmsService::class)->balance();
+
+        $this->assertSame('available', $result['status']);
+        $this->assertSame(['remaining' => 42], $result['data']);
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://dashboard.philsms.com/api/v3/balance'
+            && $request->hasHeader('Authorization', 'Bearer test-token'));
+    }
+
     public function test_it_keeps_the_provider_rejection_reason_safe_for_the_test_command(): void
     {
         config()->set('services.sms.driver', 'philsms');
