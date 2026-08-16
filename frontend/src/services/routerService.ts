@@ -62,6 +62,85 @@ export interface RouterMonitoringSnapshot {
   scanned_at: string;
 }
 
+export interface RouterProvisioningDiscovery {
+  api_authenticated: boolean;
+  routeros_version: string | null;
+  board_name: string | null;
+  architecture: string | null;
+  cpu_load: number;
+  free_memory: number;
+  total_memory: number;
+  free_storage: number;
+  total_storage: number;
+  interfaces: Array<{ name: string; type: string | null; running: boolean; disabled: boolean }>;
+  running_interfaces: string[];
+  bridges: string[];
+  existing_addresses: string[];
+  wan_candidates: Array<{ gateway: string | null; interface: string | null; distance: string | null }>;
+  wan_auto_detected: boolean;
+  counts: Record<string, number>;
+  fq_codel_available: boolean;
+  fasttrack_enabled: boolean;
+  default_firewall_preserved: boolean;
+  existing_solarnet_detected: boolean;
+  pppoe_detected: boolean;
+  blockers: string[];
+  clean: boolean;
+  read_errors: Array<{ path: string; message: string }>;
+  discovered_at: string;
+}
+
+export interface RouterProvisioningAudit {
+  id: string;
+  router_id: string;
+  status: string;
+  discovery: RouterProvisioningDiscovery;
+  plan: RouterProvisioningPlan | null;
+  backup_filename: string | null;
+  verification: Record<string, unknown> | null;
+  failure_reason: string | null;
+  discovered_at?: string | null;
+  approved_at?: string | null;
+  applied_at?: string | null;
+  verified_at?: string | null;
+  rolled_back_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouterProvisioningPlan {
+  kind: 'solarnet_clean_ipoe_provisioning_v1';
+  access: 'IPoE ONLY';
+  pppoe: 'NOT USED';
+  wan_interface: string;
+  customer_parent_interface: string;
+  customer_vlan_id: number;
+  customer_gateway_cidr: string;
+  customer_network_cidr: string;
+  customer_dhcp_pool: string;
+  dns_servers: string[];
+  create_nat: boolean;
+  qos_mode: 'safe_compatible' | 'disabled_missing_fq_codel';
+  fasttrack: string;
+  captive_portal: { enabled: boolean; vlan_id?: number; gateway_cidr?: string; network_cidr?: string; dhcp_pool?: string };
+  resource_names: Record<string, string | null>;
+  planned_changes: string[];
+}
+
+export interface RouterProvisioningInput {
+  audit_id: string;
+  wan_interface: string;
+  customer_parent_interface: string;
+  customer_vlan_id: number;
+  customer_gateway_cidr: string;
+  customer_dhcp_pool: string;
+  dns_servers: string;
+  enable_captive_portal: boolean;
+  portal_vlan_id?: number;
+  portal_gateway_cidr?: string;
+  portal_dhcp_pool?: string;
+}
+
 export interface RouterThreatObservation {
   id: string;
   router_id: string;
@@ -209,6 +288,24 @@ export const routerService = {
   async monitoring(id: string): Promise<RouterMonitoringSnapshot> {
     const response = await api.get<{ success: boolean; data: RouterMonitoringSnapshot }>(`/routers/${id}/monitoring`);
     return response.data.data;
+  },
+
+  async provisioningDiscover(id: string): Promise<{ message: string; audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery } }>(`/routers/${id}/provisioning/discover`);
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async provisioningPreview(id: string, data: RouterProvisioningInput): Promise<{ message: string; audit: RouterProvisioningAudit; plan: RouterProvisioningPlan }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; plan: RouterProvisioningPlan } }>(`/routers/${id}/provisioning/preview`, data);
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async provisioningApply(id: string, auditId: string, confirmationText: string): Promise<{ message: string; audit: RouterProvisioningAudit; verification: Record<string, unknown> }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; verification: Record<string, unknown> } }>(`/routers/${id}/provisioning/apply`, {
+      audit_id: auditId,
+      confirmation_text: confirmationText,
+    });
+    return { message: response.data.message, ...response.data.data };
   },
 
   async scanThreatFeed(id: string): Promise<{ message: string; data: { indicators_loaded: number; connections_checked: number; matches: RouterThreatObservation[]; scanned_at: string } }> {

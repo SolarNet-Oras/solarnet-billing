@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Router;
+use App\Models\RouterProvisioningAudit;
 use App\Models\RouterQosDeployment;
 use App\Models\RouterThreatObservation;
 use App\Models\Setting;
 use App\Services\MikrotikService;
 use App\Services\MikrotikScriptGenerator;
 use App\Services\RouterQosService;
+use App\Services\RouterProvisioningService;
 use App\Services\ThreatFeedService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,13 +24,15 @@ class RouterController extends Controller
     protected MikrotikScriptGenerator $scriptGenerator;
     protected ThreatFeedService $threatFeedService;
     protected RouterQosService $routerQosService;
+    protected RouterProvisioningService $routerProvisioningService;
 
-    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService, RouterQosService $routerQosService)
+    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService, RouterQosService $routerQosService, RouterProvisioningService $routerProvisioningService)
     {
         $this->mikrotikService = $mikrotikService;
         $this->scriptGenerator = $scriptGenerator;
         $this->threatFeedService = $threatFeedService;
         $this->routerQosService = $routerQosService;
+        $this->routerProvisioningService = $routerProvisioningService;
     }
 
     /**
@@ -374,6 +378,55 @@ class RouterController extends Controller
         $validator = Validator::make($request->all(), ['target' => ['required', 'string', 'max:253']]);
         if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A valid QoS test target is required.', 'errors' => $validator->errors()], 422);
         $result = $this->mikrotikService->qosPingTest(Router::findOrFail($id), $validator->validated()['target']);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Read every required RouterOS area before considering a new IPoE setup. */
+    public function provisioningDiscover(Request $request, string $id): JsonResponse
+    {
+        $result = $this->routerProvisioningService->discover(Router::findOrFail($id), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Persist an administrator-selected plan only; this endpoint never changes RouterOS. */
+    public function provisioningPreview(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'audit_id' => ['required', 'uuid'],
+            'wan_interface' => ['required', 'string', 'max:128'],
+            'customer_parent_interface' => ['required', 'string', 'max:128'],
+            'customer_vlan_id' => ['required', 'integer', 'min:2', 'max:4094'],
+            'customer_gateway_cidr' => ['required', 'string', 'max:32'],
+            'customer_dhcp_pool' => ['required', 'string', 'max:64'],
+            'dns_servers' => ['required', 'string', 'max:255'],
+            'enable_captive_portal' => ['required', 'boolean'],
+            'portal_vlan_id' => ['nullable', 'required_if:enable_captive_portal,true', 'integer', 'min:2', 'max:4094'],
+            'portal_gateway_cidr' => ['nullable', 'required_if:enable_captive_portal,true', 'string', 'max:32'],
+            'portal_dhcp_pool' => ['nullable', 'required_if:enable_captive_portal,true', 'string', 'max:64'],
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A complete, isolated IPoE plan is required before preview.', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $audit = RouterProvisioningAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerProvisioningService->preview($router, $audit, $validator->validated(), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Apply a preview only after exact acknowledgement and a final clean-router read. */
+    public function provisioningApply(Request $request, string $id): JsonResponse
+    {
+        $confirmation = 'I understand this router will be configured as a SolarNet IPoE router.';
+        $validator = Validator::make($request->all(), [
+            'audit_id' => ['required', 'uuid'],
+            'confirmation_text' => ['required', 'string', Rule::in([$confirmation])],
+        ], [
+            'confirmation_text.in' => "Type exactly: {$confirmation}",
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Exact administrator acknowledgement is required before provisioning.', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $audit = RouterProvisioningAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerProvisioningService->apply($router, $audit, $request->user());
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 

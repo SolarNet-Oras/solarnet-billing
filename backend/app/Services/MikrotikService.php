@@ -175,6 +175,207 @@ class MikrotikService
     }
 
     /**
+     * Read every configuration area that can make a "new router" unsafe to
+     * provision. This is intentionally read-only and deliberately conservative:
+     * an unreadable required area or an unknown production-looking setting stops
+     * the provisioning workflow rather than being guessed or overwritten.
+     */
+    public function cleanProvisioningDiscovery(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $errors = [];
+            $read = function (string $path) use ($client, &$errors): array {
+                try {
+                    return $client->query(new Query($path))->read();
+                } catch (Throwable $e) {
+                    $errors[] = ['path' => $path, 'message' => $e->getMessage()];
+                    return [];
+                }
+            };
+
+            $resource = $read('/system/resource/print')[0] ?? [];
+            $interfaces = $read('/interface/print');
+            $bridges = $read('/interface/bridge/print');
+            $vlans = $read('/interface/vlan/print');
+            $addresses = $read('/ip/address/print');
+            $dhcpServers = $read('/ip/dhcp-server/print');
+            $dhcpClients = $read('/ip/dhcp-client/print');
+            $dhcpPools = $read('/ip/pool/print');
+            $dhcpNetworks = $read('/ip/dhcp-server/network/print');
+            $routes = $read('/ip/route/print');
+            $filters = $read('/ip/firewall/filter/print');
+            $nat = $read('/ip/firewall/nat/print');
+            $mangle = $read('/ip/firewall/mangle/print');
+            $simpleQueues = $read('/queue/simple/print');
+            $queueTrees = $read('/queue/tree/print');
+            $queueTypes = $read('/queue/type/print');
+            $hotspots = $read('/ip/hotspot/print');
+            $hotspotProfiles = $read('/ip/hotspot/profile/print');
+            $pppoeServers = $read('/interface/pppoe-server/server/print');
+            $pppoeClients = $read('/interface/pppoe-client/print');
+            $pppSecrets = $read('/ppp/secret/print');
+            $pppProfiles = $read('/ppp/profile/print');
+            $wireguard = $read('/interface/wireguard/print');
+            $routingRules = $read('/routing/rule/print');
+            $routingTables = $read('/routing/table/print');
+            $scripts = $read('/system/script/print');
+            $schedulers = $read('/system/scheduler/print');
+
+            $interfaceNames = array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $interfaces)));
+            $runningInterfaces = array_values(array_filter(array_map(
+                fn (array $item) => (($item['running'] ?? 'false') === 'true' && ($item['disabled'] ?? 'false') !== 'true') ? ($item['name'] ?? null) : null,
+                $interfaces,
+            )));
+            $defaultRoutes = array_values(array_filter($routes, fn (array $route) => in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true) && ($route['disabled'] ?? 'false') !== 'true'));
+            $wanCandidates = [];
+            foreach ($defaultRoutes as $route) {
+                $gateway = (string) ($route['gateway'] ?? $route['immediate-gw'] ?? '');
+                $interface = null;
+                if (preg_match('/%([^\s,]+)/', $gateway, $match) === 1) $interface = $match[1];
+                if ($interface === null && in_array($gateway, $interfaceNames, true)) $interface = $gateway;
+                $wanCandidates[] = ['gateway' => $gateway ?: null, 'interface' => $interface, 'distance' => $route['distance'] ?? null];
+            }
+            foreach ($dhcpClients as $dhcpClient) {
+                $interface = $dhcpClient['interface'] ?? null;
+                if ($interface && ($dhcpClient['disabled'] ?? 'false') !== 'true' && !array_filter($wanCandidates, fn (array $candidate) => ($candidate['interface'] ?? null) === $interface)) {
+                    $wanCandidates[] = ['gateway' => $dhcpClient['gateway'] ?? null, 'interface' => $interface, 'distance' => null];
+                }
+            }
+
+            $isDefaultRule = fn (array $rule): bool => $rule === [] || preg_match('/defconf|default configuration|default rule/i', (string) ($rule['comment'] ?? '')) === 1;
+            $customFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule)));
+            $customNat = array_values(array_filter($nat, fn (array $rule) => !$isDefaultRule($rule)));
+            $customRoutes = array_values(array_filter($routes, fn (array $route) => ($route['dynamic'] ?? 'false') !== 'true' && !in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true)));
+            $customPppProfiles = array_values(array_filter($pppProfiles, fn (array $profile) => !in_array(strtolower((string) ($profile['name'] ?? '')), ['default', 'default-encryption'], true)));
+            // RouterOS commonly includes the default HotSpot profile even before
+            // HotSpot is configured. Only an actual HotSpot server or a custom
+            // profile makes the clean-router workflow unsafe to continue.
+            $customHotspotProfiles = array_values(array_filter($hotspotProfiles, fn (array $profile) => strtolower((string) ($profile['name'] ?? '')) !== 'default'));
+            $hasSolarNet = $this->containsSolarNetMarker(array_merge($filters, $nat, $mangle, $simpleQueues, $queueTrees, $hotspots, $scripts, $schedulers));
+            $pppoeDetected = count($pppoeServers) + count($pppoeClients) + count($pppSecrets) > 0;
+
+            $blockers = [];
+            if ($errors !== []) $blockers[] = 'Router discovery is incomplete. SolarNet will not provision a router when a required RouterOS area cannot be read.';
+            if ($pppoeDetected) $blockers[] = 'PPPoE DETECTED. SolarNet provisioning uses IPoE only and will not migrate, disable, or delete PPPoE automatically.';
+            if ($hotspots !== [] || $customHotspotProfiles !== []) $blockers[] = 'Existing HotSpot configuration was detected.';
+            if ($vlans !== []) $blockers[] = 'Existing VLAN interfaces were detected.';
+            if ($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) $blockers[] = 'Existing DHCP server, pool, or network configuration was detected.';
+            if ($simpleQueues !== [] || $queueTrees !== []) $blockers[] = 'Existing Simple Queue or Queue Tree configuration was detected.';
+            if ($mangle !== []) $blockers[] = 'Existing firewall mangle rules were detected.';
+            if ($customFirewall !== [] || $customNat !== []) $blockers[] = 'Existing non-default firewall or NAT rules were detected.';
+            if ($customRoutes !== [] || $routingRules !== [] || count($routingTables) > 1) $blockers[] = 'Existing production routing, policy routing, or additional routing tables were detected.';
+            if ($wireguard !== []) $blockers[] = 'Existing WireGuard configuration was detected. SolarNet will not alter or build on an existing VPN router automatically.';
+            if ($scripts !== [] || $schedulers !== []) $blockers[] = 'Existing RouterOS scripts or schedulers were detected.';
+            if ($hasSolarNet) $blockers[] = 'Existing SolarNet configuration was detected.';
+            if (count($bridges) > 1) $blockers[] = 'More than one bridge was detected; automatic customer topology selection would be unsafe.';
+
+            return [
+                'success' => true,
+                'data' => [
+                    'api_authenticated' => true,
+                    'routeros_version' => $resource['version'] ?? null,
+                    'board_name' => $resource['board-name'] ?? null,
+                    'architecture' => $resource['architecture-name'] ?? null,
+                    'cpu_load' => (int) ($resource['cpu-load'] ?? 0),
+                    'free_memory' => (int) ($resource['free-memory'] ?? 0),
+                    'total_memory' => (int) ($resource['total-memory'] ?? 0),
+                    'free_storage' => (int) ($resource['free-hdd-space'] ?? 0),
+                    'total_storage' => (int) ($resource['total-hdd-space'] ?? 0),
+                    'interfaces' => array_map(fn (array $item) => ['name' => $item['name'] ?? null, 'type' => $item['type'] ?? null, 'running' => ($item['running'] ?? 'false') === 'true', 'disabled' => ($item['disabled'] ?? 'false') === 'true'], $interfaces),
+                    'running_interfaces' => $runningInterfaces,
+                    'bridges' => array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $bridges))),
+                    'existing_addresses' => array_values(array_filter(array_map(fn (array $item) => $item['address'] ?? null, $addresses))),
+                    'wan_candidates' => $wanCandidates,
+                    'wan_auto_detected' => count($wanCandidates) === 1 && !empty($wanCandidates[0]['interface']),
+                    'counts' => [
+                        'vlans' => count($vlans), 'ip_addresses' => count($addresses), 'dhcp_servers' => count($dhcpServers), 'dhcp_clients' => count($dhcpClients), 'dhcp_pools' => count($dhcpPools),
+                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'mangle' => count($mangle),
+                        'simple_queues' => count($simpleQueues), 'queue_trees' => count($queueTrees), 'queue_types' => count($queueTypes),
+                        'hotspots' => count($hotspots), 'custom_hotspot_profiles' => count($customHotspotProfiles), 'pppoe_servers' => count($pppoeServers), 'pppoe_clients' => count($pppoeClients),
+                        'ppp_secrets' => count($pppSecrets), 'custom_ppp_profiles' => count($customPppProfiles), 'wireguard' => count($wireguard),
+                        'scripts' => count($scripts), 'schedulers' => count($schedulers),
+                    ],
+                    'fq_codel_available' => (bool) array_filter($queueTypes, fn (array $type) => str_contains(strtolower((string) (($type['name'] ?? '') . ' ' . ($type['kind'] ?? ''))), 'fq-codel')),
+                    'fasttrack_enabled' => (bool) array_filter($filters, fn (array $rule) => ($rule['disabled'] ?? 'false') !== 'true' && ($rule['action'] ?? '') === 'fasttrack-connection'),
+                    'default_firewall_preserved' => $customFirewall === [] && $customNat === [],
+                    'existing_solarnet_detected' => $hasSolarNet,
+                    'pppoe_detected' => $pppoeDetected,
+                    'blockers' => $blockers,
+                    'clean' => $blockers === [],
+                    'read_errors' => $errors,
+                    'discovered_at' => now()->toIso8601String(),
+                ],
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Clean router provisioning discovery failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Router discovery failed before provisioning: ' . $e->getMessage()];
+        }
+    }
+
+    /** Verify only the resources that a clean SolarNet provisioning plan owns. */
+    public function verifyCleanProvisioning(Router $router, array $plan): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $names = $plan['resource_names'] ?? [];
+            $vlan = $client->query((new Query('/interface/vlan/print'))->where('name', (string) ($names['customer_vlan'] ?? '')))->read()[0] ?? null;
+            $dhcp = $client->query((new Query('/ip/dhcp-server/print'))->where('name', (string) ($names['customer_dhcp'] ?? '')))->read()[0] ?? null;
+            $pool = $client->query((new Query('/ip/pool/print'))->where('name', (string) ($names['customer_pool'] ?? '')))->read()[0] ?? null;
+            $addresses = $client->query((new Query('/ip/address/print'))->where('comment', self::provisioningComment('customer gateway')))->read();
+            $pppoeServers = $client->query(new Query('/interface/pppoe-server/server/print'))->read();
+            $pppoeClients = $client->query(new Query('/interface/pppoe-client/print'))->read();
+            $pppSecrets = $client->query(new Query('/ppp/secret/print'))->read();
+            $queues = $client->query(new Query('/queue/simple/print'))->read();
+            $billing = $this->billingAccessRulesStatus($router);
+
+            $checks = [
+                'customer_vlan' => $vlan !== null,
+                'customer_dhcp' => $dhcp !== null,
+                'customer_pool' => $pool !== null,
+                'customer_gateway' => $addresses !== [],
+                'pppoe_absent' => $pppoeServers === [] && $pppoeClients === [] && $pppSecrets === [],
+                'no_customer_queues_created' => $queues === [],
+                'billing_access' => (bool) ($billing['installed'] ?? false),
+            ];
+            if (($plan['captive_portal']['enabled'] ?? false) === true) {
+                $portal = $client->query((new Query('/ip/hotspot/print'))->where('name', (string) ($names['portal_hotspot'] ?? '')))->read()[0] ?? null;
+                $checks['isolated_captive_portal'] = $portal !== null;
+            }
+
+            return [
+                'success' => !in_array(false, $checks, true),
+                'data' => [
+                    'checks' => $checks,
+                    'client_test_required' => true,
+                    'client_test_note' => 'Base infrastructure is verified. Connect one IPoE ONU/OLT client and verify DHCP, DNS, Internet, billing queue creation, and suspension policy before declaring the router production-ready.',
+                    'verified_at' => now()->toIso8601String(),
+                ],
+                'message' => !in_array(false, $checks, true)
+                    ? 'SolarNet base infrastructure was verified. An IPoE client acceptance test is still required before production use.'
+                    : 'One or more expected SolarNet base resources could not be verified.',
+            ];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'Provisioning verification failed: ' . $e->getMessage()];
+        }
+    }
+
+    private static function provisioningComment(string $resource): string
+    {
+        return 'SolarNet Provisioning: ' . $resource;
+    }
+
+    private function containsSolarNetMarker(array $rows): bool
+    {
+        foreach ($rows as $row) {
+            foreach (['name', 'comment', 'list'] as $field) {
+                if (str_contains(strtolower((string) ($row[$field] ?? '')), 'solarnet')) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Read and summarise the RouterOS configuration required for a QoS safety
      * decision. This method is deliberately read-only; it never calls add,
      * set, remove, move, or disable on the router.

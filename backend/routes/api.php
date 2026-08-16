@@ -135,6 +135,9 @@ Route::prefix('v1')->group(function () {
         });
         Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
         Route::middleware('role:super_admin|admin')->group(function () {
+            Route::post('routers/{id}/provisioning/discover', [RouterController::class, 'provisioningDiscover']);
+            Route::post('routers/{id}/provisioning/preview', [RouterController::class, 'provisioningPreview']);
+            Route::post('routers/{id}/provisioning/apply', [RouterController::class, 'provisioningApply']);
             Route::get('routers/{id}/qos/status', [RouterController::class, 'qosStatus']);
             Route::get('routers/{id}/qos/config', [RouterController::class, 'qosConfig']);
             Route::get('routers/{id}/qos/clients', [RouterController::class, 'qosClients']);

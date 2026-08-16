@@ -3,6 +3,7 @@ import { type Router, routerService } from '@/services/routerService';
 import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal, Network } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
 import { RouterConsoleModal } from './RouterConsoleModal';
+import { RouterProvisioningModal } from './RouterProvisioningModal';
 
 interface RouterListProps {
   routers: Router[];
@@ -20,6 +21,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const [scriptModalOpen, setScriptModalOpen] = useState(false);
   const [selectedRouter, setSelectedRouter] = useState<Router | null>(null);
   const [consoleRouter, setConsoleRouter] = useState<Router | null>(null);
+  const [provisioningRouter, setProvisioningRouter] = useState<Router | null>(null);
   const [billingActionId, setBillingActionId] = useState<string | null>(null);
   const [billingResult, setBillingResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
@@ -233,6 +235,15 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex items-center justify-end space-x-2">
                     <button
+                      onClick={() => setProvisioningRouter(router)}
+                      className="rounded px-2 py-1 text-xs font-semibold text-cyan-700 hover:bg-cyan-50 dark:text-cyan-300 dark:hover:bg-cyan-900/20"
+                      title="Set up a new, clean router using IPoE"
+                      aria-label="Set Up MikroTik"
+                      data-testid="router-provision-btn"
+                    >
+                      Set Up
+                    </button>
+                    <button
                       onClick={() => handleGenerateScript(router)}
                       className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors"
                       title="Generate Setup Script"
@@ -398,6 +409,13 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
           onClose={() => setConsoleRouter(null)}
           routerId={consoleRouter.id}
           routerName={consoleRouter.name}
+        />
+      )}
+      {provisioningRouter && (
+        <RouterProvisioningModal
+          isOpen={true}
+          router={provisioningRouter}
+          onClose={() => setProvisioningRouter(null)}
         />
       )}
     </div>
