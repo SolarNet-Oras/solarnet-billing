@@ -29,7 +29,6 @@ import SettingsPage from '@/pages/SettingsPage';
 import SuspendedAccountPage from '@/pages/SuspendedAccountPage';
 import RemittancesPage from '@/pages/RemittancesPage';
 import ClientMigrationPage from '@/pages/ClientMigrationPage';
-import SpeedtestPage from '@/pages/SpeedtestPage';
 
 // ============================================================================
 // Main App Component
@@ -45,7 +44,6 @@ const App: React.FC = (): JSX.Element => {
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/suspended" element={<SuspendedAccountPage />} />
-              <Route path="/speedtest" element={<SpeedtestPage />} />
               
               {/* Protected Routes */}
               <Route

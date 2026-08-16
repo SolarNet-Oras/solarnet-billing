@@ -12,7 +12,6 @@ const GROUP_META: Record<string, { label: string; description: string }> = {
   ai:         { label: 'AI Assistant',description: 'Controls the floating AI chat. The OpenAI API key stays on the server — you never enter it here.' },
   suspension: { label: 'Internet Suspension & Payment Reminder', description: 'Controls when overdue accounts are restricted, their reduced speed, and the reminder page they can still access.' },
   automation: { label: 'Automation',  description: 'Toggles for the nightly scheduled jobs. When the master switch is off, no jobs run.' },
-  speedtest: { label: 'Speedtest Branding', description: 'Customer-facing application branding only. The visitor\'s actual public IP remains unchanged and is never shared between sessions.' },
 };
 
 const SettingsPage: React.FC = () => {

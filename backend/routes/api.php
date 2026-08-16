@@ -18,7 +18,6 @@ use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
 use App\Http\Controllers\Api\V1\SettingsController;
-use App\Http\Controllers\Api\V1\SpeedtestController;
 use App\Http\Controllers\Api\V1\TicketController;
 use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -44,12 +43,6 @@ Route::prefix('v1')->group(function () {
             'laravel_version' => app()->version(),
         ]);
     });
-
-    // Public speed-test identity. It reports the requesting client's actual
-    // proxy-validated IP and SolarNet's application branding; no test traffic
-    // is proxied or routed through this endpoint.
-    Route::get('speedtest/connection', [SpeedtestController::class, 'connection'])->middleware('throttle:30,1');
-    Route::get('speedtest/public-ip', [SpeedtestController::class, 'connection'])->middleware('throttle:30,1');
 
     // Authentication routes (public)
     Route::prefix('auth')->group(function () {
