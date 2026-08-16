@@ -14,10 +14,10 @@ class PhilSmsServiceTest extends TestCase
         config()->set('services.sms.driver', 'philsms');
         config()->set('services.sms.philsms_api_token', 'test-token');
         config()->set('services.sms.philsms_sender_id', 'SolarNet');
-        config()->set('services.sms.philsms_base_url', 'https://app.philsms.com/api/v3');
+        config()->set('services.sms.philsms_base_url', 'https://dashboard.philsms.com/api/v3');
 
         Http::fake([
-            'https://app.philsms.com/api/v3/sms/send' => Http::response([
+            'https://dashboard.philsms.com/api/v3/sms/send' => Http::response([
                 'status' => 'success',
                 'data' => ['uid' => 'sms-test-uid'],
             ], 201),
@@ -27,7 +27,7 @@ class PhilSmsServiceTest extends TestCase
 
         $this->assertSame('sent', $delivery);
         Http::assertSent(function (Request $request): bool {
-            return $request->url() === 'https://app.philsms.com/api/v3/sms/send'
+            return $request->url() === 'https://dashboard.philsms.com/api/v3/sms/send'
                 && $request->hasHeader('Authorization', 'Bearer test-token')
                 && $request['recipient'] === '639171234567'
                 && $request['sender_id'] === 'SolarNet'
@@ -52,10 +52,10 @@ class PhilSmsServiceTest extends TestCase
         config()->set('services.sms.driver', 'philsms');
         config()->set('services.sms.philsms_api_token', 'test-token');
         config()->set('services.sms.philsms_sender_id', 'SolarNet');
-        config()->set('services.sms.philsms_base_url', 'https://app.philsms.com/api/v3');
+        config()->set('services.sms.philsms_base_url', 'https://dashboard.philsms.com/api/v3');
 
         Http::fake([
-            'https://app.philsms.com/api/v3/sms/send' => Http::response([
+            'https://dashboard.philsms.com/api/v3/sms/send' => Http::response([
                 'status' => 'error',
                 'message' => 'Sender ID is not approved.',
             ], 422),

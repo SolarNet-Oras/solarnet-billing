@@ -137,11 +137,15 @@ Create an API token and register a sender ID in the PhilSMS dashboard, then add 
 
 ```env
 SMS_DRIVER=philsms
-PHILSMS_API_TOKEN=your-philsms-api-token
-PHILSMS_SENDER_ID=SolarNet
+# Keep the token quoted: PhilSMS tokens commonly contain a | character.
+PHILSMS_API_TOKEN='your-philsms-api-token'
+# Use PhilSMS while a custom Sender ID is awaiting telco approval.
+PHILSMS_SENDER_ID=PhilSMS
+# Required by the current PhilSMS dashboard API documentation.
+PHILSMS_BASE_URL=https://dashboard.philsms.com/api/v3
 ```
 
-PhilSMS supports Philippine numbers. An alphanumeric sender ID must be registered and is limited to 11 characters. Restart through the normal deployment command, then send one explicit test to a real mobile number:
+PhilSMS supports Philippine numbers. `PhilSMS` is the provider default sender ID. An alphanumeric custom sender ID, such as `SolarNet`, must be registered and is limited to 11 characters. Restart through the normal deployment command, then send one explicit test to a real mobile number:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \

@@ -43,8 +43,12 @@ return [
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
         'philsms_api_token' => env('PHILSMS_API_TOKEN'),
-        'philsms_sender_id' => env('PHILSMS_SENDER_ID'),
-        'philsms_base_url' => env('PHILSMS_BASE_URL', 'https://app.philsms.com/api/v3'),
+        // PhilSMS's documented default sender ID. Set PHILSMS_SENDER_ID to a
+        // registered custom brand only after PhilSMS has approved it.
+        'philsms_sender_id' => env('PHILSMS_SENDER_ID', 'PhilSMS'),
+        // PhilSMS's current dashboard documentation uses this host. Keeping it
+        // configurable supports a future provider-host change without a code edit.
+        'philsms_base_url' => env('PHILSMS_BASE_URL', 'https://dashboard.philsms.com/api/v3'),
     ],
 
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.
