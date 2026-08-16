@@ -15,9 +15,14 @@ class PhilSmsService
 {
     public const DRIVER = 'philsms';
 
+    /** A safe provider/network reason for an operator-facing test command. */
+    protected ?string $lastFailureReason = null;
+
     /** @return 'sent'|'skipped_not_configured'|'skipped_no_phone'|'skipped_invalid_phone'|'skipped_invalid_sender_id'|'skipped_empty_message'|'failed' */
     public function send(?string $phone, string $message): string
     {
+        $this->lastFailureReason = null;
+
         if (blank($phone)) {
             return 'skipped_no_phone';
         }
@@ -61,7 +66,8 @@ class PhilSmsService
                     'message' => $message,
                 ]);
         } catch (\Throwable $e) {
-            Log::warning('PhilSMS request failed', [
+            $this->lastFailureReason = 'Network request to PhilSMS failed: ' . $e->getMessage();
+            Log::error('PhilSMS request failed', [
                 'recipient_last4' => $this->lastFour($recipient),
                 'error' => $e->getMessage(),
             ]);
@@ -70,10 +76,13 @@ class PhilSmsService
         }
 
         if (!$response->successful() || strtolower((string) $response->json('status')) !== 'success') {
-            Log::warning('PhilSMS rejected SMS request', [
+            $providerMessage = trim((string) $response->json('message'));
+            $this->lastFailureReason = 'PhilSMS returned HTTP ' . $response->status()
+                . ($providerMessage === '' ? '.' : ': ' . $providerMessage);
+            Log::error('PhilSMS rejected SMS request', [
                 'recipient_last4' => $this->lastFour($recipient),
                 'http_status' => $response->status(),
-                'provider_message' => $response->json('message'),
+                'provider_message' => $providerMessage,
             ]);
 
             return 'failed';
@@ -86,6 +95,12 @@ class PhilSmsService
         ]);
 
         return 'sent';
+    }
+
+    /** A token-safe explanation of the most recent failed provider request. */
+    public function lastFailureReason(): ?string
+    {
+        return $this->lastFailureReason;
     }
 
     public function isConfigured(): bool

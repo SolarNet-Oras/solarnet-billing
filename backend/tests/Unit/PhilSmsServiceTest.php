@@ -46,4 +46,24 @@ class PhilSmsServiceTest extends TestCase
         $this->assertSame('skipped_not_configured', app(PhilSmsService::class)->send('09171234567', 'Test'));
         Http::assertNothingSent();
     }
+
+    public function test_it_keeps_the_provider_rejection_reason_safe_for_the_test_command(): void
+    {
+        config()->set('services.sms.driver', 'philsms');
+        config()->set('services.sms.philsms_api_token', 'test-token');
+        config()->set('services.sms.philsms_sender_id', 'SolarNet');
+        config()->set('services.sms.philsms_base_url', 'https://app.philsms.com/api/v3');
+
+        Http::fake([
+            'https://app.philsms.com/api/v3/sms/send' => Http::response([
+                'status' => 'error',
+                'message' => 'Sender ID is not approved.',
+            ], 422),
+        ]);
+
+        $philSms = app(PhilSmsService::class);
+
+        $this->assertSame('failed', $philSms->send('09171234567', 'Test'));
+        $this->assertSame('PhilSMS returned HTTP 422: Sender ID is not approved.', $philSms->lastFailureReason());
+    }
 }

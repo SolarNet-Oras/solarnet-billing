@@ -23,6 +23,9 @@ class SendPhilSmsTest extends Command
 
         $delivery = $philSms->send((string) $this->argument('phone'), (string) $this->option('message'));
         $this->line("PhilSMS delivery: {$delivery}");
+        if ($delivery !== 'sent' && $philSms->lastFailureReason() !== null) {
+            $this->error('Reason: ' . $philSms->lastFailureReason());
+        }
 
         return $delivery === 'sent' ? self::SUCCESS : self::FAILURE;
     }
