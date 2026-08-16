@@ -487,6 +487,21 @@ class InvoiceService
                 }
             });
 
+            // A receipt email covers every verified payment method. It is
+            // deliberately post-commit and best-effort, so mail failures can
+            // never undo a cash, bank, GCash, or PayMongo payment.
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    app(PaymentConfirmationEmailService::class)
+                        ->send($payment->fresh(['customer', 'invoice']));
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred payment confirmation email failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
+
             Log::info('Payment recorded', [
                 'payment_id' => $payment->id,
                 'invoice_id' => $invoice->id,
@@ -529,6 +544,18 @@ class InvoiceService
                         ->sendPaymentReceived($payment->fresh(['customer', 'invoice']));
                 } catch (\Throwable $e) {
                     Log::warning('Deferred customer advance-payment push failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
+
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    app(PaymentConfirmationEmailService::class)
+                        ->send($payment->fresh(['customer', 'invoice']));
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred advance-payment confirmation email failed', [
                         'payment_id' => $payment->id,
                         'error_type' => $e::class,
                     ]);

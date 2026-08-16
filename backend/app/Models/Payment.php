@@ -30,6 +30,7 @@ class Payment extends Model
         'transaction_id',
         'reference',
         'notes',
+        'payment_confirmation_email_sent_at',
     ];
 
     protected $casts = [
@@ -38,6 +39,7 @@ class Payment extends Model
         'cash_breakdown' => 'array',
         'payer_signature_similarity' => 'float',
         'payment_date' => 'date',
+        'payment_confirmation_email_sent_at' => 'datetime',
     ];
 
     public function invoice(): BelongsTo
