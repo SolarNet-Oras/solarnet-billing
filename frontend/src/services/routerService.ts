@@ -110,11 +110,18 @@ export interface RouterQosInspection {
   inspected_at: string;
 }
 
+export interface RouterQosAnalysis {
+  recommended_mode: 'full' | 'safe' | 'disabled';
+  full: { available: boolean; safety_passed: boolean; test_available: boolean; reasons: string[] };
+  safe: { available: boolean; queue_type: string | null; managed_queue_count: number; ownership: string; reasons: string[] };
+  disabled: { available: boolean; reason: string | null };
+}
+
 export interface RouterQosDeployment {
   id: string;
   router_id: string;
   configuration_version: number;
-  status: 'previewed' | 'refused' | 'applying' | 'active' | 'failed' | 'rolled_back' | 'disabled';
+  status: 'previewed' | 'refused' | 'applying' | 'active' | 'failed' | 'rolled_back' | 'disabled' | 'safe_testing' | 'safe_test_passed';
   strategy: string | null;
   queue_type: string | null;
   configuration: Record<string, unknown> | null;
@@ -124,6 +131,9 @@ export interface RouterQosDeployment {
   failure_reason: string | null;
   created_at: string;
   applied_at: string | null;
+  test_started_at?: string | null;
+  test_expires_at?: string | null;
+  test_completed_at?: string | null;
 }
 
 export interface RouterQosMetrics extends RouterMonitoringSnapshot {
@@ -148,6 +158,17 @@ export interface RouterQosPreview {
   recommendation: { strategy: string | null; queue_type: string | null; cake_available_but_not_selected: string[]; reason: string };
   preservation: { customer_simple_queues_preserved: number; administrator_simple_queues_preserved: number; firewall_rules_changed: number; mangle_rules_changed: number; queue_types_created: number; queue_trees_to_create: number };
   risk: 'low' | 'medium' | 'blocked';
+}
+
+export interface RouterQosSafePreview {
+  ready: boolean;
+  mode: 'safe';
+  customer: { id: string; account_number: string; full_name: string };
+  queue_type_before: string | null;
+  queue_type_after: string;
+  preserved: { max_limit: string; target: string; parent: string | null; packet_marks: string | null; priority: string | null; comment: string | null };
+  test_duration_minutes: number;
+  message: string;
 }
 
 export const routerService = {
@@ -205,8 +226,8 @@ export const routerService = {
     return { message: response.data.message, data: response.data.data };
   },
 
-  async qosStatus(id: string): Promise<{ inspection: RouterQosInspection; active_deployment: RouterQosDeployment | null }> {
-    const response = await api.get<{ success: boolean; data: { inspection: RouterQosInspection; active_deployment: RouterQosDeployment | null } }>(`/routers/${id}/qos/status`);
+  async qosStatus(id: string): Promise<{ inspection: RouterQosInspection; analysis: RouterQosAnalysis; active_deployment: RouterQosDeployment | null }> {
+    const response = await api.get<{ success: boolean; data: { inspection: RouterQosInspection; analysis: RouterQosAnalysis; active_deployment: RouterQosDeployment | null } }>(`/routers/${id}/qos/status`);
     return response.data.data;
   },
 
@@ -215,13 +236,28 @@ export const routerService = {
     return response.data.data;
   },
 
-  async qosClients(id: string): Promise<{ data: Array<{ customer_id: string; account_number: string; full_name: string; ip_address: string | null; mac_address: string | null; status: string; plan: { name: string; download_speed: number; upload_speed: number; priority: number; qos_priority_level: 'Critical' | 'High' | 'Normal' | 'Low' } | null; queue: { name: string; max_limit: string | null; rate: string | null; dropped: string | null; disabled: boolean } | null }>; queue_read_warning: string | null }> {
+  async qosClients(id: string): Promise<{ data: Array<{ customer_id: string; account_number: string; full_name: string; ip_address: string | null; mac_address: string | null; status: string; plan: { name: string; download_speed: number; upload_speed: number; priority: number; qos_priority_level: 'Critical' | 'High' | 'Normal' | 'Low' } | null; queue: { name: string; max_limit: string | null; rate: string | null; dropped: string | null; disabled: boolean } | null; safe_qos: { eligible: boolean; reason: string | null } }>; queue_read_warning: string | null }> {
     const response = await api.get<{ success: boolean; data: Array<any>; queue_read_warning: string | null }>(`/routers/${id}/qos/clients`);
     return { data: response.data.data, queue_read_warning: response.data.queue_read_warning };
   },
 
   async qosPreview(id: string, data: { download_capacity_mbps: number; upload_capacity_mbps: number; ceiling_percent: number; download_parent: string; upload_parent: string; mode?: 'production' | 'test' }): Promise<{ message: string; data: { deployment: RouterQosDeployment; preview: RouterQosPreview } }> {
     const response = await api.post<{ success: boolean; message: string; data: { deployment: RouterQosDeployment; preview: RouterQosPreview } }>(`/routers/${id}/qos/preview`, data);
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosSafePreview(id: string, data: { customer_id: string; test_duration_minutes: number; test_target: string }): Promise<{ message: string; data: { deployment: RouterQosDeployment; preview: RouterQosSafePreview } }> {
+    const response = await api.post<{ success: boolean; message: string; data: { deployment: RouterQosDeployment; preview: RouterQosSafePreview } }>(`/routers/${id}/qos/safe/preview`, data);
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosSafeStartTest(id: string, deploymentId: string): Promise<{ message: string; data: RouterQosDeployment }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterQosDeployment }>(`/routers/${id}/qos/safe/start-test`, { deployment_id: deploymentId, confirm_start: true });
+    return { message: response.data.message, data: response.data.data };
+  },
+
+  async qosSafeApply(id: string, deploymentId: string): Promise<{ message: string; data: RouterQosDeployment }> {
+    const response = await api.post<{ success: boolean; message: string; data: RouterQosDeployment }>(`/routers/${id}/qos/safe/apply`, { deployment_id: deploymentId, confirm_apply: true });
     return { message: response.data.message, data: response.data.data };
   },
 

@@ -139,6 +139,9 @@ Route::prefix('v1')->group(function () {
             Route::get('routers/{id}/qos/config', [RouterController::class, 'qosConfig']);
             Route::get('routers/{id}/qos/clients', [RouterController::class, 'qosClients']);
             Route::post('routers/{id}/qos/preview', [RouterController::class, 'qosPreview']);
+            Route::post('routers/{id}/qos/safe/preview', [RouterController::class, 'qosSafePreview']);
+            Route::post('routers/{id}/qos/safe/start-test', [RouterController::class, 'qosSafeStartTest']);
+            Route::post('routers/{id}/qos/safe/apply', [RouterController::class, 'qosSafeApply']);
             Route::get('routers/{id}/qos/metrics', [RouterController::class, 'qosMetrics']);
             Route::post('routers/{id}/qos/test', [RouterController::class, 'qosTest']);
             Route::post('routers/{id}/qos/apply', [RouterController::class, 'qosApply']);

@@ -295,6 +295,40 @@ class RouterController extends Controller
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
+    /** Preview a single existing SolarNet customer queue for Safe QoS; no RouterOS change. */
+    public function qosSafePreview(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'customer_id' => ['required', 'uuid'],
+            'test_duration_minutes' => ['required', 'integer', 'min:1', 'max:60'],
+            'test_target' => ['required', 'string', 'max:253'],
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A customer, a one-to-sixty minute test duration, and a router ping target are required.', 'errors' => $validator->errors()], 422);
+
+        $result = $this->routerQosService->previewSafe(Router::findOrFail($id), $request->user(), $validator->validated());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Explicitly start the one-customer Safe QoS test after a preview. */
+    public function qosSafeStartTest(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['deployment_id' => ['required', 'uuid'], 'confirm_start' => ['required', 'accepted']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit administrator confirmation is required to start a Safe QoS test.', 'errors' => $validator->errors()], 422);
+
+        $result = $this->routerQosService->startSafeTest(Router::findOrFail($id), RouterQosDeployment::findOrFail($validator->validated()['deployment_id']), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Retain a Safe QoS queue type only after its scheduled controlled test passed. */
+    public function qosSafeApply(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['deployment_id' => ['required', 'uuid'], 'confirm_apply' => ['required', 'accepted']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit administrator confirmation is required to retain Safe QoS.', 'errors' => $validator->errors()], 422);
+
+        $result = $this->routerQosService->applySafe(Router::findOrFail($id), RouterQosDeployment::findOrFail($validator->validated()['deployment_id']), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     public function qosApply(Request $request, string $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [

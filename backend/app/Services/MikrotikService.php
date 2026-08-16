@@ -314,6 +314,138 @@ class MikrotikService
         }
     }
 
+    /**
+     * Read one SolarNet-owned customer Simple Queue. Ownership is deliberately
+     * strict: the generated queue name, router relation, and exact /32 target
+     * must all agree. An administrator-created queue is never a candidate.
+     */
+    public function readManagedCustomerQueue(Router $router, Customer $customer): array
+    {
+        if ($customer->router_id !== $router->id || !$customer->ip_address) {
+            return ['success' => false, 'message' => 'Customer is not assigned to this router with a current IP address.'];
+        }
+
+        $queueName = 'customer-' . $customer->id;
+        try {
+            $client = new Client($this->makeConfig($router));
+            $rows = $client->query((new Query('/queue/simple/print'))->where('name', $queueName))->read();
+            $queue = $rows[0] ?? null;
+            if (!$queue) return ['success' => false, 'message' => "SolarNet-managed queue {$queueName} was not found."];
+            if (!$this->isExactCustomerQueueTarget((string) ($queue['target'] ?? ''), $customer->ip_address)) {
+                return ['success' => false, 'message' => 'The SolarNet queue target no longer exactly matches this customer IP. No QoS change is allowed.'];
+            }
+
+            return ['success' => true, 'data' => $this->simpleQueueSnapshot($queue)];
+        } catch (Throwable $e) {
+            Log::warning('Could not read managed customer queue for Safe QoS', ['router_id' => $router->id, 'customer_id' => $customer->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Could not read the SolarNet-managed customer queue: ' . $e->getMessage()];
+        }
+    }
+
+    /** Apply only an existing SolarNet queue's queue discipline. Limits and topology stay untouched. */
+    public function applySafeQueueType(Router $router, Customer $customer, array $before, string $queueType): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $current = $this->findSimpleQueueFromClient($client, (string) ($before['name'] ?? ''));
+            if (!$current || !$this->queueStillMatchesSnapshot($current, $before) || !$this->isExactCustomerQueueTarget((string) ($current['target'] ?? ''), (string) $customer->ip_address)) {
+                return ['success' => false, 'message' => 'The managed queue changed after preview or no longer matches the client IP. Safe QoS was not applied.'];
+            }
+
+            $response = $client->query(
+                (new Query('/queue/simple/set'))
+                    ->equal('.id', $current['.id'])
+                    ->equal('queue', $queueType)
+            )->read();
+            if ($this->routerOsTrap($response)) return ['success' => false, 'message' => 'RouterOS rejected the Safe QoS queue-type update: ' . $this->routerOsTrap($response)];
+
+            $saved = $this->findSimpleQueueFromClient($client, (string) $before['name']);
+            if (!$saved || !$this->queueStillMatchesSnapshot($saved, $before) || (string) ($saved['queue'] ?? '') !== $queueType) {
+                return ['success' => false, 'message' => 'RouterOS did not verify the Safe QoS queue update. Existing queue limits were left unchanged.'];
+            }
+
+            return ['success' => true, 'data' => $this->simpleQueueSnapshot($saved), 'message' => 'Safe QoS queue discipline was applied and the original limit, target, parent, packet mark, priority, and comment were verified unchanged.'];
+        } catch (Throwable $e) {
+            Log::warning('Safe QoS queue update failed', ['router_id' => $router->id, 'customer_id' => $customer->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Safe QoS queue update failed without changing a global router setting: ' . $e->getMessage()];
+        }
+    }
+
+    /** Restore only fields captured from one managed customer queue before its Safe QoS test. */
+    public function restoreManagedCustomerQueue(Router $router, Customer $customer, array $before): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $current = $this->findSimpleQueueFromClient($client, (string) ($before['name'] ?? ''));
+            if (!$current || !$this->isExactCustomerQueueTarget((string) ($current['target'] ?? ''), (string) $customer->ip_address)) {
+                return ['success' => false, 'message' => 'The managed queue cannot be safely restored because its exact client target no longer matches.'];
+            }
+
+            $restoreFields = ['target', 'max-limit', 'queue', 'parent', 'packet-marks', 'priority', 'limit-at', 'burst-limit', 'burst-threshold', 'burst-time', 'bucket-size', 'disabled', 'comment'];
+            $query = (new Query('/queue/simple/set'))->equal('.id', $current['.id']);
+            foreach ($restoreFields as $field) {
+                if (array_key_exists($field, $before)) $query->equal($field, (string) $before[$field]);
+            }
+            $response = $client->query($query)->read();
+            if ($this->routerOsTrap($response)) return ['success' => false, 'message' => 'RouterOS rejected the Safe QoS rollback: ' . $this->routerOsTrap($response)];
+
+            $saved = $this->findSimpleQueueFromClient($client, (string) $before['name']);
+            if (!$saved || !$this->queueMatchesRestoreSnapshot($saved, $before)) {
+                return ['success' => false, 'message' => 'RouterOS did not verify restoration of the original managed queue configuration.'];
+            }
+
+            return ['success' => true, 'data' => $this->simpleQueueSnapshot($saved), 'message' => 'The original SolarNet-managed customer queue configuration was restored and verified.'];
+        } catch (Throwable $e) {
+            Log::warning('Safe QoS queue rollback failed', ['router_id' => $router->id, 'customer_id' => $customer->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'Could not restore the Safe QoS customer queue: ' . $e->getMessage()];
+        }
+    }
+
+    private function findSimpleQueueFromClient(Client $client, string $name): ?array
+    {
+        if ($name === '') return null;
+        return $client->query((new Query('/queue/simple/print'))->where('name', $name))->read()[0] ?? null;
+    }
+
+    private function simpleQueueSnapshot(array $queue): array
+    {
+        $fields = ['name', 'target', 'max-limit', 'queue', 'parent', 'packet-marks', 'priority', 'limit-at', 'burst-limit', 'burst-threshold', 'burst-time', 'bucket-size', 'disabled', 'comment', 'rate', 'dropped', 'bytes'];
+        $snapshot = [];
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $queue)) $snapshot[$field] = (string) $queue[$field];
+        }
+        return $snapshot;
+    }
+
+    private function isExactCustomerQueueTarget(string $target, string $ipAddress): bool
+    {
+        $targets = array_values(array_filter(array_map('trim', explode(',', $target))));
+        return count($targets) === 1 && in_array($targets[0], [$ipAddress, $ipAddress . '/32'], true);
+    }
+
+    /** Fields that must remain untouched when only the queue discipline changes. */
+    private function queueStillMatchesSnapshot(array $queue, array $before): bool
+    {
+        foreach (['name', 'target', 'max-limit', 'parent', 'packet-marks', 'priority', 'limit-at', 'burst-limit', 'burst-threshold', 'burst-time', 'bucket-size', 'disabled', 'comment'] as $field) {
+            if (array_key_exists($field, $before) && (string) ($queue[$field] ?? '') !== (string) $before[$field]) return false;
+        }
+        return true;
+    }
+
+    private function queueMatchesRestoreSnapshot(array $queue, array $before): bool
+    {
+        foreach (['target', 'max-limit', 'queue', 'parent', 'packet-marks', 'priority', 'limit-at', 'burst-limit', 'burst-threshold', 'burst-time', 'bucket-size', 'disabled', 'comment'] as $field) {
+            if (array_key_exists($field, $before) && (string) ($queue[$field] ?? '') !== (string) $before[$field]) return false;
+        }
+        return true;
+    }
+
+    private function routerOsTrap(array $response): ?string
+    {
+        $trap = collect($response)->first(fn (array $row) => isset($row['!trap']) || isset($row['message']));
+        return $trap['message'] ?? null;
+    }
+
     /** Create a RouterOS binary backup and verify that the router reports the file. */
     public function createQosBackup(Router $router, string $backupName): array
     {

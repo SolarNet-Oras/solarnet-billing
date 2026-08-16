@@ -56,3 +56,11 @@ Schedule::command('paymongo:reconcile-pending')
     ->everyMinute()
     ->timezone($tz)
     ->withoutOverlapping();
+
+// Every minute — end controlled Safe QoS tests. A failed verification restores
+// only the original SolarNet-managed customer Simple Queue snapshot.
+Schedule::command('qos:complete-safe-tests')
+    ->everyMinute()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();

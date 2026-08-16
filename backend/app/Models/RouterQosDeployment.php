@@ -25,6 +25,9 @@ class RouterQosDeployment extends Model
         'created_by',
         'applied_by',
         'applied_at',
+        'test_started_at',
+        'test_expires_at',
+        'test_completed_at',
         'rolled_back_by',
         'rolled_back_at',
     ];
@@ -37,6 +40,9 @@ class RouterQosDeployment extends Model
             'verification' => 'array',
             'backup_verified_at' => 'datetime',
             'applied_at' => 'datetime',
+            'test_started_at' => 'datetime',
+            'test_expires_at' => 'datetime',
+            'test_completed_at' => 'datetime',
             'rolled_back_at' => 'datetime',
         ];
     }
