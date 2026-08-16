@@ -204,7 +204,10 @@ class MikrotikService
             $filters = $read('/ip/firewall/filter/print');
             $mangles = $read('/ip/firewall/mangle/print');
             $nat = $read('/ip/firewall/nat/print');
-            $connections = $read('/ip/firewall/connection/print');
+            // Do not enumerate the live firewall connection table here. It is
+            // not a QoS safety prerequisite and can be very large on a
+            // concentrator, causing an otherwise read-only inspection to time
+            // out. Connection state belongs in an opt-in diagnostic instead.
             $dhcpServers = $read('/ip/dhcp-server/print');
             $dhcpLeases = $read('/ip/dhcp-server/lease/print');
             $simpleQueues = $read('/queue/simple/print');
@@ -296,7 +299,7 @@ class MikrotikService
                     'firewall_filter_count' => count($filters),
                     'firewall_nat_count' => count($nat),
                     'routing_rule_count' => count($routingRules),
-                    'active_connections' => count($connections),
+                    'active_connections' => null,
                     'dhcp_lease_count' => count($dhcpLeases),
                     'ethernet_interface_count' => count($ethernet),
                     'wireguard_interface_count' => count($wireguard),
@@ -403,7 +406,6 @@ class MikrotikService
 
         try {
             $client = new Client($this->makeConfig($router));
-            $connections = $client->query(new Query('/ip/firewall/connection/print'))->read();
             $trees = $client->query(new Query('/queue/tree/print'))->read();
             $drops = 0;
             foreach ($trees as $tree) {
@@ -413,7 +415,10 @@ class MikrotikService
             return [
                 'success' => true,
                 'data' => array_merge($monitoring['data'], [
-                    'active_connections' => count($connections),
+                    // Avoid polling all firewall connections every five
+                    // seconds. It neither influences the QoS plan nor its
+                    // safe verification, and may overload busy routers.
+                    'active_connections' => null,
                     'queue_tree_count' => count($trees),
                     'queue_drops' => $drops,
                     'latency_ms' => null,

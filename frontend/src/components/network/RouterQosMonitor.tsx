@@ -13,6 +13,17 @@ const formatRate = (bps: number | null | undefined) => {
   return `${(bps / 1_000_000).toFixed(1)} Mbps`;
 };
 
+/** Keep an actionable, non-sensitive API failure in the operator UI. */
+const describeQosError = (error: unknown) => {
+  const apiError = error as {
+    message?: string;
+    response?: { status?: number; data?: { message?: string } };
+  };
+  const status = apiError.response?.status;
+  const detail = apiError.response?.data?.message || apiError.message || 'No response was received from the billing server.';
+  return status ? `HTTP ${status}: ${detail}` : detail;
+};
+
 export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
   const [routerId, setRouterId] = useState('');
   const [inspection, setInspection] = useState<RouterQosInspection | null>(null);
@@ -43,30 +54,49 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
 
   const load = useCallback(async (withClients = true) => {
     if (!routerId) return;
+    setLoading(true);
+    setMessage(null);
+    const failures: string[] = [];
+
+    // Do not open several RouterOS API sessions at once. A full safety
+    // inspection is deliberately completed before the smaller live reads.
+    // This keeps the control plane responsive on busy concentrators.
+    let status: Awaited<ReturnType<typeof routerService.qosStatus>> | null = null;
     try {
-      setLoading(true);
-      const [status, configuration, currentMetrics, customerQueues] = await Promise.all([
-        routerService.qosStatus(routerId),
-        routerService.qosConfig(routerId),
-        routerService.qosMetrics(routerId),
-        withClients ? routerService.qosClients(routerId) : Promise.resolve(null),
-      ]);
+      status = await routerService.qosStatus(routerId);
       setInspection(status.inspection);
-      setDeployments(configuration);
-      setMetrics(currentMetrics);
-      if (customerQueues) {
-        setClients(customerQueues.data);
-        setClientWarning(customerQueues.queue_read_warning);
-      }
       const clientParent = status.inspection.client_interfaces[0] || status.inspection.bridge_interfaces[0] || status.inspection.vlan_interfaces[0] || '';
       const knownWan = status.inspection.wan_candidates.find((wan) => wan.interface)?.interface || '';
       setDownloadParent((current) => current || clientParent);
       setUploadParent((current) => current || knownWan);
-    } catch (error: any) {
-      setMessage({ success: false, text: error?.response?.data?.message || 'Could not read live RouterOS QoS data.' });
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      failures.push(`RouterOS QoS inspection failed: ${describeQosError(error)}`);
     }
+
+    try {
+      setDeployments(await routerService.qosConfig(routerId));
+    } catch (error) {
+      failures.push(`QoS configuration history failed: ${describeQosError(error)}`);
+    }
+
+    try {
+      setMetrics(await routerService.qosMetrics(routerId));
+    } catch (error) {
+      failures.push(`Live QoS metrics failed: ${describeQosError(error)}`);
+    }
+
+    if (withClients) {
+      try {
+        const customerQueues = await routerService.qosClients(routerId);
+        setClients(customerQueues.data);
+        setClientWarning(customerQueues.queue_read_warning);
+      } catch (error) {
+        failures.push(`Customer queue reference failed: ${describeQosError(error)}`);
+      }
+    }
+
+    if (failures.length) setMessage({ success: false, text: failures.join(' ') });
+    setLoading(false);
   }, [routerId]);
 
   useEffect(() => {
@@ -138,7 +168,7 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
     {message && <div className={`mt-4 rounded-lg border p-3 text-sm ${message.success ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100' : 'border-red-400/25 bg-red-500/10 text-red-100'}`}>{message.text}</div>}
 
     {inspection && <>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="CPU" value={`${inspection.cpu_load}%`} alert={inspection.cpu_load > 80} /><Metric label="Memory" value={metrics?.memory_used_percent === null || metrics?.memory_used_percent === undefined ? 'Live read pending' : `${metrics.memory_used_percent}% used`} alert={(metrics?.memory_used_percent ?? 0) > 85} /><Metric label="Connections" value={String(metrics?.active_connections ?? inspection.active_connections)} /><Metric label="Customer queues" value={String(inspection.existing_queues.billing_customer_queues)} /><Metric label="QoS state" value={activeDeployment ? `Active v${activeDeployment.configuration_version}` : 'Not deployed'} alert={Boolean(activeDeployment)} /></div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Metric label="CPU" value={`${inspection.cpu_load}%`} alert={inspection.cpu_load > 80} /><Metric label="Memory" value={metrics?.memory_used_percent === null || metrics?.memory_used_percent === undefined ? 'Live read pending' : `${metrics.memory_used_percent}% used`} alert={(metrics?.memory_used_percent ?? 0) > 85} /><Metric label="Connections" value={(metrics?.active_connections ?? inspection.active_connections) === null ? 'Not polled' : String(metrics?.active_connections ?? inspection.active_connections)} /><Metric label="Customer queues" value={String(inspection.existing_queues.billing_customer_queues)} /><Metric label="QoS state" value={activeDeployment ? `Active v${activeDeployment.configuration_version}` : 'Not deployed'} alert={Boolean(activeDeployment)} /></div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.05fr_0.95fr]"><article className="rounded-xl border border-slate-800 bg-slate-900/60 p-4"><h4 className="flex items-center gap-2 font-semibold text-white"><ShieldAlert className="h-4 w-4 text-amber-300" /> Safety discovery</h4><div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2"><Info label="RouterOS" value={`${inspection.routeros_version || 'unknown'} · ${inspection.board_name || 'unknown board'}`} /><Info label="FastTrack" value={inspection.fasttrack.enabled ? `Enabled (${inspection.fasttrack.count}) - deployment blocked` : 'Not detected'} /><Info label="Queue architecture" value={`${inspection.existing_queues.simple_total} simple / ${inspection.existing_queues.queue_tree_total} tree`} /><Info label="Capabilities" value={`FQ-CoDel: ${inspection.queue_capabilities.fq_codel.join(', ') || 'none'} · PCQ: ${inspection.queue_capabilities.pcq.join(', ') || 'none'}`} /><Info label="WAN routes" value={inspection.multi_wan_detected ? 'Multiple paths - explicit WAN mapping required' : `${inspection.wan_candidates.length || 0} default path`} /><Info label="Client network" value={`${inspection.client_interfaces.join(', ') || 'not detected'} · ${inspection.dhcp_lease_count} DHCP leases`} /></div>{inspection.warnings.length > 0 && <ul className="mt-3 space-y-1 rounded-lg bg-amber-500/5 p-3 text-xs text-amber-100">{inspection.warnings.map((warning) => <li key={warning}>- {warning}</li>)}</ul>}</article>
 

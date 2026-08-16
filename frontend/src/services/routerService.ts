@@ -99,7 +99,9 @@ export interface RouterQosInspection {
   firewall_filter_count: number;
   firewall_nat_count: number;
   routing_rule_count: number;
-  active_connections: number;
+  // Deliberately not polled: enumerating a large firewall connection table
+  // can degrade a busy router. It is not needed for QoS safety decisions.
+  active_connections: number | null;
   dhcp_lease_count: number;
   ethernet_interface_count: number;
   wireguard_interface_count: number;
@@ -125,7 +127,7 @@ export interface RouterQosDeployment {
 }
 
 export interface RouterQosMetrics extends RouterMonitoringSnapshot {
-  active_connections: number;
+  active_connections: number | null;
   queue_tree_count: number;
   queue_drops: number;
   queue_drop_delta: number | null;
