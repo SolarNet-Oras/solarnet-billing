@@ -28,15 +28,15 @@ class MikrotikService
      */
     private const PAYMENT_CHECKOUT_HOSTS = ['checkout.paymongo.com'];
 
-    protected function makeConfig(Router $router): Config
+    protected function makeConfig(Router $router, int $connectTimeout = 3, int $socketTimeout = 5): Config
     {
         return (new Config())
             ->set('host', $router->host)
             ->set('user', $router->username)
             ->set('pass', $router->password)
             ->set('port', $router->port)
-            ->set('timeout', 3)
-            ->set('socket_timeout', 5)
+            ->set('timeout', $connectTimeout)
+            ->set('socket_timeout', $socketTimeout)
             ->set('attempts', 1)
             ->set('delay', 1);
     }
@@ -183,7 +183,10 @@ class MikrotikService
     public function cleanProvisioningDiscovery(Router $router): array
     {
         try {
-            $client = new Client($this->makeConfig($router));
+            // Discovery reads many RouterOS configuration areas. Bound each
+            // read separately so one unreachable menu cannot consume the
+            // whole request. These are read-only commands; nothing is changed.
+            $client = new Client($this->makeConfig($router, 3, 3));
             $errors = [];
             $read = function (string $path) use ($client, &$errors): array {
                 try {

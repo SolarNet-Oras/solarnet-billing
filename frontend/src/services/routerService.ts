@@ -1,5 +1,11 @@
 import { api } from './api';
 
+// Clean-router discovery deliberately reads many RouterOS configuration areas.
+// It needs more time than normal screen/API requests, especially through a VPN
+// or port-forward, but is still bounded well below the server's 300-second cap.
+const ROUTER_PROVISIONING_DISCOVERY_TIMEOUT = 120_000;
+const ROUTER_PROVISIONING_APPLY_TIMEOUT = 180_000;
+
 export interface Router {
   id: string;
   name: string;
@@ -297,7 +303,11 @@ export const routerService = {
   },
 
   async provisioningDiscover(id: string): Promise<{ message: string; audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery }> {
-    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery } }>(`/routers/${id}/provisioning/discover`);
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery } }>(
+      `/routers/${id}/provisioning/discover`,
+      undefined,
+      { timeout: ROUTER_PROVISIONING_DISCOVERY_TIMEOUT },
+    );
     return { message: response.data.message, ...response.data.data };
   },
 
@@ -307,10 +317,14 @@ export const routerService = {
   },
 
   async provisioningApply(id: string, auditId: string, confirmationText: string): Promise<{ message: string; audit: RouterProvisioningAudit; verification: Record<string, unknown> }> {
-    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; verification: Record<string, unknown> } }>(`/routers/${id}/provisioning/apply`, {
-      audit_id: auditId,
-      confirmation_text: confirmationText,
-    });
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterProvisioningAudit; verification: Record<string, unknown> } }>(
+      `/routers/${id}/provisioning/apply`,
+      {
+        audit_id: auditId,
+        confirmation_text: confirmationText,
+      },
+      { timeout: ROUTER_PROVISIONING_APPLY_TIMEOUT },
+    );
     return { message: response.data.message, ...response.data.data };
   },
 

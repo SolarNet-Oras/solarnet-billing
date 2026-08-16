@@ -42,6 +42,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
   if (!isOpen) return null;
 
   const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || error?.message || fallback;
+  const isTimeout = (error: any) => error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''));
 
   const discover = async () => {
     setBusy('discover');
@@ -58,7 +59,9 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
       setForm((current) => ({ ...current, wan_interface: autoWan, customer_parent_interface: alternate }));
       if (result.discovery.clean) setStep('config');
     } catch (error: any) {
-      setMessage(errorMessage(error, 'Router discovery failed. No configuration was changed.'));
+      setMessage(isTimeout(error)
+        ? 'Router discovery exceeded its two-minute read-only limit. No RouterOS configuration was changed. Test the router connection, then verify the VPN or port-forward is stable before trying again.'
+        : errorMessage(error, 'Router discovery failed. No configuration was changed.'));
     } finally {
       setBusy(null);
     }
@@ -152,6 +155,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
                 <div className="rounded-lg border border-border p-4"><strong className="text-foreground">Included after approval</strong><p className="mt-1 text-muted-foreground">Selected IPoE customer VLAN, DHCP scope, optional isolated portal VLAN, payment-only billing infrastructure, verified backup and audit trail.</p></div>
                 <div className="rounded-lg border border-border p-4"><strong className="text-foreground">Never automatic</strong><p className="mt-1 text-muted-foreground">Factory reset, PPPoE changes, bridge-port moves, customer records, customer queues, static leases, firewall/mangle/routing changes, or captive portal on the customer IPoE VLAN.</p></div>
               </div>
+              <p className="text-xs text-muted-foreground">This read-only safety scan can take up to two minutes for a router reached through VPN or port-forwarding. It does not change the router.</p>
               <button type="button" onClick={() => void discover()} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50" data-testid="router-provision-discover">
                 {busy === 'discover' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />} Run read-only clean-router discovery
               </button>
