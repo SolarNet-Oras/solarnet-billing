@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, CreditCard, Headphones, WifiOff } from 'lucide-react';
 import customerPortalService from '@/services/customerPortalService';
 import { formatPHP } from '@/lib/currency';
+import CustomerAppInstallCard from '@/components/customer/CustomerAppInstallCard';
 
 type ReminderData = {
   customer_id: string;
@@ -30,10 +31,18 @@ const PaymentRequiredPage: React.FC = () => {
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState('');
 
-  const continueToPayment = (): void => {
+  const hasCurrentPortalSession = (): boolean => {
     try {
       const customer = JSON.parse(localStorage.getItem('customer_data') || 'null');
-      if (customer?.id && customer.id === customerId && localStorage.getItem('customer_token')) {
+      return Boolean(customer?.id && customer.id === customerId && localStorage.getItem('customer_token'));
+    } catch {
+      return false;
+    }
+  };
+
+  const continueToPayment = (): void => {
+    try {
+      if (hasCurrentPortalSession()) {
         navigate('/customer/billing');
         return;
       }
@@ -118,6 +127,14 @@ const PaymentRequiredPage: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {hasCurrentPortalSession() ? (
+              <CustomerAppInstallCard autoConnectGrantedPermission showInstall={false} />
+            ) : (
+              <p className="rounded-2xl border border-sky-300/20 bg-sky-300/10 px-4 py-3 text-sm text-sky-100">
+                Sign in to this account below to connect payment and service alerts to this device.
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-3">
               <button

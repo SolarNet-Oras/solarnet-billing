@@ -52,6 +52,16 @@ const payloadFromSubscription = (subscription: PushSubscription): BrowserPushSub
   };
 };
 
+const subscriptionUsesPublicKey = (subscription: PushSubscription, publicKey: string): boolean => {
+  const existingKey = subscription.options.applicationServerKey;
+  if (!existingKey) return false;
+
+  const expected = urlBase64ToUint8Array(publicKey);
+  const actual = new Uint8Array(existingKey);
+
+  return actual.length === expected.length && actual.every((byte, index) => byte === expected[index]);
+};
+
 const customerPushDeviceId = (): string | undefined => {
   try {
     const existing = window.localStorage.getItem(DEVICE_ID_KEY);
@@ -101,13 +111,25 @@ export const subscribeToWebPush = async (publicKey: string): Promise<BrowserPush
     throw new Error('Notifications are not supported by this browser.');
   }
 
-  const permission = await Notification.requestPermission();
+  // Never show a second browser prompt when the customer has already allowed
+  // notifications. This also lets the portal reconnect a permitted device.
+  const permission = Notification.permission === 'granted'
+    ? 'granted'
+    : await Notification.requestPermission();
   if (permission !== 'granted') {
     throw new Error('Notification permission was not granted. You can enable it later in your browser settings.');
   }
 
   const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
+  if (subscription && !subscriptionUsesPublicKey(subscription, publicKey)) {
+    // A VAPID key rotation requires a new browser subscription. This changes
+    // only the local browser endpoint; it does not affect billing or router
+    // configuration. A browser that requires a click will use the visible
+    // reconnect button and show no second permission prompt.
+    await subscription.unsubscribe();
+    subscription = null;
+  }
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,

@@ -4,6 +4,7 @@ import { ArrowLeft, CreditCard, FileText, ReceiptText, Smartphone } from 'lucide
 import customerPortalService from '@/services/customerPortalService';
 import type { Invoice, Payment } from '@/types/api';
 import { formatPHP } from '@/lib/currency';
+import CustomerAppInstallCard from '@/components/customer/CustomerAppInstallCard';
 
 export default function CustomerBillingPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -83,6 +84,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
         <div><h1 className="text-3xl font-bold text-slate-900">Invoices & payments</h1><p className="mt-1 text-slate-600">Your account billing history and recorded payments.</p></div>
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
         {notice && <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">{notice}</div>}
+        <CustomerAppInstallCard autoConnectGrantedPermission showInstall={false} />
         {loading ? <div className="py-16 text-center text-slate-500">Loading billing history…</div> : <>
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b px-5 py-4"><FileText className="h-5 w-5 text-blue-600" /><h2 className="font-semibold text-slate-900">Invoices</h2></div>

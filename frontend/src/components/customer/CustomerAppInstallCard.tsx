@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, BellOff, CheckCircle2, Download, LoaderCircle, Smartphone } from 'lucide-react';
 import customerPortalService from '../../services/customerPortalService';
 import {
@@ -19,7 +19,17 @@ declare global {
   }
 }
 
-export default function CustomerAppInstallCard(): React.JSX.Element | null {
+interface CustomerAppInstallCardProps {
+  /** Reconnect an existing permitted device without showing a permission prompt. */
+  autoConnectGrantedPermission?: boolean;
+  /** The suspension reminder only needs alert controls, not the install-app action. */
+  showInstall?: boolean;
+}
+
+export default function CustomerAppInstallCard({
+  autoConnectGrantedPermission = false,
+  showInstall = true,
+}: CustomerAppInstallCardProps): React.JSX.Element | null {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
   const [showIosHelp, setShowIosHelp] = useState(false);
@@ -33,6 +43,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() => supportsWebPush() ? Notification.permission : 'unsupported');
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
+  const attemptedAutomaticConnection = useRef(false);
   const subscribedDeviceCount = pushStatus?.subscriptionCount ?? 0;
 
   useEffect(() => {
@@ -50,6 +61,14 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
     };
   }, []);
 
+  const registerPushSubscription = async (publicKey: string): Promise<string> => {
+    const subscription = await subscribeToWebPush(publicKey);
+    const response = await customerPortalService.subscribePushNotifications(subscription);
+    setThisDeviceSubscribed(true);
+    setPushPermission(Notification.permission);
+    return response.message;
+  };
+
   useEffect(() => {
     const loadPushStatus = async (): Promise<void> => {
       try {
@@ -60,6 +79,43 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
         setPushStatus({ enabled: status.enabled, publicKey: status.public_key, reason: status.reason, subscriptionCount: status.subscription_count ?? 0 });
         setThisDeviceSubscribed(Boolean(subscription));
         setPushPermission(supportsWebPush() ? Notification.permission : 'unsupported');
+
+        // A browser permission is not enough on its own: SolarNet must also
+        // receive the endpoint for this signed-in customer. If a customer has
+        // already allowed notifications, reconnect it silently. Browsers that
+        // require a click for PushManager.subscribe fall back to the button.
+        if (
+          autoConnectGrantedPermission
+          && !subscription
+          && !attemptedAutomaticConnection.current
+          && status.enabled
+          && status.public_key
+          && supportsWebPush()
+          && Notification.permission === 'granted'
+        ) {
+          attemptedAutomaticConnection.current = true;
+          try {
+            const message = await registerPushSubscription(status.public_key);
+            setPushMessage(message);
+          } catch {
+            setPushMessage('Notifications are allowed. Tap Connect billing alerts once to link this device to your SolarNet account.');
+          }
+        } else if (
+          autoConnectGrantedPermission
+          && subscription
+          && status.enabled
+          && status.public_key
+          && !attemptedAutomaticConnection.current
+        ) {
+          attemptedAutomaticConnection.current = true;
+          try {
+            setPushMessage(await registerPushSubscription(status.public_key));
+          } catch {
+            // A device can already be linked to a different customer account;
+            // leave its local subscription untouched and show the normal UI.
+            setThisDeviceSubscribed(false);
+          }
+        }
       } catch {
         // The customer dashboard stays usable if an older deployment does not
         // yet expose the opt-in push routes.
@@ -68,7 +124,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
     };
 
     void loadPushStatus();
-  }, []);
+  }, [autoConnectGrantedPermission]);
 
   const install = async (): Promise<void> => {
     if (!installEvent) {
@@ -99,11 +155,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
 
     setPushBusy(true);
     try {
-      const subscription = await subscribeToWebPush(pushStatus.publicKey);
-      const response = await customerPortalService.subscribePushNotifications(subscription);
-      setThisDeviceSubscribed(true);
-      setPushPermission(Notification.permission);
-      setPushMessage(response.message);
+      setPushMessage(await registerPushSubscription(pushStatus.publicKey));
     } catch (error: any) {
       setPushMessage(error.response?.data?.message || error.message || 'Could not enable alerts on this device.');
     } finally {
@@ -141,7 +193,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
             Receive optional payment reminders and service-status alerts on this device. Alerts are linked to your signed-in portal account, not your Wi-Fi address.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            {!installed && (
+            {showInstall && !installed && (
               <button type="button" onClick={() => void install()} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
                 <Download className="h-4 w-4" /> Install app
               </button>
@@ -154,7 +206,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
             ) : (
               <button type="button" disabled={pushBusy || !pushStatus?.enabled} onClick={() => void enableAlerts()} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50">
                 {pushBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-                Enable billing alerts
+                {pushPermission === 'granted' ? 'Connect billing alerts' : 'Enable billing alerts'}
               </button>
             )}
           </div>
