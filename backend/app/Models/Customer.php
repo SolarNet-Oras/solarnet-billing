@@ -134,6 +134,12 @@ class Customer extends Model
 
     public function locationEvents(): HasMany { return $this->hasMany(CustomerLocationEvent::class); }
 
+    /** Browser subscriptions that this customer expressly enabled for portal alerts. */
+    public function webPushSubscriptions(): HasMany
+    {
+        return $this->hasMany(CustomerWebPushSubscription::class);
+    }
+
     /**
      * Scope a query to only include active customers.
      */

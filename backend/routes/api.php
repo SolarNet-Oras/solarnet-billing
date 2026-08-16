@@ -317,6 +317,9 @@ Route::prefix('v1')->group(function () {
             Route::get('profile-change-requests', [CustomerPortalController::class, 'profileChangeRequests']);
             Route::post('profile-change-requests', [CustomerPortalController::class, 'submitProfileChangeRequest']);
             Route::put('password', [CustomerPortalController::class, 'changePassword']);
+            Route::get('push-notifications/status', [CustomerPortalController::class, 'pushNotificationStatus']);
+            Route::post('push-notifications/subscribe', [CustomerPortalController::class, 'subscribePushNotifications'])->middleware('throttle:6,1');
+            Route::delete('push-notifications/subscribe', [CustomerPortalController::class, 'unsubscribePushNotifications'])->middleware('throttle:6,1');
         });
     });
 });

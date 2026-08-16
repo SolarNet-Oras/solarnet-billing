@@ -1,5 +1,6 @@
 import api from './api';
 import type { Customer, Invoice, Payment, PaginatedResponse } from '../types/api';
+import type { BrowserPushSubscriptionPayload } from '../lib/webPush';
 
 export const customerPortalService = {
   getBranding: async (): Promise<{ name: string; logo_url: string; email: string; facebook_url: string }> => {
@@ -196,6 +197,26 @@ export const customerPortalService = {
 
   changePassword: async (data: { current_password: string; password: string; password_confirmation: string }): Promise<{ status: string; message: string }> => {
     const response = await api.put('/customer-portal/password', data);
+    return response.data;
+  },
+
+  getPushNotificationStatus: async (): Promise<{
+    enabled: boolean;
+    subscribed: boolean;
+    reason: string | null;
+    public_key: string | null;
+  }> => {
+    const response = await api.get('/customer-portal/push-notifications/status');
+    return response.data.data;
+  },
+
+  subscribePushNotifications: async (subscription: BrowserPushSubscriptionPayload): Promise<{ status: string; message: string }> => {
+    const response = await api.post('/customer-portal/push-notifications/subscribe', subscription);
+    return response.data;
+  },
+
+  unsubscribePushNotifications: async (endpoint: string): Promise<{ status: string; message: string }> => {
+    const response = await api.delete('/customer-portal/push-notifications/subscribe', { data: { endpoint } });
     return response.data;
   },
 

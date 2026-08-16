@@ -20,6 +20,7 @@ class BillingSuspensionService
     public function __construct(
         protected QueueService $queueService,
         protected MikrotikService $mikrotikService,
+        protected CustomerWebPushNotificationService $webPushNotificationService,
     ) {
     }
 
@@ -214,6 +215,7 @@ class BillingSuspensionService
         $customer->loadMissing(['servicePlan', 'router']);
         $billingState = $billingState ?: $this->billingState($customer);
         $router = $customer->router;
+        $previousStatus = $customer->status;
 
         $customer->forceFill([
             'status' => $status === 'expired' ? 'expired' : 'suspended',
@@ -230,6 +232,13 @@ class BillingSuspensionService
             'queue_last_synced_at' => now(),
         ])->saveQuietly();
 
+        // Send one high-priority alert when the account enters a restricted
+        // state. Reconciliation jobs must not repeatedly notify an account
+        // that was already suspended.
+        $pushDelivery = in_array($previousStatus, ['suspended', 'expired'], true)
+            ? 'skipped_already_restricted'
+            : $this->webPushNotificationService->sendSuspensionNotice($customer, $billingState);
+
         Log::info('Customer suspended for billing', [
             'customer_id' => $customer->id,
             'account_number' => $customer->account_number,
@@ -237,6 +246,7 @@ class BillingSuspensionService
             'router_id' => $customer->router_id,
             'queue_result' => $queueResult['success'] ?? false,
             'address_result' => $addressResult['success'] ?? false,
+            'push_delivery' => $pushDelivery,
             'force' => $force,
         ]);
 
@@ -247,6 +257,7 @@ class BillingSuspensionService
             'billing_state' => $billingState,
             'queue' => $queueResult,
             'address_list' => $addressResult,
+            'push_delivery' => $pushDelivery,
         ];
     }
 

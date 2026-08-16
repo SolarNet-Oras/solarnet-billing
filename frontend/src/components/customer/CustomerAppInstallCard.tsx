@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Bell, Download, Smartphone } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Download, LoaderCircle, Smartphone } from 'lucide-react';
+import customerPortalService from '../../services/customerPortalService';
+import {
+  currentWebPushSubscription,
+  subscribeToWebPush,
+  supportsWebPush,
+  unsubscribeFromWebPush,
+} from '../../lib/webPush';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -16,6 +23,14 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
   const [showIosHelp, setShowIosHelp] = useState(false);
+  const [pushStatus, setPushStatus] = useState<{
+    enabled: boolean;
+    publicKey: string | null;
+    reason: string | null;
+  } | null>(null);
+  const [thisDeviceSubscribed, setThisDeviceSubscribed] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState('');
 
   useEffect(() => {
     const onBeforeInstall = (event: BeforeInstallPromptEvent): void => {
@@ -32,7 +47,24 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
     };
   }, []);
 
-  if (installed) return null;
+  useEffect(() => {
+    const loadPushStatus = async (): Promise<void> => {
+      try {
+        const [status, subscription] = await Promise.all([
+          customerPortalService.getPushNotificationStatus(),
+          currentWebPushSubscription(),
+        ]);
+        setPushStatus({ enabled: status.enabled, publicKey: status.public_key, reason: status.reason });
+        setThisDeviceSubscribed(Boolean(subscription));
+      } catch {
+        // The customer dashboard stays usable if an older deployment does not
+        // yet expose the opt-in push routes.
+        setPushStatus(null);
+      }
+    };
+
+    void loadPushStatus();
+  }, []);
 
   const install = async (): Promise<void> => {
     if (!installEvent) {
@@ -45,6 +77,48 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
     setInstallEvent(null);
   };
 
+  const enableAlerts = async (): Promise<void> => {
+    setPushMessage('');
+    if (!supportsWebPush()) {
+      setPushMessage('This browser cannot receive portal notifications. On iPhone/iPad, install the SolarNet app from Safari first.');
+      return;
+    }
+    if (!pushStatus?.enabled || !pushStatus.publicKey) {
+      setPushMessage(pushStatus?.reason || 'Billing notifications are not configured on the server yet.');
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const subscription = await subscribeToWebPush(pushStatus.publicKey);
+      const response = await customerPortalService.subscribePushNotifications(subscription);
+      setThisDeviceSubscribed(true);
+      setPushMessage(response.message);
+    } catch (error: any) {
+      setPushMessage(error.response?.data?.message || error.message || 'Could not enable alerts on this device.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const disableAlerts = async (): Promise<void> => {
+    setPushMessage('');
+    setPushBusy(true);
+    try {
+      const existing = await currentWebPushSubscription();
+      if (existing) {
+        await customerPortalService.unsubscribePushNotifications(existing.endpoint);
+      }
+      await unsubscribeFromWebPush();
+      setThisDeviceSubscribed(false);
+      setPushMessage('Billing and service alerts are disabled for this device.');
+    } catch (error: any) {
+      setPushMessage(error.response?.data?.message || error.message || 'Could not disable alerts on this device.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   return (
     <section className="mt-6 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-indigo-50 p-5">
       <div className="flex gap-4">
@@ -52,18 +126,32 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
           <Smartphone className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-slate-900">Install the SolarNet Customer App</h3>
+          <h3 className="font-semibold text-slate-900">SolarNet app & billing alerts</h3>
           <p className="mt-1 text-sm leading-6 text-slate-600">
-            Add the portal to your phone for quick access to bills, payments, account status, and support.
+            Receive optional payment reminders and service-status alerts on this device. Alerts are linked to your signed-in portal account, not your Wi-Fi address.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            <button type="button" onClick={() => void install()} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-              <Download className="h-4 w-4" /> Install app
-            </button>
-            <span className="inline-flex items-center gap-2 py-2 text-sm text-slate-600">
-              <Bell className="h-4 w-4 text-sky-700" /> Notification permission is always optional.
-            </span>
+            {!installed && (
+              <button type="button" onClick={() => void install()} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                <Download className="h-4 w-4" /> Install app
+              </button>
+            )}
+            {thisDeviceSubscribed ? (
+              <button type="button" disabled={pushBusy} onClick={() => void disableAlerts()} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-70">
+                {pushBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Alerts enabled · turn off
+              </button>
+            ) : (
+              <button type="button" disabled={pushBusy || !pushStatus?.enabled} onClick={() => void enableAlerts()} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50">
+                {pushBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+                Enable billing alerts
+              </button>
+            )}
           </div>
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-600">
+            <BellOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> Permission is optional. You can turn alerts off here or in your phone’s browser/app settings.
+          </p>
+          {pushMessage && <p className="mt-2 rounded-lg bg-white/80 px-3 py-2 text-sm text-slate-700">{pushMessage}</p>}
           {showIosHelp && (
             <p className="mt-3 rounded-lg bg-white/80 p-3 text-sm text-slate-700">
               On iPhone/iPad, open this page in Safari, tap Share, then choose <strong>Add to Home Screen</strong>.

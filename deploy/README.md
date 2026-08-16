@@ -86,6 +86,40 @@ ADMIN_PHONE=YourContactNumber
 
 The deployment seeds this account only when both `ADMIN_EMAIL` and `ADMIN_PASSWORD` are supplied. SolarNet does not ship a shared default administrator account or password.
 
+## Optional customer browser notifications
+
+SolarNet can send an account-specific push notification when a subscribed customer has an invoice reminder or enters suspension. This is **not** sent from MikroTik or inferred from a DHCP lease. A customer must first sign in to the portal on their own device and choose **Enable billing alerts**. Tapping an alert opens that customer portal account.
+
+Install the server-side Web Push library once, from the production `deploy` directory:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env run --rm --no-deps backend \
+  composer require minishlink/web-push --no-interaction
+```
+
+Generate a stable VAPID key pair once. Keep the private key only in `deploy/.env`; do not commit or share it:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env run --rm --no-deps backend \
+  php -r 'require "vendor/autoload.php"; var_export(Minishlink\WebPush\VAPID::createVapidKeys()); echo PHP_EOL;'
+```
+
+Add the generated values to `deploy/.env`:
+
+```env
+WEB_PUSH_ENABLED=true
+WEB_PUSH_VAPID_SUBJECT=mailto:your-support-email@example.com
+WEB_PUSH_VAPID_PUBLIC_KEY=generated-public-key
+WEB_PUSH_VAPID_PRIVATE_KEY=generated-private-key
+```
+
+Restart through the regular deployment command so the backend, queue worker, and scheduler load the new configuration. A server-side test that does not modify any router is available after a customer has enabled alerts:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
+  php artisan web-push:test CUSTOMER_ACCOUNT_NUMBER
+```
+
 ## 6. Point MikroTik at the new server
 
 Your new **fixed** server IP is what you got from Hetzner in step 1.

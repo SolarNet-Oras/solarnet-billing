@@ -6,6 +6,7 @@ use App\Models\AutomationLog;
 use App\Models\Invoice;
 use App\Models\Setting;
 use App\Services\Automation\AutomationRunner;
+use App\Services\CustomerWebPushNotificationService;
 use App\Services\InvoiceService;
 use Illuminate\Console\Command;
 use Illuminate\Mail\Message;
@@ -56,6 +57,7 @@ class SendInvoiceReminders extends Command
         $errors = [];
         $emailSent = 0;
         $smsSent = 0;
+        $pushSent = 0;
         $skippedNoEmail = 0;
         $skippedNoPhone = 0;
         $skippedSmsNotConfigured = 0;
@@ -84,11 +86,15 @@ class SendInvoiceReminders extends Command
                         'sms' => empty($customer->contact_number)
                             ? 'skipped_no_phone'
                             : ($this->twilioIsConfigured() ? 'would_send' : 'skipped_not_configured'),
+                        'push' => app(CustomerWebPushNotificationService::class)->statusFor($customer)['subscribed']
+                            ? 'would_send'
+                            : 'skipped_no_subscription',
                     ]
                     : $this->sendReminder($customer, $invoice, $kind, $diffDays);
 
                 $emailSent += $delivery['email'] === 'sent' ? 1 : 0;
                 $smsSent += $delivery['sms'] === 'sent' ? 1 : 0;
+                $pushSent += $delivery['push'] === 'sent' ? 1 : 0;
                 $skippedNoEmail += str_contains($delivery['email'], 'no_email') ? 1 : 0;
                 $skippedNoPhone += str_contains($delivery['sms'], 'no_phone') ? 1 : 0;
                 $skippedSmsNotConfigured += $delivery['sms'] === 'skipped_not_configured' ? 1 : 0;
@@ -102,6 +108,7 @@ class SendInvoiceReminders extends Command
                     'diff_days' => $diffDays,
                     'email_delivery' => $delivery['email'],
                     'sms_delivery' => $delivery['sms'],
+                    'push_delivery' => $delivery['push'],
                 ];
             } catch (\Throwable $e) {
                 $errors[] = ['invoice_number' => $invoice->invoice_number, 'error' => $e->getMessage()];
@@ -114,6 +121,7 @@ class SendInvoiceReminders extends Command
             'processed' => count($details),
             'email_sent' => $emailSent,
             'sms_sent' => $smsSent,
+            'push_sent' => $pushSent,
             'skipped_no_email' => $skippedNoEmail,
             'skipped_no_phone' => $skippedNoPhone,
             'skipped_sms_not_configured' => $skippedSmsNotConfigured,
@@ -122,7 +130,7 @@ class SendInvoiceReminders extends Command
         ];
     }
 
-    /** @return array{email: string, sms: string} */
+    /** @return array{email: string, sms: string, push: string} */
     protected function sendReminder($customer, Invoice $invoice, string $kind, int $diffDays): array
     {
         $company = Setting::get('company.name', 'Solarnet Internet');
@@ -167,6 +175,7 @@ class SendInvoiceReminders extends Command
             . ', due ' . $invoice->due_date->format('Y-m-d')
             . ($kind === 'pre_due' ? '. Please pay before the due date.' : '. Your account is overdue; please pay to avoid suspension.');
         $smsDelivery = $this->sendSmsReminder($customer->contact_number, $smsBody);
+        $pushDelivery = app(CustomerWebPushNotificationService::class)->sendBillingReminder($customer, $invoice, $kind);
         Log::info('[automation] invoice reminder processed', [
             'invoice' => $invoice->invoice_number,
             'to' => $customer->email,
@@ -174,9 +183,10 @@ class SendInvoiceReminders extends Command
             'kind' => $kind,
             'email_delivery' => $emailDelivery,
             'sms_delivery' => $smsDelivery,
+            'push_delivery' => $pushDelivery,
         ]);
 
-        return ['email' => $emailDelivery, 'sms' => $smsDelivery];
+        return ['email' => $emailDelivery, 'sms' => $smsDelivery, 'push' => $pushDelivery];
     }
 
     protected function sendSmsReminder(?string $phone, string $body): string

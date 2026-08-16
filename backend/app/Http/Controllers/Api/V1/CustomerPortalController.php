@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
+use App\Models\CustomerWebPushSubscription;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -12,6 +13,7 @@ use App\Models\PaymongoCheckout;
 use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
 use App\Services\CustomerLocationCaptureService;
+use App\Services\CustomerWebPushNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -20,7 +22,10 @@ use Illuminate\Support\Facades\Validator;
 
 class CustomerPortalController extends Controller
 {
-    public function __construct(protected BillingSuspensionService $billingSuspensionService)
+    public function __construct(
+        protected BillingSuspensionService $billingSuspensionService,
+        protected CustomerWebPushNotificationService $webPushNotificationService,
+    )
     {
     }
 
@@ -693,6 +698,116 @@ class CustomerPortalController extends Controller
         ])->save();
 
         return response()->json(['status' => 'success', 'message' => 'Password changed successfully.']);
+    }
+
+    /**
+     * Returns only the VAPID public key and whether this account has opted in.
+     * Push endpoints and their encryption credentials are never exposed.
+     */
+    public function pushNotificationStatus(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        $status = $this->webPushNotificationService->statusFor($customer);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'enabled' => $status['enabled'],
+                'subscribed' => $status['subscribed'],
+                'reason' => $status['reason'],
+                'public_key' => $status['enabled'] ? config('services.web_push.vapid_public_key') : null,
+            ],
+        ]);
+    }
+
+    /** Store an opt-in browser subscription for the authenticated customer. */
+    public function subscribePushNotifications(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (!$this->webPushNotificationService->isConfigured()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer notifications are not configured on the server yet.',
+            ], 409);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'endpoint' => 'required|string|max:2000',
+            'keys' => 'required|array',
+            'keys.p256dh' => 'required|string|max:255',
+            'keys.auth' => 'required|string|max:255',
+            'contentEncoding' => 'nullable|in:aes128gcm,aesgcm',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $endpoint = trim($request->string('endpoint')->toString());
+        $parts = parse_url($endpoint);
+        if (!is_array($parts) || ($parts['scheme'] ?? null) !== 'https' || empty($parts['host'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'The browser provided an invalid push subscription endpoint.',
+            ], 422);
+        }
+
+        $existing = CustomerWebPushSubscription::where('endpoint', $endpoint)->first();
+        if ($existing && $existing->customer_id !== $customer->id) {
+            // Do not silently transfer a device subscription between accounts.
+            // The other portal user must turn notifications off first.
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This device is already subscribed to another SolarNet portal account. Turn off notifications for that account first.',
+            ], 409);
+        }
+
+        CustomerWebPushSubscription::updateOrCreate(
+            ['endpoint' => $endpoint],
+            [
+                'customer_id' => $customer->id,
+                'public_key' => trim((string) data_get($request->input('keys'), 'p256dh')),
+                'auth_token' => trim((string) data_get($request->input('keys'), 'auth')),
+                'content_encoding' => $request->input('contentEncoding', 'aes128gcm'),
+                'user_agent' => mb_substr((string) $request->userAgent(), 0, 512),
+                'last_used_at' => now(),
+                'failed_at' => null,
+                'failure_reason' => null,
+            ],
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Billing and service alerts are enabled for this device.',
+        ]);
+    }
+
+    /** Revoke only the authenticated customer’s subscription for this device. */
+    public function unsubscribePushNotifications(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), ['endpoint' => 'required|string|max:2000']);
+        if ($validator->fails()) {
+            return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        CustomerWebPushSubscription::query()
+            ->where('customer_id', $customer->id)
+            ->where('endpoint', trim($request->string('endpoint')->toString()))
+            ->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Billing and service alerts are disabled for this device.']);
     }
 
     protected function profileChangePayload(CustomerProfileChangeRequest $change): array

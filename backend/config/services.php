@@ -55,4 +55,15 @@ return [
         'base_url' => env('PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1'),
     ],
 
+    // Browser push is opt-in. The public key is returned only to an already
+    // authenticated customer portal session; the private key never leaves the
+    // server or application logs.
+    'web_push' => [
+        'enabled' => env('WEB_PUSH_ENABLED', false),
+        'vapid_subject' => env('WEB_PUSH_VAPID_SUBJECT'),
+        'vapid_public_key' => env('WEB_PUSH_VAPID_PUBLIC_KEY'),
+        'vapid_private_key' => env('WEB_PUSH_VAPID_PRIVATE_KEY'),
+        'currency_symbol' => env('WEB_PUSH_CURRENCY_SYMBOL', '₱'),
+    ],
+
 ];
