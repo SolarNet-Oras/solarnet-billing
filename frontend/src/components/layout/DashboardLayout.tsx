@@ -13,17 +13,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, head
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="flex min-h-screen min-w-0 bg-background">
       {/* Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content */}
-      <div className="flex min-h-screen flex-1 flex-col md:ml-64">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:ml-64">
         {/* Header */}
           <Header onMenuClick={() => setSidebarOpen(true)} title={headerTitle} subtitle={headerSubtitle} />
 
         {/* Page content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-4 md:p-5 lg:p-7 xl:p-8">
           {children}
         </main>
       </div>

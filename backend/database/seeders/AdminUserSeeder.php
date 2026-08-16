@@ -4,44 +4,57 @@ namespace Database\Seeders;
 
 use App\Models\Role;
 use App\Models\User;
+use App\Support\LegacyDefaultAdministrator;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Creates the initial Super Administrator only.
- * No demo/sample accounts are created.
- * Uses ADMIN_EMAIL / ADMIN_PASSWORD env vars in production (see .env).
+ * Creates an explicitly configured bootstrap Super Administrator only.
+ * No shared/demo account is ever created by a deployment.
  */
 class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        $email    = env('ADMIN_EMAIL', 'admin@ispbilling.local');
-        $password = env('ADMIN_PASSWORD', 'password');
-        $name     = env('ADMIN_NAME', 'Super Administrator');
-        $phone    = env('ADMIN_PHONE', '+000000000');
+        $email = trim((string) env('ADMIN_EMAIL', ''));
+        $password = (string) env('ADMIN_PASSWORD', '');
+        $name = trim((string) env('ADMIN_NAME', 'Initial Super Administrator'));
+        $phone = trim((string) env('ADMIN_PHONE', ''));
 
-        // Idempotent: create-or-update
+        // Existing staff accounts are never changed when these settings are
+        // absent. A fresh deployment must explicitly nominate its bootstrap
+        // administrator rather than receiving a shared default credential.
+        if ($email === '' || $password === '') {
+            $this->command->warn('Skipped bootstrap administrator seed: set ADMIN_EMAIL and ADMIN_PASSWORD only for a new installation.');
+            return;
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || LegacyDefaultAdministrator::isReservedEmail($email)) {
+            $this->command->warn('Skipped bootstrap administrator seed: choose a real, non-legacy administrator email address.');
+            return;
+        }
+
+        if (mb_strlen($password) < 12) {
+            $this->command->warn('Skipped bootstrap administrator seed: ADMIN_PASSWORD must be at least 12 characters.');
+            return;
+        }
+
         $admin = User::updateOrCreate(
             ['email' => $email],
             [
-                'name'              => $name,
-                'phone'             => $phone,
-                'password'          => Hash::make($password),
-                'is_active'         => true,
+                'name' => $name !== '' ? $name : 'Initial Super Administrator',
+                'phone' => $phone !== '' ? $phone : null,
+                'password' => Hash::make($password),
+                'is_active' => true,
                 'email_verified_at' => now(),
             ]
         );
 
-        // Assign super_admin role (only if not already assigned)
         $roleId = Role::where('name', 'super_admin')->value('id');
         if ($roleId && !$admin->roles()->where('roles.id', $roleId)->exists()) {
             $admin->roles()->attach($roleId);
         }
 
-        $this->command->info("Super Administrator ready: {$email}");
-        if ($password === 'password') {
-            $this->command->warn('  ⚠  Default password is in use. Change it in the app immediately, or set ADMIN_PASSWORD in .env before seeding.');
-        }
+        $this->command->info("Bootstrap Super Administrator ready: {$email}");
     }
 }

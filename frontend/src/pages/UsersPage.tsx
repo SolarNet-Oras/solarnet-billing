@@ -46,6 +46,7 @@ const emptyForm: UserForm = {
   roles: [],
   is_active: true,
 };
+const LEGACY_DEFAULT_ADMIN_EMAIL = 'admin@ispbilling.local';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -187,7 +188,9 @@ export default function UsersPage() {
     return <span className={`text-xs font-medium ${classes[client.password_status]}`}>{labels[client.password_status]}</span>;
   };
 
-  const filtered = users.filter(
+  // Backend filtering is authoritative. This additional guard avoids a legacy
+  // placeholder being flashed in the interface during a cached API response.
+  const filtered = users.filter((u) => u.email.toLowerCase() !== LEGACY_DEFAULT_ADMIN_EMAIL).filter(
     (u) =>
       !search ||
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -230,8 +233,8 @@ export default function UsersPage() {
             <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading users…
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+            <table className="min-w-[680px] w-full text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold">Name</th>

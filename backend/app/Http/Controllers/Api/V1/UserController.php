@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\LegacyDefaultAdministrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -19,7 +20,7 @@ class UserController extends Controller
         $perPage = $request->input('per_page', 15);
         $search = $request->input('search');
         
-        $query = User::with('roles');
+        $query = $this->visibleUsers()->with('roles');
         
         if ($search) {
             $query->where(function($q) use ($search) {
@@ -67,6 +68,10 @@ class UserController extends Controller
             ], 422);
         }
 
+        if (LegacyDefaultAdministrator::isReservedEmail($request->input('email'))) {
+            return $this->legacyAccountResponse();
+        }
+
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
@@ -97,7 +102,7 @@ class UserController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $user = User::with('roles.permissions')->findOrFail($id);
+        $user = $this->visibleUsers()->with('roles.permissions')->findOrFail($id);
         
         return response()->json([
             'status' => 'success',
@@ -128,7 +133,7 @@ class UserController extends Controller
      */
     public function update(Request $request, string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->visibleUsers()->findOrFail($id);
         
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
@@ -144,6 +149,10 @@ class UserController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        if ($request->has('email') && LegacyDefaultAdministrator::isReservedEmail($request->input('email'))) {
+            return $this->legacyAccountResponse();
         }
 
         $data = $request->only(['name', 'email', 'phone', 'is_active']);
@@ -172,7 +181,7 @@ class UserController extends Controller
      */
     public function destroy(string $id): JsonResponse
     {
-        $user = User::findOrFail($id);
+        $user = $this->visibleUsers()->findOrFail($id);
         
         // Prevent deleting own account
         if ($user->id === auth()->id()) {
@@ -227,7 +236,7 @@ class UserController extends Controller
             ], 422);
         }
 
-        $user = User::findOrFail($id);
+        $user = $this->visibleUsers()->findOrFail($id);
         
         // Prevent assigning super_admin role unless requester is super_admin
         $requestedRoles = $request->roles;
@@ -248,5 +257,18 @@ class UserController extends Controller
                 'roles' => $user->roles->pluck('name'),
             ],
         ]);
+    }
+
+    private function visibleUsers()
+    {
+        return User::query()->whereRaw('LOWER(email) <> ?', [LegacyDefaultAdministrator::EMAIL]);
+    }
+
+    private function legacyAccountResponse(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'The legacy development administrator account is permanently retired and cannot be created or restored.',
+        ], 422);
     }
 }

@@ -73,9 +73,18 @@ The script will:
 
 **First TLS certificate takes ~30 seconds.** Then browse to `https://<DOMAIN>`.
 
-## 5. Log in
+## 5. Create the first administrator securely
 
-- Admin: `admin@ispbilling.local` / `password`  → **change this immediately in the Users page**
+Before the first deployment, set these values in `deploy/.env` (do not commit that file):
+
+```env
+ADMIN_EMAIL=your-real-admin@example.com
+ADMIN_PASSWORD=use-a-unique-password-of-at-least-12-characters
+ADMIN_NAME=Your Name
+ADMIN_PHONE=YourContactNumber
+```
+
+The deployment seeds this account only when both `ADMIN_EMAIL` and `ADMIN_PASSWORD` are supplied. SolarNet does not ship a shared default administrator account or password.
 
 ## 6. Point MikroTik at the new server
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\LegacyDefaultAdministrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -30,6 +31,13 @@ class AuthController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        if (LegacyDefaultAdministrator::isReservedEmail($request->input('email'))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This legacy account is retired. Sign in with your assigned staff account.',
+            ], 403);
         }
 
         $user = User::create([
@@ -79,6 +87,13 @@ class AuthController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        if (LegacyDefaultAdministrator::isReservedEmail($request->input('email'))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This legacy account is retired. Sign in with your assigned staff account.',
+            ], 403);
         }
 
         $credentials = $request->only('email', 'password');

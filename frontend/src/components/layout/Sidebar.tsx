@@ -68,12 +68,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   return (
     <>
-      {isOpen && <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onClose} />}
+      {isOpen && <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] lg:hidden" onClick={onClose} />}
 
       <aside
-        className={`fixed top-0 left-0 z-50 flex h-full w-64 flex-col border-r border-border bg-card transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 left-0 z-50 flex h-full w-[min(18rem,calc(100vw-1rem))] flex-col border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-in-out lg:w-64 lg:shadow-none ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } md:fixed md:translate-x-0`}
+        } lg:fixed lg:translate-x-0`}
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <Link to="/dashboard" className="flex min-w-0 items-center gap-3">
@@ -83,12 +83,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Billing</p>
             </div>
           </Link>
-          <button onClick={onClose} className="rounded-md p-2 hover:bg-secondary md:hidden" aria-label="Close navigation">
+          <button onClick={onClose} className="rounded-md p-2 hover:bg-secondary lg:hidden" aria-label="Close navigation">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+        <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
           {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard').map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;

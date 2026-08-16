@@ -75,10 +75,30 @@
 }
 
 @layer base {
+  html {
+    min-width: 320px;
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }
