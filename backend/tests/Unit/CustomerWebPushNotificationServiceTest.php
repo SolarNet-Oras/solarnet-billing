@@ -25,8 +25,10 @@ class CustomerWebPushNotificationServiceTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertSame(CustomerWebPushNotificationService::BILLING_REMINDER_7_DAYS, $method->invoke($command, 7, 15));
+        $this->assertSame(CustomerWebPushNotificationService::BILLING_DAILY_REMINDER, $method->invoke($command, 6, 15));
         $this->assertSame(CustomerWebPushNotificationService::BILLING_DUE_TODAY, $method->invoke($command, 0, 15));
         $this->assertSame(CustomerWebPushNotificationService::BILLING_OVERDUE, $method->invoke($command, -1, 15));
+        $this->assertSame(CustomerWebPushNotificationService::BILLING_DAILY_REMINDER, $method->invoke($command, -2, 15));
         $this->assertSame(CustomerWebPushNotificationService::GRACE_PERIOD_WARNING, $method->invoke($command, -8, 15));
         $this->assertSame(CustomerWebPushNotificationService::SUSPENSION_WARNING, $method->invoke($command, -14, 15));
     }

@@ -205,7 +205,9 @@ class SendInvoiceReminders extends Command
 
     /**
      * Push timing is intentionally additive to the existing email/SMS settings.
-     * It never changes invoice generation, due dates, grace periods, or suspension.
+     * Starting seven days before due date, an unpaid invoice produces one
+     * customer-device push per day until it is paid. It never changes invoice
+     * generation, due dates, grace periods, or suspension.
      */
     protected function pushTypeFor(int $diffDays, int $graceDays): ?string
     {
@@ -214,13 +216,20 @@ class SendInvoiceReminders extends Command
         if ($diffDays === 1) return CustomerWebPushNotificationService::BILLING_REMINDER_1_DAY;
         if ($diffDays === 0) return CustomerWebPushNotificationService::BILLING_DUE_TODAY;
 
+        // Fill the days between the established 7/3/1/due milestones. The
+        // dispatch key includes today's date, so rerunning the scheduler does
+        // not create duplicate notifications on the same day.
+        if ($diffDays >= 0 && $diffDays <= 7) {
+            return CustomerWebPushNotificationService::BILLING_DAILY_REMINDER;
+        }
+
         $daysOverdue = abs($diffDays);
         if ($diffDays >= 0) return null;
         if ($daysOverdue === max(1, $graceDays - 1)) return CustomerWebPushNotificationService::SUSPENSION_WARNING;
         if ($daysOverdue === max(2, $graceDays - 7)) return CustomerWebPushNotificationService::GRACE_PERIOD_WARNING;
         if ($daysOverdue === 1) return CustomerWebPushNotificationService::BILLING_OVERDUE;
 
-        return null;
+        return CustomerWebPushNotificationService::BILLING_DAILY_REMINDER;
     }
 
     protected function sendSmsReminder(?string $phone, string $body): string

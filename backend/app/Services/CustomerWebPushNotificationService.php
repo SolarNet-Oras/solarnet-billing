@@ -22,6 +22,7 @@ class CustomerWebPushNotificationService
     public const BILLING_REMINDER_7_DAYS = 'BILLING_REMINDER_7_DAYS';
     public const BILLING_REMINDER_3_DAYS = 'BILLING_REMINDER_3_DAYS';
     public const BILLING_REMINDER_1_DAY = 'BILLING_REMINDER_1_DAY';
+    public const BILLING_DAILY_REMINDER = 'BILLING_DAILY_REMINDER';
     public const BILLING_DUE_TODAY = 'BILLING_DUE_TODAY';
     public const BILLING_OVERDUE = 'BILLING_OVERDUE';
     public const GRACE_PERIOD_WARNING = 'GRACE_PERIOD_WARNING';
@@ -64,10 +65,17 @@ class CustomerWebPushNotificationService
 
     public function sendBillingEvent(Customer $customer, Invoice $invoice, string $type): string
     {
+        $daysUntilDue = now(config('app.timezone', 'Asia/Manila'))
+            ->startOfDay()
+            ->diffInDays($invoice->due_date->copy()->startOfDay(), false);
+
         $content = match ($type) {
             self::BILLING_REMINDER_7_DAYS => ['SolarNet billing reminder', 'Your SolarNet bill is due in 7 days. Open your account to review it.'],
             self::BILLING_REMINDER_3_DAYS => ['SolarNet billing reminder', 'Your SolarNet bill is due in 3 days. Open your account to review it.'],
             self::BILLING_REMINDER_1_DAY => ['SolarNet billing reminder', 'Your SolarNet bill is due tomorrow. Open your account to review it.'],
+            self::BILLING_DAILY_REMINDER => $daysUntilDue >= 0
+                ? ['SolarNet billing reminder', "Your SolarNet bill is due in {$daysUntilDue} day(s). Open your account to review it."]
+                : ['SolarNet bill overdue', 'Your SolarNet account has an unpaid bill. Open your account to review payment options.'],
             self::BILLING_DUE_TODAY => ['SolarNet bill due today', 'Your SolarNet bill is due today. Open your account to review payment options.'],
             self::BILLING_OVERDUE => ['SolarNet bill overdue', 'Your SolarNet account has an overdue bill. Open your account to review it.'],
             self::GRACE_PERIOD_WARNING => ['SolarNet grace-period reminder', 'Your account has an unpaid bill and is inside its grace period. Open your account to review it.'],
