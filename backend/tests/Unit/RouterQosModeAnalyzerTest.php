@@ -31,7 +31,12 @@ class RouterQosModeAnalyzerTest extends TestCase
         $this->assertFalse($analysis['safe']['available']);
         $this->assertStringContainsString('No SolarNet-managed', $analysis['disabled']['reason']);
         $this->assertStringContainsString('Sync the customer from Billing', implode(' ', $analysis['safe']['suggestions']));
-        $this->assertStringContainsString('maintenance window', implode(' ', $analysis['safe']['suggestions']));
+
+        $withoutFqCodel = $this->inspection();
+        $withoutFqCodel['queue_capabilities']['fq_codel'] = [];
+        $fqCodelAnalysis = (new RouterQosModeAnalyzer())->analyze($withoutFqCodel);
+        $this->assertFalse($fqCodelAnalysis['safe']['available']);
+        $this->assertStringContainsString('maintenance window', implode(' ', $fqCodelAnalysis['safe']['suggestions']));
     }
 
     private function inspection(array $overrides = []): array
