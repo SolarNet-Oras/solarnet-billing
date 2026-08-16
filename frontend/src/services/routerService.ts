@@ -5,6 +5,7 @@ import { api } from './api';
 // or port-forward, but is still bounded well below the server's 300-second cap.
 const ROUTER_PROVISIONING_DISCOVERY_TIMEOUT = 120_000;
 const ROUTER_PROVISIONING_APPLY_TIMEOUT = 180_000;
+const ROUTER_THREAT_SCAN_TIMEOUT = 60_000;
 
 export interface Router {
   id: string;
@@ -328,8 +329,12 @@ export const routerService = {
     return { message: response.data.message, ...response.data.data };
   },
 
-  async scanThreatFeed(id: string): Promise<{ message: string; data: { indicators_loaded: number; connections_checked: number; matches: RouterThreatObservation[]; scanned_at: string } }> {
-    const response = await api.post<{ success: boolean; message: string; data: { indicators_loaded: number; connections_checked: number; matches: RouterThreatObservation[]; scanned_at: string } }>(`/routers/${id}/threat-scan`);
+  async scanThreatFeed(id: string): Promise<{ message: string; data: { indicators_loaded: number; connections_checked: number; scan_limited?: boolean; connection_limit?: number | null; matches: RouterThreatObservation[]; scanned_at: string } }> {
+    const response = await api.post<{ success: boolean; message: string; data: { indicators_loaded: number; connections_checked: number; scan_limited?: boolean; connection_limit?: number | null; matches: RouterThreatObservation[]; scanned_at: string } }>(
+      `/routers/${id}/threat-scan`,
+      undefined,
+      { timeout: ROUTER_THREAT_SCAN_TIMEOUT },
+    );
     return { message: response.data.message, data: response.data.data };
   },
 

@@ -881,12 +881,34 @@ class MikrotikService
     public function threatFeedConnections(Router $router, array $indicators): array
     {
         try {
-            $client = new Client($this->makeConfig($router));
-            $limit = max(1, (int) config('threat-monitor.connection_limit', 5000));
-            $connections = array_slice($client->query(new Query('/ip/firewall/connection/print'))->read(), 0, $limit);
-            $matches = [];
+            $limit = min(10000, max(1, (int) config('threat-monitor.connection_limit', 2000)));
+            $socketTimeout = min(30, max(5, (int) config('threat-monitor.connection_socket_timeout', 15)));
+            $client = new Client($this->makeConfig($router, 3, $socketTimeout));
 
-            foreach ($connections as $connection) {
+            // Do not retrieve the entire, detailed connection table and then
+            // slice it in PHP. On a concentrator that can mean tens of
+            // thousands of records and a socket timeout. RouterOS returns
+            // only the two fields needed for the read-only feed comparison;
+            // the library iterator lets us stop at the explicit safety cap.
+            $query = (new Query('/ip/firewall/connection/print'))
+                ->equal('.proplist', 'src-address,dst-address');
+            $connections = $client->query($query)->readAsIterator();
+            $matches = [];
+            $connectionsChecked = 0;
+
+            for ($connections->rewind(); $connections->valid() && $connectionsChecked < $limit; $connections->next()) {
+                try {
+                    $connection = $connections->current();
+                } catch (Throwable $e) {
+                    Log::warning('Skipped unreadable RouterOS threat-feed connection entry', [
+                        'router_id' => $router->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+                if (!is_array($connection)) continue;
+                $connectionsChecked++;
+
                 foreach (['source' => $connection['src-address'] ?? null, 'destination' => $connection['dst-address'] ?? null] as $direction => $address) {
                     $ip = $this->ipv4FromRouterAddress($address);
                     if ($ip === null || !isset($indicators[$ip])) continue;
@@ -898,7 +920,9 @@ class MikrotikService
 
             return [
                 'success' => true,
-                'connections_checked' => count($connections),
+                'connections_checked' => $connectionsChecked,
+                'scan_limited' => $connectionsChecked >= $limit,
+                'connection_limit' => $limit,
                 'matches' => array_values(array_map(fn (array $match) => [
                     'remote_ip' => $match['remote_ip'],
                     'directions' => array_keys($match['directions']),
@@ -906,7 +930,11 @@ class MikrotikService
             ];
         } catch (Throwable $e) {
             Log::warning('Router threat-feed connection read failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
-            return ['success' => false, 'message' => 'Could not read active RouterOS connections: ' . $e->getMessage(), 'matches' => []];
+            return [
+                'success' => false,
+                'message' => 'Could not read the bounded active RouterOS connection sample: ' . $e->getMessage() . '. No firewall or RouterOS configuration was changed.',
+                'matches' => [],
+            ];
         }
     }
 

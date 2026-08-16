@@ -49,13 +49,19 @@ class ThreatFeedService
                 $observations[] = $observation;
             }
 
+            $limitedMessage = ($result['scan_limited'] ?? false)
+                ? sprintf(' The safe %d-connection scan limit was reached; run the scan again later for a newer sample.', (int) ($result['connection_limit'] ?? 0))
+                : '';
+
             return [
                 'success' => true,
-                'message' => sprintf('Read-only scan completed. %d active connection(s) matched %s.', count($observations), self::FEED_NAME),
+                'message' => sprintf('Read-only scan completed. %d active connection(s) matched %s.', count($observations), self::FEED_NAME) . $limitedMessage,
                 'data' => [
                     'feed_name' => self::FEED_NAME,
                     'indicators_loaded' => count($indicators),
                     'connections_checked' => $result['connections_checked'],
+                    'scan_limited' => (bool) ($result['scan_limited'] ?? false),
+                    'connection_limit' => $result['connection_limit'] ?? null,
                     'matches' => $observations,
                     'scanned_at' => now()->toIso8601String(),
                 ],
