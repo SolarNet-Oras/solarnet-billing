@@ -7,6 +7,8 @@ const ROUTER_PROVISIONING_DISCOVERY_TIMEOUT = 120_000;
 const ROUTER_PROVISIONING_APPLY_TIMEOUT = 180_000;
 const ROUTER_THREAT_SCAN_TIMEOUT = 60_000;
 const ROUTER_BILLING_INSTALL_TIMEOUT = 180_000;
+const ROUTER_DNS_DISCOVERY_TIMEOUT = 120_000;
+const ROUTER_DNS_APPLY_TIMEOUT = 180_000;
 
 export interface Router {
   id: string;
@@ -153,6 +155,111 @@ export interface RouterProvisioningInput {
   portal_vlan_id?: number;
   portal_gateway_cidr?: string;
   portal_dhcp_pool?: string;
+}
+
+export interface RouterDnsStaticRecord {
+  id: string | null;
+  name: string | null;
+  address: string | null;
+  type: 'A' | 'AAAA' | string;
+  ttl: string | null;
+  comment: string;
+  disabled: boolean;
+  owned_by_solarnet: boolean;
+}
+
+export interface RouterDnsDhcpNetwork {
+  id: string | null;
+  server_name: string | null;
+  interface: string | null;
+  vlan_id: string | number | null;
+  parent_interface: string | null;
+  is_bridge: boolean;
+  network: string | null;
+  gateway: string | null;
+  dns_server: string;
+  server_disabled: boolean;
+  manageable: boolean;
+  status: string;
+}
+
+export interface RouterDnsBrandingDiscovery {
+  default_domain?: string;
+  dns: {
+    allow_remote_requests: boolean;
+    servers: string[];
+    dynamic_servers: string[];
+    use_doh_server: string | null;
+    verify_doh_cert: boolean;
+    cache_size: string | null;
+    cache_max_ttl: string | null;
+  };
+  allow_remote_requests: boolean;
+  upstream_dns_available: boolean;
+  static_records: RouterDnsStaticRecord[];
+  dhcp_networks: RouterDnsDhcpNetwork[];
+  router_management_candidates: Array<{ address: string; interface: string; cidr: string }>;
+  dns_policy: { adlist_count: number; optional_read_errors: Array<{ path: string; message: string }> };
+  compatibility: {
+    api_connected: boolean;
+    unknown_static_records_protected: number;
+    dhcp_networks_discovered: number;
+    can_distribute_dns_without_router_change: boolean;
+  };
+  discovered_at: string;
+}
+
+export interface RouterDnsBrandingPlanRecord {
+  action: 'add_solarnet' | 'replace_solarnet' | 'unchanged';
+  existing_id: string | null;
+  previous: RouterDnsStaticRecord | null;
+  hostname: string;
+  short_hostname: string;
+  type: 'A' | 'AAAA';
+  address: string;
+  ttl_seconds: number;
+  description: string;
+}
+
+export interface RouterDnsBrandingPlan {
+  kind: 'solarnet_internal_dns_v1';
+  domain: string;
+  input: RouterDnsBrandingInput;
+  records: RouterDnsBrandingPlanRecord[];
+  record_changes: RouterDnsBrandingPlanRecord[];
+  record_removals: Array<{ action: 'remove_solarnet'; existing_id: string; previous: RouterDnsStaticRecord }>;
+  dhcp_changes: Array<{
+    network_id: string;
+    server_name: string | null;
+    interface: string | null;
+    network: string | null;
+    gateway: string;
+    previous_dns_server: string;
+    new_dns_server: string;
+  }>;
+  warnings: string[];
+  protected: Record<string, boolean | number>;
+}
+
+export interface RouterDnsBrandingInput {
+  audit_id?: string;
+  domain: string;
+  records: Array<{ hostname: string; type: 'A' | 'AAAA' | 'CNAME'; address: string; ttl: number; description: string }>;
+  approved_dhcp_network_ids: string[];
+  remove_record_ids: string[];
+}
+
+export interface RouterDnsBrandingAudit {
+  id: string;
+  router_id: string;
+  status: string;
+  discovery: RouterDnsBrandingDiscovery;
+  plan: RouterDnsBrandingPlan | null;
+  backup_filename: string | null;
+  verification: Record<string, unknown> | null;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RouterThreatObservation {
@@ -327,6 +434,53 @@ export const routerService = {
       },
       { timeout: ROUTER_PROVISIONING_APPLY_TIMEOUT },
     );
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingDiscover(id: string): Promise<{ message: string; audit: RouterDnsBrandingAudit; discovery: RouterDnsBrandingDiscovery }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterDnsBrandingAudit; discovery: RouterDnsBrandingDiscovery } }>(
+      `/routers/${id}/dns-branding/discover`,
+      undefined,
+      { timeout: ROUTER_DNS_DISCOVERY_TIMEOUT },
+    );
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingScanAll(): Promise<Array<{ router_id: string; router_name: string; success: boolean; message: string; audit_id: string | null }>> {
+    const response = await api.post<{ success: boolean; data: Array<{ router_id: string; router_name: string; success: boolean; message: string; audit_id: string | null }> }>(
+      '/routers/dns-branding/scan-all',
+      undefined,
+      { timeout: ROUTER_DNS_DISCOVERY_TIMEOUT * 3 },
+    );
+    return response.data.data;
+  },
+
+  async dnsBrandingPreview(id: string, data: RouterDnsBrandingInput & { audit_id: string }): Promise<{ message: string; audit: RouterDnsBrandingAudit; plan: RouterDnsBrandingPlan }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterDnsBrandingAudit; plan: RouterDnsBrandingPlan } }>(`/routers/${id}/dns-branding/preview`, data);
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingBackup(id: string, auditId: string): Promise<{ message: string; audit: RouterDnsBrandingAudit }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterDnsBrandingAudit } }>(`/routers/${id}/dns-branding/backup`, { audit_id: auditId }, { timeout: ROUTER_DNS_DISCOVERY_TIMEOUT });
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingTest(id: string, auditId: string): Promise<{ message: string; results: Array<{ hostname: string; address: string | null; ok: boolean; message: string }> }> {
+    const response = await api.post<{ success: boolean; message: string; data: { results: Array<{ hostname: string; address: string | null; ok: boolean; message: string }> } }>(`/routers/${id}/dns-branding/test`, { audit_id: auditId }, { timeout: ROUTER_DNS_DISCOVERY_TIMEOUT });
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingApply(id: string, auditId: string, confirmationText: string): Promise<{ message: string; audit: RouterDnsBrandingAudit; verification: Record<string, unknown> }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterDnsBrandingAudit; verification: Record<string, unknown> } }>(
+      `/routers/${id}/dns-branding/apply`,
+      { audit_id: auditId, confirmation_text: confirmationText },
+      { timeout: ROUTER_DNS_APPLY_TIMEOUT },
+    );
+    return { message: response.data.message, ...response.data.data };
+  },
+
+  async dnsBrandingRollback(id: string, auditId: string): Promise<{ message: string; audit: RouterDnsBrandingAudit }> {
+    const response = await api.post<{ success: boolean; message: string; data: { audit: RouterDnsBrandingAudit } }>(`/routers/${id}/dns-branding/rollback`, { audit_id: auditId, confirm_rollback: true }, { timeout: ROUTER_DNS_APPLY_TIMEOUT });
     return { message: response.data.message, ...response.data.data };
   },
 

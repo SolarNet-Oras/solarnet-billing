@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Router;
+use App\Models\RouterDnsBrandingAudit;
 use App\Models\RouterProvisioningAudit;
 use App\Models\RouterQosDeployment;
 use App\Models\RouterThreatObservation;
@@ -11,6 +12,7 @@ use App\Models\Setting;
 use App\Services\MikrotikService;
 use App\Services\MikrotikScriptGenerator;
 use App\Services\RouterQosService;
+use App\Services\RouterDnsBrandingService;
 use App\Services\RouterProvisioningService;
 use App\Services\ThreatFeedService;
 use Illuminate\Http\JsonResponse;
@@ -24,14 +26,16 @@ class RouterController extends Controller
     protected MikrotikScriptGenerator $scriptGenerator;
     protected ThreatFeedService $threatFeedService;
     protected RouterQosService $routerQosService;
+    protected RouterDnsBrandingService $routerDnsBrandingService;
     protected RouterProvisioningService $routerProvisioningService;
 
-    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService, RouterQosService $routerQosService, RouterProvisioningService $routerProvisioningService)
+    public function __construct(MikrotikService $mikrotikService, MikrotikScriptGenerator $scriptGenerator, ThreatFeedService $threatFeedService, RouterQosService $routerQosService, RouterDnsBrandingService $routerDnsBrandingService, RouterProvisioningService $routerProvisioningService)
     {
         $this->mikrotikService = $mikrotikService;
         $this->scriptGenerator = $scriptGenerator;
         $this->threatFeedService = $threatFeedService;
         $this->routerQosService = $routerQosService;
+        $this->routerDnsBrandingService = $routerDnsBrandingService;
         $this->routerProvisioningService = $routerProvisioningService;
     }
 
@@ -427,6 +431,108 @@ class RouterController extends Controller
         $router = Router::findOrFail($id);
         $audit = RouterProvisioningAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
         $result = $this->routerProvisioningService->apply($router, $audit, $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Read RouterOS DNS/DHCP state only; this endpoint cannot change RouterOS. */
+    public function dnsBrandingDiscover(Request $request, string $id): JsonResponse
+    {
+        $result = $this->routerDnsBrandingService->discover(Router::findOrFail($id), $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Scan all routers one at a time. It creates read-only audits and never applies DNS. */
+    public function dnsBrandingScanAll(Request $request): JsonResponse
+    {
+        $results = [];
+        foreach (Router::query()->orderBy('name')->get() as $router) {
+            $result = $this->routerDnsBrandingService->discover($router, $request->user());
+            $results[] = [
+                'router_id' => $router->id,
+                'router_name' => $router->name,
+                'success' => $result['success'],
+                'message' => $result['message'],
+                'audit_id' => $result['data']['audit']->id ?? null,
+            ];
+        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Read-only DNS scans completed. No router was modified.',
+            'data' => $results,
+        ]);
+    }
+
+    /** Build a DNS preview; the planner refuses unknown DNS/DHCP objects. */
+    public function dnsBrandingPreview(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'audit_id' => ['required', 'uuid'],
+            'domain' => ['required', 'string', 'max:253'],
+            'records' => ['required', 'array', 'max:30'],
+            'records.*.hostname' => ['nullable', 'string', 'max:253'],
+            'records.*.type' => ['nullable', Rule::in(['A', 'AAAA', 'CNAME'])],
+            'records.*.address' => ['nullable', 'string', 'max:255'],
+            'records.*.ttl' => ['nullable', 'integer', 'min:60', 'max:604800'],
+            'records.*.description' => ['nullable', 'string', 'max:255'],
+            'approved_dhcp_network_ids' => ['nullable', 'array', 'max:100'],
+            // RouterOS resource IDs look like *1A, not database UUIDs.
+            'approved_dhcp_network_ids.*' => ['string', 'max:64'],
+            'remove_record_ids' => ['nullable', 'array', 'max:100'],
+            'remove_record_ids.*' => ['string', 'max:64'],
+        ]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Check the DNS record form before previewing.', 'errors' => $validator->errors()], 422);
+
+        $router = Router::findOrFail($id);
+        $audit = RouterDnsBrandingAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerDnsBrandingService->preview($router, $audit, $validator->validated());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Save a verified RouterOS backup reference only; DNS remains unchanged. */
+    public function dnsBrandingBackup(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['audit_id' => ['required', 'uuid']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A DNS preview audit is required before backup.', 'errors' => $validator->errors()], 422);
+        $router = Router::findOrFail($id);
+        $audit = RouterDnsBrandingAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerDnsBrandingService->backup($router, $audit);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Run a read-only RouterOS DNS test against previewed/current owned names. */
+    public function dnsBrandingTest(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['audit_id' => ['required', 'uuid']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'A DNS audit is required before testing.', 'errors' => $validator->errors()], 422);
+        $router = Router::findOrFail($id);
+        $audit = RouterDnsBrandingAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerDnsBrandingService->test($router, $audit);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Apply only after the exact administrator acknowledgement. */
+    public function dnsBrandingApply(Request $request, string $id): JsonResponse
+    {
+        $confirmation = 'I approve SolarNet internal DNS branding on this router.';
+        $validator = Validator::make($request->all(), [
+            'audit_id' => ['required', 'uuid'],
+            'confirmation_text' => ['required', 'string', Rule::in([$confirmation])],
+        ], ['confirmation_text.in' => "Type exactly: {$confirmation}"]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Exact administrator acknowledgement is required before DNS changes.', 'errors' => $validator->errors()], 422);
+        $router = Router::findOrFail($id);
+        $audit = RouterDnsBrandingAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerDnsBrandingService->apply($router, $audit, $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Remove only SolarNet-DNS:v1 records from one audit and restore its DHCP values. */
+    public function dnsBrandingRollback(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), ['audit_id' => ['required', 'uuid'], 'confirm_rollback' => ['required', 'accepted']]);
+        if ($validator->fails()) return response()->json(['success' => false, 'message' => 'Explicit rollback confirmation is required.', 'errors' => $validator->errors()], 422);
+        $router = Router::findOrFail($id);
+        $audit = RouterDnsBrandingAudit::query()->where('id', $validator->validated()['audit_id'])->where('router_id', $router->id)->firstOrFail();
+        $result = $this->routerDnsBrandingService->rollback($router, $audit, $request->user());
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 

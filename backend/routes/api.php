@@ -135,6 +135,16 @@ Route::prefix('v1')->group(function () {
         });
         Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
         Route::middleware('role:super_admin|admin')->group(function () {
+            // Guarded internal DNS branding. Discovery, planning, backup,
+            // approval, apply, verification, and rollback are intentionally
+            // separate; no other router configuration is part of this flow.
+            Route::post('routers/dns-branding/scan-all', [RouterController::class, 'dnsBrandingScanAll']);
+            Route::post('routers/{id}/dns-branding/discover', [RouterController::class, 'dnsBrandingDiscover']);
+            Route::post('routers/{id}/dns-branding/preview', [RouterController::class, 'dnsBrandingPreview']);
+            Route::post('routers/{id}/dns-branding/backup', [RouterController::class, 'dnsBrandingBackup']);
+            Route::post('routers/{id}/dns-branding/test', [RouterController::class, 'dnsBrandingTest']);
+            Route::post('routers/{id}/dns-branding/apply', [RouterController::class, 'dnsBrandingApply']);
+            Route::post('routers/{id}/dns-branding/rollback', [RouterController::class, 'dnsBrandingRollback']);
             Route::post('routers/{id}/provisioning/discover', [RouterController::class, 'provisioningDiscover']);
             Route::post('routers/{id}/provisioning/preview', [RouterController::class, 'provisioningPreview']);
             Route::post('routers/{id}/provisioning/apply', [RouterController::class, 'provisioningApply']);

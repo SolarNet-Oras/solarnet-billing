@@ -3,6 +3,7 @@ import { type Router, routerService } from '@/services/routerService';
 import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal, Network } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
 import { RouterConsoleModal } from './RouterConsoleModal';
+import { RouterDnsBrandingModal } from './RouterDnsBrandingModal';
 import { RouterProvisioningModal } from './RouterProvisioningModal';
 
 interface RouterListProps {
@@ -21,9 +22,12 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const [scriptModalOpen, setScriptModalOpen] = useState(false);
   const [selectedRouter, setSelectedRouter] = useState<Router | null>(null);
   const [consoleRouter, setConsoleRouter] = useState<Router | null>(null);
+  const [dnsBrandingRouter, setDnsBrandingRouter] = useState<Router | null>(null);
   const [provisioningRouter, setProvisioningRouter] = useState<Router | null>(null);
   const [billingActionId, setBillingActionId] = useState<string | null>(null);
   const [billingResult, setBillingResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [dnsScanAllBusy, setDnsScanAllBusy] = useState(false);
+  const [dnsScanAllMessage, setDnsScanAllMessage] = useState<string | null>(null);
 
   const handleTest = async (id: string) => {
     setTestingId(id);
@@ -152,6 +156,21 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     }
   };
 
+  const handleDnsScanAll = async () => {
+    setDnsScanAllBusy(true);
+    setDnsScanAllMessage(null);
+    try {
+      const results = await routerService.dnsBrandingScanAll();
+      const successful = results.filter((result) => result.success).length;
+      const failed = results.length - successful;
+      setDnsScanAllMessage(`Read-only DNS scan finished: ${successful} compatible API scan${successful === 1 ? '' : 's'}${failed ? `, ${failed} unavailable` : ''}. No router configuration was changed.`);
+    } catch (error: any) {
+      setDnsScanAllMessage(error.response?.data?.message || error.message || 'Could not scan the router DNS configuration. No router configuration was changed.');
+    } finally {
+      setDnsScanAllBusy(false);
+    }
+  };
+
   const getStatusIcon = (status: Router['connection_status']) => {
     switch (status) {
       case 'online':
@@ -190,6 +209,20 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div><h3 className="text-sm font-semibold text-foreground">Router List</h3><p className="text-xs text-muted-foreground">Manage router access, billing tools, and guarded internal DNS branding.</p></div>
+        <button
+          type="button"
+          onClick={() => void handleDnsScanAll()}
+          disabled={dnsScanAllBusy}
+          className="inline-flex items-center gap-2 rounded-md border border-cyan-500/40 px-3 py-2 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 disabled:opacity-50 dark:text-cyan-200 dark:hover:bg-cyan-900/20"
+          title="Run a read-only internal DNS compatibility scan on each router"
+        >
+          {dnsScanAllBusy ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" /> : <Network className="h-3.5 w-3.5" />}
+          Scan All Routers DNS
+        </button>
+      </div>
+      {dnsScanAllMessage && <div className="border-b border-border bg-cyan-500/5 px-5 py-2 text-xs text-cyan-900 dark:text-cyan-100">{dnsScanAllMessage}</div>}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-muted">
@@ -249,6 +282,15 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
                       data-testid="router-provision-btn"
                     >
                       Set Up
+                    </button>
+                    <button
+                      onClick={() => setDnsBrandingRouter(router)}
+                      className="rounded px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-900/20"
+                      title="DNS Management: internal SolarNet DNS branding"
+                      aria-label="DNS Management"
+                      data-testid="router-dns-management-btn"
+                    >
+                      DNS
                     </button>
                     <button
                       onClick={() => handleGenerateScript(router)}
@@ -423,6 +465,13 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
           isOpen={true}
           router={provisioningRouter}
           onClose={() => setProvisioningRouter(null)}
+        />
+      )}
+      {dnsBrandingRouter && (
+        <RouterDnsBrandingModal
+          isOpen={true}
+          router={dnsBrandingRouter}
+          onClose={() => setDnsBrandingRouter(null)}
         />
       )}
     </div>

@@ -21,6 +21,7 @@ class MikrotikService
     private const THREAT_FEED_ADDRESS_LIST = 'solarnet_threat_feed';
     private const THREAT_FEED_RULE_PREFIX = 'SolarNet Threat Feed: manual block';
     private const QOS_OWNER_PREFIX = 'SolarNet-QoS:v1';
+    private const DNS_OWNER_PREFIX = 'SolarNet-DNS:v1';
     /**
      * Customers are sent to this PayMongo-hosted page to choose GCash and
      * complete payment. Keep this deliberately narrow: allowing arbitrary
@@ -110,6 +111,414 @@ class MikrotikService
                 'data' => null,
             ];
         }
+    }
+
+    /**
+     * Read RouterOS DNS, static records, and DHCP network information without
+     * changing a setting. Unknown records and every DHCP network remain
+     * protected until an administrator explicitly includes them in a plan.
+     */
+    public function dnsBrandingDiscovery(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router, 3, 5));
+            $errors = [];
+            $read = function (string $path) use ($client, &$errors): array {
+                try {
+                    return $client->query(new Query($path))->read();
+                } catch (Throwable $e) {
+                    $errors[] = ['path' => $path, 'message' => $e->getMessage()];
+                    return [];
+                }
+            };
+
+            $dns = $read('/ip/dns/print')[0] ?? [];
+            $static = $read('/ip/dns/static/print');
+            $dhcpServers = $read('/ip/dhcp-server/print');
+            $dhcpNetworks = $read('/ip/dhcp-server/network/print');
+            $addresses = $read('/ip/address/print');
+            $vlans = $read('/interface/vlan/print');
+            $bridges = $read('/interface/bridge/print');
+            // DNS adlists are optional on older RouterOS versions. A missing
+            // menu is displayed as a warning, never treated as an error.
+            $optionalErrors = [];
+            try {
+                $adlists = $client->query(new Query('/ip/dns/adlist/print'))->read();
+            } catch (Throwable $e) {
+                $adlists = [];
+                $optionalErrors[] = ['path' => '/ip/dns/adlist/print', 'message' => $e->getMessage()];
+            }
+
+            if ($errors !== []) {
+                return ['success' => false, 'message' => 'DNS discovery could not read every required RouterOS DNS/DHCP area. No changes were made.', 'data' => ['read_errors' => $errors]];
+            }
+
+            $addressByInterface = [];
+            $privateManagementIps = [];
+            foreach ($addresses as $address) {
+                $interface = (string) ($address['interface'] ?? '');
+                $cidr = (string) ($address['address'] ?? '');
+                $ip = explode('/', $cidr, 2)[0];
+                if ($interface !== '' && $ip !== '' && !isset($addressByInterface[$interface])) $addressByInterface[$interface] = $ip;
+                if ($this->isPrivateIpv4($ip)) $privateManagementIps[] = ['address' => $ip, 'interface' => $interface, 'cidr' => $cidr];
+            }
+
+            $vlanByName = [];
+            foreach ($vlans as $vlan) {
+                if (!empty($vlan['name'])) $vlanByName[(string) $vlan['name']] = ['vlan_id' => $vlan['vlan-id'] ?? null, 'parent_interface' => $vlan['interface'] ?? null];
+            }
+            $bridgeNames = array_values(array_filter(array_map(fn (array $bridge) => $bridge['name'] ?? null, $bridges)));
+
+            $networkByGateway = [];
+            foreach ($dhcpNetworks as $network) {
+                if (!empty($network['gateway'])) $networkByGateway[(string) $network['gateway']] = $network;
+            }
+            $customerNetworks = [];
+            foreach ($dhcpServers as $server) {
+                $interface = (string) ($server['interface'] ?? '');
+                $gateway = $addressByInterface[$interface] ?? null;
+                $network = $gateway ? ($networkByGateway[$gateway] ?? null) : null;
+                $disabled = ($server['disabled'] ?? 'false') === 'true';
+                $customerNetworks[] = [
+                    'id' => $network['.id'] ?? null,
+                    'server_name' => $server['name'] ?? null,
+                    'interface' => $interface ?: null,
+                    'vlan_id' => $vlanByName[$interface]['vlan_id'] ?? null,
+                    'parent_interface' => $vlanByName[$interface]['parent_interface'] ?? null,
+                    'is_bridge' => in_array($interface, $bridgeNames, true),
+                    'network' => $network['address'] ?? null,
+                    'gateway' => $gateway,
+                    'dns_server' => $network['dns-server'] ?? '',
+                    'server_disabled' => $disabled,
+                    // Nothing is automatically managed. This only says the
+                    // network can be selected after explicit approval.
+                    'manageable' => !$disabled && !empty($network['.id']) && $this->isPrivateIpv4((string) $gateway),
+                    'status' => !$disabled && $network ? (($network['dns-server'] ?? '') === $gateway ? 'solarnet_dns_enabled' : 'not_enabled') : 'protected_unknown',
+                ];
+            }
+
+            $staticRecords = array_map(function (array $record): array {
+                $address = (string) ($record['address'] ?? '');
+                $type = strtoupper((string) ($record['type'] ?? ''));
+                if (!in_array($type, ['A', 'AAAA'], true)) $type = str_contains($address, ':') ? 'AAAA' : 'A';
+                $comment = (string) ($record['comment'] ?? '');
+                return [
+                    'id' => $record['.id'] ?? null,
+                    'name' => $record['name'] ?? null,
+                    'address' => $address ?: null,
+                    'type' => $type,
+                    'ttl' => $record['ttl'] ?? null,
+                    'comment' => $comment,
+                    'disabled' => ($record['disabled'] ?? 'false') === 'true',
+                    'owned_by_solarnet' => str_starts_with($comment, self::DNS_OWNER_PREFIX),
+                ];
+            }, $static);
+            $configuredServers = array_values(array_filter(array_map('trim', explode(',', (string) ($dns['servers'] ?? '')))));
+            $dynamicServers = array_values(array_filter(array_map('trim', explode(',', (string) ($dns['dynamic-servers'] ?? '')))));
+            $doh = trim((string) ($dns['use-doh-server'] ?? ''));
+
+            return ['success' => true, 'data' => [
+                'dns' => [
+                    'allow_remote_requests' => ($dns['allow-remote-requests'] ?? 'false') === 'true',
+                    'servers' => $configuredServers,
+                    'dynamic_servers' => $dynamicServers,
+                    'use_doh_server' => $doh ?: null,
+                    'verify_doh_cert' => ($dns['verify-doh-cert'] ?? 'false') === 'true',
+                    'cache_size' => $dns['cache-size'] ?? null,
+                    'cache_max_ttl' => $dns['cache-max-ttl'] ?? null,
+                ],
+                'allow_remote_requests' => ($dns['allow-remote-requests'] ?? 'false') === 'true',
+                'upstream_dns_available' => $configuredServers !== [] || $dynamicServers !== [] || $doh !== '',
+                'static_records' => $staticRecords,
+                'dhcp_networks' => $customerNetworks,
+                'router_management_candidates' => $privateManagementIps,
+                'dns_policy' => ['adlist_count' => count($adlists), 'optional_read_errors' => $optionalErrors],
+                'compatibility' => [
+                    'api_connected' => true,
+                    'unknown_static_records_protected' => count(array_filter($staticRecords, fn (array $record) => !($record['owned_by_solarnet'] ?? false))),
+                    'dhcp_networks_discovered' => count($customerNetworks),
+                    'can_distribute_dns_without_router_change' => ($dns['allow-remote-requests'] ?? 'false') === 'true',
+                ],
+                'discovered_at' => now()->toIso8601String(),
+            ]];
+        } catch (Throwable $e) {
+            Log::warning('Router DNS branding discovery failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'DNS discovery failed without changing RouterOS: ' . $e->getMessage()];
+        }
+    }
+
+    /** Create and verify a RouterOS binary backup before DNS changes. */
+    public function createDnsBackup(Router $router, string $backupName): array
+    {
+        $safeName = preg_replace('/[^A-Za-z0-9_-]/', '-', $backupName) ?: 'solarnet-dns-backup';
+        try {
+            $client = new Client($this->makeConfig($router));
+            $client->query((new Query('/system/backup/save'))->equal('name', $safeName))->read();
+            usleep(500000);
+            $files = $client->query(new Query('/file/print'))->read();
+            $file = collect($files)->first(fn (array $item) => in_array((string) ($item['name'] ?? ''), [$safeName, $safeName . '.backup'], true));
+            if (!$file) return ['success' => false, 'message' => 'RouterOS did not confirm the DNS backup file. DNS changes were blocked.'];
+            return ['success' => true, 'backup_file' => $file['name'], 'message' => 'RouterOS DNS safety backup created and verified.'];
+        } catch (Throwable $e) {
+            Log::warning('Router DNS backup failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'DNS backup failed. DNS changes were blocked: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Apply only previously-previewed DNS static records and explicitly
+     * selected DHCP DNS fields. It never changes /ip dns, firewall, NAT, WAN,
+     * routes, addresses, queues, VLANs, or unknown records.
+     */
+    public function applyDnsBranding(Router $router, array $plan, string $auditToken): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $static = $client->query(new Query('/ip/dns/static/print'))->read();
+            $byId = [];
+            $byName = [];
+            foreach ($static as $record) {
+                if (!empty($record['.id'])) $byId[(string) $record['.id']] = $record;
+                $name = $this->canonicalDnsName((string) ($record['name'] ?? ''));
+                if ($name !== '') $byName[$name][] = $record;
+            }
+            $ownerComment = self::DNS_OWNER_PREFIX . ' audit=' . $auditToken;
+            $created = 0;
+            $removed = 0;
+            $dhcpUpdated = 0;
+
+            foreach ((array) ($plan['record_removals'] ?? []) as $removal) {
+                $current = $byId[(string) ($removal['existing_id'] ?? '')] ?? null;
+                if (!$current || !str_starts_with((string) ($current['comment'] ?? ''), self::DNS_OWNER_PREFIX)) {
+                    throw new \RuntimeException('A SolarNet DNS record selected for removal changed after preview. No further DNS changes were made.');
+                }
+                $client->query((new Query('/ip/dns/static/remove'))->equal('.id', $current['.id']))->read();
+                $removed++;
+            }
+            foreach ((array) ($plan['record_changes'] ?? []) as $record) {
+                $action = $record['action'] ?? '';
+                if ($action === 'replace_solarnet') {
+                    $current = $byId[(string) ($record['existing_id'] ?? '')] ?? null;
+                    if (!$current || !str_starts_with((string) ($current['comment'] ?? ''), self::DNS_OWNER_PREFIX)) {
+                        throw new \RuntimeException('A SolarNet DNS record changed after preview. No replacement was made.');
+                    }
+                    $client->query((new Query('/ip/dns/static/remove'))->equal('.id', $current['.id']))->read();
+                    $removed++;
+                } elseif ($action === 'add_solarnet') {
+                    $existing = $byName[$this->canonicalDnsName((string) $record['hostname'])] ?? [];
+                    if (array_filter($existing, fn (array $item) => !str_starts_with((string) ($item['comment'] ?? ''), self::DNS_OWNER_PREFIX))) {
+                        throw new \RuntimeException('A protected DNS record now uses ' . $record['hostname'] . '. No record was added.');
+                    }
+                }
+                $description = trim((string) ($record['description'] ?? ''));
+                $comment = $ownerComment . ($description !== '' ? '; ' . substr($description, 0, 240) : '');
+                $this->addDnsStaticRecord($client, $record, $comment);
+                $created++;
+            }
+
+            $networks = $client->query(new Query('/ip/dhcp-server/network/print'))->read();
+            $networkById = [];
+            foreach ($networks as $network) if (!empty($network['.id'])) $networkById[(string) $network['.id']] = $network;
+            foreach ((array) ($plan['dhcp_changes'] ?? []) as $change) {
+                $current = $networkById[(string) ($change['network_id'] ?? '')] ?? null;
+                if (!$current
+                    || (string) ($current['gateway'] ?? '') !== (string) ($change['gateway'] ?? '')
+                    || (string) ($current['dns-server'] ?? '') !== (string) ($change['previous_dns_server'] ?? '')) {
+                    throw new \RuntimeException('An approved DHCP network changed after preview. SolarNet did not overwrite its DNS server.');
+                }
+                $client->query(
+                    (new Query('/ip/dhcp-server/network/set'))
+                        ->equal('.id', $current['.id'])
+                        ->equal('dns-server', (string) $change['new_dns_server'])
+                )->read();
+                $dhcpUpdated++;
+            }
+
+            return ['success' => true, 'message' => "Applied {$created} SolarNet DNS record(s) and {$dhcpUpdated} explicitly-approved DHCP DNS update(s).", 'data' => ['records_created' => $created, 'records_removed' => $removed, 'dhcp_updated' => $dhcpUpdated]];
+        } catch (Throwable $e) {
+            Log::warning('Router DNS branding apply failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'DNS changes were not fully applied: ' . $e->getMessage()];
+        }
+    }
+
+    /** Test static records plus external DNS without changing RouterOS. */
+    public function verifyDnsBranding(Router $router, array $plan, string $auditToken): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $static = $client->query(new Query('/ip/dns/static/print'))->read();
+            $expected = array_values(array_filter((array) ($plan['record_changes'] ?? []), fn (array $record) => in_array($record['action'] ?? '', ['add_solarnet', 'replace_solarnet'], true)));
+            $internal = [];
+            foreach ($expected as $record) {
+                $matching = collect($static)->first(fn (array $current) => $this->canonicalDnsName((string) ($current['name'] ?? '')) === $this->canonicalDnsName((string) $record['hostname'])
+                    && (string) ($current['address'] ?? '') === (string) $record['address']
+                    && str_starts_with((string) ($current['comment'] ?? ''), self::DNS_OWNER_PREFIX . ' audit=' . $auditToken));
+                $lookup = $this->routerDnsLookup($client, (string) $record['hostname']);
+                $internal[] = [
+                    'hostname' => $record['hostname'],
+                    'expected_address' => $record['address'],
+                    'static_present' => (bool) $matching,
+                    'resolved_address' => $lookup['address'],
+                    'ok' => (bool) $matching && $lookup['ok'] && $lookup['address'] === $record['address'],
+                    'message' => $lookup['message'],
+                ];
+            }
+            $external = [
+                $this->routerDnsLookup($client, 'google.com'),
+                $this->routerDnsLookup($client, 'cloudflare.com'),
+            ];
+            $ping = $this->routerPingOnce($client, '1.1.1.1');
+            $internalOk = count($internal) > 0 && !array_filter($internal, fn (array $result) => !$result['ok']);
+            $externalOk = !array_filter($external, fn (array $result) => !$result['ok']);
+
+            return ['success' => $internalOk && $externalOk, 'data' => [
+                'internal_records' => $internal,
+                'external_dns' => $external,
+                'external_connectivity' => $ping,
+                'verified_at' => now()->toIso8601String(),
+            ], 'message' => $internalOk && $externalOk
+                ? 'Internal DNS records and external DNS resolution were verified. WAN, public IP, NAT, routing, firewall, VLAN, QoS, and billing were unchanged.'
+                : 'DNS verification did not pass. SolarNet will roll back only this audit\'s DNS records and DHCP DNS values.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'DNS verification failed: ' . $e->getMessage(), 'data' => ['verified_at' => now()->toIso8601String()]];
+        }
+    }
+
+    /** Remove only records tagged with this audit and restore prior SolarNet DNS/DHCP values. */
+    public function rollbackDnsBranding(Router $router, array $plan, string $auditToken): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $static = $client->query(new Query('/ip/dns/static/print'))->read();
+            $tag = self::DNS_OWNER_PREFIX . ' audit=' . $auditToken;
+            $removed = 0;
+            foreach ($static as $record) {
+                if (!empty($record['.id']) && str_starts_with((string) ($record['comment'] ?? ''), $tag)) {
+                    $client->query((new Query('/ip/dns/static/remove'))->equal('.id', $record['.id']))->read();
+                    $removed++;
+                }
+            }
+
+            $currentNames = array_map(fn (array $record) => $this->canonicalDnsName((string) ($record['name'] ?? '')), $client->query(new Query('/ip/dns/static/print'))->read());
+            $restored = 0;
+            foreach (array_merge((array) ($plan['record_changes'] ?? []), (array) ($plan['record_removals'] ?? [])) as $change) {
+                $previous = $change['previous'] ?? null;
+                if (!is_array($previous) || empty($previous['name']) || empty($previous['address'])) continue;
+                $name = $this->canonicalDnsName((string) $previous['name']);
+                if (in_array($name, $currentNames, true)) continue; // never overwrite a later administrator record
+                $this->addDnsStaticRecord($client, [
+                    'hostname' => $previous['name'],
+                    'address' => $previous['address'],
+                    'ttl_seconds' => $this->dnsTtlSeconds((string) ($previous['ttl'] ?? '')) ?? 86400,
+                ], (string) ($previous['comment'] ?? self::DNS_OWNER_PREFIX));
+                $restored++;
+            }
+
+            $networks = $client->query(new Query('/ip/dhcp-server/network/print'))->read();
+            $networkById = [];
+            foreach ($networks as $network) if (!empty($network['.id'])) $networkById[(string) $network['.id']] = $network;
+            $dhcpRestored = 0;
+            $skipped = [];
+            foreach ((array) ($plan['dhcp_changes'] ?? []) as $change) {
+                $current = $networkById[(string) ($change['network_id'] ?? '')] ?? null;
+                if (!$current) {
+                    $skipped[] = $change['network'] ?? $change['network_id'] ?? 'unknown DHCP network';
+                    continue;
+                }
+                // It was never changed by this audit (or was already restored),
+                // so leave it alone and do not turn a safe rollback into a
+                // false failure.
+                if ((string) ($current['dns-server'] ?? '') === (string) ($change['previous_dns_server'] ?? '')) continue;
+                if ((string) ($current['dns-server'] ?? '') !== (string) ($change['new_dns_server'] ?? '')) {
+                    $skipped[] = $change['network'] ?? $change['network_id'] ?? 'unknown DHCP network';
+                    continue;
+                }
+                $query = (new Query('/ip/dhcp-server/network/set'))->equal('.id', $current['.id']);
+                $query->equal('dns-server', (string) ($change['previous_dns_server'] ?? ''));
+                $client->query($query)->read();
+                $dhcpRestored++;
+            }
+            return ['success' => $skipped === [], 'message' => $skipped === []
+                ? "Rolled back {$removed} audit-owned DNS record(s), restored {$restored} earlier SolarNet record(s), and restored {$dhcpRestored} DHCP DNS value(s)."
+                : 'Rollback removed audit-owned records but did not overwrite DHCP networks changed by another administrator: ' . implode(', ', $skipped) . '.', 'data' => compact('removed', 'restored', 'dhcpRestored', 'skipped')];
+        } catch (Throwable $e) {
+            Log::warning('Router DNS branding rollback failed', ['router_id' => $router->id, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'DNS rollback could not be completed: ' . $e->getMessage()];
+        }
+    }
+
+    /** Read-only test endpoint for current router DNS behavior. */
+    public function testDnsBranding(Router $router, array $hostnames): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $names = array_values(array_unique(array_filter(array_merge($hostnames, ['google.com', 'cloudflare.com']))));
+            $results = array_map(fn (string $hostname) => $this->routerDnsLookup($client, $hostname), $names);
+            return ['success' => true, 'data' => ['results' => $results, 'tested_at' => now()->toIso8601String()], 'message' => array_filter($results, fn (array $result) => !$result['ok'])
+                ? 'Read-only DNS test completed with one or more unresolved names. This does not change the router.'
+                : 'Read-only DNS test completed.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'DNS test failed without changing RouterOS: ' . $e->getMessage()];
+        }
+    }
+
+    private function addDnsStaticRecord(Client $client, array $record, string $comment): void
+    {
+        $client->query(
+            (new Query('/ip/dns/static/add'))
+                ->equal('name', (string) $record['hostname'])
+                ->equal('address', (string) $record['address'])
+                ->equal('ttl', (string) ((int) ($record['ttl_seconds'] ?? 86400)) . 's')
+                ->equal('comment', $comment)
+        )->read();
+    }
+
+    private function routerDnsLookup(Client $client, string $hostname): array
+    {
+        try {
+            $rows = $client->query((new Query('/resolve'))->equal('name', $hostname))->read();
+            $answer = null;
+            foreach ($rows as $row) {
+                foreach (['ret', 'address', 'data'] as $key) {
+                    if (!empty($row[$key]) && filter_var($row[$key], FILTER_VALIDATE_IP)) $answer = $row[$key];
+                }
+            }
+            return ['hostname' => $hostname, 'address' => $answer, 'ok' => $answer !== null, 'message' => $answer ? 'Resolved by RouterOS.' : 'RouterOS returned no IP address.'];
+        } catch (Throwable $e) {
+            return ['hostname' => $hostname, 'address' => null, 'ok' => false, 'message' => 'RouterOS DNS lookup failed: ' . $e->getMessage()];
+        }
+    }
+
+    private function routerPingOnce(Client $client, string $address): array
+    {
+        try {
+            $rows = $client->query((new Query('/ping'))->equal('address', $address)->equal('count', '1'))->read();
+            $received = array_filter($rows, fn (array $row) => ($row['status'] ?? '') !== 'timeout');
+            return ['target' => $address, 'ok' => $received !== [], 'message' => $received !== [] ? 'RouterOS external reachability sample succeeded.' : 'RouterOS external reachability sample timed out.'];
+        } catch (Throwable $e) {
+            return ['target' => $address, 'ok' => false, 'message' => 'RouterOS ping is unavailable: ' . $e->getMessage()];
+        }
+    }
+
+    private function canonicalDnsName(string $name): string
+    {
+        return strtolower(rtrim(trim($name), '.'));
+    }
+
+    private function dnsTtlSeconds(string $ttl): ?int
+    {
+        if (ctype_digit($ttl)) return (int) $ttl;
+        if (preg_match('/^(\d+)(s|m|h|d|w)$/i', trim($ttl), $match) !== 1) return null;
+        return (int) $match[1] * match (strtolower($match[2])) { 'm' => 60, 'h' => 3600, 'd' => 86400, 'w' => 604800, default => 1 };
+    }
+
+    private function isPrivateIpv4(string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) return false;
+        $value = ip2long($ip);
+        return ($value >= ip2long('10.0.0.0') && $value <= ip2long('10.255.255.255'))
+            || ($value >= ip2long('172.16.0.0') && $value <= ip2long('172.31.255.255'))
+            || ($value >= ip2long('192.168.0.0') && $value <= ip2long('192.168.255.255'));
     }
 
     /**

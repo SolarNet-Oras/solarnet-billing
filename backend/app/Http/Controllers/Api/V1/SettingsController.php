@@ -55,6 +55,9 @@ class SettingsController extends Controller
         // Network / captive portal
         'network.suspended_speed_kbps' => ['cast' => 'int',    'group' => 'suspension', 'label' => 'Suspended customer speed (kbps)', 'default' => 128],
         'network.payment_reminder_url' => ['cast' => 'string', 'group' => 'suspension', 'label' => 'Payment reminder URL', 'default' => ''],
+        // Saved by the guarded Router DNS Management workflow. It is not a
+        // public DNS zone and never changes the WAN/public IP configuration.
+        'dns_domain' => ['cast' => 'string', 'group' => 'network', 'label' => 'Internal DNS Domain', 'default' => 'solarnet.local'],
     ];
 
     public function index(Request $request): JsonResponse
@@ -129,6 +132,9 @@ class SettingsController extends Controller
             if ($key === 'network.payment_reminder_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
                 return response()->json(['status' => 'error', 'message' => 'Payment reminder URL must be a valid absolute URL.'], 422);
             }
+            if ($key === 'dns_domain' && !$this->validInternalDnsDomain((string) $value)) {
+                return response()->json(['status' => 'error', 'message' => 'Internal DNS Domain must be a valid domain such as solarnet.local or lan.solarnetconnection.com.'], 422);
+            }
             if ($key === 'company.facebook_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
                 return response()->json(['status' => 'error', 'message' => 'Facebook Support Page must be a valid URL.'], 422);
             }
@@ -187,5 +193,15 @@ class SettingsController extends Controller
         $marker = '/storage/company-branding/';
         $position = strpos($path, $marker);
         return $position === false ? null : 'company-branding/' . substr($path, $position + strlen($marker));
+    }
+
+    private function validInternalDnsDomain(string $domain): bool
+    {
+        $domain = strtolower(rtrim(trim($domain), '.'));
+        if (strlen($domain) < 3 || strlen($domain) > 253 || !str_contains($domain, '.')) return false;
+        foreach (explode('.', $domain) as $label) {
+            if ($label === '' || strlen($label) > 63 || preg_match('/^(?!-)[a-z0-9-]+(?<!-)$/', $label) !== 1) return false;
+        }
+        return true;
     }
 }
