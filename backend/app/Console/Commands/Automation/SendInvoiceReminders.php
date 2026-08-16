@@ -6,6 +6,7 @@ use App\Models\AutomationLog;
 use App\Models\Invoice;
 use App\Models\Setting;
 use App\Services\Automation\AutomationRunner;
+use App\Services\BillingSmsReminderService;
 use App\Services\CustomerWebPushNotificationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -44,10 +45,11 @@ class SendInvoiceReminders extends Command
 
         $graceDays = max(1, (int) Setting::get('billing.auto_suspend_days', 15));
 
-        $today = now()->startOfDay();
+        $today = now(BillingSmsReminderService::TIMEZONE)->startOfDay();
         $details = [];
         $errors = [];
         $pushSent = 0;
+        $smsQueued = 0;
 
         foreach (Invoice::unpaid()->with('customer')->get() as $invoice) {
             $customer = $invoice->customer;
@@ -72,6 +74,11 @@ class SendInvoiceReminders extends Command
                     : $this->sendReminder($customer, $invoice, $pushType);
 
                 $pushSent += $delivery === 'sent' ? 1 : 0;
+                $smsDelivery = null;
+                if ($diffDays === BillingSmsReminderService::DAYS_BEFORE_DUE) {
+                    $smsDelivery = app(BillingSmsReminderService::class)->schedule($invoice, $today, $dryRun);
+                    $smsQueued += $smsDelivery === 'queued' ? 1 : 0;
+                }
                 $details[] = [
                     'invoice_number' => $invoice->invoice_number,
                     'customer' => $customer->full_name,
@@ -79,6 +86,7 @@ class SendInvoiceReminders extends Command
                     'push_type' => $pushType,
                     'diff_days' => $diffDays,
                     'push_delivery' => $delivery,
+                    'sms_delivery' => $smsDelivery,
                 ];
             } catch (\Throwable $e) {
                 $errors[] = ['invoice_number' => $invoice->invoice_number, 'error' => $e->getMessage()];
@@ -90,8 +98,9 @@ class SendInvoiceReminders extends Command
             'candidates' => Invoice::unpaid()->count(),
             'processed' => count($details),
             'push_sent' => $pushSent,
+            'sms_queued' => $smsQueued,
             'email_policy' => 'initial_invoice_email_only',
-            'sms_policy' => 'not_sent_by_daily_reminder_job',
+            'sms_policy' => 'one_time_7_days_before_due',
             'errors' => $errors,
             'details' => $details,
         ];

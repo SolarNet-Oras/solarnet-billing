@@ -43,7 +43,7 @@ export default function CustomerBillingPage(): React.JSX.Element {
         setPayments(paymentResponse.data ?? []);
       } catch (requestError: any) {
         setError(requestError.response?.data?.message || 'Could not load your billing history.');
-        if (requestError.response?.status === 401) navigate('/customer/login', { replace: true });
+        if (requestError.response?.status === 401) navigate('/customer/login?next=%2Fcustomer%2Fbilling', { replace: true });
       } finally {
         setLoading(false);
       }

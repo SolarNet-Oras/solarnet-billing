@@ -102,7 +102,9 @@ api.interceptors.response.use(
         localStorage.removeItem('customer_token');
         localStorage.removeItem('customer_data');
         if (window.location.pathname !== '/customer/login') {
-          window.location.href = '/customer/login';
+          const requestedPath = window.location.pathname + window.location.search;
+          const next = requestedPath.startsWith('/customer/') ? `?next=${encodeURIComponent(requestedPath)}` : '';
+          window.location.href = `/customer/login${next}`;
         }
         return Promise.reject(error);
       }

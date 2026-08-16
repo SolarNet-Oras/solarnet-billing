@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { LogIn, CreditCard } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '', email: '', facebook_url: '' });
   const [formData, setFormData] = useState({
     email: '',
@@ -29,7 +30,11 @@ const CustomerLoginPage: React.FC = () => {
       
       // Temporary-password users must set a personal password before they can
       // open the dashboard or suspended-account payment page.
-      navigate(result.customer.portal_password_change_required ? '/customer/change-password' : '/customer/dashboard');
+      const requested = new URLSearchParams(location.search).get('next');
+      const next = requested?.startsWith('/customer/') ? requested : '/customer/dashboard';
+      navigate(result.customer.portal_password_change_required
+        ? `/customer/change-password?next=${encodeURIComponent(next)}`
+        : next);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {

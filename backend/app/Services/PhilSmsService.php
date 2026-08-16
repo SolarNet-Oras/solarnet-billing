@@ -6,10 +6,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Server-side PhilSMS client for explicit transactional SMS only.
+ * Server-side PhilSMS client for approved transactional and billing SMS.
  *
- * This service does not decide when to notify a customer. In particular, the
- * recurring invoice reminder job is intentionally Web Push only.
+ * This service does not decide when to notify a customer. The recurring
+ * invoice scheduler owns the one-time, seven-day billing SMS policy.
  */
 class PhilSmsService
 {
@@ -18,10 +18,14 @@ class PhilSmsService
     /** A safe provider/network reason for an operator-facing test command. */
     protected ?string $lastFailureReason = null;
 
+    /** The provider's delivery identifier from the most recent accepted SMS. */
+    protected ?string $lastProviderMessageId = null;
+
     /** @return 'sent'|'skipped_not_configured'|'skipped_no_phone'|'skipped_invalid_phone'|'skipped_invalid_sender_id'|'skipped_empty_message'|'failed' */
     public function send(?string $phone, string $message): string
     {
         $this->lastFailureReason = null;
+        $this->lastProviderMessageId = null;
 
         if (blank($phone)) {
             return 'skipped_no_phone';
@@ -91,8 +95,10 @@ class PhilSmsService
         Log::info('PhilSMS accepted SMS request', [
             'recipient_last4' => $this->lastFour($recipient),
             'sender_id' => $senderId,
-            'message_uid' => $response->json('data.uid'),
+            'message_uid' => $this->providerMessageId($response->json('data')),
         ]);
+
+        $this->lastProviderMessageId = $this->providerMessageId($response->json('data'));
 
         return 'sent';
     }
@@ -101,6 +107,11 @@ class PhilSmsService
     public function lastFailureReason(): ?string
     {
         return $this->lastFailureReason;
+    }
+
+    public function lastProviderMessageId(): ?string
+    {
+        return $this->lastProviderMessageId;
     }
 
     /**
@@ -177,5 +188,14 @@ class PhilSmsService
         $digits = preg_replace('/\D+/', '', $value);
 
         return $digits ? substr($digits, -4) : 'none';
+    }
+
+    private function providerMessageId(mixed $data): ?string
+    {
+        if (is_array($data) && filled($data['uid'] ?? null)) {
+            return (string) $data['uid'];
+        }
+
+        return is_string($data) && $data !== '' ? $data : null;
     }
 }

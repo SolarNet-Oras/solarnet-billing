@@ -145,6 +145,12 @@ class Customer extends Model
         return $this->hasMany(CustomerNotificationLog::class);
     }
 
+    /** One-time invoice-cycle SMS audit records; phone values stay server-side. */
+    public function billingSmsNotifications(): HasMany
+    {
+        return $this->hasMany(BillingSmsNotification::class);
+    }
+
     /**
      * Scope a query to only include active customers.
      */

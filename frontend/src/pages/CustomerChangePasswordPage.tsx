@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { KeyRound, ShieldCheck } from 'lucide-react';
 import customerPortalService from '@/services/customerPortalService';
 
 export default function CustomerChangePasswordPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ current_password: 'Solarnet123', password: '', password_confirmation: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -25,7 +26,8 @@ export default function CustomerChangePasswordPage(): React.JSX.Element {
         customer.portal_password_change_required = false;
         localStorage.setItem('customer_data', JSON.stringify(customer));
       }
-      navigate('/customer/dashboard', { replace: true });
+      const requested = new URLSearchParams(location.search).get('next');
+      navigate(requested?.startsWith('/customer/') ? requested : '/customer/dashboard', { replace: true });
     } catch (requestError: any) {
       setError(requestError.response?.data?.message || 'Could not change your password.');
     } finally {
