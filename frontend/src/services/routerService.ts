@@ -112,8 +112,8 @@ export interface RouterQosInspection {
 
 export interface RouterQosAnalysis {
   recommended_mode: 'full' | 'safe' | 'disabled';
-  full: { available: boolean; safety_passed: boolean; test_available: boolean; reasons: string[] };
-  safe: { available: boolean; queue_type: string | null; managed_queue_count: number; ownership: string; reasons: string[] };
+  full: { available: boolean; safety_passed: boolean; test_available: boolean; reasons: string[]; suggestions: string[] };
+  safe: { available: boolean; queue_type: string | null; managed_queue_count: number; ownership: string; reasons: string[]; suggestions: string[] };
   disabled: { available: boolean; reason: string | null };
 }
 

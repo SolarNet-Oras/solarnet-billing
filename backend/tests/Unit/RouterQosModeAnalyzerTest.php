@@ -30,6 +30,8 @@ class RouterQosModeAnalyzerTest extends TestCase
         $this->assertSame('disabled', $analysis['recommended_mode']);
         $this->assertFalse($analysis['safe']['available']);
         $this->assertStringContainsString('No SolarNet-managed', $analysis['disabled']['reason']);
+        $this->assertStringContainsString('Sync the customer from Billing', implode(' ', $analysis['safe']['suggestions']));
+        $this->assertStringContainsString('maintenance window', implode(' ', $analysis['safe']['suggestions']));
     }
 
     private function inspection(array $overrides = []): array
