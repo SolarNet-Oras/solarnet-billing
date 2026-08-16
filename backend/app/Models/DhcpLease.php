@@ -25,6 +25,8 @@ class DhcpLease extends Model
         'expires_at',
         'last_seen_at',
         'is_matched',
+        'match_source',
+        'match_note',
         'is_current',
     ];
 

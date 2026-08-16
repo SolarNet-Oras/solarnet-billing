@@ -409,6 +409,20 @@ class InvoiceService
                 });
             }
 
+            // Push is an optional post-commit alert. A delivery problem must
+            // never roll back a verified cash, bank, GCash, or PayMongo payment.
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    app(CustomerWebPushNotificationService::class)
+                        ->sendPaymentReceived($payment->fresh(['customer', 'invoice']));
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred customer payment push failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
+
             Log::info('Payment recorded', [
                 'payment_id' => $payment->id,
                 'invoice_id' => $invoice->id,
@@ -444,6 +458,19 @@ class InvoiceService
                     ? Carbon::parse($paymentData['covered_cycle_date'], config('app.timezone', 'Asia/Manila'))
                     : null,
             );
+
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    app(CustomerWebPushNotificationService::class)
+                        ->sendPaymentReceived($payment->fresh(['customer', 'invoice']));
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred customer advance-payment push failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
+
             return $payment;
         });
     }

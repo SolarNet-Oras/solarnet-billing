@@ -51,6 +51,7 @@ class SendInvoiceReminders extends Command
             fn ($value) => (int) trim($value),
             explode(',', (string) Setting::get('automation.overdue_reminder_days', '1,7,14'))
         ), fn ($value) => $value > 0));
+        $graceDays = max(1, (int) Setting::get('billing.auto_suspend_days', 15));
 
         $today = now()->startOfDay();
         $details = [];
@@ -75,22 +76,23 @@ class SendInvoiceReminders extends Command
             $kind = $diffDays === $beforeDays
                 ? 'pre_due'
                 : ($diffDays < 0 && in_array(abs($diffDays), $afterDays, true) ? 'overdue_' . abs($diffDays) : null);
-            if ($kind === null) {
+            $pushType = $this->pushTypeFor($diffDays, $graceDays);
+            if ($kind === null && $pushType === null) {
                 continue;
             }
 
             try {
                 $delivery = $dryRun
                     ? [
-                        'email' => empty($customer->email) ? 'skipped_no_email' : 'would_send',
-                        'sms' => empty($customer->contact_number)
+                        'email' => $kind === null ? 'skipped_not_scheduled' : (empty($customer->email) ? 'skipped_no_email' : 'would_send'),
+                        'sms' => $kind === null ? 'skipped_not_scheduled' : (empty($customer->contact_number)
                             ? 'skipped_no_phone'
-                            : ($this->twilioIsConfigured() ? 'would_send' : 'skipped_not_configured'),
-                        'push' => app(CustomerWebPushNotificationService::class)->statusFor($customer)['subscribed']
+                            : ($this->twilioIsConfigured() ? 'would_send' : 'skipped_not_configured')),
+                        'push' => $pushType === null ? 'skipped_not_scheduled' : (app(CustomerWebPushNotificationService::class)->statusFor($customer)['subscribed']
                             ? 'would_send'
-                            : 'skipped_no_subscription',
+                            : 'skipped_no_subscription'),
                     ]
-                    : $this->sendReminder($customer, $invoice, $kind, $diffDays);
+                    : $this->sendReminder($customer, $invoice, $kind, $diffDays, $pushType);
 
                 $emailSent += $delivery['email'] === 'sent' ? 1 : 0;
                 $smsSent += $delivery['sms'] === 'sent' ? 1 : 0;
@@ -105,6 +107,7 @@ class SendInvoiceReminders extends Command
                     'phone' => $customer->contact_number,
                     'balance' => (float) $invoice->balance,
                     'kind' => $kind,
+                    'push_type' => $pushType,
                     'diff_days' => $diffDays,
                     'email_delivery' => $delivery['email'],
                     'sms_delivery' => $delivery['sms'],
@@ -131,8 +134,14 @@ class SendInvoiceReminders extends Command
     }
 
     /** @return array{email: string, sms: string, push: string} */
-    protected function sendReminder($customer, Invoice $invoice, string $kind, int $diffDays): array
+    protected function sendReminder($customer, Invoice $invoice, ?string $kind, int $diffDays, ?string $pushType): array
     {
+        $emailDelivery = 'skipped_not_scheduled';
+        $smsDelivery = 'skipped_not_scheduled';
+
+        // Preserve the existing email/SMS schedule. Push may additionally
+        // send the requested 7/3/1-day, due-day, and grace-period events.
+        if ($kind !== null) {
         $company = Setting::get('company.name', 'Solarnet Internet');
         $currency = Setting::get('company.currency', 'PHP ');
         $subject = $kind === 'pre_due'
@@ -175,18 +184,43 @@ class SendInvoiceReminders extends Command
             . ', due ' . $invoice->due_date->format('Y-m-d')
             . ($kind === 'pre_due' ? '. Please pay before the due date.' : '. Your account is overdue; please pay to avoid suspension.');
         $smsDelivery = $this->sendSmsReminder($customer->contact_number, $smsBody);
-        $pushDelivery = app(CustomerWebPushNotificationService::class)->sendBillingReminder($customer, $invoice, $kind);
+        }
+
+        $pushDelivery = $pushType === null
+            ? 'skipped_not_scheduled'
+            : app(CustomerWebPushNotificationService::class)->sendBillingEvent($customer, $invoice, $pushType);
         Log::info('[automation] invoice reminder processed', [
             'invoice' => $invoice->invoice_number,
             'to' => $customer->email,
             'phone' => $customer->contact_number,
             'kind' => $kind,
+            'push_type' => $pushType,
             'email_delivery' => $emailDelivery,
             'sms_delivery' => $smsDelivery,
             'push_delivery' => $pushDelivery,
         ]);
 
         return ['email' => $emailDelivery, 'sms' => $smsDelivery, 'push' => $pushDelivery];
+    }
+
+    /**
+     * Push timing is intentionally additive to the existing email/SMS settings.
+     * It never changes invoice generation, due dates, grace periods, or suspension.
+     */
+    protected function pushTypeFor(int $diffDays, int $graceDays): ?string
+    {
+        if ($diffDays === 7) return CustomerWebPushNotificationService::BILLING_REMINDER_7_DAYS;
+        if ($diffDays === 3) return CustomerWebPushNotificationService::BILLING_REMINDER_3_DAYS;
+        if ($diffDays === 1) return CustomerWebPushNotificationService::BILLING_REMINDER_1_DAY;
+        if ($diffDays === 0) return CustomerWebPushNotificationService::BILLING_DUE_TODAY;
+
+        $daysOverdue = abs($diffDays);
+        if ($diffDays >= 0) return null;
+        if ($daysOverdue === max(1, $graceDays - 1)) return CustomerWebPushNotificationService::SUSPENSION_WARNING;
+        if ($daysOverdue === max(2, $graceDays - 7)) return CustomerWebPushNotificationService::GRACE_PERIOD_WARNING;
+        if ($daysOverdue === 1) return CustomerWebPushNotificationService::BILLING_OVERDUE;
+
+        return null;
     }
 
     protected function sendSmsReminder(?string $phone, string $body): string

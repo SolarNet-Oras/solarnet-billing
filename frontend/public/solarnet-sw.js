@@ -64,7 +64,13 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = new URL(event.notification.data?.url || '/customer/dashboard', self.location.origin).href;
+  const requestedUrl = new URL(event.notification.data?.url || '/customer/dashboard', self.location.origin);
+  const allowedPaths = ['/customer/dashboard', '/customer/billing'];
+  // Never let a notification payload navigate a customer to another origin or
+  // an unexpected page. The backend applies the same allow-list before send.
+  const targetUrl = requestedUrl.origin === self.location.origin && allowedPaths.includes(requestedUrl.pathname)
+    ? requestedUrl.href
+    : new URL('/customer/dashboard', self.location.origin).href;
 
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
     const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);

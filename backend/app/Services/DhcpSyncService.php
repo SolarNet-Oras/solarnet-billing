@@ -216,10 +216,11 @@ class DhcpSyncService
     }
 
     /**
-     * Match lease to existing customer by MAC address
-     * 
-     * @param DhcpLease $lease
-     * @return Customer|null
+     * Match a read-only DHCP lease to a customer. An exact registered MAC is
+     * preferred. A unique, exact account number in the lease comment is a
+     * safe fallback only when it does not conflict with a registered MAC.
+     * This writes SolarNet's database association only; it never writes to
+     * RouterOS DHCP, pools, VLANs, NAT, firewall, QoS, or routing.
      */
     protected function matchLeaseToCustomer(DhcpLease $lease): ?Customer
     {
@@ -246,12 +247,94 @@ class DhcpSyncService
             $lease->update([
                 'customer_id' => $customer->id,
                 'is_matched' => true,
+                'match_source' => 'mac_address',
+                'match_note' => 'Exact registered MAC address and router match.',
             ]);
 
             return $customer;
         }
 
-        return null;
+        $accountNumbers = $this->accountNumbersFromLeaseComment($lease->comment);
+        if ($accountNumbers === []) {
+            $this->markLeaseUnmatched($lease, 'No exact registered MAC or account number was found.');
+            return null;
+        }
+
+        $candidates = Customer::query()
+            ->whereIn('account_number', $accountNumbers)
+            ->where(function ($query) use ($lease) {
+                $query->where('router_id', $lease->router_id)
+                    ->orWhereNull('router_id');
+            })
+            ->orderByRaw('case when router_id = ? then 0 else 1 end', [$lease->router_id])
+            ->get();
+
+        if ($candidates->count() !== 1) {
+            $this->markLeaseUnmatched(
+                $lease,
+                $candidates->isEmpty()
+                    ? 'Lease comment contains no customer account assigned to this router.'
+                    : 'Lease comment maps to multiple eligible customer accounts. Staff review is required.',
+            );
+            return null;
+        }
+
+        $customer = $candidates->first();
+        $leaseMac = $this->normalizeMacAddress($lease->mac_address);
+        $customerMac = $this->normalizeMacAddress($customer->mac_address);
+        if ($customerMac && $customerMac !== $leaseMac) {
+            $this->markLeaseUnmatched(
+                $lease,
+                'Lease comment matches an account, but its registered MAC is different. No automatic reassignment was made.',
+            );
+            return null;
+        }
+
+        $customerUpdates = [];
+        if (!$customer->router_id) {
+            $customerUpdates['router_id'] = $lease->router_id;
+        }
+        if (!$customerMac) {
+            // The exact account comment is an administrator-created RouterOS
+            // association, so a missing app-side MAC can be recorded safely.
+            $customerUpdates['mac_address'] = $leaseMac;
+        }
+        if ($customerUpdates !== []) {
+            $customer->update($customerUpdates);
+        }
+
+        $lease->update([
+            'customer_id' => $customer->id,
+            'is_matched' => true,
+            'match_source' => 'account_comment',
+            'match_note' => 'Exact account number in RouterOS lease comment matched one eligible customer.',
+        ]);
+
+        return $customer;
+    }
+
+    /** @return array<int, string> */
+    protected function accountNumbersFromLeaseComment(?string $comment): array
+    {
+        $comment = trim((string) $comment);
+        if ($comment === '') return [];
+
+        preg_match_all('/(?<![A-Z0-9_-])(?:CUST-[A-Z0-9-]+|PENDING-[A-Z0-9-]+|[0-9]{6,})(?![A-Z0-9_-])/i', $comment, $matches);
+
+        return array_values(array_unique(array_map(
+            fn (string $value) => strtoupper(trim($value)),
+            $matches[0] ?? [],
+        )));
+    }
+
+    protected function markLeaseUnmatched(DhcpLease $lease, string $note): void
+    {
+        $lease->update([
+            'customer_id' => null,
+            'is_matched' => false,
+            'match_source' => null,
+            'match_note' => $note,
+        ]);
     }
 
     /**

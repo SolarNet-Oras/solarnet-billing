@@ -23,15 +23,19 @@ class CustomerWebPushSubscription extends Model
 
     protected $fillable = [
         'customer_id',
+        'device_id',
         'endpoint',
         'public_key',
         'auth_token',
         'content_encoding',
+        'platform',
+        'browser',
         'user_agent',
         'last_used_at',
         'last_sent_at',
         'failed_at',
         'failure_reason',
+        'revoked_at',
     ];
 
     protected function casts(): array
@@ -40,11 +44,17 @@ class CustomerWebPushSubscription extends Model
             'last_used_at' => 'datetime',
             'last_sent_at' => 'datetime',
             'failed_at' => 'datetime',
+            'revoked_at' => 'datetime',
         ];
     }
 
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereNull('revoked_at');
     }
 }

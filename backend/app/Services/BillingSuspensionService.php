@@ -265,6 +265,7 @@ class BillingSuspensionService
     {
         $customer->loadMissing(['servicePlan', 'router']);
         $router = $customer->router;
+        $previousStatus = $customer->status;
 
         $customer->forceFill([
             'status' => 'active',
@@ -281,6 +282,12 @@ class BillingSuspensionService
             'queue_last_synced_at' => now(),
         ])->saveQuietly();
 
+        // A restoration alert is sent only when the account was actually
+        // restricted. Routine active-to-active synchronizations stay silent.
+        $pushDelivery = in_array($previousStatus, ['suspended', 'expired'], true)
+            ? $this->webPushNotificationService->sendServiceRestored($customer)
+            : 'skipped_not_restricted';
+
         Log::info('Customer restored after billing sync', [
             'customer_id' => $customer->id,
             'account_number' => $customer->account_number,
@@ -288,6 +295,7 @@ class BillingSuspensionService
             'router_id' => $customer->router_id,
             'queue_result' => $queueResult['success'] ?? false,
             'address_result' => $addressResult['success'] ?? false,
+            'push_delivery' => $pushDelivery,
             'force' => $force,
         ]);
 
@@ -298,6 +306,7 @@ class BillingSuspensionService
             'reason' => $reason,
             'queue' => $queueResult,
             'address_list' => $addressResult,
+            'push_delivery' => $pushDelivery,
         ];
     }
 

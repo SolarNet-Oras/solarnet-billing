@@ -140,6 +140,11 @@ class Customer extends Model
         return $this->hasMany(CustomerWebPushSubscription::class);
     }
 
+    public function notificationLogs(): HasMany
+    {
+        return $this->hasMany(CustomerNotificationLog::class);
+    }
+
     /**
      * Scope a query to only include active customers.
      */

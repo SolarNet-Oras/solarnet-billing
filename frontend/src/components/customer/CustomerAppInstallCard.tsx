@@ -27,10 +27,13 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
     enabled: boolean;
     publicKey: string | null;
     reason: string | null;
+    subscriptionCount: number;
   } | null>(null);
   const [thisDeviceSubscribed, setThisDeviceSubscribed] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() => supportsWebPush() ? Notification.permission : 'unsupported');
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState('');
+  const subscribedDeviceCount = pushStatus?.subscriptionCount ?? 0;
 
   useEffect(() => {
     const onBeforeInstall = (event: BeforeInstallPromptEvent): void => {
@@ -54,8 +57,9 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
           customerPortalService.getPushNotificationStatus(),
           currentWebPushSubscription(),
         ]);
-        setPushStatus({ enabled: status.enabled, publicKey: status.public_key, reason: status.reason });
+        setPushStatus({ enabled: status.enabled, publicKey: status.public_key, reason: status.reason, subscriptionCount: status.subscription_count ?? 0 });
         setThisDeviceSubscribed(Boolean(subscription));
+        setPushPermission(supportsWebPush() ? Notification.permission : 'unsupported');
       } catch {
         // The customer dashboard stays usable if an older deployment does not
         // yet expose the opt-in push routes.
@@ -83,6 +87,11 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
       setPushMessage('This browser cannot receive portal notifications. On iPhone/iPad, install the SolarNet app from Safari first.');
       return;
     }
+    if (Notification.permission === 'denied') {
+      setPushPermission('denied');
+      setPushMessage('Notifications are blocked in this browser. Enable notifications for this site in your browser or phone settings, then try again.');
+      return;
+    }
     if (!pushStatus?.enabled || !pushStatus.publicKey) {
       setPushMessage(pushStatus?.reason || 'Billing notifications are not configured on the server yet.');
       return;
@@ -93,6 +102,7 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
       const subscription = await subscribeToWebPush(pushStatus.publicKey);
       const response = await customerPortalService.subscribePushNotifications(subscription);
       setThisDeviceSubscribed(true);
+      setPushPermission(Notification.permission);
       setPushMessage(response.message);
     } catch (error: any) {
       setPushMessage(error.response?.data?.message || error.message || 'Could not enable alerts on this device.');
@@ -148,6 +158,9 @@ export default function CustomerAppInstallCard(): React.JSX.Element | null {
               </button>
             )}
           </div>
+          {pushPermission === 'denied' && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Notifications are blocked for this site. Enable them in your browser or phone settings, then return here.</p>}
+          {pushPermission === 'unsupported' && <p className="mt-3 rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700">This browser does not support portal notifications. You can still use the customer portal normally.</p>}
+          {subscribedDeviceCount > 1 && <p className="mt-3 text-xs text-slate-600">Alerts are also enabled on {subscribedDeviceCount - 1} other signed-in device{subscribedDeviceCount === 2 ? '' : 's'}.</p>}
           <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-600">
             <BellOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> Permission is optional. You can turn alerts off here or in your phone’s browser/app settings.
           </p>

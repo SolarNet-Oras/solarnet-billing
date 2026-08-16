@@ -718,6 +718,7 @@ class CustomerPortalController extends Controller
             'data' => [
                 'enabled' => $status['enabled'],
                 'subscribed' => $status['subscribed'],
+                'subscription_count' => $status['subscription_count'],
                 'reason' => $status['reason'],
                 'public_key' => $status['enabled'] ? config('services.web_push.vapid_public_key') : null,
             ],
@@ -745,6 +746,9 @@ class CustomerPortalController extends Controller
             'keys.p256dh' => 'required|string|max:255',
             'keys.auth' => 'required|string|max:255',
             'contentEncoding' => 'nullable|in:aes128gcm,aesgcm',
+            'device_id' => 'nullable|uuid',
+            'platform' => 'nullable|string|max:80',
+            'browser' => 'nullable|string|max:80',
         ]);
         if ($validator->fails()) {
             return response()->json(['status' => 'error', 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
@@ -776,10 +780,14 @@ class CustomerPortalController extends Controller
                 'public_key' => trim((string) data_get($request->input('keys'), 'p256dh')),
                 'auth_token' => trim((string) data_get($request->input('keys'), 'auth')),
                 'content_encoding' => $request->input('contentEncoding', 'aes128gcm'),
+                'device_id' => $request->input('device_id'),
+                'platform' => $request->input('platform'),
+                'browser' => $request->input('browser'),
                 'user_agent' => mb_substr((string) $request->userAgent(), 0, 512),
                 'last_used_at' => now(),
                 'failed_at' => null,
                 'failure_reason' => null,
+                'revoked_at' => null,
             ],
         );
 
@@ -805,9 +813,29 @@ class CustomerPortalController extends Controller
         CustomerWebPushSubscription::query()
             ->where('customer_id', $customer->id)
             ->where('endpoint', trim($request->string('endpoint')->toString()))
-            ->delete();
+            ->update(['revoked_at' => now(), 'last_used_at' => now()]);
 
         return response()->json(['status' => 'success', 'message' => 'Billing and service alerts are disabled for this device.']);
+    }
+
+    /**
+     * A click is recorded only for a notification belonging to this authenticated
+     * portal account. Notification URLs never authorize access by themselves.
+     */
+    public function markPushNotificationClicked(Request $request, string $notificationId): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (!preg_match('/^[0-9a-f-]{36}$/i', $notificationId)) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid notification reference.'], 422);
+        }
+
+        $this->webPushNotificationService->markClicked($customer, $notificationId);
+
+        return response()->json(['status' => 'success']);
     }
 
     protected function profileChangePayload(CustomerProfileChangeRequest $change): array

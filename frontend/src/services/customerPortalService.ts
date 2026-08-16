@@ -203,6 +203,7 @@ export const customerPortalService = {
   getPushNotificationStatus: async (): Promise<{
     enabled: boolean;
     subscribed: boolean;
+    subscription_count: number;
     reason: string | null;
     public_key: string | null;
   }> => {
@@ -218,6 +219,10 @@ export const customerPortalService = {
   unsubscribePushNotifications: async (endpoint: string): Promise<{ status: string; message: string }> => {
     const response = await api.delete('/customer-portal/push-notifications/subscribe', { data: { endpoint } });
     return response.data;
+  },
+
+  markPushNotificationClicked: async (notificationId: string): Promise<void> => {
+    await api.post(`/customer-portal/push-notifications/${encodeURIComponent(notificationId)}/clicked`);
   },
 
   startLocationCapture: async (): Promise<{ token: string; expires_at: string; onu_reference: string }> => {

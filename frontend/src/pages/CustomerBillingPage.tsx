@@ -18,7 +18,16 @@ export default function CustomerBillingPage(): React.JSX.Element {
   useEffect(() => {
     const load = async (): Promise<void> => {
       try {
-        const returnedFromPayment = new URLSearchParams(location.search).get('payment') === 'success';
+        const query = new URLSearchParams(location.search);
+        const notificationId = query.get('notification');
+        if (notificationId && /^[0-9a-f-]{36}$/i.test(notificationId)) {
+          // Server-side ownership is checked before the audit log is updated.
+          void customerPortalService.markPushNotificationClicked(notificationId).catch(() => undefined);
+          query.delete('notification');
+          const remaining = query.toString();
+          window.history.replaceState({}, '', `/customer/billing${remaining ? `?${remaining}` : ''}`);
+        }
+        const returnedFromPayment = query.get('payment') === 'success';
         if (returnedFromPayment) {
           const result = await customerPortalService.reconcileLatestGcashCheckout();
           if (result.paid) setNotice('Your GCash payment was confirmed and has been applied to your account.');

@@ -320,6 +320,7 @@ Route::prefix('v1')->group(function () {
             Route::get('push-notifications/status', [CustomerPortalController::class, 'pushNotificationStatus']);
             Route::post('push-notifications/subscribe', [CustomerPortalController::class, 'subscribePushNotifications'])->middleware('throttle:6,1');
             Route::delete('push-notifications/subscribe', [CustomerPortalController::class, 'unsubscribePushNotifications'])->middleware('throttle:6,1');
+            Route::post('push-notifications/{notificationId}/clicked', [CustomerPortalController::class, 'markPushNotificationClicked'])->middleware('throttle:30,1');
         });
     });
 });

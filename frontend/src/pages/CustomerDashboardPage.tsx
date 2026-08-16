@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Home,
   FileText,
   CreditCard,
   User,
   LogOut,
   DollarSign,
-  Calendar,
   AlertCircle,
   KeyRound,
   Wifi,
@@ -39,6 +37,18 @@ const CustomerDashboardPage: React.FC = () => {
   useEffect(() => {
     fetchDashboardData();
     void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const notificationId = new URLSearchParams(window.location.search).get('notification');
+    if (!notificationId || !/^[0-9a-f-]{36}$/i.test(notificationId)) return;
+
+    // The server verifies the bearer session owns this notification log. The
+    // query value only records a click; it never grants account access.
+    void customerPortalService.markPushNotificationClicked(notificationId).catch(() => undefined);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('notification');
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
   const fetchDashboardData = async () => {

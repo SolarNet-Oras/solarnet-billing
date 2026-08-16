@@ -261,6 +261,11 @@ class CustomerController extends Controller
             'dhcp_lease' => $lease,
             'invoices' => $customer->invoices()->latest('issue_date')->limit(20)->get(['id', 'invoice_number', 'issue_date', 'due_date', 'total', 'paid_amount', 'balance', 'status']),
             'payments' => $customer->payments()->with('invoice:id,invoice_number')->latest('payment_date')->limit(20)->get(['id', 'invoice_id', 'amount', 'payment_method', 'payment_date', 'reference', 'transaction_id']),
+            'notification_logs' => $customer->notificationLogs()
+                ->with('subscription:id,device_id,platform,browser,last_used_at,revoked_at')
+                ->latest()
+                ->limit(20)
+                ->get(['id', 'subscription_id', 'notification_type', 'title', 'route', 'status', 'sent_at', 'delivered_at', 'clicked_at', 'failure_reason', 'created_at']),
             'location_events' => $customer->locationEvents()->latest()->limit(20)->get(['id', 'source', 'action', 'accuracy_meters', 'created_at']),
         ]);
     }

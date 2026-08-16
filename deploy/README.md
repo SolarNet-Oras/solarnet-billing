@@ -88,7 +88,9 @@ The deployment seeds this account only when both `ADMIN_EMAIL` and `ADMIN_PASSWO
 
 ## Optional customer browser notifications
 
-SolarNet can send an account-specific push notification when a subscribed customer has an invoice reminder or enters suspension. This is **not** sent from MikroTik or inferred from a DHCP lease. A customer must first sign in to the portal on their own device and choose **Enable billing alerts**. Tapping an alert opens that customer portal account.
+SolarNet can send account-specific push notifications for 7/3/1-day billing reminders, due day, overdue/grace/suspension warnings, suspension, verified payment, and service restoration. This is **not** sent from MikroTik or inferred from a DHCP lease. A customer must first sign in to the portal on their own device and choose **Enable billing alerts**. Tapping an alert opens an internal customer portal route, where the server still verifies the portal session owns the account.
+
+Each enabled browser is stored as a separate active subscription. Delivery attempts are kept in the customer notification audit log and are deduplicated per customer, event, billing item, scheduled date, and browser subscription. An expired provider subscription is revoked rather than reused. Browser Web Push can record provider acceptance and a portal click, but cannot prove that the operating system visibly displayed an alert.
 
 Install the server-side Web Push library once, from the production `deploy` directory:
 
@@ -113,12 +115,19 @@ WEB_PUSH_VAPID_PUBLIC_KEY=generated-public-key
 WEB_PUSH_VAPID_PRIVATE_KEY=generated-private-key
 ```
 
-Restart through the regular deployment command so the backend, queue worker, and scheduler load the new configuration. A server-side test that does not modify any router is available after a customer has enabled alerts:
+Restart through the regular deployment command so the backend, queue worker, and scheduler load the new configuration. A server-side test that does not modify any router is available after a customer has enabled alerts. First list the actual account numbers; do not type the literal placeholder `CUSTOMER_ACCOUNT_NUMBER`:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
-  php artisan web-push:test CUSTOMER_ACCOUNT_NUMBER
+  php artisan tinker --execute='dump(App\Models\Customer::orderBy("full_name")->get(["account_number","full_name"])->toArray());'
 ```
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
+  php artisan web-push:test ACTUAL_ACCOUNT_NUMBER
+```
+
+You can also run `php artisan web-push:test` with no account argument to list available account numbers. For `sent`, the selected customer must have already signed in on that device and enabled alerts. `skipped_no_subscription` means no active device subscription exists; `skipped_not_configured` means the VAPID package or environment values are missing.
 
 ## 6. Point MikroTik at the new server
 

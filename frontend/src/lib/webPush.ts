@@ -5,7 +5,12 @@ export interface BrowserPushSubscriptionPayload {
     auth: string;
   };
   contentEncoding?: 'aes128gcm' | 'aesgcm';
+  device_id?: string;
+  platform?: string;
+  browser?: string;
 }
+
+const DEVICE_ID_KEY = 'solarnet.customer_push_device_id';
 
 export const supportsWebPush = (): boolean => (
   'serviceWorker' in navigator
@@ -41,7 +46,45 @@ const payloadFromSubscription = (subscription: PushSubscription): BrowserPushSub
     endpoint: subscription.endpoint,
     keys: { p256dh, auth },
     contentEncoding: 'aes128gcm',
+    device_id: customerPushDeviceId(),
+    platform: browserPlatform(),
+    browser: browserName(),
   };
+};
+
+const customerPushDeviceId = (): string | undefined => {
+  try {
+    const existing = window.localStorage.getItem(DEVICE_ID_KEY);
+    if (existing) return existing;
+    const value = window.crypto?.randomUUID?.();
+    if (!value) return undefined;
+    window.localStorage.setItem(DEVICE_ID_KEY, value);
+    return value;
+  } catch {
+    // Device labels are optional metadata; a browser subscription endpoint is
+    // still sufficient for delivery when local storage is unavailable.
+    return undefined;
+  }
+};
+
+const browserPlatform = (): string | undefined => {
+  const source = navigator.userAgent || '';
+  if (/android/i.test(source)) return 'Android';
+  if (/iphone|ipad|ipod/i.test(source)) return 'iOS';
+  if (/windows/i.test(source)) return 'Windows';
+  if (/mac os/i.test(source)) return 'macOS';
+  if (/linux/i.test(source)) return 'Linux';
+  return undefined;
+};
+
+const browserName = (): string | undefined => {
+  const source = navigator.userAgent || '';
+  if (/edg\//i.test(source)) return 'Microsoft Edge';
+  if (/firefox\//i.test(source)) return 'Firefox';
+  if (/opr\//i.test(source)) return 'Opera';
+  if (/chrome\//i.test(source) && !/edg\//i.test(source)) return 'Chrome';
+  if (/safari\//i.test(source) && !/chrome\//i.test(source)) return 'Safari';
+  return undefined;
 };
 
 export const currentWebPushSubscription = async (): Promise<BrowserPushSubscriptionPayload | null> => {
