@@ -6,6 +6,8 @@ interface RouterQosMonitorProps {
   routers: Router[];
 }
 
+type QosMode = 'safe' | 'full';
+
 const formatRate = (bps: number | null | undefined) => {
   if (bps === null || bps === undefined) return 'Awaiting sample';
   if (bps < 1_000) return `${bps} bps`;
@@ -26,6 +28,7 @@ const describeQosError = (error: unknown) => {
 
 export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
   const [routerId, setRouterId] = useState('');
+  const [qosMode, setQosMode] = useState<QosMode>('safe');
   const [inspection, setInspection] = useState<RouterQosInspection | null>(null);
   const [analysis, setAnalysis] = useState<RouterQosAnalysis | null>(null);
   const [deployments, setDeployments] = useState<RouterQosDeployment[]>([]);
@@ -58,7 +61,7 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
     if (!routerId && routers.length) setRouterId(routers[0].id);
   }, [routerId, routers]);
 
-  const load = useCallback(async (withClients = true) => {
+  const load = useCallback(async (withClients = true, modeToValidate?: QosMode) => {
     if (!routerId) return;
     setLoading(true);
     setMessage(null);
@@ -76,6 +79,10 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
       const knownWan = status.inspection.wan_candidates.find((wan) => wan.interface)?.interface || '';
       setDownloadParent((current) => current || clientParent);
       setUploadParent((current) => current || knownWan);
+      if (modeToValidate && !status.analysis[modeToValidate].available) {
+        const modeName = modeToValidate === 'safe' ? 'Safe QoS' : 'Full QoS';
+        failures.push(`${modeName} cannot be deployed on this router. No RouterOS change was made. ${status.analysis[modeToValidate].reasons.join(' ')}`);
+      }
     } catch (error) {
       failures.push(`RouterOS QoS inspection failed: ${describeQosError(error)}`);
     }
@@ -108,16 +115,15 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
 
   useEffect(() => {
     setInspection(null); setAnalysis(null); setDeployments([]); setMetrics(null); setClients([]); setPreview(null); setPreviewDeployment(null); setSafePreview(null); setSafePreviewDeployment(null); setMessage(null); setDownloadParent(''); setUploadParent('');
-    if (routerId) void load();
   }, [routerId, load]);
 
   useEffect(() => {
-    if (!routerId) return;
+    if (!routerId || !inspection) return;
     const interval = window.setInterval(async () => {
       try { setMetrics(await routerService.qosMetrics(routerId)); } catch { /* keep the last actual sample visible */ }
     }, 5_000);
     return () => window.clearInterval(interval);
-  }, [routerId]);
+  }, [routerId, inspection]);
 
   const handlePreview = async () => {
     if (!selectedRouter) return;
@@ -235,7 +241,7 @@ export function RouterQosMonitor({ routers }: RouterQosMonitorProps) {
   if (routers.length === 0) return null;
 
   return <section className="mt-5 rounded-2xl border border-indigo-400/25 bg-slate-950/75 p-5 text-slate-100">
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2"><Gauge className="h-5 w-5 text-indigo-300" /><h3 className="font-semibold text-indigo-100">QoS monitor & safe deployment</h3></div><p className="mt-1 max-w-3xl text-xs text-slate-400">Read the actual router first. SolarNet preserves billing-created client Simple Queues and never overwrites firewall, mangle, VLAN, DHCP, routing, WireGuard, or failover configuration.</p></div><div className="flex items-center gap-2"><label className="text-xs text-slate-400" htmlFor="qos-router">Router</label><select id="qos-router" value={routerId} onChange={(event) => setRouterId(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white">{routers.map((router) => <option key={router.id} value={router.id}>{router.name}</option>)}</select><button onClick={() => void load()} disabled={loading} className="rounded-lg border border-indigo-400/30 px-3 py-2 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/10 disabled:opacity-50">{loading ? 'Reading...' : 'Inspect router'}</button></div></div>
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2"><Gauge className="h-5 w-5 text-indigo-300" /><h3 className="font-semibold text-indigo-100">QoS monitor & safe deployment</h3></div><p className="mt-1 max-w-3xl text-xs text-slate-400">Choose a QoS mode, then inspect the actual router. Choosing a mode does not change RouterOS; it only decides which safety checks and deployment path you want to review.</p></div><div className="flex flex-col gap-2 lg:items-end"><div className="flex flex-wrap items-center gap-2" role="group" aria-label="QoS mode"><span className="text-xs text-slate-400">QoS mode</span><button type="button" onClick={() => setQosMode('safe')} aria-pressed={qosMode === 'safe'} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${qosMode === 'safe' ? 'border-emerald-400/55 bg-emerald-500/20 text-emerald-100' : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-emerald-400/35'}`}>Safe QoS</button><button type="button" onClick={() => setQosMode('full')} aria-pressed={qosMode === 'full'} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${qosMode === 'full' ? 'border-amber-400/55 bg-amber-500/20 text-amber-100' : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-amber-400/35'}`}>Full QoS</button></div><div className="flex items-center gap-2"><label className="text-xs text-slate-400" htmlFor="qos-router">Router</label><select id="qos-router" value={routerId} onChange={(event) => setRouterId(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white">{routers.map((router) => <option key={router.id} value={router.id}>{router.name}</option>)}</select><button onClick={() => void load(true, qosMode)} disabled={loading} className="rounded-lg border border-indigo-400/30 px-3 py-2 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/10 disabled:opacity-50">{loading ? 'Reading...' : `Inspect ${qosMode === 'safe' ? 'Safe' : 'Full'} QoS`}</button></div></div></div>
 
     {message && <div className={`mt-4 rounded-lg border p-3 text-sm ${message.success ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100' : 'border-red-400/25 bg-red-500/10 text-red-100'}`}>{message.text}</div>}
 
