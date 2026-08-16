@@ -58,6 +58,11 @@ class SettingsController extends Controller
         // Saved by the guarded Router DNS Management workflow. It is not a
         // public DNS zone and never changes the WAN/public IP configuration.
         'dns_domain' => ['cast' => 'string', 'group' => 'network', 'label' => 'Internal DNS Domain', 'default' => 'solarnet.local'],
+
+        // SolarNet's own speed-test UI branding. This does not alter a
+        // visitor's public IP, ISP, ASN, routing, or external provider record.
+        'speedtest.provider_display_name' => ['cast' => 'string', 'group' => 'speedtest', 'label' => 'Provider Display Name', 'default' => null],
+        'speedtest.enabled' => ['cast' => 'bool', 'group' => 'speedtest', 'label' => 'Enable public Speedtest identity', 'default' => true],
     ];
 
     public function index(Request $request): JsonResponse
@@ -66,7 +71,7 @@ class SettingsController extends Controller
         foreach (self::SCHEMA as $key => $meta) {
             $data[] = [
                 'key'         => $key,
-                'value'       => $key === 'ai.model' ? config('openai.model') : Setting::get($key, $meta['default']),
+                'value'       => $this->settingValue($key, $meta),
                 'cast'        => $meta['cast'],
                 'group'       => $meta['group'],
                 'label'       => $meta['label'],
@@ -138,6 +143,9 @@ class SettingsController extends Controller
             if ($key === 'company.facebook_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
                 return response()->json(['status' => 'error', 'message' => 'Facebook Support Page must be a valid URL.'], 422);
             }
+            if ($key === 'speedtest.provider_display_name' && !$this->validSpeedtestProviderName((string) $value)) {
+                return response()->json(['status' => 'error', 'message' => 'Provider Display Name must be 2 to 80 printable characters.'], 422);
+            }
             Setting::put($key, $value, $meta['cast']);
             $applied[] = $key;
         }
@@ -203,5 +211,24 @@ class SettingsController extends Controller
             if ($label === '' || strlen($label) > 63 || preg_match('/^(?!-)[a-z0-9-]+(?<!-)$/', $label) !== 1) return false;
         }
         return true;
+    }
+
+    /** @param array{default:mixed} $meta */
+    private function settingValue(string $key, array $meta): mixed
+    {
+        if ($key === 'ai.model') return config('openai.model');
+        if ($key === 'speedtest.provider_display_name') {
+            return Setting::get($key, config('speedtest.provider_name'));
+        }
+
+        return Setting::get($key, $meta['default']);
+    }
+
+    private function validSpeedtestProviderName(string $name): bool
+    {
+        $name = trim($name);
+        return mb_strlen($name) >= 2
+            && mb_strlen($name) <= 80
+            && preg_match('/[\p{C}]/u', $name) !== 1;
     }
 }

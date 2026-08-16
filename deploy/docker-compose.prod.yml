@@ -83,6 +83,9 @@ services:
       SESSION_DRIVER: redis
       QUEUE_CONNECTION: redis
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      # PHP-FPM is reachable only through backend-nginx, which is reached only
+      # through Caddy. Caddy replaces forwarded client headers before proxying.
+      TRUSTED_PROXIES: "*"
     depends_on:
       postgres:
         condition: service_healthy

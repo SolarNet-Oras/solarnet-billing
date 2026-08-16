@@ -16,7 +16,14 @@
         path /docs*
     }
     handle @api {
-        reverse_proxy backend-nginx:80
+        reverse_proxy backend-nginx:80 {
+            # Replace any client-supplied forwarding header with the address
+            # Caddy itself observed. Laravel receives this only through the
+            # Docker-internal nginx proxy.
+            header_up X-Forwarded-For {http.request.remote.host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
 
     # Everything else -> React SPA

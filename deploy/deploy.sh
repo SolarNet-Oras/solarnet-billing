@@ -79,6 +79,11 @@ JWT_ALGO=${JWT_ALGO:-HS256}
 
 CORS_ALLOWED_ORIGINS=https://${DOMAIN}
 
+# Application-facing Speedtest branding. This does not change the detected
+# visitor IP, WAN, routing, DNS, MikroTik configuration, or public ASN.
+SPEEDTEST_PROVIDER_NAME="${SPEEDTEST_PROVIDER_NAME:-}"
+SPEEDTEST_ENABLED=${SPEEDTEST_ENABLED:-true}
+
 BCRYPT_ROUNDS=12
 APP_MAINTENANCE_DRIVER=file
 EOF
