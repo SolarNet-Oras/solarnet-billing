@@ -152,7 +152,12 @@ class RouterQosService
 
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
         if (!$analysis['safe']['available']) {
-            return ['success' => false, 'message' => 'Safe QoS is not applicable on this router. ' . implode(' ', $analysis['safe']['reasons'])];
+            return [
+                'success' => false,
+                'code' => 'SAFE_QOS_NOT_APPLICABLE',
+                'message' => 'Safe QoS cannot be deployed on this router. No RouterOS change was made. ' . implode(' ', $analysis['safe']['reasons']),
+                'data' => ['analysis' => $analysis, 'deployment_blocked' => true],
+            ];
         }
 
         $customer = Customer::query()->where('id', $input['customer_id'])->where('router_id', $router->id)->first();
@@ -222,7 +227,14 @@ class RouterQosService
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
-        if (!$analysis['safe']['available']) return ['success' => false, 'message' => 'Safe QoS is no longer applicable. No queue was changed. ' . implode(' ', $analysis['safe']['reasons'])];
+        if (!$analysis['safe']['available']) {
+            return [
+                'success' => false,
+                'code' => 'SAFE_QOS_NOT_APPLICABLE',
+                'message' => 'Safe QoS can no longer be deployed on this router. No queue was changed. ' . implode(' ', $analysis['safe']['reasons']),
+                'data' => ['analysis' => $analysis, 'deployment_blocked' => true],
+            ];
+        }
 
         $queueResult = $this->mikrotikService->readManagedCustomerQueue($router, $customer);
         if (!$queueResult['success']) return $queueResult;
