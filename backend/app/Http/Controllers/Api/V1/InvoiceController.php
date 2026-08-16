@@ -133,6 +133,11 @@ class InvoiceController extends Controller
             $invoice->save();
         }
 
+        // A newly created invoice becomes a sent invoice only after its final
+        // due date, discount, and notes are stored. This sends the one-time
+        // PDF email without risking an incomplete attachment.
+        $this->invoiceService->markAsSent($invoice->fresh(['customer', 'items', 'payments']));
+
         return response()->json([
             'message' => 'Invoice generated successfully',
             'invoice' => $invoice->fresh(['customer', 'items', 'payments']),

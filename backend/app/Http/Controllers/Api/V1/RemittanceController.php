@@ -144,7 +144,8 @@ class RemittanceController extends Controller
 
         $start = Carbon::today();
         $invoice = $invoices->generateInvoice($customer, $start, $start->copy()->addMonthNoOverflow()->subDay(), [], now(), now());
-        $invoice->update(['status' => 'sent', 'notes' => 'Early payment invoice created by collector.']);
+        $invoice->update(['notes' => 'Early payment invoice created by collector.']);
+        $invoices->markAsSent($invoice->fresh(['customer', 'items', 'payments']));
 
         return response()->json(['message' => 'Early payment invoice created.', 'invoice' => $invoice->fresh(['customer', 'items'])], 201);
     }

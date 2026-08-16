@@ -10,8 +10,10 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Services\BillingSuspensionService;
 use Carbon\Carbon;
+use Illuminate\Mail\Message;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 
 class InvoiceService
@@ -277,17 +279,79 @@ class InvoiceService
     }
 
     /**
-     * Mark invoice as sent
-     * 
-     * @param Invoice $invoice
-     * @return void
+     * Mark an invoice as sent and deliver its first invoice email once.
+     *
+     * Recurring invoices are generated seven days before their due date, so
+     * this is the creation-time email. Repeated scheduler/manual calls do not
+     * create another initial invoice email after sent_at has been recorded.
      */
     public function markAsSent(Invoice $invoice): void
     {
+        if ($invoice->sent_at !== null) {
+            return;
+        }
+
         $invoice->update([
             'status' => 'sent',
             'sent_at' => now(),
         ]);
+
+        $this->sendInitialInvoiceEmail($invoice->fresh(['customer', 'items', 'payments']));
+    }
+
+    /**
+     * SMTP delivery is deliberately best-effort: a mail issue must never roll
+     * back invoice creation, billing dates, payment credits, or MikroTik sync.
+     *
+     * @return 'sent'|'skipped_no_email'|'skipped_no_balance'|'failed'
+     */
+    public function sendInitialInvoiceEmail(Invoice $invoice): string
+    {
+        $invoice->loadMissing(['customer', 'items', 'payments']);
+        $customer = $invoice->customer;
+        if (!$customer || blank($customer->email)) {
+            return 'skipped_no_email';
+        }
+        if ((float) $invoice->balance <= 0) {
+            return 'skipped_no_balance';
+        }
+
+        $company = (string) Setting::get('company.name', 'Solarnet Internet');
+        $currency = (string) Setting::get('company.currency', 'PHP ');
+        $subject = "Your SolarNet invoice {$invoice->invoice_number}";
+        $body = "Hi {$customer->full_name},\n\n"
+            . "Your SolarNet invoice is now available.\n\n"
+            . "Invoice   : {$invoice->invoice_number}\n"
+            . 'Due date  : ' . $invoice->due_date->format('Y-m-d') . "\n"
+            . 'Amount due: ' . $currency . number_format((float) $invoice->balance, 2) . "\n\n"
+            . "A PDF copy is attached. Please settle on or before the due date to avoid service interruption.\n\n"
+            . "Thank you,\n{$company}\n";
+
+        try {
+            $pdf = $this->generatePdf($invoice)->output();
+            Mail::raw($body, function (Message $message) use ($customer, $subject, $pdf, $invoice) {
+                $message->to($customer->email, $customer->full_name)
+                    ->subject($subject)
+                    ->attachData($pdf, "invoice-{$invoice->invoice_number}.pdf", ['mime' => 'application/pdf']);
+            });
+
+            Log::info('Initial invoice email sent', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $customer->id,
+            ]);
+
+            return 'sent';
+        } catch (\Throwable $e) {
+            Log::warning('Initial invoice email failed', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 'failed';
+        }
     }
 
     /**
