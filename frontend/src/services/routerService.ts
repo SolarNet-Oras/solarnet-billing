@@ -6,6 +6,7 @@ import { api } from './api';
 const ROUTER_PROVISIONING_DISCOVERY_TIMEOUT = 120_000;
 const ROUTER_PROVISIONING_APPLY_TIMEOUT = 180_000;
 const ROUTER_THREAT_SCAN_TIMEOUT = 60_000;
+const ROUTER_BILLING_INSTALL_TIMEOUT = 180_000;
 
 export interface Router {
   id: string;
@@ -409,7 +410,11 @@ export const routerService = {
   },
 
   async installBillingAccess(id: string): Promise<{ success: boolean; message: string; rules_installed?: number }> {
-    const response = await api.post(`/routers/${id}/billing-access/install`);
+    const response = await api.post(
+      `/routers/${id}/billing-access/install`,
+      undefined,
+      { timeout: ROUTER_BILLING_INSTALL_TIMEOUT },
+    );
     return response.data;
   },
 

@@ -85,7 +85,14 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
       const result = await routerService.installBillingAccess(router.id);
       setBillingResult({ id: router.id, success: result.success, message: result.message });
     } catch (error: any) {
-      setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to install billing access rules.' });
+      const timedOut = error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''));
+      setBillingResult({
+        id: router.id,
+        success: false,
+        message: timedOut
+          ? 'Billing-rule installation exceeded the three-minute browser limit. Do not click Install again; wait one minute, then use Verify billing access to check whether the router completed the idempotent update.'
+          : error.response?.data?.message || error.message || 'Failed to install billing access rules.',
+      });
     } finally {
       setBillingActionId(null);
     }
