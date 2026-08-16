@@ -82,6 +82,12 @@ export interface RouterProvisioningDiscovery {
   fq_codel_available: boolean;
   fasttrack_enabled: boolean;
   default_firewall_preserved: boolean;
+  baseline_connectivity: {
+    masquerade_nat_rules: number;
+    api_input_rules: number;
+    api_service_ports: string[];
+    warnings: string[];
+  };
   existing_solarnet_detected: boolean;
   pppoe_detected: boolean;
   blockers: string[];

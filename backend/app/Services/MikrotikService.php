@@ -207,6 +207,7 @@ class MikrotikService
             $filters = $read('/ip/firewall/filter/print');
             $nat = $read('/ip/firewall/nat/print');
             $mangle = $read('/ip/firewall/mangle/print');
+            $services = $read('/ip/service/print');
             $simpleQueues = $read('/queue/simple/print');
             $queueTrees = $read('/queue/tree/print');
             $queueTypes = $read('/queue/type/print');
@@ -244,16 +245,31 @@ class MikrotikService
             }
 
             $isDefaultRule = fn (array $rule): bool => $rule === [] || preg_match('/defconf|default configuration|default rule/i', (string) ($rule['comment'] ?? '')) === 1;
-            $customFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule)));
-            $customNat = array_values(array_filter($nat, fn (array $rule) => !$isDefaultRule($rule)));
+            $apiPorts = array_values(array_unique(array_filter(array_map(
+                fn (array $service) => strtolower((string) ($service['name'] ?? '')) === 'api' && ($service['disabled'] ?? 'false') !== 'true' ? (string) ($service['port'] ?? '') : null,
+                $services,
+            ))));
+            $baselineMasqueradeNat = array_values(array_filter($nat, fn (array $rule) => self::isBaselineMasqueradeNat($rule)));
+            $baselineApiRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineApiFirewallRule($rule, $apiPorts)));
+            $unacceptedFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineApiFirewallRule($rule, $apiPorts)));
+            $unacceptedNat = array_values(array_filter($nat, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineMasqueradeNat($rule)));
             $customRoutes = array_values(array_filter($routes, fn (array $route) => ($route['dynamic'] ?? 'false') !== 'true' && !in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true)));
             $customPppProfiles = array_values(array_filter($pppProfiles, fn (array $profile) => !in_array(strtolower((string) ($profile['name'] ?? '')), ['default', 'default-encryption'], true)));
             // RouterOS commonly includes the default HotSpot profile even before
             // HotSpot is configured. Only an actual HotSpot server or a custom
             // profile makes the clean-router workflow unsafe to continue.
             $customHotspotProfiles = array_values(array_filter($hotspotProfiles, fn (array $profile) => strtolower((string) ($profile['name'] ?? '')) !== 'default'));
-            $hasSolarNet = $this->containsSolarNetMarker(array_merge($filters, $nat, $mangle, $simpleQueues, $queueTrees, $hotspots, $scripts, $schedulers));
+            // The minimal API input rule may be labelled SolarNet. It is
+            // connectivity baseline, not an existing customer/billing setup.
+            $hasSolarNet = $this->containsSolarNetMarker(array_merge($unacceptedFirewall, $unacceptedNat, $mangle, $simpleQueues, $queueTrees, $hotspots, $scripts, $schedulers));
             $pppoeDetected = count($pppoeServers) + count($pppoeClients) + count($pppSecrets) > 0;
+            $baselineWarnings = [];
+            foreach ($baselineApiRules as $rule) {
+                if (empty($rule['src-address']) && empty($rule['src-address-list'])) {
+                    $baselineWarnings[] = 'The preserved API input rule has no source restriction. Restrict access at the VPN or port-forward gateway.';
+                    break;
+                }
+            }
 
             $blockers = [];
             if ($errors !== []) $blockers[] = 'Router discovery is incomplete. SolarNet will not provision a router when a required RouterOS area cannot be read.';
@@ -263,7 +279,7 @@ class MikrotikService
             if ($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) $blockers[] = 'Existing DHCP server, pool, or network configuration was detected.';
             if ($simpleQueues !== [] || $queueTrees !== []) $blockers[] = 'Existing Simple Queue or Queue Tree configuration was detected.';
             if ($mangle !== []) $blockers[] = 'Existing firewall mangle rules were detected.';
-            if ($customFirewall !== [] || $customNat !== []) $blockers[] = 'Existing non-default firewall or NAT rules were detected.';
+            if ($unacceptedFirewall !== [] || $unacceptedNat !== []) $blockers[] = 'Existing non-baseline firewall or NAT rules were detected. Only standard srcnat masquerade and a TCP input allow rule for the enabled RouterOS API port are accepted.';
             if ($customRoutes !== [] || $routingRules !== [] || count($routingTables) > 1) $blockers[] = 'Existing production routing, policy routing, or additional routing tables were detected.';
             if ($wireguard !== []) $blockers[] = 'Existing WireGuard configuration was detected. SolarNet will not alter or build on an existing VPN router automatically.';
             if ($scripts !== [] || $schedulers !== []) $blockers[] = 'Existing RouterOS scripts or schedulers were detected.';
@@ -290,7 +306,7 @@ class MikrotikService
                     'wan_auto_detected' => count($wanCandidates) === 1 && !empty($wanCandidates[0]['interface']),
                     'counts' => [
                         'vlans' => count($vlans), 'ip_addresses' => count($addresses), 'dhcp_servers' => count($dhcpServers), 'dhcp_clients' => count($dhcpClients), 'dhcp_pools' => count($dhcpPools),
-                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'mangle' => count($mangle),
+                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'baseline_masquerade_nat_rules' => count($baselineMasqueradeNat), 'baseline_api_input_rules' => count($baselineApiRules), 'unaccepted_firewall_rules' => count($unacceptedFirewall), 'unaccepted_nat_rules' => count($unacceptedNat), 'mangle' => count($mangle),
                         'simple_queues' => count($simpleQueues), 'queue_trees' => count($queueTrees), 'queue_types' => count($queueTypes),
                         'hotspots' => count($hotspots), 'custom_hotspot_profiles' => count($customHotspotProfiles), 'pppoe_servers' => count($pppoeServers), 'pppoe_clients' => count($pppoeClients),
                         'ppp_secrets' => count($pppSecrets), 'custom_ppp_profiles' => count($customPppProfiles), 'wireguard' => count($wireguard),
@@ -298,7 +314,13 @@ class MikrotikService
                     ],
                     'fq_codel_available' => (bool) array_filter($queueTypes, fn (array $type) => str_contains(strtolower((string) (($type['name'] ?? '') . ' ' . ($type['kind'] ?? ''))), 'fq-codel')),
                     'fasttrack_enabled' => (bool) array_filter($filters, fn (array $rule) => ($rule['disabled'] ?? 'false') !== 'true' && ($rule['action'] ?? '') === 'fasttrack-connection'),
-                    'default_firewall_preserved' => $customFirewall === [] && $customNat === [],
+                    'default_firewall_preserved' => $unacceptedFirewall === [] && $unacceptedNat === [],
+                    'baseline_connectivity' => [
+                        'masquerade_nat_rules' => count($baselineMasqueradeNat),
+                        'api_input_rules' => count($baselineApiRules),
+                        'api_service_ports' => $apiPorts,
+                        'warnings' => $baselineWarnings,
+                    ],
                     'existing_solarnet_detected' => $hasSolarNet,
                     'pppoe_detected' => $pppoeDetected,
                     'blockers' => $blockers,
@@ -363,6 +385,33 @@ class MikrotikService
     private static function provisioningComment(string $resource): string
     {
         return 'SolarNet Provisioning: ' . $resource;
+    }
+
+    /**
+     * A basic Internet uplink needs source NAT. Accept only an enabled,
+     * unmodified source-NAT masquerade rule here; destination NAT, port
+     * forwarding, protocol/port matching, address translation, and mangle
+     * remain production configuration and keep the router out of this wizard.
+     */
+    private static function isBaselineMasqueradeNat(array $rule): bool
+    {
+        if (($rule['disabled'] ?? 'false') === 'true') return false;
+        if (($rule['chain'] ?? '') !== 'srcnat' || ($rule['action'] ?? '') !== 'masquerade') return false;
+
+        foreach (['protocol', 'src-port', 'dst-port', 'src-address', 'dst-address', 'in-interface', 'in-interface-list', 'to-addresses', 'to-ports'] as $field) {
+            if (!empty($rule[$field])) return false;
+        }
+
+        return true;
+    }
+
+    /** Preserve a narrow RouterOS API allow rule that keeps the verified app connection reachable. */
+    private static function isBaselineApiFirewallRule(array $rule, array $apiPorts): bool
+    {
+        if (($rule['disabled'] ?? 'false') === 'true') return false;
+        if (($rule['chain'] ?? '') !== 'input' || ($rule['action'] ?? '') !== 'accept' || strtolower((string) ($rule['protocol'] ?? '')) !== 'tcp') return false;
+
+        return in_array((string) ($rule['dst-port'] ?? ''), $apiPorts, true);
     }
 
     private function containsSolarNetMarker(array $rows): bool
