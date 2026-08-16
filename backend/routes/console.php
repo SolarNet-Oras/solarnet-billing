@@ -36,7 +36,8 @@ Schedule::command('automation:db-backup')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 08:00 — payment reminders (pre-due + overdue follow-ups)
+// 08:00 — daily web-push reminders for unpaid invoices. Initial invoice
+// emails are sent once when an invoice is created, not by this reminder job.
 Schedule::command('automation:invoice-reminders')
     ->dailyAt('08:00')
     ->timezone($tz)

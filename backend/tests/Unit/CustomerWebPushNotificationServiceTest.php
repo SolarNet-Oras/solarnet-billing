@@ -18,7 +18,7 @@ class CustomerWebPushNotificationServiceTest extends TestCase
         $this->assertFalse(app(CustomerWebPushNotificationService::class)->isConfigured());
     }
 
-    public function test_push_schedule_covers_billing_and_grace_events_without_changing_email_sms_schedule(): void
+    public function test_daily_web_push_schedule_covers_billing_and_grace_events(): void
     {
         $command = app(SendInvoiceReminders::class);
         $method = new \ReflectionMethod($command, 'pushTypeFor');
