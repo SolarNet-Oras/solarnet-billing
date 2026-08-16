@@ -129,6 +129,27 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
 
 You can also run `php artisan web-push:test` with no account argument to list available account numbers. For `sent`, the selected customer must have already signed in on that device and enabled alerts. `skipped_no_subscription` means no active device subscription exists; `skipped_not_configured` means the VAPID package or environment values are missing.
 
+## Optional PhilSMS transactional SMS
+
+SolarNet uses PhilSMS for explicit transactional SMS only. The daily unpaid-invoice reminder remains **Web Push only**; configuring PhilSMS does not create recurring SMS messages.
+
+Create an API token and register a sender ID in the PhilSMS dashboard, then add these server-side values to `deploy/.env` (never commit or place the token in the frontend):
+
+```env
+SMS_DRIVER=philsms
+PHILSMS_API_TOKEN=your-philsms-api-token
+PHILSMS_SENDER_ID=SolarNet
+```
+
+PhilSMS supports Philippine numbers. An alphanumeric sender ID must be registered and is limited to 11 characters. Restart through the normal deployment command, then send one explicit test to a real mobile number:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
+  php artisan sms:philsms-test 09171234567
+```
+
+The command reports provider acceptance only; it does not alter billing, customer records, or MikroTik.
+
 ## 6. Point MikroTik at the new server
 
 Your new **fixed** server IP is what you got from Hetzner in step 1.

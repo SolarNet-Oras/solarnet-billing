@@ -38,14 +38,13 @@ return [
         ],
     ],
 
-    // Transactional customer reminders. Set SMS_DRIVER=twilio and the
-    // remaining values in the production .env to enable actual SMS delivery.
+    // Transactional SMS is sent through PhilSMS only when an application flow
+    // explicitly requests it. Daily billing reminders remain Web Push only.
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
-        'twilio_sid' => env('TWILIO_ACCOUNT_SID'),
-        'twilio_token' => env('TWILIO_AUTH_TOKEN'),
-        'twilio_from' => env('TWILIO_FROM_NUMBER'),
-        'default_country_code' => env('SMS_DEFAULT_COUNTRY_CODE', '+63'),
+        'philsms_api_token' => env('PHILSMS_API_TOKEN'),
+        'philsms_sender_id' => env('PHILSMS_SENDER_ID'),
+        'philsms_base_url' => env('PHILSMS_BASE_URL', 'https://app.philsms.com/api/v3'),
     ],
 
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.
