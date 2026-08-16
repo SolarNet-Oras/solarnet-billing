@@ -888,27 +888,17 @@ class MikrotikService
             // Do not retrieve the entire, detailed connection table and then
             // slice it in PHP. On a concentrator that can mean tens of
             // thousands of records and a socket timeout. RouterOS returns
-            // only the two fields needed for the read-only feed comparison;
-            // the library iterator lets us stop at the explicit safety cap.
+            // only the two fields needed for the read-only feed comparison.
+            // The RouterOS PHP client's count option is the actual response
+            // cap; its iterator alone still waits for the complete reply.
             $query = (new Query('/ip/firewall/connection/print'))
                 ->equal('.proplist', 'src-address,dst-address');
-            $connections = $client->query($query)->readAsIterator();
+            $connections = $client->query($query)->read(true, ['count' => $limit]);
             $matches = [];
-            $connectionsChecked = 0;
+            $connectionsChecked = count($connections);
 
-            for ($connections->rewind(); $connections->valid() && $connectionsChecked < $limit; $connections->next()) {
-                try {
-                    $connection = $connections->current();
-                } catch (Throwable $e) {
-                    Log::warning('Skipped unreadable RouterOS threat-feed connection entry', [
-                        'router_id' => $router->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    continue;
-                }
+            foreach ($connections as $connection) {
                 if (!is_array($connection)) continue;
-                $connectionsChecked++;
-
                 foreach (['source' => $connection['src-address'] ?? null, 'destination' => $connection['dst-address'] ?? null] as $direction => $address) {
                     $ip = $this->ipv4FromRouterAddress($address);
                     if ($ip === null || !isset($indicators[$ip])) continue;
