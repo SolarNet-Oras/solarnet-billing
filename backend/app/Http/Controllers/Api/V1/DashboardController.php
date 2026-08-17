@@ -9,6 +9,7 @@ use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Router;
+use App\Models\ServicePlan;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\MikrotikService;
@@ -51,7 +52,13 @@ class DashboardController extends Controller
                 'resolved_at', 'closed_at', 'created_at', 'updated_at',
             ]);
 
-        return response()->json(['clients' => $clients, 'tickets' => $tickets]);
+        $servicePlans = ServicePlan::query()
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->orderBy('price')
+            ->get(['id', 'name', 'download_speed', 'upload_speed', 'price']);
+
+        return response()->json(['clients' => $clients, 'tickets' => $tickets, 'service_plans' => $servicePlans]);
     }
 
     public function technicianMonitor(Request $request): JsonResponse

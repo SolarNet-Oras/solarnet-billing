@@ -66,15 +66,46 @@ type RepairForm = {
   materials_used: string;
 };
 
+type ServicePlan = {
+  id: string;
+  name: string;
+  price: number;
+  download_speed: number;
+  upload_speed: number;
+};
+
+type RegistrationForm = {
+  full_name: string;
+  address: string;
+  contact_number: string;
+  email: string;
+  installation_date: string;
+  service_plan_id: string;
+  mac_address: string;
+};
+
+type RegistrationMatch = {
+  mac_address: string;
+  ip_address: string;
+  comment?: string | null;
+  router?: string | null;
+  score: number;
+  match_type: 'exact' | 'fuzzy_90_plus';
+};
+
 const emptyRepairForm: RepairForm = {
   resolution_notes: '', findings: '', actions_performed: '', equipment_replaced: '', materials_used: '',
+};
+
+const emptyRegistrationForm: RegistrationForm = {
+  full_name: '', address: '', contact_number: '', email: '', installation_date: '', service_plan_id: '', mac_address: '',
 };
 
 const rate = (value: number | null) => value === null ? '—' : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)} Mbps` : `${(value / 1_000).toFixed(1)} Kbps`;
 const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export default function TechnicianDashboardPage() {
-  const [tab, setTab] = useState<'map' | 'traffic' | 'tickets' | 'application'>('map');
+  const [tab, setTab] = useState<'map' | 'traffic' | 'tickets' | 'application' | 'register'>('map');
   const [clients, setClients] = useState<Client[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Client | null>(null);
@@ -89,11 +120,16 @@ export default function TechnicianDashboardPage() {
   const [installationForms, setInstallationForms] = useState<Record<string, { mac_address: string; notes: string }>>({});
   const [repairForms, setRepairForms] = useState<Record<string, RepairForm>>({});
   const [ticketBusy, setTicketBusy] = useState<string | null>(null);
+  const [servicePlans, setServicePlans] = useState<ServicePlan[]>([]);
+  const [registrationForm, setRegistrationForm] = useState<RegistrationForm>(emptyRegistrationForm);
+  const [registrationMatch, setRegistrationMatch] = useState<RegistrationMatch | null>(null);
+  const [registrationBusy, setRegistrationBusy] = useState(false);
 
   const loadWorkspace = async (): Promise<void> => {
     const response = await api.get('/dashboard/technician');
     setClients(response.data.clients || []);
     setTickets(response.data.tickets || []);
+    setServicePlans(response.data.service_plans || []);
     setSelected((current) => current || response.data.clients?.[0] || null);
   };
 
@@ -166,12 +202,40 @@ export default function TechnicianDashboardPage() {
     return runTicketAction(ticket, 'repair/resolve', form, 'Repair marked resolved. Close it after the final check.');
   };
 
+  const registerClient = async (confirmFuzzyMatch = false): Promise<void> => {
+    setRegistrationBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.post('/dashboard/technician/register-client', {
+        ...registrationForm,
+        confirm_fuzzy_match: confirmFuzzyMatch,
+      });
+      await loadWorkspace();
+      setRegistrationForm(emptyRegistrationForm);
+      setRegistrationMatch(null);
+      setNotice('Client registered and matched to the current MikroTik DHCP lease.');
+    } catch (requestError: any) {
+      const body = requestError.response?.data;
+      if (requestError.response?.status === 409 && body?.requires_confirmation && body.match) {
+        setRegistrationMatch(body.match as RegistrationMatch);
+      } else {
+        const errors = body?.errors;
+        const firstError = errors ? Object.values(errors).flat()[0] : null;
+        setError(String(firstError || body?.message || 'Could not register this client.'));
+      }
+    } finally {
+      setRegistrationBusy(false);
+    }
+  };
+
   return <DashboardLayout><main className="mx-auto max-w-7xl space-y-5 p-4 md:p-6">
     <header><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Field workspace</p><h1 className="mt-1 text-2xl font-bold">Technician dashboard</h1><p className="mt-1 text-sm text-muted-foreground">Client map and live network reference, plus every available or assigned field ticket.</p></header>
     <div className="flex flex-wrap gap-2 border-b">
       <button onClick={() => setTab('map')} className={`px-4 py-2 text-sm font-semibold ${tab === 'map' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}><MapPin className="mr-1 inline h-4 w-4" />Client map</button>
       <button onClick={() => setTab('traffic')} className={`px-4 py-2 text-sm font-semibold ${tab === 'traffic' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}><Wrench className="mr-1 inline h-4 w-4" />Live traffic</button>
       <button onClick={() => setTab('tickets')} className={`px-4 py-2 text-sm font-semibold ${tab === 'tickets' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}><ClipboardList className="mr-1 inline h-4 w-4" />My tickets</button>
+      <button onClick={() => setTab('register')} className={`px-4 py-2 text-sm font-semibold ${tab === 'register' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}><UserPlus className="mr-1 inline h-4 w-4" />Register client</button>
       <button onClick={() => setTab('application')} className={`px-4 py-2 text-sm font-semibold ${tab === 'application' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}><UserPlus className="mr-1 inline h-4 w-4" />New client application</button>
     </div>
     {error && <p className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
@@ -208,5 +272,6 @@ export default function TechnicianDashboardPage() {
     {tab === 'application' && <section className="rounded-2xl border bg-card p-6"><UserPlus className="h-8 w-8 text-primary" /><h2 className="mt-3 text-lg font-semibold">New client application</h2><p className="mt-2 max-w-xl text-sm text-muted-foreground">Record a prospective client’s details and exact installation location. The application remains pending for office approval.</p><Link to="/signup" className="mt-5 inline-flex rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Start new application</Link></section>}
 
     {tab === 'traffic' && <section className="overflow-x-auto rounded-2xl border bg-card"><div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between"><div><h2 className="font-semibold">Live queue & lease monitor</h2><p className="mt-1 text-xs text-muted-foreground">Read-only MikroTik Simple Queue traffic for all registered clients · last checked {checkedAt || '—'}.</p></div><label className="relative block md:w-80"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={monitorQuery} onChange={(event) => setMonitorQuery(event.target.value)} placeholder="Search client, IP, or queue" className="w-full rounded-lg border bg-background py-2 pl-9 pr-3 text-sm" /></label></div><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-muted/40 text-xs uppercase text-muted-foreground"><tr><th className="p-4">Client</th><th className="p-4">Lease</th><th className="p-4">Queue</th><th className="p-4">Plan</th><th className="p-4">Traffic</th><th className="p-4">Status</th></tr></thead><tbody>{visibleMonitor.map((item) => <tr key={item.customer_id} className="border-t"><td className="p-4 font-medium">{item.full_name}</td><td className="p-4"><p>{item.ip_address}</p><small className="text-muted-foreground">{item.lease_status}</small></td><td className="p-4"><p className="max-w-40 truncate">{item.queue_name}</p><small className="text-muted-foreground">{item.queue_found ? 'Queue found' : 'Queue unavailable'}</small></td><td className="p-4">{item.service_plan ? `${item.service_plan.name} · ${item.service_plan.download_speed}/${item.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="p-4"><p className="text-sky-600">↓ {rate(item.traffic.download_bps)}</p><p className="text-rose-600">↑ {rate(item.traffic.upload_bps)}</p></td><td className="p-4 capitalize">{item.customer_status}</td></tr>)}{!visibleMonitor.length && <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No registered client matches this search.</td></tr>}</tbody></table></section>}
+    {tab === 'register' && <section className="rounded-2xl border bg-card p-6"><div className="flex items-start gap-3"><UserPlus className="mt-1 h-8 w-8 text-primary" /><div><h2 className="text-lg font-semibold">Add / register client</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Enter the installed ONU/router MAC. SolarNet binds only to a current unregistered bound DHCP lease. Exact matches bind immediately; a 90%+ match requires confirmation.</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-sm font-medium">Client name *<input value={registrationForm.full_name} onChange={(event) => setRegistrationForm((current) => ({ ...current, full_name: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><label className="text-sm font-medium">Address *<input value={registrationForm.address} onChange={(event) => setRegistrationForm((current) => ({ ...current, address: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><label className="text-sm font-medium">Contact number *<input value={registrationForm.contact_number} onChange={(event) => setRegistrationForm((current) => ({ ...current, contact_number: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><label className="text-sm font-medium">Email<input type="email" value={registrationForm.email} onChange={(event) => setRegistrationForm((current) => ({ ...current, email: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><label className="text-sm font-medium">Installation date *<input type="date" value={registrationForm.installation_date} onChange={(event) => setRegistrationForm((current) => ({ ...current, installation_date: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label><label className="text-sm font-medium">Service plan *<select value={registrationForm.service_plan_id} onChange={(event) => setRegistrationForm((current) => ({ ...current, service_plan_id: event.target.value }))} className="mt-1 w-full rounded-lg border bg-background px-3 py-2"><option value="">Select plan</option>{servicePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.download_speed}/{plan.upload_speed} Mbps · ₱{Number(plan.price).toLocaleString('en-PH')}</option>)}</select></label><label className="text-sm font-medium md:col-span-2">ONU/router MAC address *<input value={registrationForm.mac_address} onChange={(event) => { setRegistrationMatch(null); setRegistrationForm((current) => ({ ...current, mac_address: event.target.value })); }} placeholder="AA:BB:CC:DD:EE:FF" className="mt-1 w-full rounded-lg border bg-background px-3 py-2 font-mono" /><span className="mt-1 block text-xs text-muted-foreground">The entered MAC is compared with current unregistered DHCP leases. The account number is generated automatically.</span></label></div>{registrationMatch && <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">Confirm 90%+ MAC match before binding</p><p className="mt-1">Entered MAC: <span className="font-mono">{registrationForm.mac_address}</span></p><p>Lease MAC: <span className="font-mono">{registrationMatch.mac_address}</span> · {registrationMatch.score}% match</p><p>IP: {registrationMatch.ip_address} · Router: {registrationMatch.router || 'Unknown'}</p>{registrationMatch.comment && <p>Comment: {registrationMatch.comment}</p>}<button disabled={registrationBusy} onClick={() => void registerClient(true)} className="mt-3 rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white disabled:opacity-60">{registrationBusy ? 'Binding…' : 'Confirm and bind this lease'}</button></div>}<div className="mt-5 flex flex-wrap gap-3"><button disabled={registrationBusy || !registrationForm.full_name.trim() || !registrationForm.address.trim() || !registrationForm.contact_number.trim() || !registrationForm.installation_date || !registrationForm.service_plan_id || !registrationForm.mac_address.trim()} onClick={() => void registerClient(false)} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">{registrationBusy ? 'Checking lease…' : 'Register and bind client'}</button><button type="button" onClick={() => { setRegistrationForm(emptyRegistrationForm); setRegistrationMatch(null); setError(''); }} className="rounded-lg border px-4 py-2 text-sm font-semibold">Clear</button></div></section>}
   </main></DashboardLayout>;
 }

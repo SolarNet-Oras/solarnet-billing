@@ -105,6 +105,118 @@ class UnregisteredLeaseController extends Controller
     }
 
     /**
+     * Register a field-installed client from the technician dashboard.
+     *
+     * Exact MAC matches bind immediately. A one-character MAC discrepancy
+     * (11/12 positions, at least 90% identical) returns a confirmation
+     * preview; the technician must explicitly confirm before binding.
+     */
+    public function technicianRegister(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'full_name' => 'required|string|max:255',
+            'address' => 'required|string|max:1000',
+            'contact_number' => 'required|string|max:20',
+            'email' => 'nullable|email|max:255',
+            'installation_date' => 'required|date',
+            'service_plan_id' => 'required|exists:service_plans,id',
+            'mac_address' => 'required|string|max:32',
+            'confirm_fuzzy_match' => 'sometimes|boolean',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $data = $validator->validated();
+        $inputMac = $this->normalizeMacForMatch($data['mac_address']);
+        if (!$inputMac) {
+            return response()->json(['success' => false, 'message' => 'Enter a valid 12-character ONU/router MAC address.'], 422);
+        }
+
+        $plan = ServicePlan::query()
+            ->whereKey($data['service_plan_id'])
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->first();
+        if (!$plan) {
+            return response()->json(['success' => false, 'message' => 'Select an active customer service plan. Company Owned is not available for field registration.'], 422);
+        }
+
+        $candidates = DhcpLease::with('router:id,name')
+            ->unmatched()
+            ->active()
+            ->presentOnRouter()
+            ->whereNotNull('mac_address')
+            ->get()
+            ->map(function (DhcpLease $lease) use ($inputMac) {
+                $leaseMac = $this->normalizeMacForMatch($lease->mac_address);
+                if (!$leaseMac) return null;
+
+                $samePositions = 0;
+                $inputBytes = str_replace(':', '', $inputMac);
+                $leaseBytes = str_replace(':', '', $leaseMac);
+                for ($index = 0; $index < 12; $index++) {
+                    if ($inputBytes[$index] === $leaseBytes[$index]) $samePositions++;
+                }
+                $lease->mac_match_score = round(($samePositions / 12) * 100, 1);
+                $lease->mac_match_type = $samePositions === 12 ? 'exact' : 'fuzzy_90_plus';
+                return $lease;
+            })
+            ->filter(fn (?DhcpLease $lease) => $lease && $lease->mac_match_score >= 90)
+            ->sortByDesc('mac_match_score')
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'No current unregistered bound DHCP lease matches this MAC exactly or at least 90%. Refresh DHCP leases and verify the ONU MAC.'], 422);
+        }
+
+        $bestScore = (float) $candidates->first()->mac_match_score;
+        $best = $candidates->filter(fn (DhcpLease $lease) => (float) $lease->mac_match_score === $bestScore)->values();
+        if ($best->count() !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'More than one unregistered lease matches this MAC. Use the exact MAC to avoid binding the wrong client.',
+                'matches' => $best->map(fn (DhcpLease $lease) => $this->technicianMatchPayload($lease))->values(),
+            ], 422);
+        }
+
+        $lease = $best->first();
+        if ($lease->mac_match_type !== 'exact' && !$request->boolean('confirm_fuzzy_match')) {
+            return response()->json([
+                'success' => false,
+                'requires_confirmation' => true,
+                'message' => 'A 90%+ MAC match was found. Confirm the displayed lease before binding it.',
+                'match' => $this->technicianMatchPayload($lease),
+            ], 409);
+        }
+
+        if (!$lease->is_current || $lease->status !== 'bound' || $lease->is_matched || $lease->customer_id || !$lease->router) {
+            return response()->json(['success' => false, 'message' => 'This DHCP lease is no longer a current unregistered bound lease. Refresh the technician dashboard and try again.'], 422);
+        }
+
+        $request->merge([
+            'full_name' => $data['full_name'],
+            'address' => $data['address'],
+            'contact_number' => $data['contact_number'],
+            'email' => $data['email'] ?? null,
+            'installation_date' => $data['installation_date'],
+            'service_plan_id' => $plan->id,
+            'monthly_fee' => $plan->price,
+        ]);
+
+        $response = $this->quickRegister($request, $lease->id);
+        $response->setData(array_merge((array) $response->getData(true), [
+            'mac_match' => [
+                'type' => $lease->mac_match_type,
+                'score' => (float) $lease->mac_match_score,
+                'lease_mac' => $lease->mac_address,
+                'entered_mac' => $inputMac,
+            ],
+        ]));
+        return $response;
+    }
+
+    /**
      * One-click convert a static+commented lease into a Customer.
      * Uses lease comment as full_name and rate_limit to match a ServicePlan.
      *
@@ -354,6 +466,27 @@ class UnregisteredLeaseController extends Controller
             case 'M':
             default:  return $value;
         }
+    }
+
+    protected function normalizeMacForMatch(?string $value): ?string
+    {
+        $hex = strtoupper((string) preg_replace('/[^0-9A-F]/i', '', (string) $value));
+        if (strlen($hex) !== 12 || !ctype_xdigit($hex)) return null;
+        return implode(':', str_split($hex, 2));
+    }
+
+    protected function technicianMatchPayload(DhcpLease $lease): array
+    {
+        return [
+            'lease_id' => $lease->id,
+            'mac_address' => $lease->mac_address,
+            'ip_address' => $lease->ip_address,
+            'hostname' => $lease->hostname,
+            'comment' => $lease->comment,
+            'router' => $lease->router?->name,
+            'score' => (float) $lease->mac_match_score,
+            'match_type' => $lease->mac_match_type,
+        ];
     }
 
     /**
