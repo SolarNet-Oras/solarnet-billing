@@ -58,6 +58,34 @@ class QueueService
     }
 
     /**
+     * Apply the normal plan queue for a restoration attempt without first
+     * changing the customer's service status. This lets billing keep a paid
+     * customer visibly pending until RouterOS confirms the queue update.
+     */
+    public function restoreCustomerQueue(Customer $customer, bool $forceConnectionAttempt = false): array
+    {
+        $customer->load(['servicePlan', 'router']);
+
+        if (!$customer->router || !$customer->ip_address || !$customer->servicePlan) {
+            return [
+                'success' => false,
+                'message' => 'Cannot confirm restoration: router, IP address, or service plan is missing.',
+                'pending' => true,
+            ];
+        }
+
+        if (!$forceConnectionAttempt && in_array($customer->router->connection_status, ['offline', 'unknown', null], true)) {
+            return [
+                'success' => false,
+                'message' => 'Cannot confirm restoration because the assigned router is not online.',
+                'pending' => true,
+            ];
+        }
+
+        return $this->ensureCustomerQueue($customer);
+    }
+
+    /**
      * Check if customer should have a queue
      * 
      * @param Customer $customer

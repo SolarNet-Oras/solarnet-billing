@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
 use App\Services\CustomerAccountService;
+use App\Services\CustomerAccountReconciliationService;
 use App\Services\BillingSuspensionService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
@@ -241,6 +242,14 @@ class CustomerController extends Controller
     {
         $customer = Customer::with(['technician', 'router', 'servicePlan'])
             ->findOrFail($id);
+        $suspension = app(BillingSuspensionService::class);
+        $financial = app(CustomerAccountReconciliationService::class)->snapshot($customer);
+        $schedule = $suspension->gracePeriodSchedule($customer);
+        $restorationEligibility = app(CustomerAccountReconciliationService::class)->restorationEligibility($customer, $financial, [
+            'should_suspend' => $schedule['should_suspend'],
+            'outstanding_balance' => $schedule['outstanding_balance'],
+            'oldest_due_date' => $schedule['oldest_due_date'],
+        ]);
 
         // A subscriber normally has one current DHCP lease. Returning it with
         // the customer keeps the operator view useful without exposing the
@@ -257,7 +266,21 @@ class CustomerController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $customer,
-            'billing' => app(BillingSuspensionService::class)->buildPaymentReminderData($customer),
+            'billing' => $suspension->buildPaymentReminderData($customer),
+            'account_reconciliation' => [
+                ...$financial,
+                'service_status' => $customer->status,
+                'suspension_source' => $customer->suspension_source,
+                'restoration_status' => $customer->restoration_status,
+                'restoration_reason' => $customer->restoration_reason,
+                'restoration_last_error' => $customer->restoration_last_error,
+                'restoration_eligible' => $restorationEligibility['eligible'],
+                'restoration_eligibility_reason' => $restorationEligibility['reason'],
+            ],
+            'account_reconciliation_history' => $customer->accountReconciliations()
+                ->latest()
+                ->limit(20)
+                ->get(['id', 'payment_id', 'invoice_id', 'correlation_id', 'action', 'financial_status', 'service_status', 'previous_service_status', 'outstanding_balance', 'restoration_eligible', 'restoration_status', 'reason', 'created_at']),
             'dhcp_lease' => $lease,
             'invoices' => $customer->invoices()->latest('issue_date')->limit(20)->get(['id', 'invoice_number', 'issue_date', 'due_date', 'total', 'paid_amount', 'balance', 'status']),
             'payments' => $customer->payments()->with(['invoice:id,invoice_number', 'paymongoCheckout:id,payment_id,payment_intent_id,paymongo_payment_id,status,reference_number'])->latest('payment_date')->limit(20)->get(['id', 'invoice_id', 'amount', 'payment_method', 'payment_date', 'reference', 'transaction_id']),
@@ -349,6 +372,9 @@ class CustomerController extends Controller
 
         $validated = $validator->validated();
         $statusWasChanged = array_key_exists('status', $validated) && $validated['status'] !== $customer->status;
+        $manualRestorationRequested = $statusWasChanged
+            && $validated['status'] === 'active'
+            && in_array($customer->status, ['suspended', 'expired'], true);
         if ($statusWasChanged) {
             // Any status picked from the operator form is intentional. Keep
             // the monthly billing scheduler from undoing it unexpectedly.
@@ -356,12 +382,24 @@ class CustomerController extends Controller
                 ? 'manual'
                 : null;
         }
+        if ($manualRestorationRequested) {
+            // Do not write ACTIVE first. The explicit operator request still
+            // requires queue and firewall restoration confirmation.
+            unset($validated['status'], $validated['suspension_source']);
+        }
         $customer->update($validated);
 
-        if ($statusWasChanged) {
+        if ($manualRestorationRequested) {
+            app(BillingSuspensionService::class)->restoreCustomer(
+                $customer->fresh(['servicePlan', 'router']),
+                'manual_restore',
+                true,
+            );
+        } elseif ($statusWasChanged) {
             $customer->load(['servicePlan', 'router']);
             app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($customer, true);
         }
+        $customer->refresh();
 
         return response()->json([
             'status' => 'success',
@@ -588,7 +626,10 @@ class CustomerController extends Controller
     public function restore(string $id): JsonResponse
     {
         $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
-        $result = app(BillingSuspensionService::class)->restoreCustomer($customer);
+        // This is an explicit administrator action. Payment callbacks never
+        // override manual/technical holds, but an administrator may request a
+        // verified RouterOS restoration from the customer record.
+        $result = app(BillingSuspensionService::class)->restoreCustomer($customer, 'manual_restore', true);
 
         return response()->json($result);
     }

@@ -419,6 +419,35 @@ class InvoiceService
     public function recordPayment(Invoice $invoice, array $paymentData): Payment
     {
         return DB::transaction(function () use ($invoice, $paymentData) {
+            // Lock the invoice before allocation. This serializes a manual
+            // receipt, PayMongo webhook, and checkout reconciliation that hit
+            // the same receivable at the same time.
+            $invoice = Invoice::query()
+                ->with('customer')
+                ->whereKey($invoice->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $amount = round((float) $paymentData['amount'], 2);
+
+            // Gateway callbacks provide a durable transaction ID. Treat a
+            // replay for the same invoice/customer as idempotent; reject an
+            // attempt to reuse the ID for a different financial record.
+            $transactionId = trim((string) ($paymentData['transaction_id'] ?? '')) ?: null;
+            if ($transactionId) {
+                $existing = Payment::query()->where('transaction_id', $transactionId)->lockForUpdate()->first();
+                if ($existing) {
+                    if ($existing->invoice_id === $invoice->id
+                        && $existing->customer_id === $invoice->customer_id
+                        && (int) round((float) $existing->amount * 100) === (int) round($amount * 100)) {
+                        return $existing->fresh(['invoice', 'customer']);
+                    }
+                    throw new \RuntimeException('This payment transaction ID was already used for a different payment.');
+                }
+            }
+            if ($amount <= 0 || $amount > round((float) $invoice->balance, 2)) {
+                throw new \RuntimeException('Payment amount must not exceed the current invoice balance.');
+            }
+
             // Create payment record
             $payment = Payment::create([
                 'invoice_id' => $invoice->id,
@@ -426,7 +455,7 @@ class InvoiceService
                 'collector_id' => $paymentData['collector_id'] ?? null,
                 'received_by' => $paymentData['received_by'] ?? null,
                 'payment_number' => $this->generatePaymentNumber(),
-                'amount' => $paymentData['amount'],
+                'amount' => $amount,
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payer_signature' => $paymentData['payer_signature'] ?? null,
@@ -435,7 +464,7 @@ class InvoiceService
                 'signature_signer_name' => $paymentData['signature_signer_name'] ?? null,
                 'payment_method' => $paymentData['payment_method'],
                 'payment_date' => $paymentData['payment_date'] ?? now(),
-                'transaction_id' => $paymentData['transaction_id'] ?? null,
+                'transaction_id' => $transactionId,
                 'reference' => $paymentData['reference'] ?? null,
                 'notes' => $paymentData['notes'] ?? null,
             ]);
@@ -459,10 +488,10 @@ class InvoiceService
             // balance keeps the customer restricted.
             $customer = $invoice->customer;
             if ($customer) {
-                DB::afterCommit(function () use ($customer) {
+                DB::afterCommit(function () use ($customer, $payment) {
                     try {
                         $freshCustomer = $customer->fresh(['servicePlan', 'router']);
-                        app(BillingSuspensionService::class)->reconcileAfterPayment($freshCustomer);
+                        app(BillingSuspensionService::class)->reconcileAfterPayment($freshCustomer, $payment->fresh(['invoice']));
                     } catch (\Throwable $e) {
                         Log::warning('Deferred customer network sync after payment failed', [
                             'customer_id' => $customer->id,
@@ -515,16 +544,33 @@ class InvoiceService
     public function recordAdvancePayment(Customer $customer, array $paymentData): Payment
     {
         return DB::transaction(function () use ($customer, $paymentData) {
+            $customer = Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
+            $amount = round((float) $paymentData['amount'], 2);
+            if ($amount <= 0) {
+                throw new \RuntimeException('Advance payment amount must be greater than zero.');
+            }
+            $transactionId = trim((string) ($paymentData['transaction_id'] ?? '')) ?: null;
+            if ($transactionId) {
+                $existing = Payment::query()->where('transaction_id', $transactionId)->lockForUpdate()->first();
+                if ($existing) {
+                    if ($existing->customer_id === $customer->id && !$existing->invoice_id
+                        && (int) round((float) $existing->amount * 100) === (int) round($amount * 100)) {
+                        return $existing->fresh(['invoice', 'customer']);
+                    }
+                    throw new \RuntimeException('This payment transaction ID was already used for a different payment.');
+                }
+            }
+
             $payment = Payment::create([
                 'customer_id' => $customer->id,
                 'received_by' => $paymentData['received_by'] ?? null,
                 'payment_number' => $this->generatePaymentNumber(),
-                'amount' => $paymentData['amount'],
+                'amount' => $amount,
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payment_method' => $paymentData['payment_method'],
                 'payment_date' => $paymentData['payment_date'] ?? now(),
-                'transaction_id' => $paymentData['transaction_id'] ?? null,
+                'transaction_id' => $transactionId,
                 'reference' => $paymentData['reference'] ?? null,
                 'notes' => $paymentData['notes'] ?? 'Advance payment for future billing',
             ]);
@@ -542,7 +588,7 @@ class InvoiceService
                     $customer = $payment->fresh(['customer'])?->customer;
                     if ($customer) {
                         app(BillingSuspensionService::class)
-                            ->reconcileAfterPayment($customer->load(['servicePlan', 'router']));
+                            ->reconcileAfterPayment($customer->load(['servicePlan', 'router']), $payment->fresh(['invoice']));
                     }
                 } catch (\Throwable $e) {
                     Log::warning('Deferred customer network sync after advance payment failed', [

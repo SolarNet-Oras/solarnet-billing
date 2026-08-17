@@ -64,6 +64,11 @@ class Customer extends Model
         'queue_last_synced_at',
         'queue_sync_status',
         'suspension_source',
+        'restoration_status',
+        'restoration_reason',
+        'restoration_last_error',
+        'restoration_attempted_at',
+        'restoration_confirmed_at',
     ];
 
     /**
@@ -87,6 +92,8 @@ class Customer extends Model
             'welcome_email_sent_at' => 'datetime',
             'queue_synced' => 'boolean',
             'queue_last_synced_at' => 'datetime',
+            'restoration_attempted_at' => 'datetime',
+            'restoration_confirmed_at' => 'datetime',
         ];
     }
 
@@ -161,6 +168,12 @@ class Customer extends Model
     public function finalGracePeriodWarnings(): HasMany
     {
         return $this->hasMany(FinalGracePeriodWarning::class);
+    }
+
+    /** Append-only audit records for billing-to-service reconciliation. */
+    public function accountReconciliations(): HasMany
+    {
+        return $this->hasMany(CustomerAccountReconciliation::class);
     }
 
     /**

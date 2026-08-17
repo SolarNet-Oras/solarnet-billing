@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Router;
 use App\Models\Setting;
 use Carbon\Carbon;
@@ -22,6 +23,7 @@ class BillingSuspensionService
         protected QueueService $queueService,
         protected MikrotikService $mikrotikService,
         protected CustomerWebPushNotificationService $webPushNotificationService,
+        protected CustomerAccountReconciliationService $accountReconciliationService,
     ) {
     }
 
@@ -143,8 +145,8 @@ class BillingSuspensionService
                     // A previously automated restriction is removed as soon
                     // as a customer is assigned to a Company Owned plan.
                     if ($customer->suspension_source === 'automation') {
-                        $this->restoreCustomer($customer, 'company_owned_plan');
-                        $summary['restored']++;
+                        $result = $this->restoreCustomer($customer, 'company_owned_plan');
+                        if ($result['success'] ?? false) $summary['restored']++;
                     }
                     $summary['skipped_company_owned']++;
                     continue;
@@ -158,8 +160,8 @@ class BillingSuspensionService
                 }
 
                 if ($customer->suspension_source === 'automation' && !$billingState['should_suspend']) {
-                    $this->restoreCustomer($customer, 'payment_confirmed');
-                    $summary['restored']++;
+                    $result = $this->restoreCustomer($customer, 'payment_confirmed');
+                    if ($result['success'] ?? false) $summary['restored']++;
                 }
             } catch (\Throwable $e) {
                 $summary['errors'][] = [
@@ -212,32 +214,39 @@ class BillingSuspensionService
     }
 
     /**
-     * Reconcile service access immediately after a verified payment. Unlike a
-     * routine status sync, this explicitly permits a payment to restore a
-     * manually or automatically suspended/expired customer after any
-     * verified payment, including a partial payment. The normal automation
-     * pass will re-evaluate any remaining overdue balance later.
+     * Reconcile service access after a committed payment. A payment record is
+     * not an activation instruction: current invoice balances and the source
+     * of the restriction decide whether restoration is allowed.
      */
-    public function reconcileAfterPayment(Customer $customer): array
+    public function reconcileAfterPayment(Customer $customer, ?Payment $payment = null): array
     {
         $customer->loadMissing(['servicePlan', 'router']);
+        $financial = $this->accountReconciliationService->snapshot($customer);
         $billingState = $this->billingState($customer);
+        $eligibility = $this->accountReconciliationService->restorationEligibility($customer, $financial, $billingState);
 
-        if (in_array($customer->status, ['suspended', 'expired'], true)) {
-            return $this->restoreCustomer($customer, 'payment_confirmed', true);
+        if ($eligibility['eligible']) {
+            return $this->restoreCustomer($customer, 'payment_confirmed', false, $financial, $eligibility, $payment);
         }
 
-        if ($billingState['should_suspend']) {
-            return $this->suspendCustomer(
-                $customer,
-                $billingState,
-                true,
-                $customer->suspension_source ?: 'automation',
-                $customer->status,
-            );
+        if ($billingState['should_suspend'] && $customer->status === 'active') {
+            $result = $this->suspendCustomer($customer, $billingState, false, 'automation');
+            $this->auditReconciliation($customer, $financial, $eligibility, 'payment_reconciled_suspended', $eligibility['reason'], $payment, $result);
+            return $result;
         }
 
-        return $this->syncCustomerMikrotikStatus($customer, true);
+        // Partial payments and manual/technical holds retain the current
+        // restriction. No status is overwritten simply because payment exists.
+        $result = [
+            'success' => true,
+            'action' => $eligibility['restricted'] ? 'retain_restriction' : 'financial_reconciled',
+            'customer_id' => $customer->id,
+            'financial' => $financial,
+            'billing_state' => $billingState,
+            'restoration_eligibility' => $eligibility,
+        ];
+        $this->auditReconciliation($customer, $financial, $eligibility, $result['action'], $eligibility['reason'], $payment, $result);
+        return $result;
     }
 
     public function suspendCustomer(Customer $customer, array $billingState = [], bool $force = false, string $source = 'manual', string $status = 'suspended'): array
@@ -251,6 +260,11 @@ class BillingSuspensionService
             'status' => $status === 'expired' ? 'expired' : 'suspended',
             'suspension_source' => $source,
             'queue_sync_status' => 'pending',
+            'restoration_status' => null,
+            'restoration_reason' => null,
+            'restoration_last_error' => null,
+            'restoration_attempted_at' => null,
+            'restoration_confirmed_at' => null,
         ])->saveQuietly();
 
         $queueResult = $this->queueService->syncCustomerQueue($customer);
@@ -265,9 +279,18 @@ class BillingSuspensionService
         // Send one high-priority alert when the account enters a restricted
         // state. Reconciliation jobs must not repeatedly notify an account
         // that was already suspended.
-        $pushDelivery = in_array($previousStatus, ['suspended', 'expired'], true)
-            ? 'skipped_already_restricted'
-            : $this->webPushNotificationService->sendSuspensionNotice($customer, $billingState);
+        $pushDelivery = 'skipped_already_restricted';
+        if (!in_array($previousStatus, ['suspended', 'expired'], true)) {
+            try {
+                $pushDelivery = $this->webPushNotificationService->sendSuspensionNotice($customer, $billingState);
+            } catch (\Throwable $e) {
+                $pushDelivery = 'failed';
+                Log::warning('Billing suspension push notification failed', [
+                    'customer_id' => $customer->id,
+                    'error_type' => $e::class,
+                ]);
+            }
+        }
 
         Log::info('Customer suspended for billing', [
             'customer_id' => $customer->id,
@@ -280,7 +303,7 @@ class BillingSuspensionService
             'force' => $force,
         ]);
 
-        return [
+        $result = [
             'success' => ($queueResult['success'] ?? false) || ($addressResult['success'] ?? false),
             'action' => 'suspend',
             'customer_id' => $customer->id,
@@ -289,55 +312,144 @@ class BillingSuspensionService
             'address_list' => $addressResult,
             'push_delivery' => $pushDelivery,
         ];
+        $financial = $this->accountReconciliationService->snapshot($customer);
+        $eligibility = $this->accountReconciliationService->restorationEligibility($customer, $financial, $billingState);
+        $this->auditReconciliation($customer, $financial, $eligibility, 'suspension_applied', 'Service restriction synchronized from current billing policy.', null, $result, $previousStatus);
+        return $result;
     }
 
-    public function restoreCustomer(Customer $customer, string $reason = 'payment_current', bool $force = false): array
+    /**
+     * Restore only after both the normal Simple Queue and the suspended
+     * address-list removal have been confirmed by RouterOS. The database is
+     * deliberately kept restricted while a RouterOS restoration is pending.
+     */
+    public function restoreCustomer(Customer $customer, string $reason = 'payment_current', bool $force = false, ?array $financial = null, ?array $eligibility = null, ?Payment $payment = null): array
     {
         $customer->loadMissing(['servicePlan', 'router']);
         $router = $customer->router;
         $previousStatus = $customer->status;
+        $restricted = in_array($previousStatus, ['suspended', 'expired'], true);
+        $financial ??= $this->accountReconciliationService->snapshot($customer);
+        $billingState = $this->billingState($customer);
+        $eligibility ??= $this->accountReconciliationService->restorationEligibility($customer, $financial, $billingState);
+
+        // A customer without RouterOS ownership has no external service state
+        // to confirm. This records that fact explicitly rather than pretending
+        // that a MikroTik call took place.
+        if (!$router || !$customer->ip_address) {
+            $customer->forceFill([
+                'status' => 'active',
+                'suspension_source' => null,
+                'restoration_status' => 'confirmed',
+                'restoration_reason' => 'No RouterOS-managed router/IP is assigned to this customer.',
+                'restoration_last_error' => null,
+                'restoration_attempted_at' => now(),
+                'restoration_confirmed_at' => now(),
+            ])->saveQuietly();
+            $result = [
+                'success' => true,
+                'action' => 'restore_not_network_managed',
+                'customer_id' => $customer->id,
+                'reason' => $reason,
+                'queue' => ['success' => true, 'skipped' => true, 'message' => 'No RouterOS-managed router/IP is assigned.'],
+                'address_list' => ['success' => true, 'skipped' => true, 'message' => 'No RouterOS-managed router/IP is assigned.'],
+                'push_delivery' => 'skipped_not_restricted',
+            ];
+            $this->auditReconciliation($customer, $financial, $eligibility, 'restoration_confirmed', $result['queue']['message'], $payment, $result, $previousStatus);
+            return $result;
+        }
 
         $customer->forceFill([
-            'status' => 'active',
-            'suspension_source' => null,
+            'restoration_status' => 'pending',
+            'restoration_reason' => $reason,
+            'restoration_last_error' => null,
+            'restoration_attempted_at' => now(),
             'queue_sync_status' => 'pending',
         ])->saveQuietly();
 
-        $queueResult = $this->queueService->syncCustomerQueue($customer);
-        $addressResult = $this->syncSuspendedAddressList($customer, false, $router);
+        // QueueService applies the normal plan queue without requiring a
+        // premature status=active write. Address-list removal runs only after
+        // that queue operation has succeeded.
+        $queueResult = $this->queueService->restoreCustomerQueue($customer, $force);
+        $addressResult = ['success' => false, 'message' => 'Address-list removal was not attempted because queue restoration did not confirm.'];
+        if ($queueResult['success'] ?? false) {
+            $addressResult = $this->syncSuspendedAddressList($customer, false, $router);
+        }
+        $restored = (bool) ($queueResult['success'] ?? false) && (bool) ($addressResult['success'] ?? false);
 
-        $customer->forceFill([
-            'queue_sync_status' => $queueResult['success'] ? 'synced' : 'failed',
-            'queue_synced' => (bool) ($queueResult['success'] ?? false),
-            'queue_last_synced_at' => now(),
-        ])->saveQuietly();
+        $rollback = null;
+        if (!$restored && ($queueResult['success'] ?? false) && !($addressResult['success'] ?? false)) {
+            // If a later firewall-list operation failed, return the managed
+            // queue to its restricted rate as a best-effort safety rollback.
+            $rollback = $this->queueService->syncCustomerQueue($customer, $force);
+        }
 
-        // A restoration alert is sent only when the account was actually
-        // restricted. Routine active-to-active synchronizations stay silent.
-        $pushDelivery = in_array($previousStatus, ['suspended', 'expired'], true)
-            ? $this->webPushNotificationService->sendServiceRestored($customer)
-            : 'skipped_not_restricted';
+        if ($restored) {
+            $customer->forceFill([
+                'status' => 'active',
+                'suspension_source' => null,
+                'queue_sync_status' => 'synced',
+                'queue_synced' => true,
+                'queue_last_synced_at' => now(),
+                'restoration_status' => 'confirmed',
+                'restoration_reason' => $reason,
+                'restoration_last_error' => null,
+                'restoration_confirmed_at' => now(),
+            ])->saveQuietly();
+        } else {
+            $error = implode(' ', array_filter([
+                $queueResult['message'] ?? null,
+                $addressResult['message'] ?? null,
+                $rollback && !($rollback['success'] ?? false) ? ($rollback['message'] ?? null) : null,
+            ]));
+            $customer->forceFill([
+                'status' => $restricted ? $previousStatus : $customer->status,
+                'queue_sync_status' => 'failed',
+                'queue_synced' => false,
+                'queue_last_synced_at' => now(),
+                'restoration_status' => ($queueResult['pending'] ?? false) ? 'pending' : 'failed',
+                'restoration_reason' => $reason,
+                'restoration_last_error' => $error ?: 'RouterOS restoration could not be confirmed.',
+            ])->saveQuietly();
+        }
 
-        Log::info('Customer restored after billing sync', [
+        // A restoration alert is only sent after RouterOS confirms service.
+        $pushDelivery = 'skipped_not_confirmed';
+        if ($restored && $restricted) {
+            try {
+                $pushDelivery = $this->webPushNotificationService->sendServiceRestored($customer);
+            } catch (\Throwable $e) {
+                $pushDelivery = 'failed';
+                Log::warning('Service restoration push notification failed', [
+                    'customer_id' => $customer->id,
+                    'error_type' => $e::class,
+                ]);
+            }
+        }
+
+        Log::info('Customer restoration reconciliation completed', [
             'customer_id' => $customer->id,
             'account_number' => $customer->account_number,
             'reason' => $reason,
             'router_id' => $customer->router_id,
             'queue_result' => $queueResult['success'] ?? false,
             'address_result' => $addressResult['success'] ?? false,
-            'push_delivery' => $pushDelivery,
+            'restoration_confirmed' => $restored,
             'force' => $force,
         ]);
 
-        return [
-            'success' => ($queueResult['success'] ?? false) || ($addressResult['success'] ?? false),
-            'action' => 'restore',
+        $result = [
+            'success' => $restored,
+            'action' => $restored ? 'restore_confirmed' : 'restore_pending_or_failed',
             'customer_id' => $customer->id,
             'reason' => $reason,
             'queue' => $queueResult,
             'address_list' => $addressResult,
+            'rollback' => $rollback,
             'push_delivery' => $pushDelivery,
         ];
+        $this->auditReconciliation($customer, $financial, $eligibility, $restored ? 'restoration_confirmed' : 'restoration_failed', $customer->restoration_last_error ?: $reason, $payment, $result, $previousStatus);
+        return $result;
     }
 
     public function buildPaymentReminderData(Customer $customer): array
@@ -390,6 +502,37 @@ class BillingSuspensionService
                 'upload_speed' => $customer->servicePlan->upload_speed,
             ] : null,
         ];
+    }
+
+    /** Write an append-only reconciliation record without ever risking a payment. */
+    protected function auditReconciliation(Customer $customer, array $financial, array $eligibility, string $action, string $reason, ?Payment $payment = null, array $result = [], ?string $previousServiceStatus = null): void
+    {
+        try {
+            $this->accountReconciliationService->audit(
+                $customer,
+                $financial,
+                $eligibility,
+                $action,
+                $reason,
+                $payment,
+                $payment?->invoice,
+                [
+                    'previous_service_status' => $previousServiceStatus,
+                    'result_action' => $result['action'] ?? null,
+                    'queue_success' => $result['queue']['success'] ?? null,
+                    'address_list_success' => $result['address_list']['success'] ?? null,
+                    'billing_state' => $result['billing_state'] ?? null,
+                ],
+            );
+        } catch (\Throwable $e) {
+            // Accounting data is already committed before this method runs;
+            // audit persistence failure must not roll it back or hide the event.
+            Log::warning('Customer reconciliation audit write failed', [
+                'customer_id' => $customer->id,
+                'action' => $action,
+                'error_type' => $e::class,
+            ]);
+        }
     }
 
     /**
