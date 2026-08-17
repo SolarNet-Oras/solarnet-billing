@@ -123,10 +123,10 @@ class UnregisteredLeaseController extends Controller
             'installation_date' => 'required|date',
             'service_plan_id' => 'required|exists:service_plans,id',
             'mac_address' => 'required|string|max:32',
-            'gps_coordinates' => 'nullable|array',
-            'gps_coordinates.latitude' => 'required_with:gps_coordinates|numeric|between:-90,90',
-            'gps_coordinates.longitude' => 'required_with:gps_coordinates|numeric|between:-180,180',
-            'location_accuracy_meters' => 'nullable|numeric|min:0|max:100000',
+            'gps_coordinates' => 'required|array',
+            'gps_coordinates.latitude' => 'required|numeric|between:-90,90',
+            'gps_coordinates.longitude' => 'required|numeric|between:-180,180',
+            'location_accuracy_meters' => 'required|numeric|min:0|max:100000',
             'confirm_fuzzy_match' => 'sometimes|boolean',
         ]);
         if ($validator->fails()) {
