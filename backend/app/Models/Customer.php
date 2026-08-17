@@ -151,6 +151,12 @@ class Customer extends Model
         return $this->hasMany(BillingSmsNotification::class);
     }
 
+    /** Final SMS/email warnings with grace-period and delivery audit details. */
+    public function finalGracePeriodWarnings(): HasMany
+    {
+        return $this->hasMany(FinalGracePeriodWarning::class);
+    }
+
     /**
      * Scope a query to only include active customers.
      */

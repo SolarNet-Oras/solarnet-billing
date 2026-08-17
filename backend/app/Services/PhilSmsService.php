@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * Server-side PhilSMS client for approved transactional and billing SMS.
  *
- * This service does not decide when to notify a customer. The recurring
- * invoice scheduler owns the one-time, seven-day billing SMS policy.
+ * This service does not decide when to notify a customer. Billing automation
+ * owns the one-time pre-due and final grace-period notification policies.
  */
 class PhilSmsService
 {

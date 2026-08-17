@@ -8,10 +8,11 @@ use App\Models\Setting;
 use App\Services\Automation\AutomationRunner;
 use App\Services\BillingSmsReminderService;
 use App\Services\CustomerWebPushNotificationService;
+use App\Services\FinalGracePeriodWarningService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-/** Sends daily web-push reminders for unpaid invoices. */
+/** Sends billing reminders without changing invoices, payments, or suspension state. */
 class SendInvoiceReminders extends Command
 {
     protected $signature = 'automation:invoice-reminders
@@ -19,7 +20,7 @@ class SendInvoiceReminders extends Command
                             {--triggered-by=schedule}
                             {--user-id=}';
 
-    protected $description = 'Send daily web-push payment reminders for upcoming/overdue invoices';
+    protected $description = 'Send Web Push reminders and queue one-time billing SMS/email events';
 
     public function handle(): int
     {
@@ -43,13 +44,17 @@ class SendInvoiceReminders extends Command
             return ['skipped' => true, 'reason' => 'automation.enabled=false'];
         }
 
-        $graceDays = max(1, (int) Setting::get('billing.auto_suspend_days', 15));
+        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
 
         $today = now(BillingSmsReminderService::TIMEZONE)->startOfDay();
         $details = [];
         $errors = [];
         $pushSent = 0;
         $smsQueued = 0;
+        $finalWarningQueued = 0;
+        $finalWarningPushSent = 0;
+        $finalWarningDetails = [];
+        $customersWithUnpaidInvoices = [];
 
         foreach (Invoice::unpaid()->with('customer')->get() as $invoice) {
             $customer = $invoice->customer;
@@ -59,6 +64,7 @@ class SendInvoiceReminders extends Command
             if ($customer->hasCompanyOwnedPlan()) {
                 continue;
             }
+            $customersWithUnpaidInvoices[$customer->id] = $customer;
 
             $diffDays = $today->diffInDays($invoice->due_date->copy()->startOfDay(), false);
             $pushType = $this->pushTypeFor($diffDays, $graceDays);
@@ -93,16 +99,54 @@ class SendInvoiceReminders extends Command
             }
         }
 
+        // The final grace event is customer-level, because the existing
+        // suspension service chooses the oldest invoice that truly triggers
+        // restriction. Running this separately prevents duplicate final push
+        // messages where a customer has more than one unpaid invoice.
+        foreach ($customersWithUnpaidInvoices as $customer) {
+            try {
+                $finalWarning = app(FinalGracePeriodWarningService::class)->schedule($customer, $today, $dryRun);
+                $event = $finalWarning['event'];
+                if (!($event['eligible'] ?? false) || !$event['invoice']) {
+                    continue;
+                }
+
+                $pushDelivery = $dryRun
+                    ? (app(CustomerWebPushNotificationService::class)->statusFor($customer)['subscribed']
+                        ? 'would_send'
+                        : 'skipped_no_subscription')
+                    : $this->sendReminder($customer, $event['invoice'], CustomerWebPushNotificationService::SUSPENSION_WARNING);
+
+                $finalWarningPushSent += $pushDelivery === 'sent' ? 1 : 0;
+                $finalWarningQueued += collect($finalWarning['deliveries'])->filter(fn (string $delivery) => $delivery === 'queued')->count();
+                $finalWarningDetails[] = [
+                    'invoice_number' => $event['invoice']->invoice_number,
+                    'customer' => $customer->full_name,
+                    'balance' => $event['outstanding_balance'],
+                    'grace_period_end' => $event['grace_period_end']?->toDateString(),
+                    'scheduled_suspension_at' => $event['suspension_at']?->toIso8601String(),
+                    'sms_email' => $finalWarning['deliveries'],
+                    'web_push_delivery' => $pushDelivery,
+                ];
+            } catch (\Throwable $e) {
+                $errors[] = ['customer' => $customer->full_name, 'error' => $e->getMessage()];
+            }
+        }
+
         return [
             'dry_run' => $dryRun,
             'candidates' => Invoice::unpaid()->count(),
             'processed' => count($details),
             'push_sent' => $pushSent,
             'sms_queued' => $smsQueued,
-            'email_policy' => 'initial_invoice_email_only',
-            'sms_policy' => 'one_time_7_days_before_due',
+            'final_warning_channels_queued' => $finalWarningQueued,
+            'final_warning_push_sent' => $finalWarningPushSent,
+            'email_policy' => 'initial invoice email plus one final grace-period warning email',
+            'sms_policy' => 'one_time_7_days_before_due plus one final grace-period warning SMS',
+            'final_grace_policy' => 'one queued SMS and one queued email on the final grace day; Web Push uses the existing suspension warning event',
             'errors' => $errors,
             'details' => $details,
+            'final_grace_details' => $finalWarningDetails,
         ];
     }
 
@@ -125,6 +169,9 @@ class SendInvoiceReminders extends Command
      */
     protected function pushTypeFor(int $diffDays, int $graceDays): ?string
     {
+        // A zero-day grace period has its final warning on the due date, so
+        // that customer-level workflow owns the Web Push event as well.
+        if ($graceDays === 0 && $diffDays === 0) return null;
         if ($diffDays === 7) return CustomerWebPushNotificationService::BILLING_REMINDER_7_DAYS;
         if ($diffDays === 3) return CustomerWebPushNotificationService::BILLING_REMINDER_3_DAYS;
         if ($diffDays === 1) return CustomerWebPushNotificationService::BILLING_REMINDER_1_DAY;
@@ -139,7 +186,10 @@ class SendInvoiceReminders extends Command
 
         $daysOverdue = abs($diffDays);
         if ($diffDays >= 0) return null;
-        if ($daysOverdue === max(1, $graceDays - 1)) return CustomerWebPushNotificationService::SUSPENSION_WARNING;
+        // The customer-level final-grace workflow below owns this exact final
+        // event. It reuses SUSPENSION_WARNING for one Web Push delivery but
+        // also queues the separately audited SMS and email channels.
+        if ($daysOverdue === $graceDays) return null;
         if ($daysOverdue === max(2, $graceDays - 7)) return CustomerWebPushNotificationService::GRACE_PERIOD_WARNING;
         if ($daysOverdue === 1) return CustomerWebPushNotificationService::BILLING_OVERDUE;
 

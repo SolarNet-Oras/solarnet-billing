@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Router;
 use App\Models\Setting;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -362,41 +363,114 @@ class BillingSuspensionService
         ];
     }
 
-    protected function billingState(Customer $customer): array
+    /**
+     * Return the date-only schedule used by the existing automated suspension
+     * check. This is intentionally the single source of truth for grace-period
+     * notifications as well as suspension: a due date becomes eligible for
+     * suspension on the day after its configured final grace day.
+     *
+     * @return array{outstanding_balance: float, triggering_invoice: Invoice|null, oldest_due_date: Carbon|null, grace_days: int, grace_period_start: Carbon|null, grace_period_end: Carbon|null, suspension_at: Carbon|null, should_suspend: bool, company_owned: bool}
+     */
+    public function gracePeriodSchedule(Customer $customer, ?CarbonInterface $at = null): array
     {
         $customer->loadMissing('servicePlan');
+        $now = ($at ? Carbon::instance($at) : now(config('app.timezone', 'Asia/Manila')))
+            ->setTimezone(config('app.timezone', 'Asia/Manila'))
+            ->startOfDay();
+
         if ($customer->hasCompanyOwnedPlan()) {
-            return ['outstanding_balance' => 0.0, 'oldest_due_date' => null, 'oldest_unpaid_due_date' => null, 'should_suspend' => false, 'company_owned' => true];
+            return [
+                'outstanding_balance' => 0.0,
+                'triggering_invoice' => null,
+                'oldest_due_date' => null,
+                'grace_days' => max(0, (int) Setting::get('billing.auto_suspend_days', 15)),
+                'grace_period_start' => null,
+                'grace_period_end' => null,
+                'suspension_at' => null,
+                'should_suspend' => false,
+                'company_owned' => true,
+            ];
         }
-        $outstanding = (float) Invoice::query()
-            ->where('customer_id', $customer->id)
-            ->where('balance', '>', 0)
-            ->whereIn('status', ['sent', 'partial', 'overdue'])
-            ->sum('balance');
 
-        $oldestDue = Invoice::query()
+        $triggeringInvoice = Invoice::unpaid()
             ->where('customer_id', $customer->id)
-            ->where('balance', '>', 0)
-            ->whereIn('status', ['sent', 'partial', 'overdue'])
             ->orderBy('due_date')
-            ->value('due_date');
+            ->orderBy('id')
+            ->first();
+        $outstanding = round((float) Invoice::unpaid()
+            ->where('customer_id', $customer->id)
+            ->sum('balance'), 2);
+        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
 
-        $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
-        $oldestEligibleDue = Invoice::query()
-            ->where('customer_id', $customer->id)
-            ->where('balance', '>', 0)
-            ->whereIn('status', ['sent', 'partial', 'overdue'])
-            ->orderBy('due_date')
-            ->value('due_date');
-        $shouldSuspend = $oldestEligibleDue !== null
-            && Carbon::parse($oldestEligibleDue, config('app.timezone', 'Asia/Manila'))->startOfDay()
-                ->lt(now(config('app.timezone', 'Asia/Manila'))->subDays($graceDays)->startOfDay());
+        if (!$triggeringInvoice) {
+            return [
+                'outstanding_balance' => $outstanding,
+                'triggering_invoice' => null,
+                'oldest_due_date' => null,
+                'grace_days' => $graceDays,
+                'grace_period_start' => null,
+                'grace_period_end' => null,
+                'suspension_at' => null,
+                'should_suspend' => false,
+                'company_owned' => false,
+            ];
+        }
+
+        $dates = self::gracePeriodDates($triggeringInvoice->due_date, $graceDays);
 
         return [
             'outstanding_balance' => $outstanding,
-            'oldest_due_date' => $oldestDue,
-            'oldest_unpaid_due_date' => $oldestEligibleDue,
-            'should_suspend' => $shouldSuspend,
+            'triggering_invoice' => $triggeringInvoice,
+            'oldest_due_date' => $dates['due_date'],
+            'grace_days' => $graceDays,
+            'grace_period_start' => $dates['grace_period_start'],
+            'grace_period_end' => $dates['grace_period_end'],
+            'suspension_at' => $dates['suspension_at'],
+            // This is equivalent to the historic due_date < today - grace_days
+            // condition, expressed as the date on which that condition first
+            // becomes true.
+            'should_suspend' => $now->gte($dates['suspension_at']),
+            'company_owned' => false,
+        ];
+    }
+
+    /**
+     * Pure date calculation matching the existing strict-less-than
+     * suspension rule. It is public so notifications and tests cannot invent
+     * a parallel grace-period calculation.
+     *
+     * @return array{due_date: Carbon, grace_period_start: Carbon, grace_period_end: Carbon, suspension_at: Carbon}
+     */
+    public static function gracePeriodDates(CarbonInterface $dueDate, int $graceDays): array
+    {
+        $due = Carbon::instance($dueDate)
+            ->setTimezone(config('app.timezone', 'Asia/Manila'))
+            ->startOfDay();
+        $graceDays = max(0, $graceDays);
+
+        return [
+            'due_date' => $due,
+            'grace_period_start' => $due->copy()->addDay(),
+            'grace_period_end' => $due->copy()->addDays($graceDays),
+            'suspension_at' => $due->copy()->addDays($graceDays + 1),
+        ];
+    }
+
+    protected function billingState(Customer $customer): array
+    {
+        $schedule = $this->gracePeriodSchedule($customer);
+
+        return [
+            'outstanding_balance' => $schedule['outstanding_balance'],
+            'oldest_due_date' => $schedule['oldest_due_date'],
+            'oldest_unpaid_due_date' => $schedule['oldest_due_date'],
+            'should_suspend' => $schedule['should_suspend'],
+            'grace_days' => $schedule['grace_days'],
+            'grace_period_start' => $schedule['grace_period_start'],
+            'grace_period_end' => $schedule['grace_period_end'],
+            'suspension_at' => $schedule['suspension_at'],
+            'triggering_invoice_id' => $schedule['triggering_invoice']?->id,
+            'company_owned' => $schedule['company_owned'],
         ];
     }
 

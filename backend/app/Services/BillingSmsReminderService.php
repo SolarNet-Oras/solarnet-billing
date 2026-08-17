@@ -12,8 +12,9 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\QueryException;
 
 /**
- * Reserves and delivers the one permitted recurring billing SMS: exactly
- * seven Manila calendar days before an unpaid invoice is due.
+ * Reserves and delivers the one permitted pre-due billing SMS: exactly seven
+ * Manila calendar days before an unpaid invoice is due. The separately
+ * audited final grace-period SMS is handled by FinalGracePeriodWarningService.
  */
 class BillingSmsReminderService
 {

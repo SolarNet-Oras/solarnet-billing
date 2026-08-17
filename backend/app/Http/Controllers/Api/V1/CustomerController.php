@@ -266,6 +266,15 @@ class CustomerController extends Controller
                 ->latest()
                 ->limit(20)
                 ->get(['id', 'subscription_id', 'notification_type', 'title', 'route', 'status', 'sent_at', 'delivered_at', 'clicked_at', 'failure_reason', 'created_at']),
+            // The paired SMS/email rows include the authoritative balance,
+            // due date, grace dates, scheduled suspension date, recipient,
+            // provider ID, status, and failure details for administrator audit.
+            // The matching Web Push status remains in notification_logs above.
+            'final_grace_warnings' => $customer->finalGracePeriodWarnings()
+                ->with('invoice:id,invoice_number')
+                ->latest()
+                ->limit(20)
+                ->get(['id', 'invoice_id', 'notification_type', 'channel', 'recipient', 'amount', 'original_due_date', 'grace_period_start', 'grace_period_end', 'suspension_at', 'portal_url', 'provider_message_id', 'status', 'attempt_count', 'last_attempt_at', 'sent_at', 'failure_reason', 'created_at']),
             'location_events' => $customer->locationEvents()->latest()->limit(20)->get(['id', 'source', 'action', 'accuracy_meters', 'created_at']),
         ]);
     }

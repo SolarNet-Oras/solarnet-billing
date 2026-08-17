@@ -79,7 +79,7 @@ class CustomerWebPushNotificationService
             self::BILLING_DUE_TODAY => ['SolarNet bill due today', 'Your SolarNet bill is due today. Open your account to review payment options.'],
             self::BILLING_OVERDUE => ['SolarNet bill overdue', 'Your SolarNet account has an overdue bill. Open your account to review it.'],
             self::GRACE_PERIOD_WARNING => ['SolarNet grace-period reminder', 'Your account has an unpaid bill and is inside its grace period. Open your account to review it.'],
-            self::SUSPENSION_WARNING => ['SolarNet service suspension warning', 'Your account still has an unpaid bill. Please settle it soon to avoid interruption.'],
+            self::SUSPENSION_WARNING => $this->finalGraceWarningContent($customer),
             default => throw new \InvalidArgumentException("Unsupported billing notification type: {$type}"),
         };
 
@@ -309,6 +309,19 @@ class CustomerWebPushNotificationService
             'failure_reason' => $reason,
             'revoked_at' => $revoke ? now() : $subscription->revoked_at,
         ])->save();
+    }
+
+    /** @return array{0: string, 1: string} */
+    private function finalGraceWarningContent(Customer $customer): array
+    {
+        $outstanding = (float) Invoice::unpaid()
+            ->where('customer_id', $customer->id)
+            ->sum('balance');
+
+        return [
+            'SolarNet final billing warning',
+            'Your PHP ' . number_format($outstanding, 2) . ' outstanding balance reaches its final grace day today. Settle now to avoid service suspension.',
+        ];
     }
 
     private function dispatchKey(Customer $customer, string $type, ?Invoice $invoice, ?Payment $payment, CustomerWebPushSubscription $subscription, ?string $eventSuffix): string
