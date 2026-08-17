@@ -12,12 +12,22 @@ export interface AiChatResponse {
   assistant: string;
   tool_calls: AiToolCall[];
   model: string;
+  language?: {
+    language: string;
+    language_name: string;
+    detected_language: string;
+    detected_language_name: string;
+    source: string;
+    explicit: boolean;
+    fallback_required: boolean;
+  };
   usage: { prompt_tokens: number; completion_tokens: number };
 }
 
 export interface AiConversationSummary {
   id: string;
   title: string | null;
+  language?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,7 +73,7 @@ export const aiService = {
     return res.data.data;
   },
 
-  async getMessages(conversationId: string): Promise<{ conversation: { id: string; title: string | null }; messages: AiPersistedMessage[] }> {
+  async getMessages(conversationId: string): Promise<{ conversation: { id: string; title: string | null; language?: string | null }; messages: AiPersistedMessage[] }> {
     const res = await api.get<{ success: boolean; data: any }>(`/ai/conversations/${conversationId}/messages`);
     return res.data.data;
   },

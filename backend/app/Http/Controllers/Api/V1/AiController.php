@@ -85,7 +85,7 @@ class AiController extends Controller
         $rows = AiConversation::where('user_id', $request->user()->id)
             ->orderBy('created_at', 'desc')
             ->limit(50)
-            ->get(['id', 'title', 'created_at', 'updated_at']);
+            ->get(['id', 'title', 'language', 'created_at', 'updated_at']);
 
         return response()->json(['success' => true, 'data' => $rows]);
     }
@@ -110,6 +110,7 @@ class AiController extends Controller
                 'conversation' => [
                     'id'    => $conversation->id,
                     'title' => $conversation->title,
+                    'language' => $conversation->language,
                 ],
                 'messages' => $messages,
             ],

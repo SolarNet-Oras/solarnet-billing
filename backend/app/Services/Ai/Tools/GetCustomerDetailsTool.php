@@ -3,6 +3,10 @@
 namespace App\Services\Ai\Tools;
 
 use App\Models\Customer;
+use App\Models\DhcpLease;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Services\Ai\AiTool;
 
@@ -46,6 +50,28 @@ class GetCustomerDetailsTool implements AiTool
         $customer = $q->first();
         if (!$customer) return ['found' => false];
 
+        $unpaidInvoices = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->where('balance', '>', 0)
+            ->whereIn('status', ['sent', 'partial', 'overdue'])
+            ->orderBy('due_date')
+            ->limit(5)
+            ->get();
+        $lastPayment = Payment::query()
+            ->where('customer_id', $customer->id)
+            ->latest('payment_date')
+            ->first();
+        $lease = DhcpLease::query()
+            ->where('customer_id', $customer->id)
+            ->where('is_current', true)
+            ->latest('last_seen_at')
+            ->first();
+        $openTicket = Ticket::query()
+            ->where('customer_id', $customer->id)
+            ->whereNotIn('status', ['closed', 'resolved'])
+            ->latest('created_at')
+            ->first();
+
         return [
             'found' => true,
             'customer' => [
@@ -73,6 +99,37 @@ class GetCustomerDetailsTool implements AiTool
                     'name'              => $customer->router->name,
                     'connection_status' => $customer->router->connection_status,
                 ] : null,
+                'billing' => [
+                    'outstanding_balance' => round((float) $unpaidInvoices->sum('balance'), 2),
+                    'unpaid_invoice_count' => $unpaidInvoices->count(),
+                    'next_due_date' => $unpaidInvoices->first()?->due_date?->toDateString(),
+                    'unpaid_invoices' => $unpaidInvoices->map(fn (Invoice $invoice) => [
+                        'invoice_number' => $invoice->invoice_number,
+                        'due_date' => $invoice->due_date?->toDateString(),
+                        'balance' => (float) $invoice->balance,
+                        'status' => $invoice->status,
+                    ])->values()->all(),
+                    'last_payment' => $lastPayment ? [
+                        'amount' => (float) $lastPayment->amount,
+                        'method' => $lastPayment->payment_method,
+                        'payment_date' => $lastPayment->payment_date?->toDateString(),
+                        'transaction_id' => $lastPayment->transaction_id,
+                    ] : null,
+                ],
+                'network' => [
+                    'current_lease' => $lease ? [
+                        'status' => $lease->status,
+                        'ip_address' => $lease->ip_address,
+                        'last_seen_at' => $lease->last_seen_at?->toIso8601String(),
+                    ] : null,
+                ],
+                'latest_open_ticket' => $openTicket ? [
+                    'ticket_number' => $openTicket->ticket_number,
+                    'subject' => $openTicket->subject,
+                    'status' => $openTicket->status,
+                    'priority' => $openTicket->priority,
+                ] : null,
+                'as_of' => now()->toIso8601String(),
             ],
         ];
     }

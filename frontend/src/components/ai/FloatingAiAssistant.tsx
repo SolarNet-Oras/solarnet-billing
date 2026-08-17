@@ -15,7 +15,7 @@ interface UiMessage {
 const SUGGESTIONS: string[] = [
   'Give me a network status summary',
   'Show me all suspended customers',
-  'Who is on IP 192.168.1.50?',
+  'Bakit po mabagal ang internet namin?',
   'How many unregistered leases are ready to register?',
 ];
 
@@ -102,6 +102,7 @@ const FloatingAiAssistant: React.FC = () => {
   const [sending, setSending] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
+  const [languageName, setLanguageName] = useState<string>('English / Filipino');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -136,6 +137,7 @@ const FloatingAiAssistant: React.FC = () => {
     try {
       const res = await aiService.chat(trimmed, conversationId);
       setConversationId(res.conversation_id);
+      if (res.language?.language_name) setLanguageName(res.language.language_name);
       setMessages((prev) => [...prev, {
         role: 'assistant',
         content: res.assistant,
@@ -155,12 +157,13 @@ const FloatingAiAssistant: React.FC = () => {
     setMessages([]);
     setError('');
     setShowSidebar(false);
+    setLanguageName('English / Filipino');
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const loadConversation = async (id: string): Promise<void> => {
     try {
-      const { messages: msgs } = await aiService.getMessages(id);
+      const { conversation, messages: msgs } = await aiService.getMessages(id);
       const ui: UiMessage[] = msgs
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => ({
@@ -169,6 +172,7 @@ const FloatingAiAssistant: React.FC = () => {
           ts: new Date(m.created_at).getTime(),
         }));
       setConversationId(id);
+      setLanguageName(conversation.language === 'fil' ? 'Filipino' : 'English / Filipino');
       setMessages(ui);
       setShowSidebar(false);
     } catch (err: any) {
@@ -226,8 +230,9 @@ const FloatingAiAssistant: React.FC = () => {
               <Sparkles className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm">AI Assistant</div>
+              <div className="font-semibold text-sm">SolarNet Assistant</div>
               <div className="text-xs opacity-80">
+                <span>{languageName} · </span>
                 {conversationId ? 'Ongoing chat' : 'New chat'} · Hi, {user?.name?.split(' ')[0] || 'there'} 👋
               </div>
             </div>
@@ -307,7 +312,7 @@ const FloatingAiAssistant: React.FC = () => {
                   </div>
                   <div className="font-semibold text-foreground">How can I help?</div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    I have read-only access to customers, DHCP leases, and network status.
+                    Support in English or Filipino. I use read-only customer, DHCP lease, and network data when needed.
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
@@ -381,7 +386,7 @@ const FloatingAiAssistant: React.FC = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about customers, leases, network..."
+                placeholder="Ask in English or Filipino..."
                 rows={1}
                 className="flex-1 resize-none px-3 py-2 rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary max-h-32"
                 data-testid="ai-input"

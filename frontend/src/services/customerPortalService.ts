@@ -297,6 +297,7 @@ export interface CustomerTroubleshootingResponse {
     id: string;
     status: string;
     stage: string;
+    language?: string | null;
     diagnosis?: { confidence?: string; cause?: string; balance?: number; due_date?: string | null; suspension_date?: string | null } | null;
   };
   assistant: string;

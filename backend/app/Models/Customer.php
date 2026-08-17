@@ -41,6 +41,7 @@ class Customer extends Model
         'location_confirmed_at',
         'contact_number',
         'email',
+        'preferred_language',
         'portal_password',
         'portal_password_set_at',
         'welcome_email_sent_at',

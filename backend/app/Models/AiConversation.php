@@ -12,7 +12,7 @@ class AiConversation extends Model
 {
     use HasFactory, HasUuids;
 
-    protected $fillable = ['user_id', 'title'];
+    protected $fillable = ['user_id', 'title', 'language', 'language_source'];
 
     public function user(): BelongsTo
     {
