@@ -121,6 +121,7 @@ const emptyRegistrationForm: RegistrationForm = {
 
 const rate = (value: number | null) => value === null ? '—' : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)} Mbps` : `${(value / 1_000).toFixed(1)} Kbps`;
 const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const isCompletedTicket = (ticket: Ticket) => ['closed', 'registered'].includes(ticket.workflow_status);
 
 export default function TechnicianDashboardPage() {
   const [tab, setTab] = useState<'map' | 'traffic' | 'tickets' | 'application' | 'register'>('map');
@@ -185,11 +186,22 @@ export default function TechnicianDashboardPage() {
   const visibleTickets = useMemo(() => {
     const term = ticketQuery.trim().toLowerCase();
     return tickets.filter((ticket) => {
+      if (isCompletedTicket(ticket)) return false;
       const matchesText = !term || `${ticket.ticket_number} ${ticket.subject} ${ticket.customer?.full_name || ''} ${ticket.customer?.address || ''}`.toLowerCase().includes(term);
       const matchesFilter = ticketFilter === 'all'
         || (ticketFilter === 'pending' && ['open', 'unclaimed', 'claimed'].includes(ticket.workflow_status))
         || ticket.ticket_type === ticketFilter
         || ticket.workflow_status === ticketFilter;
+      return matchesText && matchesFilter;
+    });
+  }, [tickets, ticketFilter, ticketQuery]);
+
+  const completedTickets = useMemo(() => {
+    const term = ticketQuery.trim().toLowerCase();
+    return tickets.filter((ticket) => {
+      if (!isCompletedTicket(ticket)) return false;
+      const matchesText = !term || `${ticket.ticket_number} ${ticket.subject} ${ticket.customer?.full_name || ''} ${ticket.customer?.address || ''}`.toLowerCase().includes(term);
+      const matchesFilter = ticketFilter === 'all' || ticket.workflow_status === ticketFilter;
       return matchesText && matchesFilter;
     });
   }, [tickets, ticketFilter, ticketQuery]);
@@ -321,7 +333,8 @@ export default function TechnicianDashboardPage() {
           {!!ticket.histories?.length && <details className="mt-4 border-t pt-3"><summary className="cursor-pointer text-sm font-semibold">Audit history ({ticket.histories.length})</summary><ol className="mt-3 space-y-2">{ticket.histories.map((history) => <li key={history.id} className="border-l-2 border-primary/30 pl-3 text-xs"><p className="font-semibold">{label(history.action)} · {history.user?.name || 'System'}</p><p className="text-muted-foreground">{new Date(history.created_at).toLocaleString('en-PH')}{history.new_status ? ` · ${label(history.new_status)}` : ''}</p>{history.notes && <p className="mt-1">{history.notes}</p>}</li>)}</ol></details>}
         </article>;
       })}
-      {!visibleTickets.length && <p className="rounded-2xl border bg-card p-8 text-center text-sm text-muted-foreground">No ticket matches this search and filter.</p>}
+      {!visibleTickets.length && !completedTickets.length && <p className="rounded-2xl border bg-card p-8 text-center text-sm text-muted-foreground">No active ticket matches this search and filter.</p>}
+      {!!completedTickets.length && <article className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-emerald-950">Completed ticket history</h2><p className="mt-1 text-sm text-emerald-900/80">Completed tickets are archived here and removed from the active work list.</p></div><span className="rounded-full bg-emerald-200 px-2.5 py-1 text-xs font-bold text-emerald-950">{completedTickets.length}</span></div><div className="mt-4 space-y-2">{completedTickets.map((ticket) => <details key={ticket.id} className="rounded-xl border border-emerald-200 bg-background/80 p-3"><summary className="cursor-pointer list-none"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold text-primary">{ticket.ticket_number}</p><p className="font-semibold">{ticket.subject}</p><p className="text-xs text-muted-foreground">{ticket.customer?.full_name || 'No client'} · {new Date(ticket.updated_at).toLocaleString('en-PH')}</p></div><span className="inline-flex w-fit rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-800">{label(ticket.workflow_status)}</span></div></summary><div className="mt-3 border-t border-emerald-100 pt-3 text-sm"><p><strong>Address:</strong> {ticket.customer?.address || 'No address'}</p>{ticket.resolution_notes && <p className="mt-1 whitespace-pre-line"><strong>Resolution:</strong> {ticket.resolution_notes}</p>}{ticket.installation_notes && <p className="mt-1 whitespace-pre-line"><strong>Installation notes:</strong> {ticket.installation_notes}</p>}{ticket.histories?.length ? <ol className="mt-3 space-y-2 border-l-2 border-emerald-200 pl-3">{ticket.histories.map((history) => <li key={history.id} className="text-xs"><p className="font-semibold">{label(history.action)} · {history.user?.name || 'System'}</p><p className="text-muted-foreground">{new Date(history.created_at).toLocaleString('en-PH')}{history.new_status ? ` · ${label(history.new_status)}` : ''}</p>{history.notes && <p className="mt-1">{history.notes}</p>}</li>)}</ol> : <p className="mt-2 text-xs text-muted-foreground">No audit history recorded.</p>}</div></details>)}</div></article>}
     </section>}
 
     {tab === 'application' && <section className="rounded-2xl border bg-card p-6"><UserPlus className="h-8 w-8 text-primary" /><h2 className="mt-3 text-lg font-semibold">New client application</h2><p className="mt-2 max-w-xl text-sm text-muted-foreground">Record a prospective client’s details and exact installation location. The application remains pending for office approval.</p><Link to="/signup" className="mt-5 inline-flex rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Start new application</Link></section>}
