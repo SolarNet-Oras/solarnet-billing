@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solarnet-customer-shell-v2';
+const CACHE_NAME = 'solarnet-customer-shell-v3';
 const APP_SHELL = [
   '/',
   '/customer/login',
