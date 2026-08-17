@@ -29,7 +29,12 @@ class PaymentConfirmationEmailService
         $subject = "{$company} payment confirmation {$payment->payment_number}";
 
         try {
-            Mail::raw($this->body($payment), function (Message $message) use ($customer, $subject) {
+            $html = app(SolarNetEmailRenderer::class)->paymentConfirmation(
+                $payment,
+                $this->paymentMethodLabel($payment->payment_method),
+            );
+
+            Mail::html($html, function (Message $message) use ($customer, $subject) {
                 $message->to($customer->email, $customer->full_name)->subject($subject);
             });
 

@@ -200,19 +200,7 @@ class FinalGracePeriodWarningService
 
     public function emailBody(Customer $customer, array $event): string
     {
-        $company = (string) Setting::get('company.name', 'SolarNet Connection');
-
-        return "Hello {$customer->full_name},\n\n"
-            . "This is a final reminder regarding your SolarNet Internet account.\n\n"
-            . 'Outstanding balance: PHP ' . number_format((float) $event['outstanding_balance'], 2) . "\n"
-            . 'Original due date: ' . $event['original_due_date']->format('F j, Y') . "\n"
-            . 'Grace period: ' . $event['grace_days'] . " days\n"
-            . 'Your grace period ends: ' . $event['grace_period_end']->format('F j, Y') . "\n\n"
-            . "Your service is scheduled for suspension according to our billing policy if the outstanding balance remains unpaid.\n\n"
-            . "Please settle your account before the grace period expires.\n\n"
-            . "Pay securely through your SolarNet Customer Portal:\n{$event['portal_url']}\n\n"
-            . "If you have already made a payment, please allow the payment to be verified and posted to your account.\n\n"
-            . "Thank you,\n{$company}\nBilling Department\n";
+        return app(SolarNetEmailRenderer::class)->finalGraceWarning($customer, $event);
     }
 
     /** @return array{0: FinalGracePeriodWarning, 1: bool} */
@@ -294,7 +282,7 @@ class FinalGracePeriodWarningService
         }
 
         try {
-            Mail::raw($this->emailBody($warning->customer, $event), function (Message $message) use ($warning) {
+            Mail::html($this->emailBody($warning->customer, $event), function (Message $message) use ($warning) {
                 $message->to($warning->recipient, $warning->customer->full_name)
                     ->subject($this->emailSubject());
             });

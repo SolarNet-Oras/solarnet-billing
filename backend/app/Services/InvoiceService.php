@@ -324,20 +324,12 @@ class InvoiceService
             return 'skipped_no_balance';
         }
 
-        $company = (string) Setting::get('company.name', 'Solarnet Internet');
-        $currency = (string) Setting::get('company.currency', 'PHP ');
         $subject = "Your SolarNet invoice {$invoice->invoice_number}";
-        $body = "Hi {$customer->full_name},\n\n"
-            . "Your SolarNet invoice is now available.\n\n"
-            . "Invoice   : {$invoice->invoice_number}\n"
-            . 'Due date  : ' . $invoice->due_date->format('Y-m-d') . "\n"
-            . 'Amount due: ' . $currency . number_format((float) $invoice->balance, 2) . "\n\n"
-            . "A PDF copy is attached. Please settle on or before the due date to avoid service interruption.\n\n"
-            . "Thank you,\n{$company}\n";
+        $html = app(SolarNetEmailRenderer::class)->initialInvoice($invoice);
 
         try {
             $pdf = $this->generatePdf($invoice)->output();
-            Mail::raw($body, function (Message $message) use ($customer, $subject, $pdf, $invoice) {
+            Mail::html($html, function (Message $message) use ($customer, $subject, $pdf, $invoice) {
                 $message->to($customer->email, $customer->full_name)
                     ->subject($subject)
                     ->attachData($pdf, "invoice-{$invoice->invoice_number}.pdf", ['mime' => 'application/pdf']);
