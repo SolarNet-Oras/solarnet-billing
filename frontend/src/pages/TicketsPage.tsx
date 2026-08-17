@@ -581,6 +581,13 @@ const TicketsPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {selectedTicket.customer?.notes && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                      <h3 className="font-semibold text-blue-950">Client notes</h3>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-blue-900">{selectedTicket.customer.notes}</p>
+                    </div>
+                  )}
+
                   <div>
                     <h3 className="font-medium text-gray-900 mb-2">Description</h3>
                     <p className="text-gray-700 whitespace-pre-wrap">{selectedTicket.description}</p>
