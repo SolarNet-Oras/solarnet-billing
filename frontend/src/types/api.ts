@@ -276,6 +276,7 @@ export interface Ticket {
   customer_id: string;
   assigned_to: string | null;
   customer?: Customer;
+  client_notes?: string | null;
   assignedTo?: User;
   assigned_technician?: User;
   subject: string;

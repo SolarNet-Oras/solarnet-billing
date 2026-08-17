@@ -51,6 +51,10 @@ class DashboardController extends Controller
                 'approved_at', 'return_reason', 'returned_at', 'registered_at',
                 'resolved_at', 'closed_at', 'created_at', 'updated_at',
             ]);
+        $tickets->each(function (Ticket $ticket): void {
+            // Keep signup notes available as a stable top-level field for field clients.
+            $ticket->setAttribute('client_notes', $ticket->customer?->notes);
+        });
 
         $servicePlans = ServicePlan::query()
             ->where('is_active', true)
