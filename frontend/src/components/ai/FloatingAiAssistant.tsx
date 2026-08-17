@@ -195,6 +195,13 @@ const FloatingAiAssistant: React.FC = () => {
 
   if (!isAuthenticated) return null;
 
+  // The operational assistant exposes staff-level customer/network tools.
+  // Keep it hidden for field/collector roles that do not have the same
+  // view-dashboard permission instead of rendering a control that can only
+  // return an avoidable 403/"Insufficient permissions" response.
+  const canUseOperationalAssistant = Boolean(user?.permissions?.includes('view-dashboard'));
+  if (!canUseOperationalAssistant) return null;
+
   const isSuperAdmin = Boolean((user as any)?.roles?.some?.((r: any) => (typeof r === 'string' ? r : r?.name) === 'super_admin'));
   const suggestions = isSuperAdmin ? [...SUGGESTIONS, ...SUPER_ADMIN_SUGGESTIONS] : SUGGESTIONS;
 
