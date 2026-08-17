@@ -27,11 +27,11 @@ class BillingSmsReminderServiceTest extends TestCase
             $customer,
             1500,
             Carbon::parse('2026-09-15', 'Asia/Manila'),
-            'https://billing.solarnetconnection.com/customer/billing',
+            'https://solarnetportal.com/customer/billing',
         );
 
         $this->assertSame(
-            'SOLARNET: Hi Juan, your bill of PHP 1,500.00 is due Sep 15, 2026. Pay: https://billing.solarnetconnection.com/customer/billing',
+            'SOLARNET: Hi Juan, your bill of PHP 1,500.00 is due Sep 15, 2026. Pay: https://solarnetportal.com/customer/billing',
             $message,
         );
     }

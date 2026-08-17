@@ -12,6 +12,7 @@ use App\Services\BillingSuspensionService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
 use App\Services\InvoiceService;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -226,7 +227,7 @@ class CustomerController extends Controller
             'portal_credentials' => $plainPassword ? [
                 'email'    => $customer->email,
                 'password' => $plainPassword,
-                'portal_url' => rtrim(config('app.url'), '/') . '/customer/login',
+                'portal_url' => CustomerPortalUrl::to('/customer/login'),
                 'welcome_email_sent' => $emailSent,
             ] : null,
             'queue_sync' => $queueSyncStatus,

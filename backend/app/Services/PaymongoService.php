@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\PaymongoCheckout;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -25,7 +26,7 @@ class PaymongoService
         $customer = $invoice->customer;
         $accountNumber = $customer->account_number;
         $reference = 'SLR-' . $accountNumber . '-' . $invoice->invoice_number . '-' . Str::upper(Str::random(8));
-        $origin = rtrim(config('app.url'), '/');
+        $origin = CustomerPortalUrl::base();
         $payload = ['data' => ['attributes' => [
             'line_items' => [[
                 'currency' => 'PHP', 'amount' => (int) round($invoice->balance * 100), 'name' => "SolarNet {$accountNumber} - {$invoice->invoice_number}", 'quantity' => 1,

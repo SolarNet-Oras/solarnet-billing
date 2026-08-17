@@ -54,6 +54,10 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Public customer sign-in and payment links intentionally use a separate
+    // hostname from the staff billing application.
+    'customer_portal_url' => env('CUSTOMER_PORTAL_URL', env('APP_URL', 'http://localhost')),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

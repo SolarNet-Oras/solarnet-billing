@@ -19,7 +19,7 @@ PAYMONGO_WEBHOOK_SECRET=whsk_...
 Register this webhook in PayMongo:
 
 ```text
-https://billing.solarnetconnection.com/api/v1/customer-portal/paymongo/webhook
+https://billing.solarnetportal.com/api/v1/customer-portal/paymongo/webhook
 ```
 
 Enable `payment.paid`, `payment.failed`, and `qrph.expired` events. Payment

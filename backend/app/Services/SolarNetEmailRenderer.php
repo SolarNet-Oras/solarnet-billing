@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Support\CustomerPortalUrl;
 use Carbon\Carbon;
 
 /**
@@ -168,7 +169,7 @@ class SolarNetEmailRenderer
 
     private function portalUrl(): string
     {
-        return rtrim((string) config('app.url'), '/') . '/customer/billing';
+        return CustomerPortalUrl::to('/customer/billing');
     }
 
     private function absoluteUrl(string $url): ?string

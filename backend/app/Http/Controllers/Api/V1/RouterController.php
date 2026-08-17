@@ -15,6 +15,7 @@ use App\Services\RouterQosService;
 use App\Services\RouterDnsBrandingService;
 use App\Services\RouterProvisioningService;
 use App\Services\ThreatFeedService;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -559,7 +560,7 @@ class RouterController extends Controller
     public function installBillingAccess(string $id): JsonResponse
     {
         $router = Router::findOrFail($id);
-        $paymentUrl = trim((string) Setting::get('network.payment_reminder_url', rtrim((string) config('app.url'), '/') . '/customer/login'));
+        $paymentUrl = $this->paymentReminderUrl();
         $result = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
         return response()->json($result, $result['success'] ? 200 : 422);
     }
@@ -635,7 +636,7 @@ class RouterController extends Controller
         }
 
         $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
-        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, Setting::get('network.payment_reminder_url', config('app.url')));
+        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, $this->paymentReminderUrl());
 
         return response()->json([
             'success' => true,
@@ -683,7 +684,7 @@ class RouterController extends Controller
         ]);
 
         $billingSystemIp = $request->input('billing_system_ip') ?: $this->detectPublicIp();
-        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, Setting::get('network.payment_reminder_url', config('app.url')));
+        $script = $this->scriptGenerator->generateSetupScript($router, $billingSystemIp, $this->paymentReminderUrl());
 
         return response()->json([
             'success' => true,
@@ -709,6 +710,12 @@ class RouterController extends Controller
                 'default_ssl_port'  => 8729,
             ],
         ]);
+    }
+
+    /** Use an explicit operator setting when present, otherwise the new portal. */
+    private function paymentReminderUrl(): string
+    {
+        return CustomerPortalUrl::paymentReminder((string) Setting::get('network.payment_reminder_url', ''));
     }
 
     /**

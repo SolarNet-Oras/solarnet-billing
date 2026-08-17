@@ -4,7 +4,8 @@ import axios from 'axios';
 import { CheckCircle2, Crosshair, Loader2, Wifi, User, Mail, Phone, MapPin, ClipboardCopy } from 'lucide-react';
 import { formatPHP } from '@/lib/currency';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_BASE = import.meta.env.VITE_API_URL
+  || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8001');
 
 interface ServicePlanOption {
   id: string;

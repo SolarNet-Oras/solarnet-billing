@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Router;
 use App\Models\Setting;
+use App\Support\CustomerPortalUrl;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -482,10 +483,10 @@ class BillingSuspensionService
             ->whereIn('status', ['sent', 'partial', 'overdue'])
             ->sum('balance');
 
-        $paymentUrl = trim((string) Setting::get('network.payment_reminder_url', ''));
-        if ($paymentUrl === '') {
-            $paymentUrl = rtrim(config('app.url'), '/') . '/payment-required/' . $customer->id;
-        }
+        $paymentUrl = CustomerPortalUrl::paymentReminder(
+            (string) Setting::get('network.payment_reminder_url', ''),
+            '/payment-required/' . $customer->id,
+        );
 
         return [
             'customer_id' => $customer->id,

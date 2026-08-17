@@ -7,6 +7,7 @@ use App\Models\BillingSmsNotification;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Setting;
+use App\Support\CustomerPortalUrl;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\QueryException;
@@ -166,13 +167,11 @@ class BillingSmsReminderService
 
     public function portalUrl(): ?string
     {
-        $base = rtrim((string) config('app.url'), '/');
-        $parts = parse_url($base);
-        if (($parts['scheme'] ?? null) !== 'https' || blank($parts['host'] ?? null)) {
+        if (!CustomerPortalUrl::isValidHttpsBase()) {
             return null;
         }
 
-        return $base . '/customer/billing';
+        return CustomerPortalUrl::to('/customer/billing');
     }
 
     private function isEnabled(): bool

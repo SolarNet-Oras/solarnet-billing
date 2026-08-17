@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -58,7 +59,7 @@ class CustomerAccountService
     {
         if (empty($customer->email)) return false;
 
-        $portalUrl = $portalUrl ?: rtrim(config('app.url'), '/') . '/customer/login';
+        $portalUrl = $portalUrl ?: CustomerPortalUrl::to('/customer/login');
 
         $subject = 'Welcome to Solarnet Internet';
         $body = $this->buildWelcomeEmailBody($customer, $plainPassword, $portalUrl);

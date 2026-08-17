@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Router;
+use App\Support\CustomerPortalUrl;
 
 class MikrotikScriptGenerator
 {
@@ -29,7 +30,7 @@ class MikrotikScriptGenerator
         $apiPort = 8728;
         $isForwardedEndpoint = (int) $router->port !== $apiPort;
         $connectionEndpoint = $router->host . ':' . $router->port;
-        $paymentPortalUrl = trim((string) ($paymentPortalUrl ?: config('app.url')));
+        $paymentPortalUrl = trim((string) ($paymentPortalUrl ?: CustomerPortalUrl::to('/customer/login')));
         $paymentPortalHost = parse_url($paymentPortalUrl, PHP_URL_HOST);
         $paymentAccessHosts = [];
         $paymentPortalIps = $paymentPortalHost ? $this->resolveIpv4Addresses($paymentPortalHost) : [];

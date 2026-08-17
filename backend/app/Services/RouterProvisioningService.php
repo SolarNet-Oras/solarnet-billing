@@ -6,6 +6,7 @@ use App\Models\Router;
 use App\Models\RouterProvisioningAudit;
 use App\Models\Setting;
 use App\Models\User;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Support\Str;
 
 /**
@@ -97,7 +98,7 @@ class RouterProvisioningService
         $apply = $this->mikrotikService->runOneTimeScript($router, $this->applyScript($plan), $user->email);
         if (!$apply['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $apply['message']);
 
-        $paymentUrl = (string) Setting::get('network.payment_reminder_url', rtrim((string) config('app.url'), '/') . '/customer/login');
+        $paymentUrl = CustomerPortalUrl::paymentReminder((string) Setting::get('network.payment_reminder_url', ''));
         $billing = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
         if (!$billing['success']) return $this->rollbackAfterFailure($router, $audit, $plan, 'Billing access infrastructure could not be installed: ' . $billing['message']);
 

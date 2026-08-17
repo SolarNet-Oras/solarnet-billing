@@ -4,7 +4,8 @@
 #
 # Usage:
 #   1. cp .env.production.example .env
-#   2. Edit .env and set DOMAIN, DB_PASSWORD, APP_KEY, JWT_SECRET
+#   2. Edit .env and set CUSTOMER_DOMAIN, ADMIN_DOMAIN, LEGACY_ADMIN_DOMAIN,
+#      DB_PASSWORD, APP_KEY, and JWT_SECRET
 #   3. docker compose -f docker-compose.prod.yml --env-file .env up -d
 #
 # Services:
@@ -32,7 +33,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      DOMAIN: ${DOMAIN}
+      CUSTOMER_DOMAIN: ${CUSTOMER_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      LEGACY_ADMIN_DOMAIN: ${LEGACY_ADMIN_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
     networks: [edge]
     depends_on: [frontend, backend-nginx]
@@ -42,7 +45,8 @@ services:
       context: ..
       dockerfile: deploy/frontend.Dockerfile
       args:
-        VITE_API_URL: https://${DOMAIN}
+        # Empty in production: the SPA calls /api on the host it was opened on.
+        VITE_API_URL: ""
     restart: unless-stopped
     networks: [edge]
 
@@ -70,7 +74,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      APP_URL: https://${DOMAIN}
+      APP_URL: https://${ADMIN_DOMAIN}
+      CUSTOMER_PORTAL_URL: https://${CUSTOMER_DOMAIN}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -82,7 +87,12 @@ services:
       CACHE_STORE: redis
       SESSION_DRIVER: redis
       QUEUE_CONNECTION: redis
-      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN},https://${CUSTOMER_DOMAIN}
+      SANCTUM_STATEFUL_DOMAINS: ${ADMIN_DOMAIN},${CUSTOMER_DOMAIN}
+      SESSION_DOMAIN: ""
+      SESSION_SECURE_COOKIE: "true"
+      SESSION_SAME_SITE: lax
+      MAIL_EHLO_DOMAIN: ${ADMIN_DOMAIN}
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,7 +112,8 @@ services:
     env_file: .env
     environment:
       APP_ENV: production
-      APP_URL: https://${DOMAIN}
+      APP_URL: https://${ADMIN_DOMAIN}
+      CUSTOMER_PORTAL_URL: https://${CUSTOMER_DOMAIN}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_DATABASE: ${DB_DATABASE}
@@ -130,7 +141,8 @@ services:
     env_file: .env
     environment:
       APP_ENV: production
-      APP_URL: https://${DOMAIN}
+      APP_URL: https://${ADMIN_DOMAIN}
+      CUSTOMER_PORTAL_URL: https://${CUSTOMER_DOMAIN}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_DATABASE: ${DB_DATABASE}

@@ -15,6 +15,7 @@ use App\Services\BillingSuspensionService;
 use App\Services\CustomerLocationCaptureService;
 use App\Services\CustomerWebPushNotificationService;
 use App\Services\CustomerPortalTokenService;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -259,7 +260,7 @@ class CustomerPortalController extends Controller
                 'account_number' => $customer->account_number,
                 'email'          => $customer->email,
                 'password'       => $plain, // shown once on success page
-                'portal_url'     => rtrim(config('app.url'), '/') . '/customer/login',
+                'portal_url'     => CustomerPortalUrl::to('/customer/login'),
                 'dhcp_lease_linked' => $leaseBinding['linked'],
                 'dhcp_lease_message' => $leaseBinding['message'],
                 'existing_customer_merged' => $mergedExistingCustomer,
@@ -990,7 +991,7 @@ class CustomerPortalController extends Controller
             'data' => [
                 'customer_id' => $customer->id,
                 'resolver_data' => $this->billingSuspensionService->buildPaymentReminderData($customer),
-                'redirect_url' => rtrim(config('app.url'), '/') . '/payment-required/' . $customer->id,
+                'redirect_url' => CustomerPortalUrl::to('/payment-required/' . $customer->id),
             ],
         ]);
     }

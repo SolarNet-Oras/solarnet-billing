@@ -20,7 +20,11 @@ import type { ApiResponse, ApiError } from '@/types/api';
 // Configuration
 // ============================================================================
 
-const API_BASE_URL: string = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+// Production serves the same SPA from both the customer and staff domains.
+// Keeping API requests same-origin prevents cross-domain token and cookie
+// problems while still allowing local Vite development on port 8001.
+const API_BASE_URL: string = import.meta.env.VITE_API_URL
+  || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8001');
 const API_VERSION: string = 'v1';
 const API_TIMEOUT: number = 30000; // 30 seconds
 

@@ -43,7 +43,9 @@ Edit `.env` and set:
 
 | Variable | How to get it |
 |---|---|
-| `DOMAIN` | Your subdomain, e.g. `billing.solarnet.co` |
+| `CUSTOMER_DOMAIN` | Customer portal hostname, e.g. `solarnetportal.com` |
+| `ADMIN_DOMAIN` | Staff billing hostname, e.g. `billing.solarnetportal.com` |
+| `LEGACY_ADMIN_DOMAIN` | Existing billing hostname to redirect, e.g. `billing.solarnetconnection.com` |
 | `ACME_EMAIL` | Your email (for Let's Encrypt) |
 | `DB_PASSWORD` | `openssl rand -base64 32` |
 | `JWT_SECRET` | `openssl rand -base64 48` |
@@ -56,6 +58,23 @@ docker compose -f docker-compose.prod.yml --env-file .env run --rm backend \
 ```
 Paste the output into `.env` as `APP_KEY=base64:...`.
 
+## Domain cutover (existing installation)
+
+Before deploying the multi-domain configuration, point these DNS records to
+the same VPS IPv4 address and wait for public DNS to resolve them:
+
+```text
+solarnetportal.com             A   <VPS_IPV4>
+billing.solarnetportal.com     A   <VPS_IPV4>
+billing.solarnetconnection.com A   <VPS_IPV4>   # keep during the redirect
+```
+
+Do not leave a conflicting `AAAA` or `CNAME` record. If a proxy such as
+Cloudflare is in use, keep these records DNS-only while Caddy obtains its
+certificates. Then add the three `*_DOMAIN` values above to `deploy/.env`.
+The legacy hostname permanently redirects to `ADMIN_DOMAIN`; no customer,
+billing, router, or credential data is changed by the cutover.
+
 ## 4. Deploy (5 min first time)
 
 ```bash
@@ -63,15 +82,22 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
+For a domain-only cutover of an existing production system, use this instead
+so no migration or seeder writes are attempted:
+
+```bash
+RUN_MIGRATIONS=0 RUN_SEEDERS=0 ./deploy.sh
+```
+
 The script will:
-- Build the frontend (Vite build with `VITE_API_URL=https://$DOMAIN`)
+- Build one frontend for both hostnames. It calls `/api` on the domain the user opened, so customer and staff sessions stay same-origin.
 - Build the Laravel PHP image
 - Start Postgres + Redis and wait for them to be healthy
 - Run migrations + seeders
 - Cache Laravel config/routes/views (production optimisation)
 - Start Caddy which will automatically request a TLS certificate
 
-**First TLS certificate takes ~30 seconds.** Then browse to `https://<DOMAIN>`.
+**First TLS certificates take ~30 seconds after DNS is correct.** Then browse to the customer and staff domains.
 
 ## 5. Create the first administrator securely
 

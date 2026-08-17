@@ -5,10 +5,12 @@
     }
 }
 
-{$DOMAIN} {
+# Both public hostnames use the same SolarNet stack. The frontend sends API
+# requests to its current host, so customer and staff authentication remain
+# same-origin and do not share browser tokens or cookies.
+(solarnet_application) {
     encode zstd gzip
 
-    # API + Sanctum + Laravel routes -> backend nginx
     @api {
         path /api/*
         path /sanctum/*
@@ -19,7 +21,6 @@
         reverse_proxy backend-nginx:80
     }
 
-    # Everything else -> React SPA
     handle {
         reverse_proxy frontend:80
     }
@@ -36,4 +37,22 @@
         output stdout
         format console
     }
+}
+
+# Customer portal: its root is a customer sign-in entry point.
+{$CUSTOMER_DOMAIN} {
+    @customer_landing path /
+    redir @customer_landing /customer/login permanent
+    import solarnet_application
+}
+
+# Staff/admin billing application.
+{$ADMIN_DOMAIN} {
+    import solarnet_application
+}
+
+# Preserve historical staff links while moving the former billing hostname to
+# the new permanent billing address. Caddy issues its own certificate first.
+{$LEGACY_ADMIN_DOMAIN} {
+    redir https://{$ADMIN_DOMAIN}{uri} permanent
 }

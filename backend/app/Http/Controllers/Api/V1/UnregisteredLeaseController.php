@@ -12,6 +12,7 @@ use App\Services\DhcpSyncService;
 use App\Services\MikrotikService;
 use App\Services\InvoiceService;
 use App\Services\QueueService;
+use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -425,7 +426,7 @@ class UnregisteredLeaseController extends Controller
                 $portalCreds = [
                     'email'              => $customer->email,
                     'password'           => $plain,
-                    'portal_url'         => rtrim(config('app.url'), '/') . '/customer/login',
+                    'portal_url'         => CustomerPortalUrl::to('/customer/login'),
                     'welcome_email_sent' => $sent,
                 ];
             } catch (\Throwable $e) {
