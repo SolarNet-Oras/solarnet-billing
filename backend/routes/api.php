@@ -175,8 +175,11 @@ Route::prefix('v1')->group(function () {
             Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister'])->middleware('permission:create-customers|manage-dhcp');
         });
 
-        // AI Assistant (floating chat)
-        Route::prefix('ai')->middleware('permission:view-dashboard')->group(function () {
+        // AI Assistant (floating chat). Keep it available on every employee
+        // dashboard, including Collector and Technician. Individual tools
+        // still enforce their own read/write permissions, and the customer
+        // role is intentionally excluded from this staff API.
+        Route::prefix('ai')->middleware('role:super_admin|admin|cashier|office_admin|collector|technician|noc|accounting|viewer')->group(function () {
             Route::post('chat',                              [AiController::class, 'chat']);
             Route::get('conversations',                      [AiController::class, 'listConversations']);
             Route::get('conversations/{id}/messages',        [AiController::class, 'messages']);
