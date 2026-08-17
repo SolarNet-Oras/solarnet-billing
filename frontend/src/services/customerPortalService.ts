@@ -275,7 +275,33 @@ export const customerPortalService = {
     const response = await api.post('/customer-portal/location-capture/confirm', { token });
     return response.data.data;
   },
+
+  startTroubleshooting: async (): Promise<CustomerTroubleshootingResponse> => {
+    const response = await api.post('/customer-portal/troubleshooting/sessions');
+    return response.data.data;
+  },
+
+  sendTroubleshootingMessage: async (sessionId: string, message: string): Promise<CustomerTroubleshootingResponse> => {
+    const response = await api.post(`/customer-portal/troubleshooting/sessions/${encodeURIComponent(sessionId)}/messages`, { message });
+    return response.data.data;
+  },
+
+  escalateTroubleshooting: async (sessionId: string): Promise<{ ticket: { id: string; ticket_number: string; status: string }; message: string }> => {
+    const response = await api.post(`/customer-portal/troubleshooting/sessions/${encodeURIComponent(sessionId)}/escalate`);
+    return response.data.data;
+  },
 };
+
+export interface CustomerTroubleshootingResponse {
+  session: {
+    id: string;
+    status: string;
+    stage: string;
+    diagnosis?: { confidence?: string; cause?: string; balance?: number; due_date?: string | null; suspension_date?: string | null } | null;
+  };
+  assistant: string;
+  next_question?: string | null;
+}
 
 export interface CustomerProfileChangeRequest {
   id: string;

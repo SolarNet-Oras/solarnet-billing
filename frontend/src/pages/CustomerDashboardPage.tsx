@@ -16,6 +16,7 @@ import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
 import { formatPHP } from '../lib/currency';
 import CustomerAppInstallCard from '../components/customer/CustomerAppInstallCard';
+import CustomerTroubleshootingCard from '../components/customer/CustomerTroubleshootingCard';
 
 const CustomerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -207,6 +208,8 @@ const CustomerDashboardPage: React.FC = () => {
             <strong>Change your temporary password now.</strong> This account is using its initial portal password. Open “Change portal password” below before continuing.
           </div>
         )}
+
+        <CustomerTroubleshootingCard />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

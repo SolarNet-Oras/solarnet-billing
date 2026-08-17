@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
+use App\Http\Controllers\Api\V1\CustomerTroubleshootingController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
 use App\Http\Controllers\Api\V1\HistoricalCleanupController;
@@ -328,6 +329,9 @@ Route::prefix('v1')->group(function () {
             Route::post('push-notifications/subscribe', [CustomerPortalController::class, 'subscribePushNotifications'])->middleware('throttle:6,1');
             Route::delete('push-notifications/subscribe', [CustomerPortalController::class, 'unsubscribePushNotifications'])->middleware('throttle:6,1');
             Route::post('push-notifications/{notificationId}/clicked', [CustomerPortalController::class, 'markPushNotificationClicked'])->middleware('throttle:30,1');
+            Route::post('troubleshooting/sessions', [CustomerTroubleshootingController::class, 'start'])->middleware('throttle:10,1');
+            Route::post('troubleshooting/sessions/{id}/messages', [CustomerTroubleshootingController::class, 'message'])->middleware('throttle:30,1');
+            Route::post('troubleshooting/sessions/{id}/escalate', [CustomerTroubleshootingController::class, 'escalate'])->middleware('throttle:5,1');
         });
     });
 });

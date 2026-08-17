@@ -14,6 +14,7 @@ use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
 use App\Services\CustomerLocationCaptureService;
 use App\Services\CustomerWebPushNotificationService;
+use App\Services\CustomerPortalTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +26,7 @@ class CustomerPortalController extends Controller
     public function __construct(
         protected BillingSuspensionService $billingSuspensionService,
         protected CustomerWebPushNotificationService $webPushNotificationService,
+        protected CustomerPortalTokenService $customerPortalTokens,
     )
     {
     }
@@ -914,57 +916,7 @@ class CustomerPortalController extends Controller
      */
     protected function getAuthenticatedCustomer(Request $request): ?Customer
     {
-        $token = $request->bearerToken();
-
-        if (!$token) {
-            return null;
-        }
-
-        try {
-            // Decode and verify token
-            $decoded = json_decode(base64_decode($token), true);
-            
-            if (!$decoded || !isset($decoded['payload']) || !isset($decoded['signature'])) {
-                return null;
-            }
-
-            $payload = $decoded['payload'];
-            $signature = $decoded['signature'];
-
-            // Verify signature
-            $expectedSignature = hash_hmac('sha256', json_encode($payload), config('app.key'));
-            
-            if (!hash_equals($expectedSignature, $signature)) {
-                return null;
-            }
-
-            // Check expiration
-            if (isset($payload['expires_at']) && $payload['expires_at'] < now()->timestamp) {
-                return null;
-            }
-
-            // Verify customer still exists
-            $customer = Customer::find($payload['customer_id']);
-
-            if (!$customer) {
-                return null;
-            }
-
-            // Additional verification: check email and account match
-            if ($customer->email !== $payload['email'] || 
-                $customer->account_number !== $payload['account_number']) {
-                return null;
-            }
-
-            return $customer;
-            
-        } catch (\Exception $e) {
-            \Log::warning('Customer authentication failed', [
-                'error' => $e->getMessage(),
-                'token' => substr($token, 0, 20) . '...',
-            ]);
-            return null;
-        }
+        return $this->customerPortalTokens->authenticate($request);
     }
 
     /**
