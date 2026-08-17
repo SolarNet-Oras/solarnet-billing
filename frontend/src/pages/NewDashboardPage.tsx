@@ -260,10 +260,17 @@ const NewDashboardPageContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Collectors use the scoped collection workspace below. The general
+    // dashboard metrics endpoint is intentionally restricted to roles with
+    // `view-dashboard`, so do not request it for the collector dashboard.
+    if (collector) {
+      setLoading(false);
+      return;
+    }
     fetchMetrics();
     const interval = window.setInterval(() => fetchMetrics(), 30000);
     return () => window.clearInterval(interval);
-  }, [fetchMetrics]);
+  }, [collector, fetchMetrics]);
 
   useEffect(() => {
     if (collector) {
@@ -340,7 +347,7 @@ const NewDashboardPageContent: React.FC = () => {
   return (
     <DashboardLayout headerTitle="Client & billing overview" headerSubtitle="A real-time view of your subscribers, collections, and network readiness.">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 pb-10">
-        <section>
+        {!collector && <section>
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-primary" />
@@ -358,7 +365,7 @@ const NewDashboardPageContent: React.FC = () => {
             <MetricTile label="Disconnected" value={metrics?.expired_subscribers ?? 0} Icon={CircleOff} tone="bg-slate-600" />
             <MetricTile label="Collectible" value={peso(metrics?.collectible ?? 0)} Icon={Banknote} tone="bg-violet-600" />
           </div>
-        </section>
+        </section>}
 
         {!collector && <section className="grid gap-2 lg:grid-cols-2">
           <div className="rounded-md border border-border/70 bg-card p-2.5 shadow-sm">
