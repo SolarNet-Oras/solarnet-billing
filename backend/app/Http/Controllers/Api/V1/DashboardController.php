@@ -29,7 +29,7 @@ class DashboardController extends Controller
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates']);
         $tickets = Ticket::with([
-            'customer:id,account_number,full_name,address,gps_coordinates,service_plan_id',
+            'customer:id,account_number,full_name,address,notes,gps_coordinates,service_plan_id',
             'customer.servicePlan:id,name,download_speed,upload_speed,price',
             'assignedTechnician:id,name,email',
             'histories.user:id,name,email',
