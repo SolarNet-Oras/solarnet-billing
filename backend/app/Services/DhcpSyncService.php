@@ -240,15 +240,34 @@ class DhcpSyncService
             ->first();
 
         if ($customer) {
+            $customerUpdates = [];
+            $activatedWaitingRegistration = $customer->status === 'pending'
+                && $customer->mac_binding_status === 'waiting_for_match';
             if (!$customer->router_id) {
-                $customer->update(['router_id' => $lease->router_id]);
+                $customerUpdates['router_id'] = $lease->router_id;
+            }
+
+            // A technician may register a client before the ONU has appeared
+            // in DHCP.  Only an exact MAC match can release that record from
+            // the waiting state; fuzzy matches are never auto-bound here.
+            if ($activatedWaitingRegistration) {
+                $routerName = $lease->router?->name ?? 'the router';
+                $customerUpdates['status'] = 'active';
+                $customerUpdates['ip_address'] = $lease->ip_address;
+                $customerUpdates['mac_binding_status'] = 'matched';
+                $customerUpdates['notes'] = trim((string) $customer->notes) . " Exact DHCP MAC match received on {$routerName}; registration activated.";
+            }
+            if ($customerUpdates !== []) {
+                $customer->update($customerUpdates);
             }
             // Update lease with customer match
             $lease->update([
                 'customer_id' => $customer->id,
                 'is_matched' => true,
                 'match_source' => 'mac_address',
-                'match_note' => 'Exact registered MAC address and router match.',
+                'match_note' => $activatedWaitingRegistration
+                    ? 'Exact waiting-registration MAC appeared in a current bound DHCP lease; customer activated.'
+                    : 'Exact registered MAC address and router match.',
             ]);
 
             return $customer;

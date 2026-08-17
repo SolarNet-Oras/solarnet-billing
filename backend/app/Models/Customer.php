@@ -49,6 +49,7 @@ class Customer extends Model
         'service_plan_id',
         'monthly_fee',
         'mac_address',
+        'mac_binding_status',
         'ip_address',
         'vlan',
         'status',

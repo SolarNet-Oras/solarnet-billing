@@ -58,7 +58,23 @@ class DashboardController extends Controller
             ->orderBy('price')
             ->get(['id', 'name', 'download_speed', 'upload_speed', 'price']);
 
-        return response()->json(['clients' => $clients, 'tickets' => $tickets, 'service_plans' => $servicePlans]);
+        $pendingRegistrations = Customer::query()
+            ->where('status', 'pending')
+            ->where('mac_binding_status', 'waiting_for_match')
+            ->with('servicePlan:id,name,download_speed,upload_speed,price')
+            ->latest('created_at')
+            ->get([
+                'id', 'account_number', 'full_name', 'address', 'contact_number',
+                'email', 'mac_address', 'installation_date', 'service_plan_id',
+                'mac_binding_status', 'created_at',
+            ]);
+
+        return response()->json([
+            'clients' => $clients,
+            'tickets' => $tickets,
+            'service_plans' => $servicePlans,
+            'pending_registrations' => $pendingRegistrations,
+        ]);
     }
 
     public function technicianMonitor(Request $request): JsonResponse
