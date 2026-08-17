@@ -116,6 +116,7 @@ class FinalGracePeriodWarningService
             'eligible' => $eligibleCustomer
                 && $suspensionEnabled
                 && !$schedule['company_owned']
+                && $invoice?->allowsAutomaticBillingNotifications()
                 && (float) $schedule['outstanding_balance'] > 0
                 && $isFinalWarningDay,
             'is_final_warning_day' => $isFinalWarningDay,

@@ -83,9 +83,11 @@ class PaymentConfirmationEmailService
             . 'Method      : ' . $this->paymentMethodLabel($payment->payment_method) . "\n";
 
         if ($invoice) {
+            $body .= 'Status      : ' . ((float) $invoice->balance <= 0 ? 'PAID' : 'PARTIAL PAYMENT') . "\n";
             $body .= "Invoice     : {$invoice->invoice_number}\n"
                 . 'Remaining balance: ' . $currency . number_format((float) $invoice->balance, 2) . "\n";
         } else {
+            $body .= "Status      : ADVANCE CREDIT\n";
             $body .= "Payment type: Advance credit for future billing\n";
         }
 

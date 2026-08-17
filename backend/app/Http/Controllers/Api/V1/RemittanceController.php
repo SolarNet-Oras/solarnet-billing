@@ -143,7 +143,7 @@ class RemittanceController extends Controller
         abort_if($openInvoice, 422, 'This client already has an unpaid invoice. Use that invoice for payment.');
 
         $start = Carbon::today();
-        $invoice = $invoices->generateInvoice($customer, $start, $start->copy()->addMonthNoOverflow()->subDay(), [], now(), now());
+        $invoice = $invoices->generateInvoice($customer, $start, $start->copy()->addMonthNoOverflow()->subDay(), [], now(), now(), null, 'collector_early');
         $invoice->update(['notes' => 'Early payment invoice created by collector.']);
         $invoices->markAsSent($invoice->fresh(['customer', 'items', 'payments']));
 

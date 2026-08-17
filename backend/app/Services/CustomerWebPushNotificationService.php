@@ -116,11 +116,18 @@ class CustomerWebPushNotificationService
             return 'skipped_customer_missing';
         }
 
+        $invoice = $payment->invoice;
+        $message = $invoice && (float) $invoice->balance <= 0
+            ? 'Your payment is confirmed and the invoice is now PAID. Open your account to view the receipt.'
+            : ($invoice
+                ? 'Your payment was received as a partial payment. Open your account to view the remaining balance.'
+                : 'Your advance payment was received and credited to your account. Open your account for details.');
+
         return $this->send(
             $payment->customer,
             self::PAYMENT_RECEIVED,
-            'SolarNet payment received',
-            'Your payment has been received and is being processed. Open your account for the latest status.',
+            $invoice && (float) $invoice->balance <= 0 ? 'SolarNet payment confirmed — PAID' : 'SolarNet payment received',
+            $message,
             '/customer/billing',
             $payment->invoice,
             $payment,

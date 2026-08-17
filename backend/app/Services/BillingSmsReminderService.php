@@ -138,7 +138,7 @@ class BillingSmsReminderService
     public function isEligibleInvoice(Invoice $invoice, CarbonInterface $today): bool
     {
         $customer = $invoice->customer;
-        if (!$customer || !in_array($customer->status, ['active', 'suspended', 'expired'], true) || $customer->hasCompanyOwnedPlan()) {
+        if (!$customer || !$invoice->allowsAutomaticBillingNotifications() || !in_array($customer->status, ['active', 'suspended', 'expired'], true) || $customer->hasCompanyOwnedPlan()) {
             return false;
         }
 

@@ -20,6 +20,7 @@ class Invoice extends Model
         'billing_period_start',
         'billing_period_end',
         'recurring_cycle_date',
+        'generation_source',
         'subtotal',
         'tax',
         'discount',
@@ -71,6 +72,16 @@ class Invoice extends Model
     public function isPaid(): bool
     {
         return $this->status === 'paid' && $this->balance <= 0;
+    }
+
+    /**
+     * Only recurring invoices participate in automatic creation-time and
+     * recurring billing email/SMS campaigns. Manual, collector, and migration
+     * invoices remain payable without starting an automatic reminder campaign.
+     */
+    public function allowsAutomaticBillingNotifications(): bool
+    {
+        return $this->generation_source === 'recurring';
     }
 
     public function scopeOverdue($query)

@@ -49,6 +49,7 @@ class InvoiceService
                 'paid_amount' => 0,
                 'balance' => $total,
                 'status' => 'sent',
+                'generation_source' => 'migration',
                 'sent_at' => now(),
                 'notes' => 'Migrated opening balance. Previous: '.number_format($previousBalance, 2, '.', '').'; Current: '.number_format($currentBalance, 2, '.', ''),
             ]);
@@ -76,12 +77,13 @@ class InvoiceService
         ?Carbon $issueDate = null,
         ?Carbon $dueDate = null,
         ?Carbon $recurringCycleDate = null,
+        string $generationSource = 'manual',
     ): Invoice {
         if ($customer->hasCompanyOwnedPlan()) {
             throw new \LogicException('Company Owned plans are excluded from invoices and recurring billing.');
         }
         try {
-            return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate) {
+            return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate, $generationSource) {
             if ($recurringCycleDate) {
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
@@ -101,6 +103,7 @@ class InvoiceService
                 'billing_period_start' => $billingPeriodStart,
                 'billing_period_end' => $billingPeriodEnd,
                 'recurring_cycle_date' => $recurringCycleDate,
+                'generation_source' => $generationSource,
                 'status' => 'draft',
             ]);
 
@@ -238,6 +241,7 @@ class InvoiceService
                     $runDate,
                     $billingDate,
                     $billingDate,
+                    'recurring',
                 );
                 $this->markAsSent($invoice);
                 $results['generated']++;
@@ -279,7 +283,9 @@ class InvoiceService
     }
 
     /**
-     * Mark an invoice as sent and deliver its first invoice email once.
+     * Mark an invoice as sent. Only recurring invoices deliver the automatic
+     * creation-time email; manual invoices remain silent until a payment is
+     * recorded and the customer receipt is sent.
      *
      * Recurring invoices are generated seven days before their due date, so
      * this is the creation-time email. Repeated scheduler/manual calls do not
@@ -296,7 +302,9 @@ class InvoiceService
             'sent_at' => now(),
         ]);
 
-        $this->sendInitialInvoiceEmail($invoice->fresh(['customer', 'items', 'payments']));
+        if ($invoice->allowsAutomaticBillingNotifications()) {
+            $this->sendInitialInvoiceEmail($invoice->fresh(['customer', 'items', 'payments']));
+        }
     }
 
     /**
