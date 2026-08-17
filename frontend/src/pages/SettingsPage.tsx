@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { settingsService, type SettingItem } from '@/services/settingsService';
+import customerPortalService from '@/services/customerPortalService';
 import { AutomationPanel } from '@/components/automation/AutomationPanel';
 import { HistoricalCleanupPanel } from '@/components/settings/HistoricalCleanupPanel';
 import { useAuth } from '@/hooks/useAuth';
@@ -190,6 +191,7 @@ function CompanyLogoUploader({ logoUrl, onChanged, onError, onNotice }: { logoUr
     setUploading(true); onError(''); onNotice('');
     try {
       const result = await settingsService.uploadCompanyLogo(file);
+      await customerPortalService.getBranding();
       onNotice(result.message);
       onChanged();
     } catch (err: any) {
@@ -202,6 +204,7 @@ function CompanyLogoUploader({ logoUrl, onChanged, onError, onNotice }: { logoUr
     setUploading(true); onError(''); onNotice('');
     try {
       const result = await settingsService.removeCompanyLogo();
+      await customerPortalService.getBranding();
       onNotice(result.message);
       onChanged();
     } catch (err: any) {

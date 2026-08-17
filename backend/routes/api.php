@@ -73,10 +73,14 @@ Route::prefix('v1')->group(function () {
         Route::get('dashboard/technician-monitor', [DashboardController::class, 'technicianMonitor'])->middleware('role:technician');
         Route::post('dashboard/technician/register-client', [UnregisteredLeaseController::class, 'technicianRegister'])->middleware('role:technician');
         
-        // User routes (admin only)
-        Route::middleware(['role:admin|super_admin'])->group(function () {
+        // Staff-user administration is reserved for the Super Administrator.
+        // Keep this separate from customer portal-account support, which office
+        // administrators may still need for a customer password reset.
+        Route::middleware('role:super_admin')->group(function () {
             Route::apiResource('users', UserController::class);
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
+        });
+        Route::middleware(['role:admin|super_admin'])->group(function () {
             Route::get('customer-portal-accounts', [CustomerController::class, 'portalAccounts']);
             Route::post('customer-portal-accounts/{id}/reset-password', [CustomerController::class, 'resetPortalPassword']);
             Route::get('customer-profile-change-requests', [CustomerController::class, 'profileChangeRequests']);
@@ -308,6 +312,7 @@ Route::prefix('v1')->group(function () {
         // Public list of active plans (for the signup page dropdown)
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
         Route::get('branding', [SettingsController::class, 'publicBranding']);
+        Route::get('manifest.webmanifest', [SettingsController::class, 'publicManifest']);
 
         // Protected customer routes
         Route::middleware('api')->group(function () {

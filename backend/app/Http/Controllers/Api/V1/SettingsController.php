@@ -188,6 +188,33 @@ class SettingsController extends Controller
         ]]);
     }
 
+    /**
+     * Browser-installed customer applications read this public manifest. Keeping
+     * it server-generated means the uploaded company logo is also the app icon,
+     * rather than only appearing inside the portal after it has loaded.
+     */
+    public function publicManifest(): JsonResponse
+    {
+        $logoUrl = trim((string) Setting::get('company.logo_url', ''));
+
+        return response()->json([
+            'name' => Setting::get('company.name', 'Solarnet Internet') . ' Customer App',
+            'short_name' => Setting::get('company.name', 'SolarNet'),
+            'description' => 'View your SolarNet account, bills, payments, and support updates.',
+            'start_url' => '/customer/dashboard',
+            'scope' => '/',
+            'display' => 'standalone',
+            'background_color' => '#f8fafc',
+            'theme_color' => '#0f172a',
+            'icons' => [[
+                'src' => $logoUrl !== '' ? $logoUrl : '/solarnet-mark.svg',
+                'sizes' => 'any',
+                'purpose' => 'any maskable',
+            ]],
+        ])->header('Content-Type', 'application/manifest+json')
+          ->header('Cache-Control', 'no-store, max-age=0');
+    }
+
     private function storagePathFromUrl(string $url): ?string
     {
         $path = parse_url($url, PHP_URL_PATH) ?: '';

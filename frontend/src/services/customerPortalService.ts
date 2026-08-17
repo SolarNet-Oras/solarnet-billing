@@ -3,18 +3,33 @@ import { attachPaymongoQrPh } from './paymongoQrService';
 import type { Customer, Invoice, Payment, PaginatedResponse } from '../types/api';
 import type { BrowserPushSubscriptionPayload } from '../lib/webPush';
 
+export interface CompanyBranding {
+  name: string;
+  logo_url: string;
+  email: string;
+  facebook_url: string;
+}
+
+const DEFAULT_APP_ICON = '/solarnet-mark.svg';
+
+const applyBranding = (branding: CompanyBranding): void => {
+  const icon = document.querySelector<HTMLLinkElement>('#company-favicon')
+    ?? document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (icon) {
+    icon.href = branding.logo_url || DEFAULT_APP_ICON;
+    if (branding.logo_url) icon.removeAttribute('type');
+    else icon.type = 'image/svg+xml';
+  }
+  document.title = branding.name || 'SolarNet';
+  window.dispatchEvent(new CustomEvent<CompanyBranding>('solarnet:branding-changed', { detail: branding }));
+};
+
 export const customerPortalService = {
-  getBranding: async (): Promise<{ name: string; logo_url: string; email: string; facebook_url: string }> => {
+  applyBranding,
+  getBranding: async (): Promise<CompanyBranding> => {
     const response = await api.get('/customer-portal/branding');
-    const branding = response.data.data as { name: string; logo_url: string; email: string; facebook_url: string };
-    // The favicon is a normal DOM link so the browser tab uses the same logo
-    // selected by the administrator, rather than the compiled default mark.
-    const icon = document.querySelector<HTMLLinkElement>('#company-favicon')
-      ?? document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (icon && branding.logo_url) {
-      icon.href = branding.logo_url;
-      icon.removeAttribute('type');
-    }
+    const branding = response.data.data as CompanyBranding;
+    applyBranding(branding);
     return branding;
   },
   /**

@@ -179,8 +179,18 @@ class UserController extends Controller
     /**
      * Remove the specified user
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
+        // This controller-level check deliberately duplicates the route guard.
+        // A future route change must never let an administrator or staff member
+        // delete a user account.
+        if (!$request->user()?->hasRole('super_admin')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only the Super Administrator can delete user accounts.',
+            ], 403);
+        }
+
         $user = $this->visibleUsers()->findOrFail($id);
         
         // Prevent deleting own account

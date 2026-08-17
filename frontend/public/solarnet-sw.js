@@ -1,8 +1,7 @@
-const CACHE_NAME = 'solarnet-customer-shell-v3';
+const CACHE_NAME = 'solarnet-customer-shell-v4';
 const APP_SHELL = [
   '/',
   '/customer/login',
-  '/manifest.webmanifest',
   '/solarnet-mark.svg',
 ];
 
@@ -53,8 +52,8 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title, {
     body: payload.body,
-    icon: '/solarnet-mark.svg',
-    badge: '/solarnet-mark.svg',
+    icon: typeof payload.icon === 'string' && payload.icon.startsWith('/') ? payload.icon : '/solarnet-mark.svg',
+    badge: typeof payload.icon === 'string' && payload.icon.startsWith('/') ? payload.icon : '/solarnet-mark.svg',
     tag: payload.tag,
     renotify: true,
     data: { url: payload.url },

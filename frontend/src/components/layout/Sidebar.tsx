@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
-import customerPortalService from '@/services/customerPortalService';
+import customerPortalService, { type CompanyBranding } from '@/services/customerPortalService';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -47,7 +47,7 @@ const navItems: NavItem[] = [
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
-  { name: 'Users', path: '/users', icon: Users, permission: 'view-users' },
+  { name: 'Users', path: '/users', icon: Users, roles: ['super_admin'] },
   { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
 ];
@@ -59,7 +59,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
 
   React.useEffect(() => {
-    void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
+    const loadBranding = (): void => {
+      void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
+    };
+    const updateBranding = (event: Event): void => {
+      const branding = (event as CustomEvent<CompanyBranding>).detail;
+      if (branding) setBranding(branding);
+    };
+
+    loadBranding();
+    window.addEventListener('solarnet:branding-changed', updateBranding);
+    return () => window.removeEventListener('solarnet:branding-changed', updateBranding);
   }, []);
 
   const hasRole = (role: string): boolean => user?.role === role || user?.roles?.some((item) => typeof item === 'string' ? item === role : item.name === role) || false;
