@@ -211,6 +211,35 @@ class BillingSuspensionService
         return $this->restoreCustomer($customer, 'billing_current', $force);
     }
 
+    /**
+     * Reconcile service access immediately after a verified payment. Unlike a
+     * routine status sync, this explicitly permits a payment to restore a
+     * manually or automatically suspended/expired customer after any
+     * verified payment, including a partial payment. The normal automation
+     * pass will re-evaluate any remaining overdue balance later.
+     */
+    public function reconcileAfterPayment(Customer $customer): array
+    {
+        $customer->loadMissing(['servicePlan', 'router']);
+        $billingState = $this->billingState($customer);
+
+        if (in_array($customer->status, ['suspended', 'expired'], true)) {
+            return $this->restoreCustomer($customer, 'payment_confirmed', true);
+        }
+
+        if ($billingState['should_suspend']) {
+            return $this->suspendCustomer(
+                $customer,
+                $billingState,
+                true,
+                $customer->suspension_source ?: 'automation',
+                $customer->status,
+            );
+        }
+
+        return $this->syncCustomerMikrotikStatus($customer, true);
+    }
+
     public function suspendCustomer(Customer $customer, array $billingState = [], bool $force = false, string $source = 'manual', string $status = 'suspended'): array
     {
         $customer->loadMissing(['servicePlan', 'router']);

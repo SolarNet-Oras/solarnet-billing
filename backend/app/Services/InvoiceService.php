@@ -462,16 +462,15 @@ class InvoiceService
 
             $invoice->save();
 
-            // A payment is not automatically a reason to restore service. The
-            // suspension service re-evaluates every unpaid invoice after the
-            // transaction commits, so another eligible overdue balance keeps
-            // the customer restricted.
+            // Re-evaluate every unpaid invoice after commit. A settled balance
+            // restores a suspended/expired customer; another eligible overdue
+            // balance keeps the customer restricted.
             $customer = $invoice->customer;
             if ($customer) {
                 DB::afterCommit(function () use ($customer) {
                     try {
                         $freshCustomer = $customer->fresh(['servicePlan', 'router']);
-                        app(BillingSuspensionService::class)->syncCustomerMikrotikStatus($freshCustomer);
+                        app(BillingSuspensionService::class)->reconcileAfterPayment($freshCustomer);
                     } catch (\Throwable $e) {
                         Log::warning('Deferred customer network sync after payment failed', [
                             'customer_id' => $customer->id,
@@ -545,6 +544,21 @@ class InvoiceService
                     ? Carbon::parse($paymentData['covered_cycle_date'], config('app.timezone', 'Asia/Manila'))
                     : null,
             );
+
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    $customer = $payment->fresh(['customer'])?->customer;
+                    if ($customer) {
+                        app(BillingSuspensionService::class)
+                            ->reconcileAfterPayment($customer->load(['servicePlan', 'router']));
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred customer network sync after advance payment failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
 
             DB::afterCommit(function () use ($payment) {
                 try {
