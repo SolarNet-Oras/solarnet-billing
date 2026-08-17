@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Payment extends Model
 {
@@ -55,4 +56,5 @@ class Payment extends Model
     public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }
     public function receiver(): BelongsTo { return $this->belongsTo(User::class, 'received_by'); }
     public function remittance(): BelongsTo { return $this->belongsTo(Remittance::class); }
+    public function paymongoCheckout(): HasOne { return $this->hasOne(PaymongoCheckout::class, 'payment_id'); }
 }

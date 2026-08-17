@@ -222,6 +222,38 @@ class RemittanceController extends Controller
         return response()->json(['paid' => $paid, 'checkout_status' => $checkout->fresh()->status]);
     }
 
+    public function startQrPhPayment(string $invoiceId, PaymongoService $paymongo): JsonResponse
+    {
+        $invoice = Invoice::with('customer')->findOrFail($invoiceId);
+        abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'QR Ph is available for due invoices only.');
+        try {
+            return response()->json(['message' => 'PayMongo QR Ph payment created.', 'payment' => $paymongo->createQrPhPayment($invoice)]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function attachQrPhPayment(Request $request, string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $data = $request->validate([
+            'payment_method_id' => 'required|string|max:100',
+            'qr_image_url' => 'nullable|string|max:2000000',
+        ]);
+        $checkout = PaymongoCheckout::where('id', $checkoutId)->where('invoice_id', $invoiceId)->firstOrFail();
+        try {
+            return response()->json(['payment' => $paymongo->finalizeQrPhAttachment($checkout, $data['payment_method_id'], $data['qr_image_url'] ?? null)]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function reconcileQrPhPayment(string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $checkout = PaymongoCheckout::where('id', $checkoutId)->where('invoice_id', $invoiceId)->firstOrFail();
+        $paid = $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id);
+        return response()->json(['paid' => $paid, 'payment_status' => $checkout->fresh()->status]);
+    }
+
     public function submit(Request $request): JsonResponse
     {
         $data = $request->validate(['notes' => 'nullable|string|max:1000']);

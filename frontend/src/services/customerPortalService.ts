@@ -1,4 +1,5 @@
 import api from './api';
+import { attachPaymongoQrPh } from './paymongoQrService';
 import type { Customer, Invoice, Payment, PaginatedResponse } from '../types/api';
 import type { BrowserPushSubscriptionPayload } from '../lib/webPush';
 
@@ -178,6 +179,41 @@ export const customerPortalService = {
   }> => {
     const response = await api.post(`/customer-portal/invoices/${invoiceId}/gcash-checkout`);
     return response.data.data;
+  },
+
+  startQrPhPayment: async (invoiceId: string): Promise<{
+    checkout_id: string;
+    payment_intent_id: string;
+    client_key: string;
+    public_key: string;
+    base_url?: string;
+    amount: number;
+    currency: string;
+    invoice_number: string;
+    reference_number: string;
+    qr_image_url?: string | null;
+    status: string;
+    expires_at?: string | null;
+    temporary_payment_access?: { success: boolean; granted: boolean; message: string };
+  }> => {
+    const response = await api.post(`/customer-portal/invoices/${invoiceId}/qr-ph`);
+    const payment = response.data.data;
+    if (!payment.qr_image_url) {
+      const qr = await attachPaymongoQrPh({
+        publicKey: payment.public_key,
+        baseUrl: payment.base_url,
+        paymentIntentId: payment.payment_intent_id,
+        clientKey: payment.client_key,
+      });
+      const attached = await api.post(`/customer-portal/qr-ph/${payment.checkout_id}/attach`, qr);
+      return attached.data.data;
+    }
+    return payment;
+  },
+
+  reconcileQrPhPayment: async (checkoutId: string): Promise<{ paid: boolean; payment_status: string }> => {
+    const response = await api.post(`/customer-portal/qr-ph/${checkoutId}/reconcile`);
+    return response.data;
   },
 
   reconcileLatestGcashCheckout: async (): Promise<{ found: boolean; paid: boolean }> => {

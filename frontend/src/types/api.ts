@@ -423,6 +423,7 @@ export interface Payment {
   transaction_id: string | null;
   reference: string | null;
   notes: string | null;
+  paymongo_checkout?: { payment_intent_id?: string; paymongo_payment_id?: string; status?: string; reference_number?: string } | null;
   created_at: string;
   updated_at: string;
 }

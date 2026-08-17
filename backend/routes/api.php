@@ -233,6 +233,9 @@ Route::prefix('v1')->group(function () {
             Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
             Route::post('invoices/{id}/gcash-checkout', [RemittanceController::class, 'startGcashCheckout']);
             Route::post('invoices/{id}/gcash-checkouts/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileGcashCheckout']);
+            Route::post('invoices/{id}/qr-ph', [RemittanceController::class, 'startQrPhPayment']);
+            Route::post('invoices/{id}/qr-ph/{checkoutId}/attach', [RemittanceController::class, 'attachQrPhPayment']);
+            Route::post('invoices/{id}/qr-ph/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileQrPhPayment']);
             Route::post('remittances', [RemittanceController::class, 'submit']);
         });
         // Office staff verify what a collector declares against cash, bank, or GCash received.
@@ -311,6 +314,9 @@ Route::prefix('v1')->group(function () {
             Route::post('invoices/{id}/gcash-checkout', [CustomerPortalController::class, 'startGcashCheckout']);
             Route::post('gcash-checkouts/{id}/reconcile', [CustomerPortalController::class, 'reconcileGcashCheckout']);
             Route::post('gcash-checkouts/reconcile-latest', [CustomerPortalController::class, 'reconcileLatestGcashCheckout']);
+            Route::post('invoices/{id}/qr-ph', [CustomerPortalController::class, 'startQrPhPayment']);
+            Route::post('qr-ph/{id}/attach', [CustomerPortalController::class, 'attachQrPhPayment']);
+            Route::post('qr-ph/{id}/reconcile', [CustomerPortalController::class, 'reconcileQrPhPayment']);
             Route::put('profile', [CustomerPortalController::class, 'updateProfile']);
             Route::post('location-capture/start', [CustomerPortalController::class, 'startLocationCapture'])->middleware('throttle:3,1');
             Route::post('location-capture/capture', [CustomerPortalController::class, 'captureLocation'])->middleware('throttle:6,1');

@@ -260,7 +260,7 @@ class CustomerController extends Controller
             'billing' => app(BillingSuspensionService::class)->buildPaymentReminderData($customer),
             'dhcp_lease' => $lease,
             'invoices' => $customer->invoices()->latest('issue_date')->limit(20)->get(['id', 'invoice_number', 'issue_date', 'due_date', 'total', 'paid_amount', 'balance', 'status']),
-            'payments' => $customer->payments()->with('invoice:id,invoice_number')->latest('payment_date')->limit(20)->get(['id', 'invoice_id', 'amount', 'payment_method', 'payment_date', 'reference', 'transaction_id']),
+            'payments' => $customer->payments()->with(['invoice:id,invoice_number', 'paymongoCheckout:id,payment_id,payment_intent_id,paymongo_payment_id,status,reference_number'])->latest('payment_date')->limit(20)->get(['id', 'invoice_id', 'amount', 'payment_method', 'payment_date', 'reference', 'transaction_id']),
             'notification_logs' => $customer->notificationLogs()
                 ->with('subscription:id,device_id,platform,browser,last_used_at,revoked_at')
                 ->latest()

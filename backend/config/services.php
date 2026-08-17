@@ -52,9 +52,10 @@ return [
     ],
 
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.
-    'paymongo' => [
-        'secret_key' => env('PAYMONGO_SECRET_KEY'),
-        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+      'paymongo' => [
+         'secret_key' => env('PAYMONGO_SECRET_KEY'),
+         'public_key' => env('PAYMONGO_PUBLIC_KEY'),
+         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
         'base_url' => env('PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1'),
     ],
 

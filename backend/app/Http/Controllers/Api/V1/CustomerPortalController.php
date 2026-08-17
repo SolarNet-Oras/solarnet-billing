@@ -497,6 +497,44 @@ class CustomerPortalController extends Controller
         return response()->json(['status' => 'success', 'data' => $paymongo->reconcileLatestCustomerCheckout($customer->id)]);
     }
 
+    /** Start a customer-owned Dynamic QR Ph Payment Intent. */
+    public function startQrPhPayment(Request $request, string $id, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $invoice = Invoice::where('customer_id', $customer->id)->findOrFail($id);
+        try {
+            $payment = $paymongo->createQrPhPayment($invoice->load('customer'));
+            $payment['temporary_payment_access'] = app(\App\Services\MikrotikService::class)
+                ->grantTemporaryPaymentCheckoutAccess($customer, (int) \App\Models\Setting::get('network.payment_checkout_access_minutes', 1440));
+            return response()->json(['status' => 'success', 'data' => $payment]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function attachQrPhPayment(Request $request, string $id, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $data = $request->validate(['payment_method_id' => 'required|string|max:100', 'qr_image_url' => 'nullable|string|max:2000000']);
+        $checkout = PaymongoCheckout::where('customer_id', $customer->id)->whereKey($id)->firstOrFail();
+        try {
+            return response()->json(['status' => 'success', 'data' => $paymongo->finalizeQrPhAttachment($checkout, $data['payment_method_id'], $data['qr_image_url'] ?? null)]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function reconcileQrPhPayment(Request $request, string $id, PaymongoService $paymongo): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $checkout = PaymongoCheckout::where('customer_id', $customer->id)->whereKey($id)->firstOrFail();
+        $paid = $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id);
+        return response()->json(['status' => 'success', 'paid' => $paid, 'payment_status' => $checkout->fresh()->status]);
+    }
+
     /** PayMongo webhook endpoint. The event is signed, then payment state is re-read from PayMongo. */
     public function paymongoWebhook(Request $request, PaymongoService $paymongo): JsonResponse
     {
@@ -508,7 +546,21 @@ class CustomerPortalController extends Controller
         $sessionId = data_get($payload, 'data.attributes.data.id')
             ?? data_get($payload, 'data.attributes.data.attributes.checkout_session_id')
             ?? data_get($payload, 'data.attributes.data.attributes.metadata.checkout_session_id');
-        if ($sessionId) $paymongo->reconcileCheckout((string) $sessionId);
+        $eventType = (string) (data_get($payload, 'data.attributes.type') ?? data_get($payload, 'type'));
+        $eventId = (string) (data_get($payload, 'data.id') ?? data_get($payload, 'id') ?? '');
+        $resource = data_get($payload, 'data.attributes.data', []);
+        $paymentIntentId = data_get($resource, 'attributes.payment_intent_id')
+            ?? data_get($resource, 'attributes.payment_intent.data.id')
+            ?? data_get($resource, 'attributes.payment_intent.id');
+        if ($sessionId && !in_array($eventType, ['payment.paid', 'payment.failed', 'qrph.expired'], true)) {
+            $paymongo->reconcileCheckout((string) $sessionId);
+        } elseif ($paymentIntentId && in_array($eventType, ['payment.paid', 'payment.failed', 'qrph.expired'], true)) {
+            $paymongo->reconcileQrPhPayment((string) $paymentIntentId, $eventId ?: null);
+        } elseif ($resource && in_array($eventType, ['payment.paid', 'payment.failed', 'qrph.expired'], true)) {
+            // Some PayMongo event payloads identify the payment resource only;
+            // the service resolves the intent through the stored mapping.
+            $paymongo->reconcileQrPhPaymentResource((string) (data_get($resource, 'id') ?? ''), $eventId ?: null);
+        }
         return response()->json(['status' => 'ok']);
     }
 
@@ -519,9 +571,10 @@ class CustomerPortalController extends Controller
             [$key, $value] = array_pad(explode('=', trim($part), 2), 2, null);
             if ($key && $value) $parts[$key] = $value;
         }
-        if (empty($parts['t']) || empty($parts['te'])) return false;
+        if (empty($parts['t']) || (empty($parts['te']) && empty($parts['li']))) return false;
         $expected = hash_hmac('sha256', $parts['t'] . '.' . $payload, $secret);
-        return hash_equals($expected, $parts['te']);
+        return (!empty($parts['te']) && hash_equals($expected, $parts['te']))
+            || (!empty($parts['li']) && hash_equals($expected, $parts['li']));
     }
 
     /**

@@ -3,7 +3,6 @@ import {
   FileText, 
   Plus, 
   Search, 
-  Filter, 
   Download, 
   Loader2,
   PhilippinePeso, 
@@ -13,7 +12,6 @@ import {
   CheckCircle,
   AlertCircle,
   XCircle,
-  Calendar
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
@@ -33,7 +31,7 @@ const paymentMethodLabels: Record<Payment['payment_method'], string> = {
 function PaymentMethod({ methods }: { methods: Payment[] }): React.JSX.Element {
   if (methods.length === 0) return <span className="text-gray-400">Not paid</span>;
 
-  const labels = [...new Set(methods.map((payment) => paymentMethodLabels[payment.payment_method] ?? payment.payment_method))];
+  const labels = [...new Set(methods.map((payment) => payment.paymongo_checkout ? 'QR Ph' : (paymentMethodLabels[payment.payment_method] ?? payment.payment_method)))];
   return <span className="font-medium">{labels.join(', ')}</span>;
 }
 

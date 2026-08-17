@@ -25,7 +25,7 @@ class InvoiceController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Invoice::with(['customer', 'items', 'payments']);
+        $query = Invoice::with(['customer', 'items', 'payments.paymongoCheckout']);
 
         // Filter by customer
         if ($request->has('customer_id')) {
@@ -66,7 +66,7 @@ class InvoiceController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $invoice = Invoice::with(['customer', 'items', 'payments'])
+        $invoice = Invoice::with(['customer', 'items', 'payments.paymongoCheckout'])
                          ->findOrFail($id);
 
         return response()->json($invoice);
