@@ -12,11 +12,21 @@ interface OltSnapshot {
   system_name?: string | null;
   interface_count?: number | null;
   polled_at?: string | null;
+  relay_router?: string | null;
 }
+
+type RouterOption = {
+  id: string;
+  name: string;
+  connection_status: string;
+  is_active: boolean;
+};
 
 interface OltDevice {
   id: string;
   name: string;
+  router_id?: string | null;
+  relay_router?: RouterOption | null;
   host: string;
   snmp_port: number;
   snmp_version: '2c';
@@ -32,6 +42,7 @@ interface OltDevice {
 
 type OltForm = {
   name: string;
+  router_id: string;
   host: string;
   snmp_port: number;
   snmp_community: string;
@@ -42,7 +53,7 @@ type OltForm = {
 };
 
 const emptyForm: OltForm = {
-  name: '', host: '', snmp_port: 161, snmp_community: '', location: '', model: '', notes: '', is_active: true,
+  name: '', router_id: '', host: '', snmp_port: 161, snmp_community: '', location: '', model: '', notes: '', is_active: true,
 };
 
 const statusStyle: Record<OltStatus, string> = {
@@ -55,6 +66,7 @@ const errorMessage = (error: any, fallback: string) => error?.response?.data?.me
 
 export function OltSnmpManager() {
   const [devices, setDevices] = useState<OltDevice[]>([]);
+  const [routers, setRouters] = useState<RouterOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -67,10 +79,14 @@ export function OltSnmpManager() {
   const load = async () => {
     setLoading(true);
     try {
-      const response = await api.get<{ success: boolean; data: OltDevice[] }>('/olts');
-      setDevices(response.data.data);
+      const [oltResponse, routerResponse] = await Promise.all([
+        api.get<{ success: boolean; data: OltDevice[] }>('/olts'),
+        api.get<{ success: boolean; data: RouterOption[] }>('/routers'),
+      ]);
+      setDevices(oltResponse.data.data);
+      setRouters(routerResponse.data.data.filter((router) => router.is_active));
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Could not load OLT devices.'));
+      setError(errorMessage(requestError, 'Could not load OLT devices and available MikroTik relay routers.'));
     } finally {
       setLoading(false);
     }
@@ -90,6 +106,7 @@ export function OltSnmpManager() {
     setEditing(device);
     setForm({
       name: device.name,
+      router_id: device.router_id || '',
       host: device.host,
       snmp_port: device.snmp_port,
       snmp_community: '',
@@ -112,15 +129,15 @@ export function OltSnmpManager() {
       const payload = { ...form, snmp_version: '2c' as const };
       if (editing) {
         await api.put(`/olts/${editing.id}`, payload);
-        setNotice('OLT SNMP settings updated.');
+        setNotice('OLT SNMP relay settings updated.');
       } else {
         await api.post('/olts', payload);
-        setNotice('OLT saved. Use Test SNMP to confirm its read-only access.');
+        setNotice('OLT saved. Use Test SNMP to confirm its read-only MikroTik relay path.');
       }
       setShowForm(false);
       await load();
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Could not save OLT SNMP settings.'));
+      setError(errorMessage(requestError, 'Could not save OLT SNMP relay settings.'));
     } finally {
       setSaving(false);
     }
@@ -135,7 +152,7 @@ export function OltSnmpManager() {
       setNotice(response.data.message);
       await load();
     } catch (requestError) {
-      setError(errorMessage(requestError, 'SNMP test failed.'));
+      setError(errorMessage(requestError, 'SNMP relay test failed.'));
       await load();
     } finally {
       setTestingId(null);
@@ -143,12 +160,12 @@ export function OltSnmpManager() {
   };
 
   const remove = async (device: OltDevice) => {
-    if (!window.confirm(`Remove ${device.name} from SolarNet SNMP monitoring? This does not change the OLT.`)) return;
+    if (!window.confirm(`Remove ${device.name} from SolarNet SNMP monitoring? This does not change the OLT or MikroTik.`)) return;
     setError('');
     setNotice('');
     try {
       await api.delete(`/olts/${device.id}`);
-      setNotice(`${device.name} was removed from SolarNet monitoring. The OLT was not changed.`);
+      setNotice(`${device.name} was removed from SolarNet monitoring. The OLT and MikroTik were not changed.`);
       await load();
     } catch (requestError) {
       setError(errorMessage(requestError, 'Could not remove OLT monitoring.'));
@@ -163,23 +180,24 @@ export function OltSnmpManager() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200"><Activity className="h-4 w-4" /> Read-only SNMP monitoring</div>
             <h2 className="text-2xl font-semibold tracking-tight">OLT Devices</h2>
-            <p className="mt-2 max-w-2xl text-sm text-slate-300">Monitor each OLT directly through its management IP. SolarNet reads standard health information only and never sends cloud credentials or OLT configuration commands.</p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-300">Monitor each OLT through the selected MikroTik management router. SolarNet relays only fixed read-only standard SNMP health checks; it never exposes OLT SNMP publicly or sends OLT configuration commands.</p>
           </div>
           <button type="button" onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-300"><Plus className="h-4 w-4" /> Add OLT via SNMP</button>
         </div>
       </section>
 
       <section className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4 text-sm text-muted-foreground">
-        <div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" /><div><p className="font-semibold text-foreground">Before adding an OLT</p><p className="mt-1">Enable SNMP v2c with a dedicated <strong>read-only</strong> community, use UDP port 161, and allow only the SolarNet VPS or management VPN address in the OLT firewall. ONU discovery, authorization, and reboot remain disabled until a vendor-specific MIB is reviewed.</p></div></div>
+        <div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" /><div><p className="font-semibold text-foreground">Before adding an OLT</p><p className="mt-1">Enable SNMP v2c with a dedicated <strong>read-only</strong> community, use UDP port 161, and select the MikroTik that can reach the OLT management IP. Permit SNMP only from that management router; SolarNet does not require a public UDP 161 rule. ONU discovery, authorization, and reboot remain disabled until a vendor-specific MIB is reviewed.</p></div></div>
       </section>
 
       {(error || notice) && <div className={`rounded-xl border p-4 text-sm ${error ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>{error || notice}</div>}
 
       {showForm && <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-lg font-semibold text-foreground">{editing ? 'Edit OLT SNMP settings' : 'Add OLT via SNMP'}</h3><p className="mt-1 text-sm text-muted-foreground">The community is encrypted at rest and never displayed again.</p></div><button type="button" onClick={() => setShowForm(false)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><XCircle className="h-5 w-5" /></button></div>
+        <div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-lg font-semibold text-foreground">{editing ? 'Edit OLT SNMP settings' : 'Add OLT via SNMP'}</h3><p className="mt-1 text-sm text-muted-foreground">SolarNet relays fixed, read-only SNMP GETs through the selected MikroTik API connection. The community is encrypted at rest and never displayed again.</p></div><button type="button" onClick={() => setShowForm(false)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><XCircle className="h-5 w-5" /></button></div>
         <form onSubmit={save} className="grid gap-4 md:grid-cols-2">
           <label className="text-sm font-medium">OLT name *<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Main OLT" className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" /></label>
-          <label className="text-sm font-medium">Management host / IP *<input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="10.0.0.10" className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" /></label>
+          <label className="text-sm font-medium">MikroTik relay router *<select required value={form.router_id} onChange={(event) => setForm({ ...form, router_id: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3"><option value="">Select the router that reaches this OLT</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name} · {router.connection_status}</option>)}</select><span className="mt-1 block text-xs font-normal text-muted-foreground">The router issues the read-only SNMP request inside your management network.</span></label>
+          <label className="text-sm font-medium">OLT management IP *<input required inputMode="decimal" value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.88.10" className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" /></label>
           <label className="text-sm font-medium">SNMP port *<input required type="number" min="1" max="65535" value={form.snmp_port} onChange={(event) => setForm({ ...form, snmp_port: Number(event.target.value) || 161 })} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" /></label>
           <label className="text-sm font-medium">SNMP version<input value="SNMP v2c — read-only" disabled className="mt-1 h-11 w-full rounded-lg border border-input bg-muted px-3 text-muted-foreground" /></label>
           <label className="text-sm font-medium">Read-only community {editing ? <span className="font-normal text-muted-foreground">(leave blank to keep current)</span> : '*'}<input required={!editing} type="password" autoComplete="new-password" value={form.snmp_community} onChange={(event) => setForm({ ...form, snmp_community: event.target.value })} placeholder={editing ? 'Encrypted; unchanged when blank' : 'Read-only community'} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" /></label>
@@ -192,8 +210,8 @@ export function OltSnmpManager() {
       </section>}
 
       <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4"><div><h3 className="font-semibold text-foreground">SNMP OLT inventory</h3><p className="mt-1 text-xs text-muted-foreground">Standard system and interface health only.</p></div><button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button></div>
-        {loading ? <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading OLT inventory…</div> : devices.length === 0 ? <div className="p-10 text-center"><Router className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 font-semibold text-foreground">No SNMP OLT devices yet</p><p className="mt-1 text-sm text-muted-foreground">Add an OLT management IP to begin read-only monitoring.</p></div> : <div className="divide-y divide-border">{devices.map((device) => <article key={device.id} className="p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="font-semibold text-foreground">{device.name}</h4><span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase ${statusStyle[device.connection_status]}`}>{device.connection_status}</span></div><p className="mt-1 font-mono text-sm text-muted-foreground">{device.host}:{device.snmp_port} · SNMP v2c</p><p className="mt-1 text-xs text-muted-foreground">{device.location || 'Location not set'}{device.model ? ` · ${device.model}` : ''} · last check {device.last_checked_at ? new Date(device.last_checked_at).toLocaleString('en-PH') : 'never'}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={testingId === device.id} onClick={() => void test(device)} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{testingId === device.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}{testingId === device.id ? 'Testing…' : 'Test SNMP'}</button><button type="button" onClick={() => openEdit(device)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"><Edit3 className="h-4 w-4" />Edit</button><button type="button" onClick={() => void remove(device)} className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 px-3 py-2 text-sm font-semibold text-rose-600"><Trash2 className="h-4 w-4" />Remove</button></div></div>{device.last_snapshot && <div className="mt-4 grid gap-3 rounded-xl bg-muted/50 p-4 text-sm md:grid-cols-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System name</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_name || 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Interfaces</p><p className="mt-1 font-medium">{device.last_snapshot.interface_count ?? 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Uptime</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_uptime || 'Not supplied'}</p></div><div className="md:col-span-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System description</p><p className="mt-1 break-words text-muted-foreground">{device.last_snapshot.system_description || 'Not supplied'}</p></div></div>}</article>)}</div>}
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4"><div><h3 className="font-semibold text-foreground">SNMP OLT inventory</h3><p className="mt-1 text-xs text-muted-foreground">Standard system and interface health only, relayed through the selected MikroTik.</p></div><button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button></div>
+        {loading ? <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading OLT inventory…</div> : devices.length === 0 ? <div className="p-10 text-center"><Router className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 font-semibold text-foreground">No SNMP OLT devices yet</p><p className="mt-1 text-sm text-muted-foreground">Add an OLT management IP and its MikroTik relay router to begin read-only monitoring.</p></div> : <div className="divide-y divide-border">{devices.map((device) => <article key={device.id} className="p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="font-semibold text-foreground">{device.name}</h4><span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase ${statusStyle[device.connection_status]}`}>{device.connection_status}</span></div><p className="mt-1 font-mono text-sm text-muted-foreground">{device.host}:{device.snmp_port} · SNMP v2c</p><p className="mt-1 text-xs text-muted-foreground">Relay: {device.relay_router ? `${device.relay_router.name} · ${device.relay_router.connection_status}` : 'Select a MikroTik relay router'} · {device.location || 'Location not set'}{device.model ? ` · ${device.model}` : ''} · last check {device.last_checked_at ? new Date(device.last_checked_at).toLocaleString('en-PH') : 'never'}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={testingId === device.id} onClick={() => void test(device)} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{testingId === device.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}{testingId === device.id ? 'Testing…' : 'Test SNMP'}</button><button type="button" onClick={() => openEdit(device)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"><Edit3 className="h-4 w-4" />Edit</button><button type="button" onClick={() => void remove(device)} className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 px-3 py-2 text-sm font-semibold text-rose-600"><Trash2 className="h-4 w-4" />Remove</button></div></div>{device.last_snapshot && <div className="mt-4 grid gap-3 rounded-xl bg-muted/50 p-4 text-sm md:grid-cols-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System name</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_name || 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Interfaces</p><p className="mt-1 font-medium">{device.last_snapshot.interface_count ?? 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Uptime</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_uptime || 'Not supplied'}</p></div><div className="md:col-span-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System description</p><p className="mt-1 break-words text-muted-foreground">{device.last_snapshot.system_description || 'Not supplied'}</p></div></div>}</article>)}</div>}
       </section>
 
       <section className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground"><div className="flex gap-3"><ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">Vendor features are intentionally not guessed</p><p className="mt-1">ONT serial discovery, optical levels, authorization, and reboot require the exact vendor model and approved MIB/OID map. SolarNet will not send generic SNMP write commands to a live OLT.</p></div></div></section>

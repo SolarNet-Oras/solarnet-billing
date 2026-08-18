@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OltDevice extends Model
 {
@@ -12,6 +13,7 @@ class OltDevice extends Model
 
     protected $fillable = [
         'name',
+        'router_id',
         'host',
         'snmp_port',
         'snmp_version',
@@ -52,9 +54,18 @@ class OltDevice extends Model
 
     public function toSafeArray(): array
     {
+        $router = $this->relationLoaded('router') ? $this->router : null;
+
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'router_id' => $this->router_id,
+            'relay_router' => $router ? [
+                'id' => $router->id,
+                'name' => $router->name,
+                'connection_status' => $router->connection_status,
+                'is_active' => $router->is_active,
+            ] : null,
             'host' => $this->host,
             'snmp_port' => $this->snmp_port,
             'snmp_version' => $this->snmp_version,
@@ -69,5 +80,11 @@ class OltDevice extends Model
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    /** RouterOS device that reaches this OLT through the management LAN. */
+    public function router(): BelongsTo
+    {
+        return $this->belongsTo(Router::class);
     }
 }

@@ -2548,4 +2548,82 @@ class MikrotikService
             return ['success' => false, 'message' => 'Ping failed: ' . $e->getMessage()];
         }
     }
+
+    /**
+     * Read one SNMPv2c OID from a device reachable by the router itself.
+     *
+     * This is intentionally a narrow relay primitive, not a RouterOS console
+     * or generic command executor. Callers provide only a single validated
+     * OID and receive a value; it never sends SNMP SET/WALK traffic and never
+     * persists the community on RouterOS.
+     */
+    public function relaySnmpV2cGet(Router $router, string $address, int $port, string $community, string $oid): array
+    {
+        if (!filter_var($address, FILTER_VALIDATE_IP) || $port < 1 || $port > 65535 || !preg_match('/^\.?(?:\d+\.)*\d+$/', $oid)) {
+            return ['success' => false, 'code' => 'RELAY_INPUT_INVALID', 'message' => 'The OLT SNMP relay request contains an invalid address, port, or OID.'];
+        }
+
+        try {
+            $client = new Client($this->makeConfig($router, 3, 5));
+            $rows = $client->query(
+                (new Query('/tool/snmp-get'))
+                    ->equal('address', $address)
+                    ->equal('port', (string) $port)
+                    ->equal('version', '2c')
+                    ->equal('community', $community)
+                    ->equal('oid', ltrim($oid, '.'))
+                    ->equal('tries', '1')
+                    ->equal('try-timeout', '2s')
+            )->read();
+
+            $value = $this->routerOsSnmpValue($rows);
+            if ($value === null) {
+                return [
+                    'success' => false,
+                    'code' => 'RELAY_NO_SNMP_RESPONSE',
+                    'message' => 'RouterOS did not receive an SNMP value from the OLT.',
+                ];
+            }
+
+            return ['success' => true, 'value' => $value];
+        } catch (Throwable $e) {
+            $message = $e->getMessage();
+            $normalized = strtolower($message);
+            $code = str_contains($normalized, 'not enough permissions')
+                || str_contains($normalized, 'permission denied')
+                || str_contains($normalized, 'not permitted')
+                ? 'RELAY_ROUTER_PERMISSION_MISSING'
+                : 'RELAY_ROUTER_ERROR';
+
+            Log::warning('Read-only OLT SNMP relay failed', [
+                'router_id' => $router->id,
+                'olt_host' => $address,
+                'olt_port' => $port,
+                'oid' => $oid,
+                'code' => $code,
+                'error' => $message,
+            ]);
+
+            return [
+                'success' => false,
+                'code' => $code,
+                'message' => $code === 'RELAY_ROUTER_PERMISSION_MISSING'
+                    ? 'The router API account cannot run the read-only RouterOS SNMP tool.'
+                    : 'RouterOS could not complete the read-only SNMP relay request.',
+            ];
+        }
+    }
+
+    /** @param array<int, array<string, mixed>> $rows */
+    private function routerOsSnmpValue(array $rows): ?string
+    {
+        foreach ($rows as $row) {
+            foreach (['value', 'ret', 'result'] as $key) {
+                $value = $row[$key] ?? null;
+                if (is_scalar($value) && trim((string) $value) !== '') return trim((string) $value);
+            }
+        }
+
+        return null;
+    }
 }

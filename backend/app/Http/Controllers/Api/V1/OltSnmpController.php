@@ -20,7 +20,12 @@ class OltSnmpController extends Controller
     {
         return response()->json([
             'success' => true,
-            'data' => OltDevice::query()->orderBy('name')->get()->map->toSafeArray()->values(),
+            'data' => OltDevice::query()
+                ->with('router:id,name,connection_status,is_active')
+                ->orderBy('name')
+                ->get()
+                ->map->toSafeArray()
+                ->values(),
         ]);
     }
 
@@ -33,8 +38,8 @@ class OltSnmpController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'OLT saved. Run the read-only SNMP test to confirm access.',
-            'data' => $olt->toSafeArray(),
+            'message' => 'OLT saved. Run the read-only SNMP test through its selected MikroTik management router.',
+            'data' => $olt->load('router:id,name,connection_status,is_active')->toSafeArray(),
         ], 201);
     }
 
@@ -53,7 +58,7 @@ class OltSnmpController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'OLT SNMP settings updated.',
-            'data' => $olt->fresh()->toSafeArray(),
+            'data' => $olt->fresh()->load('router:id,name,connection_status,is_active')->toSafeArray(),
         ]);
     }
 
@@ -88,7 +93,8 @@ class OltSnmpController extends Controller
     {
         return [
             'name' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
-            'host' => [$creating ? 'required' : 'sometimes', 'string', 'max:255'],
+            'router_id' => [$creating ? 'required' : 'sometimes', 'uuid', Rule::exists('routers', 'id')],
+            'host' => [$creating ? 'required' : 'sometimes', 'ip'],
             'snmp_port' => [$creating ? 'required' : 'sometimes', 'integer', 'between:1,65535'],
             'snmp_version' => [$creating ? 'required' : 'sometimes', Rule::in(['2c'])],
             'snmp_community' => [$creating ? 'required' : 'nullable', 'string', 'min:1', 'max:255'],
