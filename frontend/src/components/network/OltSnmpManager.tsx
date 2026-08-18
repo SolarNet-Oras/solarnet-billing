@@ -237,7 +237,14 @@ export function OltSnmpManager() {
     setError('');
     setNotice('');
     try {
-      const response = await api.post<{ success: boolean; message: string; data: OltInterfaceMonitoring }>(`/olts/${interfaceOltId}/interfaces/refresh`);
+      // An OLT interface sample performs several bounded, read-only SNMP walks
+      // through the management router. It can legitimately take longer than the
+      // application's normal API timeout, especially on an OLT with many ports.
+      const response = await api.post<{ success: boolean; message: string; data: OltInterfaceMonitoring }>(
+        `/olts/${interfaceOltId}/interfaces/refresh`,
+        undefined,
+        { timeout: 120_000 },
+      );
       setInterfaceSnapshots((current) => ({ ...current, [interfaceOltId]: response.data.data }));
       setNotice(response.data.message);
     } catch (requestError) {
