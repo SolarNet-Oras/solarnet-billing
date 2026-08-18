@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { MikroTikRouters } from '@/components/network/MikroTikRouters';
-import { OltCloudAccess } from '@/components/network/OltCloudAccess';
+import { OltSnmpManager } from '@/components/network/OltSnmpManager';
 
 export function NetworkDevicesPage() {
   const [activeTab, setActiveTab] = useState<'mikrotik' | 'olt'>('mikrotik');
@@ -38,7 +38,7 @@ export function NetworkDevicesPage() {
               }`}
             >
               OLT Devices
-              <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Cloud access</span>
+              <span className="ml-2 text-xs bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded">SNMP monitoring</span>
             </button>
           </div>
         </div>
@@ -46,7 +46,7 @@ export function NetworkDevicesPage() {
         {/* Tab Content */}
         <div className="mt-6">
           {activeTab === 'mikrotik' && <MikroTikRouters />}
-          {activeTab === 'olt' && <OltCloudAccess />}
+          {activeTab === 'olt' && <OltSnmpManager />}
         </div>
       </div>
     </DashboardLayout>

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\CustomerPortalController;
 use App\Http\Controllers\Api\V1\CustomerTroubleshootingController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
+use App\Http\Controllers\Api\V1\OltSnmpController;
 use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
@@ -139,6 +140,24 @@ Route::prefix('v1')->group(function () {
             Route::post('routers/preview-script', [RouterController::class, 'previewSetupScript']);
             Route::get('routers/scripts/queue-management', [RouterController::class, 'getQueueScript']);
         });
+
+        // OLT monitoring is separate from MikroTik router credentials. It is
+        // intentionally read-only standard SNMP polling; no cloud login,
+        // ONU provisioning, reboot, or OLT configuration command is exposed.
+        Route::middleware(['permission:view-routers'])->group(function () {
+            Route::get('olts', [OltSnmpController::class, 'index']);
+            Route::get('olts/{id}/monitoring', [OltSnmpController::class, 'monitoring']);
+        });
+        Route::middleware(['permission:create-routers'])->group(function () {
+            Route::post('olts', [OltSnmpController::class, 'store']);
+        });
+        Route::middleware(['permission:edit-routers'])->group(function () {
+            Route::put('olts/{id}', [OltSnmpController::class, 'update']);
+        });
+        Route::middleware(['permission:delete-routers'])->group(function () {
+            Route::delete('olts/{id}', [OltSnmpController::class, 'destroy']);
+        });
+        Route::post('olts/{id}/test', [OltSnmpController::class, 'test'])->middleware('permission:manage-routers');
         Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
         Route::middleware('role:super_admin|admin')->group(function () {
             // Guarded internal DNS branding. Discovery, planning, backup,
@@ -288,7 +307,8 @@ Route::prefix('v1')->group(function () {
             Route::get('reports/tickets', [ReportController::class, 'ticketsOverview']);
         });
         
-        // HSGQ OLT routes (require permission)
+        // Legacy HSGQ API routes remain for compatibility. The Network Devices
+        // UI uses the OLT SNMP routes above and no longer embeds cloud login.
         Route::middleware(['permission:view-routers'])->group(function () {
             Route::get('hsgq-olt', [HsgqOltController::class, 'index']);
             Route::get('hsgq-olt/{oltId}/onts', [HsgqOltController::class, 'getOnts']);
