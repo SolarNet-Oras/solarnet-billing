@@ -21,13 +21,20 @@ class OltSnmpRelayServiceTest extends TestCase
 
         $mikrotik = Mockery::mock(MikrotikService::class);
         $mikrotik->shouldReceive('relaySnmpV2cGet')
-            ->times(5)
+            ->times(12)
             ->andReturn(
                 ['success' => true, 'value' => 'HSGQ-G04R'],
-                ['success' => true, 'value' => '1.3.6.1.4.1.9999'],
+                ['success' => true, 'value' => '1.3.6.1.4.1.50224.3.1.1'],
                 ['success' => true, 'value' => '123456'],
                 ['success' => true, 'value' => 'Main OLT'],
                 ['success' => true, 'value' => '4'],
+                ['success' => true, 'value' => 'V1.0'],
+                ['success' => true, 'value' => 'IGD_V1.0.18C_Rel'],
+                ['success' => true, 'value' => 'V1.0.0'],
+                ['success' => true, 'value' => 'HSGQ-G04R'],
+                ['success' => true, 'value' => '202509260028'],
+                ['success' => true, 'value' => 'Fan1:76 %Fan2:76 %Fan3:76 %'],
+                ['success' => true, 'value' => 'AC'],
             );
 
         $result = (new OltSnmpService($mikrotik))->inspect($olt);
@@ -36,6 +43,8 @@ class OltSnmpRelayServiceTest extends TestCase
         $this->assertSame('read_only_standard_mib_via_mikrotik_api_relay', $result['data']['mode']);
         $this->assertSame('Concentrator', $result['data']['relay_router']);
         $this->assertSame(4, $result['data']['interface_count']);
+        $this->assertSame('HSGQ-G04R', $result['data']['hsgq_vendor_health']['model']);
+        $this->assertSame('AC', $result['data']['hsgq_vendor_health']['power_source']);
     }
 
     public function test_it_reports_when_the_router_api_account_lacks_the_snmp_tool_permission(): void

@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Log;
  *
  * OLT management addresses are commonly private. Polling through the existing
  * authenticated RouterOS API avoids exposing UDP/161 or adding a public NAT
- * rule. Only five fixed GET OIDs are relayed; no SNMP SET, WALK, ONU action,
- * router configuration, or OLT configuration path exists in this service.
+ * rule. Only fixed standard-health GET OIDs and a small HSGQ non-sensitive
+ * device-health allowlist are relayed; no SNMP SET, WALK, ONU action, router
+ * configuration, or OLT configuration path exists in this service.
  */
 class OltSnmpService
 {
@@ -21,6 +22,23 @@ class OltSnmpService
     private const SYS_UPTIME = '1.3.6.1.2.1.1.3.0';
     private const SYS_NAME = '1.3.6.1.2.1.1.5.0';
     private const IF_NUMBER = '1.3.6.1.2.1.2.1.0';
+
+    /**
+     * HSGQ-G04R vendor values observed from the OLT's private enterprise
+     * subtree. These are deliberately limited to non-sensitive, human-readable
+     * device-identification and health strings. No ONU tables, account tables,
+     * configuration values, or unlabelled counters are queried or stored.
+     */
+    private const HSGQ_ENTERPRISE_ROOT = '1.3.6.1.4.1.50224.';
+    private const HSGQ_SAFE_HEALTH_OIDS = [
+        'platform_version' => '1.3.6.1.4.1.50224.3.1.1.5.0',
+        'firmware_release' => '1.3.6.1.4.1.50224.3.1.1.6.0',
+        'software_version' => '1.3.6.1.4.1.50224.3.1.1.7.0',
+        'model' => '1.3.6.1.4.1.50224.3.1.1.19.0',
+        'build' => '1.3.6.1.4.1.50224.3.1.1.20.0',
+        'fan_reading' => '1.3.6.1.4.1.50224.3.1.1.21.0',
+        'power_source' => '1.3.6.1.4.1.50224.3.1.1.24.0',
+    ];
 
     public function __construct(private readonly MikrotikService $mikrotik)
     {
@@ -48,12 +66,15 @@ class OltSnmpService
         $first = $this->get($router, $olt, self::SYS_DESCR);
         if (!$first['success']) return $this->relayFailure($olt, $router, $first);
 
+        $systemObjectId = $this->valueOrNull($this->get($router, $olt, self::SYS_OBJECT_ID));
+
         $snapshot = [
             'system_description' => $first['value'],
-            'system_object_id' => $this->valueOrNull($this->get($router, $olt, self::SYS_OBJECT_ID)),
+            'system_object_id' => $systemObjectId,
             'system_uptime' => $this->valueOrNull($this->get($router, $olt, self::SYS_UPTIME)),
             'system_name' => $this->valueOrNull($this->get($router, $olt, self::SYS_NAME)),
             'interface_count' => $this->integerValue($this->valueOrNull($this->get($router, $olt, self::IF_NUMBER))),
+            'hsgq_vendor_health' => $this->hsgqVendorHealth($router, $olt, $systemObjectId),
             'polled_at' => now()->toIso8601String(),
             'mode' => 'read_only_standard_mib_via_mikrotik_api_relay',
             'relay_router' => $router->name,
@@ -75,6 +96,24 @@ class OltSnmpService
     private function get(Router $router, OltDevice $olt, string $oid): array
     {
         return $this->mikrotik->relaySnmpV2cGet($router, $olt->host, $olt->snmp_port, $olt->snmp_community, $oid);
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function hsgqVendorHealth(Router $router, OltDevice $olt, ?string $systemObjectId): ?array
+    {
+        if (!is_string($systemObjectId) || !str_starts_with(ltrim($systemObjectId, '.'), self::HSGQ_ENTERPRISE_ROOT)) {
+            return null;
+        }
+
+        $health = [];
+        foreach (self::HSGQ_SAFE_HEALTH_OIDS as $key => $oid) {
+            $value = $this->valueOrNull($this->get($router, $olt, $oid));
+            if ($value !== null) $health[$key] = $value;
+        }
+
+        return $health ?: null;
     }
 
     private function relayFailure(OltDevice $olt, Router $router, array $result): array

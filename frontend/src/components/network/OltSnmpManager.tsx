@@ -5,6 +5,16 @@ import { api } from '@/services/api';
 
 type OltStatus = 'online' | 'offline' | 'unknown';
 
+interface HsgqVendorHealth {
+  platform_version?: string;
+  firmware_release?: string;
+  software_version?: string;
+  model?: string;
+  build?: string;
+  fan_reading?: string;
+  power_source?: string;
+}
+
 interface OltSnapshot {
   system_description?: string | null;
   system_object_id?: string | null;
@@ -13,6 +23,7 @@ interface OltSnapshot {
   interface_count?: number | null;
   polled_at?: string | null;
   relay_router?: string | null;
+  hsgq_vendor_health?: HsgqVendorHealth | null;
 }
 
 type RouterOption = {
@@ -55,6 +66,15 @@ type OltForm = {
 const emptyForm: OltForm = {
   name: '', router_id: '', host: '', snmp_port: 161, snmp_community: '', location: '', model: '', notes: '', is_active: true,
 };
+
+const hsgqHealthLabels: Array<[keyof HsgqVendorHealth, string]> = [
+  ['model', 'Reported model'],
+  ['firmware_release', 'Reported firmware'],
+  ['software_version', 'Reported software'],
+  ['build', 'Reported build'],
+  ['fan_reading', 'Reported fans'],
+  ['power_source', 'Reported power source'],
+];
 
 const statusStyle: Record<OltStatus, string> = {
   online: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
@@ -215,6 +235,8 @@ export function OltSnmpManager() {
       </section>
 
       {devices.some((device) => device.last_snapshot?.system_object_id) && <section className="rounded-2xl border border-violet-500/25 bg-violet-500/5 p-5 text-sm text-muted-foreground"><div className="flex gap-3"><ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" /><div><p className="font-semibold text-foreground">Vendor MIB discovery is ready for review</p><p className="mt-1">The system object ID below identifies the OLT&apos;s vendor enterprise branch. SolarNet has not walked that branch and cannot infer ONU or optical-power meanings until a vendor MIB or reviewed OID sample is available.</p><div className="mt-3 space-y-1 font-mono text-xs text-foreground">{devices.filter((device) => device.last_snapshot?.system_object_id).map((device) => <p key={device.id}>{device.name}: {device.last_snapshot?.system_object_id}</p>)}</div></div></div></section>}
+
+      {devices.some((device) => device.last_snapshot?.hsgq_vendor_health) && <section className="rounded-2xl border border-cyan-500/25 bg-cyan-500/5 p-5 text-sm text-muted-foreground"><div className="flex gap-3"><Activity className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-300" /><div className="min-w-0 flex-1"><p className="font-semibold text-foreground">HSGQ reported device health</p><p className="mt-1">Read-only values from a fixed, non-sensitive HSGQ OID allowlist. Fan and power values are shown exactly as reported by the OLT; they are not interpreted as alarms.</p><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{devices.filter((device) => device.last_snapshot?.hsgq_vendor_health).map((device) => { const health = device.last_snapshot?.hsgq_vendor_health; return <article key={device.id} className="rounded-xl border border-cyan-500/15 bg-background/70 p-4"><p className="mb-3 font-semibold text-foreground">{device.name}</p><dl className="space-y-2">{hsgqHealthLabels.map(([field, label]) => health?.[field] ? <div key={field} className="flex items-start justify-between gap-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="break-all text-right font-mono text-xs text-foreground">{health[field]}</dd></div> : null)}</dl></article>; })}</div></div></div></section>}
 
       <section className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground"><div className="flex gap-3"><ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="font-semibold text-foreground">Vendor features are intentionally not guessed</p><p className="mt-1">ONT serial discovery, optical levels, authorization, and reboot require the exact vendor model and approved MIB/OID map. SolarNet will not send generic SNMP write commands to a live OLT.</p></div></div></section>
     </div>
