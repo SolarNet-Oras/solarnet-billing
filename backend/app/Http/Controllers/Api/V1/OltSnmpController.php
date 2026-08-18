@@ -89,6 +89,14 @@ class OltSnmpController extends Controller
         ]);
     }
 
+    /** Refreshes only standard IF-MIB interface telemetry through the relay. */
+    public function refreshInterfaces(string $id): JsonResponse
+    {
+        $result = $this->snmp->refreshInterfaceMonitoring(OltDevice::findOrFail($id));
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     private function rules(bool $creating): array
     {
         return [

@@ -15,6 +15,31 @@ interface HsgqVendorHealth {
   power_source?: string;
 }
 
+interface OltInterfaceMetric {
+  index: number;
+  name: string;
+  admin_status: string;
+  oper_status: string;
+  speed_mbps?: number | null;
+  in_octets?: string | null;
+  out_octets?: string | null;
+  rx_bytes_per_second?: number | null;
+  tx_bytes_per_second?: number | null;
+  in_errors?: number | null;
+  out_errors?: number | null;
+  in_discards?: number | null;
+  out_discards?: number | null;
+}
+
+interface OltInterfaceMonitoring {
+  sampled_at: string;
+  interface_count: number;
+  interfaces: OltInterfaceMetric[];
+  truncated?: boolean;
+  mode: string;
+  relay_router: string;
+}
+
 interface OltSnapshot {
   system_description?: string | null;
   system_object_id?: string | null;
@@ -24,6 +49,7 @@ interface OltSnapshot {
   polled_at?: string | null;
   relay_router?: string | null;
   hsgq_vendor_health?: HsgqVendorHealth | null;
+  interface_monitoring?: OltInterfaceMonitoring | null;
 }
 
 type RouterOption = {
@@ -76,6 +102,14 @@ const hsgqHealthLabels: Array<[keyof HsgqVendorHealth, string]> = [
   ['power_source', 'Reported power source'],
 ];
 
+const traffic = (bytesPerSecond?: number | null) => {
+  if (bytesPerSecond === null || bytesPerSecond === undefined) return 'First sample';
+  const bitsPerSecond = bytesPerSecond * 8;
+  if (bitsPerSecond < 1_000) return `${bitsPerSecond.toFixed(0)} bps`;
+  if (bitsPerSecond < 1_000_000) return `${(bitsPerSecond / 1_000).toFixed(1)} Kbps`;
+  return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`;
+};
+
 const statusStyle: Record<OltStatus, string> = {
   online: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
   offline: 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
@@ -95,6 +129,10 @@ export function OltSnmpManager() {
   const [form, setForm] = useState<OltForm>(emptyForm);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [interfaceOltId, setInterfaceOltId] = useState('');
+  const [interfaceSnapshots, setInterfaceSnapshots] = useState<Record<string, OltInterfaceMonitoring>>({});
+  const [interfaceLoading, setInterfaceLoading] = useState(false);
+  const [interfaceSearch, setInterfaceSearch] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -105,6 +143,7 @@ export function OltSnmpManager() {
       ]);
       setDevices(oltResponse.data.data);
       setRouters(routerResponse.data.data.filter((router) => router.is_active));
+      setInterfaceOltId((current) => current && oltResponse.data.data.some((device) => device.id === current) ? current : (oltResponse.data.data[0]?.id || ''));
     } catch (requestError) {
       setError(errorMessage(requestError, 'Could not load OLT devices and available MikroTik relay routers.'));
     } finally {
@@ -192,6 +231,28 @@ export function OltSnmpManager() {
     }
   };
 
+  const refreshInterfaces = async () => {
+    if (!interfaceOltId) return;
+    setInterfaceLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await api.post<{ success: boolean; message: string; data: OltInterfaceMonitoring }>(`/olts/${interfaceOltId}/interfaces/refresh`);
+      setInterfaceSnapshots((current) => ({ ...current, [interfaceOltId]: response.data.data }));
+      setNotice(response.data.message);
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Could not refresh the read-only OLT interface monitor.'));
+    } finally {
+      setInterfaceLoading(false);
+    }
+  };
+
+  const selectedInterfaceDevice = devices.find((device) => device.id === interfaceOltId);
+  const selectedInterfaceSnapshot = interfaceOltId
+    ? interfaceSnapshots[interfaceOltId] || selectedInterfaceDevice?.last_snapshot?.interface_monitoring || null
+    : null;
+  const visibleInterfaces = (selectedInterfaceSnapshot?.interfaces || []).filter((item) => `${item.index} ${item.name} ${item.admin_status} ${item.oper_status}`.toLowerCase().includes(interfaceSearch.trim().toLowerCase()));
+
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-3xl border border-cyan-500/25 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-xl md:p-8">
@@ -232,6 +293,11 @@ export function OltSnmpManager() {
       <section className="rounded-2xl border border-border bg-card shadow-sm">
         <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4"><div><h3 className="font-semibold text-foreground">SNMP OLT inventory</h3><p className="mt-1 text-xs text-muted-foreground">Standard system and interface health only, relayed through the selected MikroTik.</p></div><button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button></div>
         {loading ? <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading OLT inventory…</div> : devices.length === 0 ? <div className="p-10 text-center"><Router className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3 font-semibold text-foreground">No SNMP OLT devices yet</p><p className="mt-1 text-sm text-muted-foreground">Add an OLT management IP and its MikroTik relay router to begin read-only monitoring.</p></div> : <div className="divide-y divide-border">{devices.map((device) => <article key={device.id} className="p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="font-semibold text-foreground">{device.name}</h4><span className={`rounded-full px-2 py-1 text-[11px] font-bold uppercase ${statusStyle[device.connection_status]}`}>{device.connection_status}</span></div><p className="mt-1 font-mono text-sm text-muted-foreground">{device.host}:{device.snmp_port} · SNMP v2c</p><p className="mt-1 text-xs text-muted-foreground">Relay: {device.relay_router ? `${device.relay_router.name} · ${device.relay_router.connection_status}` : 'Select a MikroTik relay router'} · {device.location || 'Location not set'}{device.model ? ` · ${device.model}` : ''} · last check {device.last_checked_at ? new Date(device.last_checked_at).toLocaleString('en-PH') : 'never'}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={testingId === device.id} onClick={() => void test(device)} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{testingId === device.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}{testingId === device.id ? 'Testing…' : 'Test SNMP'}</button><button type="button" onClick={() => openEdit(device)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"><Edit3 className="h-4 w-4" />Edit</button><button type="button" onClick={() => void remove(device)} className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 px-3 py-2 text-sm font-semibold text-rose-600"><Trash2 className="h-4 w-4" />Remove</button></div></div>{device.last_snapshot && <div className="mt-4 grid gap-3 rounded-xl bg-muted/50 p-4 text-sm md:grid-cols-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System name</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_name || 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Interfaces</p><p className="mt-1 font-medium">{device.last_snapshot.interface_count ?? 'Not supplied'}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Uptime</p><p className="mt-1 break-all font-medium">{device.last_snapshot.system_uptime || 'Not supplied'}</p></div><div className="md:col-span-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">System description</p><p className="mt-1 break-words text-muted-foreground">{device.last_snapshot.system_description || 'Not supplied'}</p></div></div>}</article>)}</div>}
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="font-semibold text-foreground">OLT interfaces &amp; PON port monitor</h3><p className="mt-1 text-xs text-muted-foreground">Manual, read-only IF-MIB snapshot of port names, link state, traffic counters, errors, and discards. It does not read ONU, account, or OLT configuration data.</p></div><div className="flex flex-wrap gap-2"><select value={interfaceOltId} onChange={(event) => { setInterfaceOltId(event.target.value); setInterfaceSearch(''); }} className="h-10 min-w-44 rounded-lg border border-input bg-background px-3 text-sm" aria-label="Select OLT for interface monitoring">{devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}</select><button type="button" disabled={!interfaceOltId || interfaceLoading} onClick={() => void refreshInterfaces()} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{interfaceLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{interfaceLoading ? 'Reading ports…' : 'Refresh ports'}</button></div></div>
+        {!selectedInterfaceSnapshot ? <div className="p-8 text-center text-sm text-muted-foreground">Select an OLT and choose <strong className="text-foreground">Refresh ports</strong> to create the first read-only interface snapshot.</div> : <div className="p-5"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">{selectedInterfaceSnapshot.interface_count}</span> interfaces · relay {selectedInterfaceSnapshot.relay_router} · updated {new Date(selectedInterfaceSnapshot.sampled_at).toLocaleString('en-PH')}{selectedInterfaceSnapshot.truncated ? ' · display capped at 512 interfaces' : ''}</div><input value={interfaceSearch} onChange={(event) => setInterfaceSearch(event.target.value)} placeholder="Search port, status, or index…" className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm sm:max-w-xs" /></div><div className="overflow-x-auto rounded-xl border border-border"><table className="min-w-[980px] w-full text-left text-xs"><thead className="bg-muted/60 text-[11px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-3">ID</th><th className="px-3 py-3">Interface</th><th className="px-3 py-3">Admin</th><th className="px-3 py-3">Link</th><th className="px-3 py-3 text-right">Speed</th><th className="px-3 py-3 text-right">RX</th><th className="px-3 py-3 text-right">TX</th><th className="px-3 py-3 text-right">In err / drop</th><th className="px-3 py-3 text-right">Out err / drop</th></tr></thead><tbody className="divide-y divide-border">{visibleInterfaces.map((item) => <tr key={item.index} className="hover:bg-muted/30"><td className="px-3 py-3 font-mono text-muted-foreground">{item.index}</td><td className="max-w-64 break-all px-3 py-3 font-medium text-foreground">{item.name}</td><td className="px-3 py-3 capitalize text-muted-foreground">{item.admin_status.replaceAll('_', ' ')}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 font-semibold ${item.oper_status === 'up' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : item.oper_status === 'down' || item.oper_status === 'lower_layer_down' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-slate-500/10 text-slate-600 dark:text-slate-300'}`}>{item.oper_status.replaceAll('_', ' ')}</span></td><td className="px-3 py-3 text-right text-muted-foreground">{item.speed_mbps ? `${item.speed_mbps.toLocaleString()} Mbps` : '—'}</td><td className="px-3 py-3 text-right font-mono text-cyan-700 dark:text-cyan-300">{traffic(item.rx_bytes_per_second)}</td><td className="px-3 py-3 text-right font-mono text-violet-700 dark:text-violet-300">{traffic(item.tx_bytes_per_second)}</td><td className="px-3 py-3 text-right font-mono text-muted-foreground">{item.in_errors ?? '—'} / {item.in_discards ?? '—'}</td><td className="px-3 py-3 text-right font-mono text-muted-foreground">{item.out_errors ?? '—'} / {item.out_discards ?? '—'}</td></tr>)}{visibleInterfaces.length === 0 && <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-muted-foreground">No interfaces match this search.</td></tr>}</tbody></table></div><p className="mt-3 text-xs text-muted-foreground">RX and TX rates require two snapshots; the first sample keeps the raw counters only and displays “First sample.”</p></div>}
       </section>
 
       {devices.some((device) => device.last_snapshot?.system_object_id) && <section className="rounded-2xl border border-violet-500/25 bg-violet-500/5 p-5 text-sm text-muted-foreground"><div className="flex gap-3"><ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" /><div><p className="font-semibold text-foreground">Vendor MIB discovery is ready for review</p><p className="mt-1">The system object ID below identifies the OLT&apos;s vendor enterprise branch. SolarNet has not walked that branch and cannot infer ONU or optical-power meanings until a vendor MIB or reviewed OID sample is available.</p><div className="mt-3 space-y-1 font-mono text-xs text-foreground">{devices.filter((device) => device.last_snapshot?.system_object_id).map((device) => <p key={device.id}>{device.name}: {device.last_snapshot?.system_object_id}</p>)}</div></div></div></section>}

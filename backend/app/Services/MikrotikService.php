@@ -2614,6 +2614,75 @@ class MikrotikService
         }
     }
 
+    /**
+     * Read a fixed, allowlisted SNMP table column through the router itself.
+     *
+     * This is deliberately a narrow read-only primitive for OLT monitoring.
+     * It does not accept browser input, does not run scripts, and never sends
+     * SNMP SET traffic. The OLT service supplies only standard IF-MIB columns
+     * and caps the returned rows before they reach the application.
+     *
+     * @return array{success: bool, rows?: array<int, array{index: int, value: string}>, truncated?: bool, code?: string, message?: string}
+     */
+    public function relaySnmpV2cWalk(Router $router, string $address, int $port, string $community, string $oid, int $maxRows = 512): array
+    {
+        if (!filter_var($address, FILTER_VALIDATE_IP) || $port < 1 || $port > 65535 || !preg_match('/^\.?(?:\d+\.)*\d+$/', $oid)) {
+            return ['success' => false, 'code' => 'RELAY_INPUT_INVALID', 'message' => 'The OLT SNMP relay request contains an invalid address, port, or OID.'];
+        }
+
+        $maxRows = max(1, min($maxRows, 512));
+
+        try {
+            $client = new Client($this->makeConfig($router, 3, 8));
+            $rows = $client->query(
+                (new Query('/tool/snmp-walk'))
+                    ->equal('address', $address)
+                    ->equal('port', (string) $port)
+                    ->equal('version', '2c')
+                    ->equal('community', $community)
+                    ->equal('oid', ltrim($oid, '.'))
+                    ->equal('tries', '1')
+                    ->equal('try-timeout', '2s')
+            )->read();
+
+            $walk = $this->routerOsSnmpWalkRows($rows, $oid, $maxRows);
+            if ($walk['rows'] === []) {
+                return [
+                    'success' => false,
+                    'code' => 'RELAY_NO_SNMP_RESPONSE',
+                    'message' => 'RouterOS did not receive usable SNMP table values from the OLT.',
+                ];
+            }
+
+            return ['success' => true, 'rows' => $walk['rows'], 'truncated' => $walk['truncated']];
+        } catch (Throwable $e) {
+            $message = $e->getMessage();
+            $normalized = strtolower($message);
+            $code = str_contains($normalized, 'not enough permissions')
+                || str_contains($normalized, 'permission denied')
+                || str_contains($normalized, 'not permitted')
+                ? 'RELAY_ROUTER_PERMISSION_MISSING'
+                : 'RELAY_ROUTER_ERROR';
+
+            Log::warning('Read-only OLT SNMP table relay failed', [
+                'router_id' => $router->id,
+                'olt_host' => $address,
+                'olt_port' => $port,
+                'oid' => $oid,
+                'code' => $code,
+                'error' => $message,
+            ]);
+
+            return [
+                'success' => false,
+                'code' => $code,
+                'message' => $code === 'RELAY_ROUTER_PERMISSION_MISSING'
+                    ? 'The router API account cannot run the read-only RouterOS SNMP tool.'
+                    : 'RouterOS could not complete the read-only SNMP table relay.',
+            ];
+        }
+    }
+
     /** @param array<int, array<string, mixed>> $rows */
     private function routerOsSnmpValue(array $rows): ?string
     {
@@ -2625,5 +2694,39 @@ class MikrotikService
         }
 
         return null;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array{rows: array<int, array{index: int, value: string}>, truncated: bool}
+     */
+    private function routerOsSnmpWalkRows(array $rows, string $baseOid, int $maxRows): array
+    {
+        $baseOid = rtrim(ltrim($baseOid, '.'), '.') . '.';
+        $entries = [];
+        $truncated = false;
+
+        foreach ($rows as $row) {
+            $oid = $row['oid'] ?? $row['oid-name'] ?? $row['name'] ?? null;
+            $value = $row['value'] ?? $row['ret'] ?? $row['result'] ?? null;
+            if (!is_scalar($oid) || !is_scalar($value)) continue;
+
+            $oid = ltrim(trim((string) $oid), '.');
+            if (!str_starts_with($oid, $baseOid)) continue;
+
+            $index = substr($oid, strlen($baseOid));
+            if (!preg_match('/^\d+$/', $index)) continue;
+
+            if (count($entries) >= $maxRows) {
+                $truncated = true;
+                break;
+            }
+
+            $entries[(int) $index] = ['index' => (int) $index, 'value' => trim((string) $value)];
+        }
+
+        ksort($entries, SORT_NUMERIC);
+
+        return ['rows' => array_values($entries), 'truncated' => $truncated];
     }
 }

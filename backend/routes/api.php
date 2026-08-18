@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('olts/{id}', [OltSnmpController::class, 'destroy']);
         });
         Route::post('olts/{id}/test', [OltSnmpController::class, 'test'])->middleware('permission:manage-routers');
+        Route::post('olts/{id}/interfaces/refresh', [OltSnmpController::class, 'refreshInterfaces'])->middleware('permission:manage-routers');
         Route::post('routers/{id}/threat-observations/{observation}/review', [RouterController::class, 'reviewThreatObservation'])->middleware('role:super_admin|admin');
         Route::middleware('role:super_admin|admin')->group(function () {
             // Guarded internal DNS branding. Discovery, planning, backup,
