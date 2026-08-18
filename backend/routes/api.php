@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
+use App\Http\Controllers\Api\V1\RadiusIpOeController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
 use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\TicketController;
@@ -114,6 +115,21 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
+
+        // Policy staging is admin-only. It intentionally exposes no RADIUS
+        // secret and no RouterOS write endpoint.
+        Route::middleware('role:super_admin|admin')->prefix('radius')->group(function () {
+            Route::get('status', [RadiusIpOeController::class, 'status']);
+            Route::get('subscribers', [RadiusIpOeController::class, 'index']);
+            Route::get('subscribers/{customerId}', [RadiusIpOeController::class, 'show']);
+            Route::post('subscribers/{customerId}/sync', [RadiusIpOeController::class, 'sync']);
+            Route::post('subscribers/{customerId}/test', [RadiusIpOeController::class, 'test']);
+            Route::post('stage-all', [RadiusIpOeController::class, 'stageAll']);
+            Route::get('nas-clients', [RadiusIpOeController::class, 'nasClients']);
+            Route::post('nas-clients', [RadiusIpOeController::class, 'storeNasClient']);
+            Route::put('nas-clients/{id}', [RadiusIpOeController::class, 'updateNasClient']);
+            Route::post('nas-clients/{id}/sync', [RadiusIpOeController::class, 'syncNasClient']);
+        });
         Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
         Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');

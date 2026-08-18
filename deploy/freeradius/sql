@@ -1,0 +1,42 @@
+sql {
+        driver = "rlm_sql_postgresql"
+        dialect = "postgresql"
+
+        server = "${env:RADIUS_SQL_HOST}"
+        port = "${env:RADIUS_SQL_PORT}"
+        login = "${env:RADIUS_SQL_USERNAME}"
+        password = "${env:RADIUS_SQL_PASSWORD}"
+        radius_db = "${env:RADIUS_SQL_DATABASE}"
+
+        # The bootstrap grants this account access only to the `radius`
+        # schema and sets its search_path there. FreeRADIUS standard SQL
+        # queries can therefore use their normal table names.
+        acct_table1 = "radacct"
+        acct_table2 = "radacct"
+        postauth_table = "radpostauth"
+        authcheck_table = "radcheck"
+        authreply_table = "radreply"
+        groupcheck_table = "radgroupcheck"
+        groupreply_table = "radgroupreply"
+        usergroup_table = "radusergroup"
+        nas_table = "nas"
+        # FreeRADIUS uses this exact directive name. NAS clients are loaded
+        # from `nas` on server startup, which is why SolarNet requires an
+        # explicit service restart after a NAS approval is synchronized.
+        readclients = yes
+        read_groups = yes
+
+        pool {
+                start = 0
+                min = 1
+                max = 8
+                spare = 2
+                uses = 0
+                lifetime = 0
+                cleanup_interval = 30
+                retry_delay = 5
+                spread = no
+        }
+
+        $INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
+}

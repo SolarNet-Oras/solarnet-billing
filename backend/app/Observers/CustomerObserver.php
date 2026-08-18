@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\Customer;
 use App\Jobs\SyncCustomerQueue;
+use App\Jobs\SyncRadiusSubscriber;
 use App\Services\QueueService;
 use Illuminate\Support\Facades\Log;
 
@@ -23,6 +24,7 @@ class CustomerObserver
     {
         // Sync queue after customer is created
         $this->syncQueue($customer, 'created');
+        $this->syncRadiusSubscriber($customer, 'customer_created');
     }
 
     /**
@@ -36,6 +38,7 @@ class CustomerObserver
             'router_id',
             'ip_address',
             'status',
+            'mac_address',
         ];
 
         $changed = false;
@@ -48,6 +51,7 @@ class CustomerObserver
 
         if ($changed) {
             $this->syncQueue($customer, 'updated');
+            $this->syncRadiusSubscriber($customer, 'customer_updated');
         }
     }
 
@@ -56,6 +60,17 @@ class CustomerObserver
      */
     public function deleted(Customer $customer): void
     {
+        // Soft deletion does not remove the dependent policy record. Revoke
+        // the staged identity before the existing queue cleanup continues.
+        try {
+            app(\App\Services\RadiusSubscriberService::class)->revokeForDeletedCustomer($customer);
+        } catch (\Throwable $e) {
+            Log::warning('Unable to revoke RADIUS policy after customer deletion', [
+                'customer_id' => $customer->id,
+                'error_type' => $e::class,
+            ]);
+        }
+
         // Remove queue when customer is deleted
         try {
             $customer->load('router');
@@ -74,6 +89,12 @@ class CustomerObserver
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /** Restoring a soft-deleted customer recreates only its local policy. */
+    public function restored(Customer $customer): void
+    {
+        $this->syncRadiusSubscriber($customer, 'customer_restored');
     }
 
     /**
@@ -96,6 +117,19 @@ class CustomerObserver
                 'customer_id' => $customer->id,
                 'account_number' => $customer->account_number,
                 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Local policy staging only. It has no RouterOS/RADIUS network side effect. */
+    protected function syncRadiusSubscriber(Customer $customer, string $reason): void
+    {
+        try {
+            SyncRadiusSubscriber::dispatch($customer->id, $reason)->afterCommit();
+        } catch (\Throwable $e) {
+            Log::warning('Unable to queue RADIUS subscriber policy staging', [
+                'customer_id' => $customer->id,
+                'error_type' => $e::class,
             ]);
         }
     }

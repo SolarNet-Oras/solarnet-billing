@@ -316,6 +316,7 @@ class BillingSuspensionService
         $financial = $this->accountReconciliationService->snapshot($customer);
         $eligibility = $this->accountReconciliationService->restorationEligibility($customer, $financial, $billingState);
         $this->auditReconciliation($customer, $financial, $eligibility, 'suspension_applied', 'Service restriction synchronized from current billing policy.', null, $result, $previousStatus);
+        $this->syncRadiusPolicy($customer, 'billing_suspension');
         return $result;
     }
 
@@ -357,6 +358,7 @@ class BillingSuspensionService
                 'push_delivery' => 'skipped_not_restricted',
             ];
             $this->auditReconciliation($customer, $financial, $eligibility, 'restoration_confirmed', $result['queue']['message'], $payment, $result, $previousStatus);
+            $this->syncRadiusPolicy($customer, 'billing_restoration_without_router');
             return $result;
         }
 
@@ -450,6 +452,7 @@ class BillingSuspensionService
             'push_delivery' => $pushDelivery,
         ];
         $this->auditReconciliation($customer, $financial, $eligibility, $restored ? 'restoration_confirmed' : 'restoration_failed', $customer->restoration_last_error ?: $reason, $payment, $result, $previousStatus);
+        $this->syncRadiusPolicy($customer, $restored ? 'payment_or_billing_restoration' : 'restoration_pending');
         return $result;
     }
 
@@ -687,5 +690,24 @@ class BillingSuspensionService
 
         $normalized = strtoupper(trim($macAddress));
         return $normalized === '' ? null : $normalized;
+    }
+
+    /**
+     * saveQuietly() is used for deliberate billing state transitions, so the
+     * Customer observer does not run. Stage the matching RADIUS policy here.
+     * This is local database/audit work only; no RADIUS or RouterOS request is
+     * made by RadiusSubscriberService.
+     */
+    private function syncRadiusPolicy(Customer $customer, string $reason): void
+    {
+        try {
+            app(RadiusSubscriberService::class)->syncForCustomer($customer, $reason);
+        } catch (\Throwable $e) {
+            Log::warning('RADIUS policy staging after billing transition failed', [
+                'customer_id' => $customer->id,
+                'reason' => $reason,
+                'error_type' => $e::class,
+            ]);
+        }
     }
 }

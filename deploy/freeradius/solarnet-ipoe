@@ -1,0 +1,45 @@
+server solarnet_ipoe {
+        # The Docker profile publishes these only on 127.0.0.1 by default.
+        # A remote NAS requires an explicit bind-address/firewall change.
+        listen {
+                type = auth
+                ipaddr = *
+                port = 1812
+        }
+
+        listen {
+                type = acct
+                ipaddr = *
+                port = 1813
+        }
+
+        authorize {
+                preprocess
+                sql
+
+                # A SolarNet-generated radcheck row contains Auth-Type Accept
+                # only for a complete MAC that is current/grace and conflict
+                # free. All other DHCP identities are rejected here.
+                if (control:Auth-Type != Accept) {
+                        reject
+                }
+        }
+
+        authenticate {
+                Auth-Type Accept {
+                        accept
+                }
+        }
+
+        accounting {
+                sql
+        }
+
+        post-auth {
+                sql
+        }
+
+        Post-Auth-Type REJECT {
+                sql
+        }
+}

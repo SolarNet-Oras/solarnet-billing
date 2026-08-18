@@ -16,6 +16,7 @@
 #   cron     -> scheduler (php artisan schedule:work)
 #   postgres -> PostgreSQL 16
 #   redis    -> Redis 7
+#   freeradius -> optional, isolated RADIUS service (profile: freeradius)
 ##
 
 name: solarnet
@@ -185,6 +186,55 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    networks: [internal]
+
+  # Off by default. This service is intentionally profile-gated and publishes
+  # only on loopback unless RADIUS_BIND_ADDRESS is explicitly changed for a
+  # single, firewall-allow-listed test NAS. It never sits behind Caddy.
+  freeradius:
+    profiles: ["freeradius"]
+    build:
+      context: ..
+      dockerfile: deploy/freeradius.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RADIUS_SQL_HOST: postgres
+      RADIUS_SQL_PORT: 5432
+      RADIUS_SQL_DATABASE: ${DB_DATABASE}
+      RADIUS_SQL_USERNAME: ${RADIUS_DB_USERNAME:-}
+      RADIUS_SQL_PASSWORD: ${RADIUS_DB_PASSWORD:-}
+      RADIUS_LOCAL_TEST_SECRET: ${RADIUS_LOCAL_TEST_SECRET:-}
+    ports:
+      - "${RADIUS_BIND_ADDRESS:-127.0.0.1}:1812:1812/udp"
+      - "${RADIUS_BIND_ADDRESS:-127.0.0.1}:1813:1813/udp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  # Run manually once after the Laravel migration creates the `radius`
+  # schema. It creates only the least-privileged PostgreSQL login/grants used
+  # by FreeRADIUS; it does not start RADIUS or modify application data.
+  freeradius-bootstrap:
+    profiles: ["freeradius-bootstrap"]
+    image: postgres:16-alpine
+    restart: "no"
+    env_file: .env
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${DB_DATABASE}
+      PGUSER: ${DB_USERNAME}
+      PGPASSWORD: ${DB_PASSWORD}
+      RADIUS_DB_USERNAME: ${RADIUS_DB_USERNAME:-}
+      RADIUS_DB_PASSWORD: ${RADIUS_DB_PASSWORD:-}
+    volumes:
+      - ./freeradius-db-bootstrap.sh:/usr/local/bin/freeradius-db-bootstrap:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/freeradius-db-bootstrap"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
 networks:

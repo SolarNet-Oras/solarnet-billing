@@ -64,4 +64,16 @@ class Router extends Model
             default => '⚪',
         };
     }
+
+    /** RADIUS/IPoE policy records only; RouterOS configuration remains separate. */
+    public function radiusSubscribers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RadiusSubscriber::class);
+    }
+
+    /** Explicit FreeRADIUS NAS source approval; no RouterOS setting is implied. */
+    public function radiusNasClient(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(RadiusNasClient::class);
+    }
 }

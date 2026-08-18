@@ -1,0 +1,4 @@
+# SolarNet keeps the normal FreeRADIUS dictionary and loads MikroTik reply
+# attributes solely for the staged DHCP/IPoE rate-limit response.
+$INCLUDE /usr/share/freeradius/dictionary
+$INCLUDE /usr/share/freeradius/dictionary.mikrotik

@@ -177,6 +177,12 @@ class Customer extends Model
         return $this->hasMany(CustomerAccountReconciliation::class);
     }
 
+    /** Staged RADIUS/IPoE policy; it does not replace the current queue state. */
+    public function radiusSubscriber(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(RadiusSubscriber::class);
+    }
+
     /**
      * Scope a query to only include active customers.
      */
