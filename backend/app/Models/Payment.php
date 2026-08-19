@@ -21,6 +21,7 @@ class Payment extends Model
         'payment_number',
         'amount',
         'cash_counted_amount',
+        'cash_change_amount',
         'cash_breakdown',
         'payer_signature',
         'payer_signature_similarity',
@@ -37,6 +38,7 @@ class Payment extends Model
     protected $casts = [
         'amount' => 'float',
         'cash_counted_amount' => 'float',
+        'cash_change_amount' => 'float',
         'cash_breakdown' => 'array',
         'payer_signature_similarity' => 'float',
         'payment_date' => 'date',

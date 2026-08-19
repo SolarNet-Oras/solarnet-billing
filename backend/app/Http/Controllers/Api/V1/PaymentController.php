@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Customer;
+use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
-    public function recordAdvance(Request $request, InvoiceService $invoices): JsonResponse
+    public function recordAdvance(Request $request, InvoiceService $invoices, CashTenderCalculator $cashTender): JsonResponse
     {
         $data = $request->validate([
             'customer_id' => 'required|uuid|exists:customers,id', 'amount' => 'required|numeric|min:0.01', 'payment_method' => 'required|in:cash', 'payment_date' => 'nullable|date', 'covered_cycle_date' => 'nullable|date', 'reference' => 'nullable|string|max:255', 'notes' => 'nullable|string|max:1000',
@@ -23,10 +24,11 @@ class PaymentController extends Controller
         ]);
         if ($data['payment_method'] === 'cash') {
             $data['cash_breakdown'] = $this->normalizedCashBreakdown($data['cash_breakdown'] ?? []);
-            $data['cash_counted_amount'] = collect($data['cash_breakdown'])->sum('amount');
-            if ((int) round((float) $data['cash_counted_amount'] * 100) !== (int) round((float) $data['amount'] * 100)) {
-                return response()->json(['message' => 'Cash count must exactly match the advance payment amount.'], 422);
+            $data['cash_counted_amount'] = $cashTender->tenderedAmount($data['cash_breakdown']);
+            if (!$cashTender->covers((float) $data['cash_counted_amount'], (float) $data['amount'])) {
+                return response()->json(['message' => 'Cash received must cover the advance payment amount before it can be recorded.'], 422);
             }
+            $data['cash_change_amount'] = $cashTender->change((float) $data['cash_counted_amount'], (float) $data['amount']);
         }
         $customer = Customer::findOrFail($data['customer_id']);
         if (!empty($data['covered_cycle_date']) && !$invoices->isValidFutureBillingCycle(

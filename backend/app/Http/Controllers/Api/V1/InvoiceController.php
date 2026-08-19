@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -14,10 +15,12 @@ use Illuminate\Support\Facades\Validator;
 class InvoiceController extends Controller
 {
     protected InvoiceService $invoiceService;
+    protected CashTenderCalculator $cashTender;
 
-    public function __construct(InvoiceService $invoiceService)
+    public function __construct(InvoiceService $invoiceService, CashTenderCalculator $cashTender)
     {
         $this->invoiceService = $invoiceService;
+        $this->cashTender = $cashTender;
     }
 
     /**
@@ -259,10 +262,11 @@ class InvoiceController extends Controller
         $paymentData = $request->all();
         if ($request->input('payment_method') === 'cash') {
             $paymentData['cash_breakdown'] = $this->normalizedCashBreakdown($request->input('cash_breakdown', []));
-            $paymentData['cash_counted_amount'] = collect($paymentData['cash_breakdown'])->sum('amount');
-            if ((int) round((float) $paymentData['cash_counted_amount'] * 100) !== (int) round((float) $request->amount * 100)) {
-                return response()->json(['message' => 'Cash count must exactly match the payment amount before it can be recorded.'], 422);
+            $paymentData['cash_counted_amount'] = $this->cashTender->tenderedAmount($paymentData['cash_breakdown']);
+            if (!$this->cashTender->covers((float) $paymentData['cash_counted_amount'], (float) $request->amount)) {
+                return response()->json(['message' => 'Cash received must cover the payment amount before it can be recorded.'], 422);
             }
+            $paymentData['cash_change_amount'] = $this->cashTender->change((float) $paymentData['cash_counted_amount'], (float) $request->amount);
         }
         $paymentData['received_by'] = $request->user()->id;
         $payment = $this->invoiceService->recordPayment($invoice, $paymentData);

@@ -75,7 +75,9 @@ const InvoicesPage: React.FC = () => {
   const cashCounted = useMemo(() => cashBreakdown.reduce((total, line) => total + line.amount, 0), [cashBreakdown]);
   const paymentAmount = Number(paymentData.amount || 0);
   const advanceAmountIsValid = !isAdvancePayment || paymentAmount > 0;
-  const cashMatches = Math.round(cashCounted * 100) === Math.round(paymentAmount * 100);
+  const cashCoversPayment = Math.round(cashCounted * 100) >= Math.round(paymentAmount * 100);
+  const cashChange = Math.max(0, Math.round((cashCounted - paymentAmount) * 100) / 100);
+  const cashShortfall = Math.max(0, Math.round((paymentAmount - cashCounted) * 100) / 100);
 
   useEffect(() => {
     fetchInvoices();
@@ -137,8 +139,8 @@ const InvoicesPage: React.FC = () => {
       window.alert('Enter a cash amount greater than ₱0.00 to create advance credit. A ₱0.00 payment cannot be recorded as customer credit.');
       return;
     }
-    if (paymentData.payment_method === 'cash' && !cashMatches) {
-      window.alert('Count the cash bills until the total exactly matches the payment amount.');
+    if (paymentData.payment_method === 'cash' && !cashCoversPayment) {
+      window.alert('Cash received must cover the payment amount. Enter the bills received, then return the displayed change to the client.');
       return;
     }
     try {
@@ -699,9 +701,10 @@ const InvoicesPage: React.FC = () => {
                   </div>}
 
                   {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash count required</h3><p className="mt-1 text-xs text-emerald-800">Count the bills before recording this client payment. The count must match the payment amount.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashMatches ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Counted</p><b>{formatPHP(cashCounted)}</b></div></div>
+                    <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash received and change</h3><p className="mt-1 text-xs text-emerald-800">Count the bills given by the client. The payment record keeps only the amount due; any excess is change returned to the client.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashCoversPayment ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Cash received</p><b>{formatPHP(cashCounted)}</b></div></div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="rounded border border-emerald-200 bg-white px-2 py-1.5" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div>
-                    <p className={`mt-3 text-xs font-medium ${cashMatches ? 'text-emerald-700' : 'text-amber-800'}`}>{cashMatches ? 'Cash count matches. You may record this payment.' : `Difference: ${formatPHP(cashCounted - Number(paymentData.amount || 0))}.`}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div className="rounded-lg bg-white/75 p-3"><p className="text-xs text-emerald-800">Payment amount</p><b className="text-emerald-950">{formatPHP(paymentAmount)}</b></div><div className={`rounded-lg p-3 ${cashChange > 0 ? 'bg-amber-100 text-amber-950' : 'bg-white/75 text-emerald-950'}`}><p className="text-xs">Change to return</p><b>{formatPHP(cashChange)}</b></div></div>
+                    <p className={`mt-3 text-xs font-medium ${cashCoversPayment ? 'text-emerald-700' : 'text-amber-800'}`}>{cashCoversPayment ? (cashChange > 0 ? `Return ${formatPHP(cashChange)} change to the client, then record the payment.` : 'Exact cash received. You may record this payment.') : `Need ${formatPHP(cashShortfall)} more cash to cover the payment.`}</p>
                   </section>}
 
                   <div>
@@ -759,7 +762,7 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={(paymentData.payment_method === 'cash' && !cashMatches) || !advanceAmountIsValid}
+                    disabled={(paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isAdvancePayment ? 'Save advance credit' : 'Record Payment'}

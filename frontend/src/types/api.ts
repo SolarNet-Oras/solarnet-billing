@@ -418,6 +418,8 @@ export interface Payment {
   invoice?: Invoice;
   customer?: Customer;
   amount: number;
+  cash_counted_amount?: number | null;
+  cash_change_amount?: number | null;
   payment_method: 'cash' | 'bank_transfer' | 'credit_card' | 'debit_card' | 'mobile_money' | 'other';
   payment_date: string;
   transaction_id: string | null;
