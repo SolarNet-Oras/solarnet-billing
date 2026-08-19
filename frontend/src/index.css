@@ -493,8 +493,199 @@
   animation: traffic-flow 900ms linear infinite;
 }
 
+@keyframes network-device-pulse {
+  0%, 100% { opacity: 0.38; transform: scale(0.9); }
+  50% { opacity: 0.95; transform: scale(1.08); }
+}
+
+@keyframes network-device-packet-forward {
+  0% { left: 2%; opacity: 0; transform: translate(-50%, -50%) scale(0.48); }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { left: 98%; opacity: 0; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+@keyframes network-device-packet-reverse {
+  0% { right: 2%; opacity: 0; transform: translate(50%, -50%) scale(0.48); }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { right: 98%; opacity: 0; transform: translate(50%, -50%) scale(1.08); }
+}
+
+@keyframes network-device-beam {
+  from { background-position: 0 0; }
+  to { background-position: 24px 0; }
+}
+
+.network-device-topology {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 11% 50%, rgba(14, 165, 233, 0.2), transparent 23%),
+    radial-gradient(circle at 88% 45%, rgba(99, 102, 241, 0.2), transparent 30%),
+    linear-gradient(135deg, #020817, #061326 52%, #020617);
+  padding: 1rem;
+  box-shadow: inset 0 0 48px rgba(14, 165, 233, 0.06), 0 0 34px -24px rgba(34, 211, 238, 0.96);
+}
+
+.network-device-topology-grid {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  opacity: 0.6;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.065) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.065) 1px, transparent 1px),
+    radial-gradient(circle at 1px 1px, rgba(103, 232, 249, 0.25) 1px, transparent 0);
+  background-size: 26px 26px, 26px 26px, 14px 14px;
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+}
+
+.network-device-topology-scanline {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  width: 10rem;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.11), transparent);
+  filter: blur(2px);
+  animation: network-device-scan 6s ease-in-out infinite;
+}
+
+@keyframes network-device-scan {
+  0%, 100% { left: -12rem; opacity: 0; }
+  20%, 75% { opacity: 0.75; }
+  50% { left: calc(100% - 2rem); }
+}
+
+.network-device-topology-stage {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.74fr) minmax(7rem, 0.58fr) minmax(15rem, 1.25fr);
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.network-device-vps-node,
+.network-device-router-node {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  background: linear-gradient(140deg, rgba(8, 32, 58, 0.96), rgba(2, 8, 23, 0.94));
+  color: #f8fafc;
+  box-shadow: inset 0 0 28px rgba(14, 165, 233, 0.1), 0 0 28px -23px rgba(34, 211, 238, 0.98);
+}
+
+.network-device-vps-node {
+  min-height: 9.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  clip-path: polygon(0.8rem 0, calc(100% - 0.8rem) 0, 100% 0.8rem, 100% calc(100% - 0.8rem), calc(100% - 0.8rem) 100%, 0.8rem 100%, 0 calc(100% - 0.8rem), 0 0.8rem);
+}
+
+.network-device-vps-node::after,
+.network-device-router-node::after {
+  content: '';
+  position: absolute;
+  inset: -70%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.14), transparent 38%);
+  animation: network-device-pulse 3.4s ease-in-out infinite;
+}
+
+.network-device-vps-node > *,
+.network-device-router-node > * { position: relative; z-index: 1; }
+
+.network-device-vps-orb,
+.network-device-router-signal {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border: 1px solid rgba(103, 232, 249, 0.78);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.46), rgba(2, 8, 23, 0.92) 66%);
+  color: rgb(165 243 252);
+  box-shadow: 0 0 0 5px rgba(34, 211, 238, 0.06), 0 0 23px -2px rgba(34, 211, 238, 0.86);
+  animation: network-device-pulse 2.8s ease-in-out infinite;
+}
+
+.network-device-vps-node h4,
+.network-device-router-node h4 { margin-top: 0.08rem; font-size: 0.84rem; font-weight: 800; }
+.network-device-vps-node p:not(.network-device-eyebrow),
+.network-device-router-node p:not(.network-device-eyebrow) { margin-top: 0.25rem; font-size: 0.65rem; color: rgb(203 213 225 / 0.76); }
+.network-device-eyebrow { font-size: 0.57rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(103 232 249 / 0.95); }
+
+.network-device-vps-services { display: flex; justify-content: center; gap: 0.3rem; width: 100%; }
+.network-device-vps-services span,
+.network-device-status-pill { display: inline-flex; align-items: center; gap: 0.22rem; border: 1px solid rgba(103, 232, 249, 0.22); border-radius: 0.32rem; background: rgba(8, 47, 73, 0.55); padding: 0.2rem 0.3rem; color: rgb(165 243 252); font-size: 0.56rem; font-weight: 700; }
+
+.network-device-main-link { position: relative; min-height: 8.6rem; }
+.network-device-main-link::before,
+.network-device-main-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background-image: repeating-linear-gradient(90deg, transparent 0 3px, rgba(103, 232, 249, 0.95) 3px 7px, transparent 7px 11px);
+  background-size: 24px 100%;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.66);
+  animation: network-device-beam 760ms linear infinite;
+}
+.network-device-main-link::before { top: 42%; }
+.network-device-main-link::after { top: 62%; background-image: repeating-linear-gradient(90deg, transparent 0 3px, rgba(196, 181, 253, 0.95) 3px 7px, transparent 7px 11px); box-shadow: 0 0 10px rgba(196, 181, 253, 0.62); animation-direction: reverse; animation-duration: 940ms; }
+.network-device-main-link-idle::before,
+.network-device-main-link-idle::after { opacity: 0.3; animation-play-state: paused; }
+.network-device-main-link i,
+.network-device-main-link b { position: absolute; z-index: 1; width: 0.5rem; height: 0.5rem; border-radius: 999px; }
+.network-device-main-link i { top: 42%; background: #cffafe; box-shadow: 0 0 12px 3px rgba(34, 211, 238, 0.92); animation: network-device-packet-forward 1.65s linear infinite; }
+.network-device-main-link i:nth-of-type(2) { animation-delay: 0.55s; }
+.network-device-main-link i:nth-of-type(3) { animation-delay: 1.1s; }
+.network-device-main-link b { top: 62%; background: #ede9fe; box-shadow: 0 0 12px 3px rgba(196, 181, 253, 0.9); animation: network-device-packet-reverse 1.9s linear infinite; }
+.network-device-main-link b:last-child { animation-delay: 0.9s; }
+.network-device-flow-caption { position: absolute; z-index: 2; font-size: 0.53rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.network-device-flow-caption-top { top: calc(42% - 1rem); left: 6%; color: rgb(165 243 252 / 0.9); }
+.network-device-flow-caption-bottom { top: calc(62% + 0.45rem); right: 5%; color: rgb(221 214 254 / 0.9); }
+
+.network-device-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem; }
+.network-device-router-node { min-height: 7.35rem; padding: 0.75rem; }
+.network-device-router-node .network-device-router-signal { width: 2.6rem; height: 2.6rem; }
+.network-device-router-node .network-device-router-signal { animation-duration: 3.2s; }
+.network-device-router-offline { border-color: rgba(248, 113, 113, 0.42); box-shadow: inset 0 0 28px rgba(127, 29, 29, 0.1), 0 0 28px -23px rgba(248, 113, 113, 0.82); }
+.network-device-router-offline .network-device-router-signal { border-color: rgba(252, 165, 165, 0.8); color: rgb(254 202 202); background: radial-gradient(circle, rgba(185, 28, 28, 0.48), rgba(2, 8, 23, 0.92) 66%); box-shadow: 0 0 0 5px rgba(248, 113, 113, 0.06), 0 0 23px -2px rgba(248, 113, 113, 0.82); animation-play-state: paused; }
+.network-device-router-offline .network-device-status-pill { border-color: rgba(252, 165, 165, 0.25); background: rgba(127, 29, 29, 0.35); color: rgb(254 202 202); }
+.network-device-router-unknown { border-color: rgba(148, 163, 184, 0.36); }
+.network-device-router-unknown .network-device-router-signal { border-color: rgba(148, 163, 184, 0.7); color: rgb(203 213 225); background: radial-gradient(circle, rgba(71, 85, 105, 0.5), rgba(2, 8, 23, 0.92) 66%); animation-play-state: paused; }
+
+@media (max-width: 1023px) {
+  .network-device-topology-stage { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+  .network-device-main-link { min-height: 4rem; width: min(13rem, 78%); margin: 0 auto; transform: rotate(90deg); }
+  .network-device-flow-caption { display: none; }
+  .network-device-vps-node { min-height: 7.2rem; }
+}
+
+@media (max-width: 640px) {
+  .network-device-topology { padding: 0.8rem; }
+  .network-device-router-grid { grid-template-columns: minmax(0, 1fr); }
+  .network-device-vps-node { justify-content: flex-start; text-align: left; }
+  .network-device-vps-services { justify-content: flex-start; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .traffic-flow { animation: none; }
+  .traffic-flow,
+  .network-device-topology *,
+  .network-device-topology-scanline { animation: none !important; }
 }
 
 @layer base {

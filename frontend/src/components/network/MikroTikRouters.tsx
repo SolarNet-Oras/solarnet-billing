@@ -4,6 +4,7 @@ import { routerService, type CreateRouterData, type Router } from '@/services/ro
 import { RouterList } from './RouterList';
 import { RouterFormModal } from './RouterFormModal';
 import { RouterQosMonitor } from './RouterQosMonitor';
+import { NetworkDeviceTopology } from './NetworkDeviceTopology';
 import { useAuth } from '@/hooks/useAuth';
 
 export function MikroTikRouters() {
@@ -48,8 +49,8 @@ export function MikroTikRouters() {
       <header className="flex flex-col gap-4 border-b border-slate-800 pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">Network operations</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">MikroTik router racks</h2>
-          <p className="mt-1 text-sm text-slate-400">Router access, billing tools, DNS, lease synchronization, and safe setup controls.</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">MikroTik command deck</h2>
+          <p className="mt-1 text-sm text-slate-400">A visual VPS-to-router command path with the existing billing, DNS, lease, and setup controls preserved.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => void loadRouters(true)} disabled={refreshing} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-400/60 hover:text-white disabled:opacity-50">
@@ -61,7 +62,9 @@ export function MikroTikRouters() {
         </div>
       </header>
 
-      <div className="mt-5 rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-1 shadow-[0_0_35px_-20px_rgba(34,211,238,0.9)]">
+      <div className="mt-5"><NetworkDeviceTopology routers={routers} /></div>
+
+      <div className="mt-4 rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-1 shadow-[0_0_35px_-20px_rgba(34,211,238,0.9)]">
         <div className="rounded-xl bg-background text-foreground"><RouterList routers={routers} onEdit={(router) => { setEditingRouter(router); setIsModalOpen(true); }} onDelete={async (id) => { if (confirm('Are you sure you want to delete this router?')) { await routerService.delete(id); await loadRouters(); } }} onTestConnection={() => void loadRouters(true)} onSync={() => void loadRouters(true)} /></div>
       </div>
 
