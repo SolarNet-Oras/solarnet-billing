@@ -236,7 +236,7 @@ export default function CyberSecurityPage() {
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-800 bg-slate-900/75 p-3"><p className="text-xs uppercase tracking-[0.15em] text-slate-500">Inbound / RX</p><p className="mt-1 text-xl font-bold text-cyan-200">{formatRate(totalRx)}</p></div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/75 p-3"><p className="text-xs uppercase tracking-[0.15em] text-slate-500">Outbound / TX</p><p className="mt-1 text-xl font-bold text-violet-200">{formatRate(totalTx)}</p></div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/75 p-3"><p className="text-xs uppercase tracking-[0.15em] text-slate-500">Outbound / TX</p><p className="mt-1 text-xl font-bold text-rose-200">{formatRate(totalTx)}</p></div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/75 p-3"><p className="text-xs uppercase tracking-[0.15em] text-slate-500">Blocked packet counters</p><p className="mt-1 text-xl font-bold text-emerald-200">{blockedPackets.toLocaleString()}</p></div>
             </div>
             <p className="mt-4 text-xs text-slate-500">Last RouterOS sample: <span className="font-medium text-slate-300">{formatDateTime(latestRead)}</span> · animated particles are driven by aggregate RX/TX counters, which can include bridges and VLANs. DNS and VPN are topology paths until explicitly inspected.</p>

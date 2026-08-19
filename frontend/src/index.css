@@ -152,7 +152,7 @@
 .security-data-link::before { top: 34%; }
 .security-data-link::after {
   top: 68%;
-  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.85) 18%, rgba(167, 139, 250, 0.85) 82%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(251, 113, 133, 0.88) 18%, rgba(251, 113, 133, 0.88) 82%, transparent);
   animation-delay: 0.4s;
 }
 
@@ -182,8 +182,8 @@
 
 .security-data-packet-tx {
   top: 68%;
-  background: #ddd6fe;
-  box-shadow: 0 0 12px 3px rgba(167, 139, 250, 0.95);
+  background: #fecdd3;
+  box-shadow: 0 0 12px 3px rgba(251, 113, 133, 0.95);
   animation-name: security-packet-reverse;
   animation-duration: 2.05s;
 }
@@ -213,7 +213,7 @@
 }
 
 .security-flow-label-rx { left: 4%; color: rgb(165 243 252 / 0.88); }
-.security-flow-label-tx { right: 4%; top: 1.88rem; color: rgb(221 214 254 / 0.88); }
+.security-flow-label-tx { right: 4%; top: 1.88rem; color: rgb(254 205 211 / 0.9); }
 
 .security-flow-fast .security-data-packet-rx { animation-duration: 1s; }
 .security-flow-fast .security-data-packet-tx { animation-duration: 1.2s; }
