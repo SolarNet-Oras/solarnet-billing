@@ -21,6 +21,8 @@ import {
   routerService,
   type Router,
   type RouterMonitoringSnapshot,
+  type RouterSecurityBaseline,
+  type RouterSecurityBaselineStatus,
   type RouterThreatObservation,
 } from '@/services/routerService';
 
@@ -90,6 +92,14 @@ function assessThreatRisk(sample: RouterMonitoringSnapshot | undefined, pendingM
   return { band: 'no_signal', treatment: 'No enabled firewall rule or address list with a threat-related name was found. This does not prove the router is unprotected; review the RouterOS firewall configuration before adding any rule.' };
 }
 
+const baselineStatusPresentation: Record<RouterSecurityBaselineStatus, { label: string; className: string }> = {
+  pass: { label: 'Observed', className: 'border-emerald-300/25 bg-emerald-400/10 text-emerald-100' },
+  attention: { label: 'Review', className: 'border-amber-300/25 bg-amber-400/10 text-amber-100' },
+  high: { label: 'Priority review', className: 'border-red-300/30 bg-red-400/10 text-red-100' },
+  review: { label: 'Not confirmed', className: 'border-slate-500/40 bg-slate-700/40 text-slate-200' },
+  not_applicable: { label: 'Not applicable', className: 'border-slate-600 bg-slate-800/70 text-slate-300' },
+};
+
 export default function CyberSecurityPage() {
   const [routers, setRouters] = useState<Router[]>([]);
   const [monitoring, setMonitoring] = useState<Record<string, RouterMonitoringSnapshot>>({});
@@ -98,6 +108,8 @@ export default function CyberSecurityPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRouterId, setSelectedRouterId] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [baseline, setBaseline] = useState<RouterSecurityBaseline | null>(null);
+  const [baselineLoading, setBaselineLoading] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const [billingApiStatus, setBillingApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
@@ -194,6 +206,29 @@ export default function CyberSecurityPage() {
       setNotice({ tone: 'error', text: error?.response?.data?.message || 'Threat scan could not finish. No RouterOS configuration was changed.' });
     } finally {
       setScanning(false);
+    }
+  };
+
+  const inspectSecurityBaseline = async () => {
+    if (!selectedRouter) {
+      setNotice({ tone: 'warning', text: 'Select a router before running its read-only security baseline.' });
+      return;
+    }
+    if (selectedRouter.connection_status === 'offline') {
+      setNotice({ tone: 'warning', text: `${selectedRouter.name} is offline, so its security baseline cannot be read.` });
+      return;
+    }
+
+    try {
+      setBaselineLoading(true);
+      setNotice(null);
+      const result = await routerService.securityBaseline(selectedRouter.id);
+      setBaseline(result.data);
+      setNotice({ tone: result.data.summary.high_risk_checks > 0 ? 'warning' : 'success', text: result.message });
+    } catch (error: any) {
+      setNotice({ tone: 'error', text: error?.response?.data?.message || 'Could not read the RouterOS security baseline. No RouterOS configuration was changed.' });
+    } finally {
+      setBaselineLoading(false);
     }
   };
 
@@ -330,16 +365,60 @@ export default function CyberSecurityPage() {
             <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border border-amber-300/30 bg-amber-400/10 text-amber-200"><ScanSearch className="h-5 w-5" /></span><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Manual threat review</p><h2 className="mt-1 text-xl font-bold text-white">Run a safe connection scan</h2></div></div>
             <p className="mt-4 text-sm leading-6 text-slate-400">The scan compares a bounded sample of active RouterOS connections against the configured threat feed. It records a possible match only; it does not scan customer devices and it does not block an IP automatically.</p>
             <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Router to inspect</label>
-            <select value={selectedRouterId} onChange={(event) => setSelectedRouterId(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-white outline-none transition focus:border-cyan-300">
+            <select value={selectedRouterId} onChange={(event) => { setSelectedRouterId(event.target.value); setBaseline(null); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-white outline-none transition focus:border-cyan-300">
               <option value="">Select a router</option>
               {routers.map((router) => <option key={router.id} value={router.id}>{router.name} · {router.connection_status}</option>)}
             </select>
             <button type="button" onClick={() => void scanSelectedRouter()} disabled={scanning || !selectedRouter} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50">
               <ScanSearch className={`h-4 w-4 ${scanning ? 'animate-pulse' : ''}`} /> {scanning ? 'Scanning live connections…' : 'Run read-only threat scan'}
             </button>
+            <button type="button" onClick={() => void inspectSecurityBaseline()} disabled={baselineLoading || !selectedRouter} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50">
+              <ShieldCheck className={`h-4 w-4 ${baselineLoading ? 'animate-pulse' : ''}`} /> {baselineLoading ? 'Inspecting RouterOS baseline…' : 'Inspect read-only security baseline'}
+            </button>
             <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs leading-5 text-slate-400"><span className="font-semibold text-slate-200">Safety rule:</span> a pending observation needs explicit administrator review in Network Devices before any SolarNet-owned firewall entry is added.</div>
           </article>
         </div>
+
+        {baseline && <section className="mt-5 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-5 shadow-[0_25px_60px_-42px_rgba(34,211,238,0.9)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Read-only router inspection</p>
+              <h2 className="mt-1 text-xl font-bold text-white">Security baseline · {baseline.router.name}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-400">Evidence from the current RouterOS firewall, services, IPv6, interface lists, WireGuard presence, and SolarNet threat controls. It does not infer a safe rule order or make a router change.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className={`rounded-full border px-3 py-1.5 font-semibold ${baseline.summary.status === 'needs_review' ? 'border-red-300/30 bg-red-400/10 text-red-100' : baseline.summary.status === 'review' ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100'}`}>{baseline.summary.status === 'needs_review' ? 'Priority review' : baseline.summary.status === 'review' ? 'Review recommended' : 'Baseline ready'}</span>
+              <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-300">{formatDateTime(baseline.router.inspected_at)}</span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-emerald-300/15 bg-emerald-400/5 p-3"><p className="text-lg font-bold text-emerald-100">{baseline.summary.passing_checks}</p><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Observed</p></div>
+            <div className="rounded-xl border border-amber-300/15 bg-amber-400/5 p-3"><p className="text-lg font-bold text-amber-100">{baseline.summary.attention_checks}</p><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Review</p></div>
+            <div className="rounded-xl border border-red-300/15 bg-red-400/5 p-3"><p className="text-lg font-bold text-red-100">{baseline.summary.high_risk_checks}</p><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Priority</p></div>
+            <div className="rounded-xl border border-cyan-300/15 bg-cyan-400/5 p-3"><p className="text-lg font-bold text-cyan-100">{baseline.summary.total_checks}</p><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Checks</p></div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {baseline.checks.map((check) => {
+              const presentation = baselineStatusPresentation[check.status];
+              return <article key={check.id} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="text-sm font-semibold text-white">{check.title}</h3><span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${presentation.className}`}>{presentation.label}</span></div>
+                <p className="mt-2 text-xs leading-5 text-slate-300">{check.evidence}</p>
+                <div className="mt-3 border-t border-slate-800 pt-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300">Suggested safe next step</p><p className="mt-1 text-xs leading-5 text-slate-400">{check.recommendation}</p></div>
+              </article>;
+            })}
+          </div>
+
+          <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"><p className="font-semibold text-slate-200">Firewall inventory</p><p className="mt-1 text-slate-400">{baseline.inventory.firewall_filter_rules} filter · {baseline.inventory.firewall_nat_rules} NAT · {baseline.inventory.masquerade_rules} masquerade</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"><p className="font-semibold text-slate-200">Management services</p><p className="mt-1 text-slate-400">{baseline.inventory.enabled_management_services.length ? baseline.inventory.enabled_management_services.map((service) => `${service.name}:${service.port ?? 'default'}`).join(', ') : 'No sensitive enabled service returned'}</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"><p className="font-semibold text-slate-200">VPN / WireGuard</p><p className="mt-1 text-slate-400">{baseline.inventory.wireguard_interfaces.length ? baseline.inventory.wireguard_interfaces.map((item) => item.name).join(', ') : 'No enabled interface returned'}</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"><p className="font-semibold text-slate-200">IPv6</p><p className="mt-1 text-slate-400">{baseline.inventory.ipv6_configured ? `${baseline.inventory.ipv6_filter_rules} IPv6 filter rule(s)` : 'No configured non-link-local address returned'}</p></div>
+          </div>
+          {baseline.inspection_warnings.map((warning) => <p key={warning} className="mt-3 rounded-lg border border-amber-300/15 bg-amber-400/5 px-3 py-2 text-xs leading-5 text-amber-100">{warning}</p>)}
+          <p className="mt-3 text-xs leading-5 text-slate-500">{baseline.safety}</p>
+        </section>}
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">

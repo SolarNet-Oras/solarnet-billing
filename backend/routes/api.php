@@ -151,6 +151,7 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['permission:manage-routers'])->group(function () {
             Route::post('routers/{id}/test-connection', [RouterController::class, 'testConnection']);
             Route::get('routers/{id}/monitoring', [RouterController::class, 'monitoring']);
+            Route::get('routers/{id}/security-baseline', [RouterController::class, 'securityBaseline'])->middleware('role:super_admin|admin');
             Route::post('routers/{id}/threat-scan', [RouterController::class, 'scanThreatFeed']);
             Route::get('routers/{id}/threat-observations', [RouterController::class, 'threatObservations']);
             Route::post('routers/{id}/sync', [RouterController::class, 'sync']);

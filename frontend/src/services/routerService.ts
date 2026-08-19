@@ -299,6 +299,43 @@ export interface RouterThreatObservation {
   reviewer?: { id: string; name: string; email: string } | null;
 }
 
+export type RouterSecurityBaselineStatus = 'pass' | 'attention' | 'high' | 'review' | 'not_applicable';
+
+export interface RouterSecurityBaselineCheck {
+  id: string;
+  title: string;
+  status: RouterSecurityBaselineStatus;
+  evidence: string;
+  recommendation: string;
+}
+
+export interface RouterSecurityBaseline {
+  router: { id: string; name: string; host: string; inspected_at: string };
+  summary: {
+    total_checks: number;
+    passing_checks: number;
+    attention_checks: number;
+    high_risk_checks: number;
+    status: 'ready' | 'review' | 'needs_review';
+  };
+  checks: RouterSecurityBaselineCheck[];
+  inventory: {
+    firewall_filter_rules: number;
+    enabled_input_rules: number;
+    enabled_forward_rules: number;
+    firewall_nat_rules: number;
+    masquerade_rules: number;
+    enabled_management_services: Array<{ name: string; port: string | number | null; address: string | null; restricted_at_service_layer: boolean }>;
+    wireguard_interfaces: Array<{ name: string; listen_port: string | number | null }>;
+    wan_interface_lists: string[];
+    ipv6_configured: boolean;
+    ipv6_filter_rules: number;
+    solarnet_threat_list_entries: number;
+  };
+  safety: string;
+  inspection_warnings: string[];
+}
+
 export interface RouterQosInspection {
   routeros_version: string | null;
   board_name: string | null;
@@ -431,6 +468,11 @@ export const routerService = {
   async monitoring(id: string): Promise<RouterMonitoringSnapshot> {
     const response = await api.get<{ success: boolean; data: RouterMonitoringSnapshot }>(`/routers/${id}/monitoring`);
     return response.data.data;
+  },
+
+  async securityBaseline(id: string): Promise<{ message: string; data: RouterSecurityBaseline }> {
+    const response = await api.get<{ success: boolean; message: string; data: RouterSecurityBaseline }>(`/routers/${id}/security-baseline`, { timeout: ROUTER_THREAT_SCAN_TIMEOUT });
+    return { message: response.data.message, data: response.data.data };
   },
 
   async provisioningDiscover(id: string): Promise<{ message: string; audit: RouterProvisioningAudit; discovery: RouterProvisioningDiscovery }> {

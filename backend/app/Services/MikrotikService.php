@@ -1310,6 +1310,76 @@ class MikrotikService
     }
 
     /**
+     * Read a narrow RouterOS security inventory for an administrator review.
+     *
+     * Every command in this method is a print command. It deliberately avoids
+     * connection-table scans, packet capture, credentials, WireGuard peers,
+     * certificates, DHCP data, and any RouterOS write action.
+     */
+    public function securityBaselineInspection(Router $router): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router, 3, 12));
+            $read = fn (string $path): array => $client->query(new Query($path))->read();
+
+            $inventory = [
+                'filters' => $read('/ip/firewall/filter/print'),
+                'nat' => $read('/ip/firewall/nat/print'),
+                'address_lists' => $read('/ip/firewall/address-list/print'),
+                'services' => $read('/ip/service/print'),
+                'interface_lists' => $read('/interface/list/print'),
+                'interface_list_members' => $read('/interface/list/member/print'),
+            ];
+
+            // IPv6 menus can be disabled or unavailable on an older RouterOS
+            // build. That is reported in the baseline, not treated as an IPv4
+            // firewall failure or as a reason to modify the router.
+            $optionalErrors = [];
+            foreach ([
+                'wireguard' => '/interface/wireguard/print',
+                'ipv6_filters' => '/ipv6/firewall/filter/print',
+                'ipv6_addresses' => '/ipv6/address/print',
+            ] as $key => $path) {
+                try {
+                    $inventory[$key] = $read($path);
+                } catch (Throwable $e) {
+                    $inventory[$key] = [];
+                    $optionalErrors[] = $path;
+                }
+            }
+
+            $analysis = (new RouterSecurityBaselineAnalyzer())->analyze($inventory);
+            $analysis['router'] = [
+                'id' => $router->id,
+                'name' => $router->name,
+                'host' => $router->host,
+                'inspected_at' => now()->toIso8601String(),
+            ];
+            $analysis['inspection_warnings'] = $optionalErrors === []
+                ? []
+                : ['Some optional RouterOS menus were unavailable and were not evaluated: ' . implode(', ', $optionalErrors) . '.'];
+
+            return [
+                'success' => true,
+                'message' => "Read-only security baseline completed for {$router->name}. No RouterOS configuration was changed.",
+                'data' => $analysis,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Router security baseline read failed', [
+                'router_id' => $router->id,
+                'host' => $router->host,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Could not read the RouterOS security baseline. No firewall, NAT, DHCP, queue, VPN, DNS, or billing setting was changed.',
+                'data' => null,
+            ];
+        }
+    }
+
+    /**
      * Compare the router's current connection table with a supplied set of
      * IPv4 indicators. This is intentionally read-only: it never changes
      * RouterOS firewall state and is run only from a user-triggered scan.

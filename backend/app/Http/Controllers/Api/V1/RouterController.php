@@ -199,6 +199,14 @@ class RouterController extends Controller
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
+    /** Inspect a router perimeter with RouterOS read-only print commands only. */
+    public function securityBaseline(string $id): JsonResponse
+    {
+        $router = Router::findOrFail($id);
+        $result = $this->mikrotikService->securityBaselineInspection($router);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     /** Run an operator-triggered, read-only comparison with the configured threat feed. */
     public function scanThreatFeed(string $id): JsonResponse
     {
