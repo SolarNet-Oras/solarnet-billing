@@ -82,6 +82,10 @@ class GetCustomerDetailsTool implements AiTool
             ->latest('due_date')
             ->first(['due_date']);
         $historicalDueDate = $historicalInvoice?->due_date;
+        // The installation anniversary is the current billing source of
+        // truth. `billing_cycle_day` is only a legacy fallback for records
+        // that have no recorded installation date.
+        $installationCycleDay = $customer->installation_date?->day;
         $configuredCycleDay = $customer->billingCycleDay();
         $historicalCycleDay = $historicalDueDate?->day;
         $scheduledDueDate = $openInvoiceDueDate
@@ -91,9 +95,11 @@ class GetCustomerDetailsTool implements AiTool
                 : ($historicalCycleDay ? $this->nextDueDateForDay($historicalCycleDay) : null));
         $scheduledDueDateSource = $openInvoiceDueDate
             ? 'open_invoice'
-            : ($configuredCycleDay
-                ? 'configured_billing_cycle'
-                : ($historicalCycleDay ? 'historical_invoice_cycle' : 'not_configured'));
+            : ($installationCycleDay
+                ? 'installation_date_cycle'
+                : ($configuredCycleDay
+                    ? 'legacy_billing_cycle'
+                    : ($historicalCycleDay ? 'historical_invoice_cycle' : 'not_configured')));
 
         return [
             'found' => true,

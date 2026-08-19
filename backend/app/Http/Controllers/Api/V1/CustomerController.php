@@ -126,6 +126,11 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
+        $validated['installation_date'] = $installationDate->toDateString();
+        // Keep the legacy field aligned for integrations that still read it;
+        // Customer::billingCycleDay() uses the installation date as truth.
+        $validated['billing_cycle_day'] = $installationDate->day;
         $lease = null;
 
         if (!empty($validated['dhcp_lease_id'])) {
@@ -374,6 +379,17 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        if (array_key_exists('installation_date', $validated)) {
+            $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
+            $validated['installation_date'] = $installationDate->toDateString();
+            // A date correction is also a billing-cycle correction. Never
+            // allow the two fields to silently diverge.
+            $validated['billing_cycle_day'] = $installationDate->day;
+        } elseif ($customer->installation_date) {
+            // Ignore a standalone legacy day edit for a customer that already
+            // has an installation date. The date itself is authoritative.
+            $validated['billing_cycle_day'] = $customer->installation_date->day;
+        }
         $hardwareBinding = null;
         $matchedLeaseId = null;
 
@@ -635,22 +651,25 @@ class CustomerController extends Controller
     /**
      * Controlled setup for customers that existed before SolarNet Billing.
      *
-     * This intentionally separates a customer's agreed billing due-day from
-     * their historical installation date. The operation is database-only:
-     * it does not write RouterOS queues, firewall rules, or DHCP records.
+     * The historical installation date is the source of truth for the
+     * monthly due-day. The operation is database-only: it does not write
+     * RouterOS queues, firewall rules, or DHCP records.
      */
     public function bulkSetup(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'customer_ids' => 'required|array|min:1|max:500',
             'customer_ids.*' => 'required|uuid|exists:customers,id',
-            'action' => 'required|in:billing_due_date,previous_balance,discount,status',
+            'action' => 'required|in:billing_due_date,previous_balance,discount,status,address_updates',
             'due_date' => 'nullable|date',
             'update_open_invoices' => 'nullable|boolean',
             'previous_balance' => 'nullable|numeric|gt:0|max:1000000',
             'previous_balance_due_date' => 'nullable|date',
             'discount_amount' => 'nullable|numeric|gt:0|max:1000000',
             'status' => 'nullable|in:active,suspended,expired,pending',
+            'address_updates' => 'nullable|array|min:1|max:500',
+            'address_updates.*.customer_id' => 'required|uuid|exists:customers,id',
+            'address_updates.*.address' => 'required|string|max:1000',
         ]);
 
         if ($validator->fails()) {
@@ -668,6 +687,7 @@ class CustomerController extends Controller
             'previous_balance' => 'previous_balance',
             'discount' => 'discount_amount',
             'status' => 'status',
+            'address_updates' => 'address_updates',
         };
 
         if (!array_key_exists($requiredField, $validated) || $validated[$requiredField] === null || $validated[$requiredField] === '') {
@@ -684,6 +704,22 @@ class CustomerController extends Controller
         }
 
         $customerIds = array_values(array_unique($validated['customer_ids']));
+        if ($action === 'address_updates') {
+            $addressUpdateIds = collect($validated['address_updates'])
+                ->pluck('customer_id')
+                ->unique()
+                ->values()
+                ->all();
+            $outsideSelection = array_diff($addressUpdateIds, $customerIds);
+            $missingSelection = array_diff($customerIds, $addressUpdateIds);
+            if ($outsideSelection || $missingSelection) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Provide one address for every selected client only.',
+                ], 422);
+            }
+        }
+
         $summary = DB::transaction(function () use ($customerIds, $validated, $action) {
             $customers = Customer::query()
                 ->whereIn('id', $customerIds)
@@ -695,31 +731,66 @@ class CustomerController extends Controller
             $updatedInvoices = 0;
             $skipped = [];
             $results = [];
+            $addressesByCustomerId = $action === 'address_updates'
+                ? collect($validated['address_updates'])->keyBy('customer_id')
+                : collect();
 
             foreach ($customers as $customer) {
                 if ($action === 'billing_due_date') {
-                    $dueDate = Carbon::parse($validated['due_date'])->startOfDay();
-                    $customer->update(['billing_cycle_day' => $dueDate->day]);
+                    $installationDate = Carbon::parse($validated['due_date'])->startOfDay();
+                    $customer->update([
+                        'installation_date' => $installationDate->toDateString(),
+                        'billing_cycle_day' => $installationDate->day,
+                    ]);
                     $updatedCustomers++;
 
                     $openInvoicesUpdated = 0;
+                    $nextDueDate = null;
                     if (($validated['update_open_invoices'] ?? true) === true) {
+                        // Never move an unpaid invoice backward to a past
+                        // historical installation date. Use the next valid
+                        // monthly occurrence of the newly set cycle day.
+                        $nextDueDate = $customer->fresh()->nextBillingDueDate();
                         $openInvoices = $customer->invoices()
                             ->unpaid()
                             ->lockForUpdate()
                             ->get();
                         foreach ($openInvoices as $invoice) {
-                            $invoice->update(['due_date' => $dueDate]);
+                            $invoice->update(['due_date' => $nextDueDate]);
                             $openInvoicesUpdated++;
                         }
                         $updatedInvoices += $openInvoicesUpdated;
                     }
 
+                    $invoiceMessage = $openInvoicesUpdated > 0
+                        ? " {$openInvoicesUpdated} open invoice(s) updated to {$nextDueDate?->toDateString()}."
+                        : ' Open invoices were not changed.';
+
                     $results[] = [
                         'customer_id' => $customer->id,
                         'account_number' => $customer->account_number,
                         'status' => 'updated',
-                        'message' => "Monthly due day set to {$dueDate->format('j')}. {$openInvoicesUpdated} open invoice(s) updated.",
+                        'message' => "Installation date set to {$installationDate->toDateString()}; monthly due day is now {$installationDate->format('j')}.{$invoiceMessage}",
+                    ];
+                    continue;
+                }
+
+                if ($action === 'address_updates') {
+                    $address = trim((string) data_get($addressesByCustomerId->get($customer->id), 'address'));
+                    if ($address === '') {
+                        $skipped[] = "{$customer->account_number}: no address was supplied.";
+                        continue;
+                    }
+
+                    if ($customer->address !== $address) {
+                        $customer->update(['address' => $address]);
+                        $updatedCustomers++;
+                    }
+                    $results[] = [
+                        'customer_id' => $customer->id,
+                        'account_number' => $customer->account_number,
+                        'status' => 'updated',
+                        'message' => 'Customer address saved. No coordinates or network configuration changed.',
                     ];
                     continue;
                 }

@@ -134,18 +134,25 @@ class Customer extends Model
     }
 
     /**
-     * The monthly due-day agreed with the subscriber. Older records safely
-     * fall back to the installation anniversary until a migration/setup user
-     * sets an explicit due date.
+     * The installation anniversary is the authoritative monthly billing day.
+     *
+     * `billing_cycle_day` remains only as a compatibility fallback for older
+     * records that genuinely have no installation date. New and migrated
+     * customers must use their recorded installation date as the source of
+     * their monthly due date.
      */
     public function billingCycleDay(): ?int
     {
+        if ($this->installation_date) {
+            return $this->installation_date->day;
+        }
+
         $configuredDay = (int) ($this->billing_cycle_day ?? 0);
         if ($configuredDay >= 1 && $configuredDay <= 31) {
             return $configuredDay;
         }
 
-        return $this->installation_date?->day;
+        return null;
     }
 
     /**

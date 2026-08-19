@@ -23,6 +23,7 @@ const CustomersPage: React.FC = () => {
   const [setupPreviousBalanceDueDate, setSetupPreviousBalanceDueDate] = useState<string>('');
   const [setupDiscount, setSetupDiscount] = useState<string>('');
   const [setupStatus, setSetupStatus] = useState<'active' | 'suspended' | 'expired' | 'pending'>('active');
+  const [setupAddressUpdates, setSetupAddressUpdates] = useState<Record<string, string>>({});
   const [setupSubmitting, setSetupSubmitting] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<boolean>(false);
@@ -139,13 +140,16 @@ const CustomersPage: React.FC = () => {
         setCustomers((previous) => previous.filter((customer) => !selectedIds.has(customer.id)));
       } else {
         if (clientSetupAction === 'billing_due_date' && !setupDueDate) {
-          throw new Error('Choose the clients’ original monthly due date.');
+          throw new Error('Choose the clients’ original installation date.');
         }
         if (clientSetupAction === 'previous_balance' && (!setupPreviousBalance || !setupPreviousBalanceDueDate)) {
           throw new Error('Enter the previous balance and its due date.');
         }
         if (clientSetupAction === 'discount' && !setupDiscount) {
           throw new Error('Enter the discount amount.');
+        }
+        if (clientSetupAction === 'address_updates' && selectedSetupCustomers.some((customer) => !(setupAddressUpdates[customer.id] ?? customer.address ?? '').trim())) {
+          throw new Error('Enter an address for every selected client.');
         }
 
         const response = await customerService.bulkSetupCustomers({
@@ -161,6 +165,12 @@ const CustomersPage: React.FC = () => {
           } : {}),
           ...(clientSetupAction === 'discount' ? { discount_amount: Number(setupDiscount) } : {}),
           ...(clientSetupAction === 'status' ? { status: setupStatus } : {}),
+          ...(clientSetupAction === 'address_updates' ? {
+            address_updates: selectedSetupCustomers.map((customer) => ({
+              customer_id: customer.id,
+              address: (setupAddressUpdates[customer.id] ?? customer.address ?? '').trim(),
+            })),
+          } : {}),
         });
         const skipped = response.data.skipped.length > 0
           ? ` ${response.data.skipped.length} item(s) were skipped safely.`
@@ -200,6 +210,7 @@ const CustomersPage: React.FC = () => {
   const someSelected = selectedIds.size > 0 && selectedIds.size < customers.length;
   const allVisibleSetupCustomersSelected = setupCustomers.length > 0
     && setupCustomers.every((customer) => selectedIds.has(customer.id));
+  const selectedSetupCustomers = customers.filter((customer) => selectedIds.has(customer.id));
 
   const getStatusBadge = (status: string): JSX.Element => {
     const colors = {
@@ -473,7 +484,7 @@ const CustomersPage: React.FC = () => {
                   <h2 id="client-setups-title" className="text-lg font-semibold text-foreground">Client Setups</h2>
                   <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
                     One-time setup for clients that existed before SolarNet Billing. Select clients, then apply one controlled change.
-                    Their real installation history is never replaced when setting an original monthly due date.
+                    The original installation date is the monthly due-date reference. You can also update a different address for each selected client.
                   </p>
                 </div>
                 <button
@@ -541,7 +552,8 @@ const CustomersPage: React.FC = () => {
                   onChange={(event) => setClientSetupAction(event.target.value as ClientSetupAction | 'delete')}
                   className="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="billing_due_date">Set original monthly due date</option>
+                  <option value="billing_due_date">Set installation date & monthly due day</option>
+                  <option value="address_updates">Update selected client addresses</option>
                   <option value="previous_balance">Add previous bill balance</option>
                   <option value="discount">Add discount to open invoices</option>
                   <option value="status">Set account status</option>
@@ -551,7 +563,7 @@ const CustomersPage: React.FC = () => {
                 {clientSetupAction === 'billing_due_date' && (
                   <div className="mt-4 space-y-3">
                     <label className="block text-sm font-medium text-foreground">
-                      Original monthly due date
+                      Original installation date
                       <input
                         type="date"
                         value={setupDueDate}
@@ -560,7 +572,7 @@ const CustomersPage: React.FC = () => {
                       />
                     </label>
                     <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                      Only the day of the month is saved as the future billing cycle. For example, selecting August 25 means the client is billed on the 25th of every month. It does not change the installation date.
+                      This is the billing reference. For example, selecting August 1, 2026 saves the installation date as August 1, 2026 and makes the monthly due day the 1st. Existing records never use today as a replacement date.
                     </p>
                     <label className="flex items-start gap-2 text-sm text-foreground">
                       <input
@@ -569,8 +581,32 @@ const CustomersPage: React.FC = () => {
                         onChange={(event) => setSetupUpdatesOpenInvoices(event.target.checked)}
                         className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
                       />
-                      <span>Also move each selected client’s currently open invoice to this due date.</span>
+                      <span>Also move each selected client’s open invoice to the next occurrence of this monthly due day.</span>
                     </label>
+                  </div>
+                )}
+
+                {clientSetupAction === 'address_updates' && (
+                  <div className="mt-4 space-y-3">
+                    <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                      Enter the correct address for each selected client. This updates customer records only; it does not alter GPS coordinates, invoices, service status, or MikroTik settings.
+                    </p>
+                    <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                      {selectedSetupCustomers.length === 0 ? (
+                        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Select clients from the list first.</p>
+                      ) : selectedSetupCustomers.map((customer) => (
+                        <label key={customer.id} className="block rounded-md border border-border bg-background p-3 text-sm font-medium text-foreground">
+                          <span className="block truncate">{customer.full_name}</span>
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{customer.account_number}</span>
+                          <input
+                            value={setupAddressUpdates[customer.id] ?? customer.address ?? ''}
+                            onChange={(event) => setSetupAddressUpdates((current) => ({ ...current, [customer.id]: event.target.value }))}
+                            placeholder="Complete client address"
+                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
 

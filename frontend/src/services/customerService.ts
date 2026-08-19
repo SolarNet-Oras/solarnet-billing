@@ -1,7 +1,7 @@
 import api from './api';
 import type { Customer, PaginatedResponse } from '../types/api';
 
-export type ClientSetupAction = 'billing_due_date' | 'previous_balance' | 'discount' | 'status';
+export type ClientSetupAction = 'billing_due_date' | 'previous_balance' | 'discount' | 'status' | 'address_updates';
 
 export interface BulkClientSetupPayload {
   customer_ids: string[];
@@ -12,6 +12,7 @@ export interface BulkClientSetupPayload {
   previous_balance_due_date?: string;
   discount_amount?: number;
   status?: 'active' | 'suspended' | 'expired' | 'pending';
+  address_updates?: Array<{ customer_id: string; address: string }>;
 }
 
 export interface BulkClientSetupResponse {
