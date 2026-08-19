@@ -242,6 +242,7 @@ class InvoiceController extends Controller
             'cash_breakdown' => 'required_if:payment_method,cash|array',
             'cash_breakdown.*.denomination' => 'required_with:cash_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
             'cash_breakdown.*.count' => 'required_with:cash_breakdown|integer|min:0|max:100000',
+            'cash_change_to_advance' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -266,7 +267,10 @@ class InvoiceController extends Controller
             if (!$this->cashTender->covers((float) $paymentData['cash_counted_amount'], (float) $request->amount)) {
                 return response()->json(['message' => 'Cash received must cover the payment amount before it can be recorded.'], 422);
             }
-            $paymentData['cash_change_amount'] = $this->cashTender->change((float) $paymentData['cash_counted_amount'], (float) $request->amount);
+            $cashChange = $this->cashTender->change((float) $paymentData['cash_counted_amount'], (float) $request->amount);
+            $applyChangeAsAdvance = $request->boolean('cash_change_to_advance') && $cashChange > 0;
+            $paymentData['cash_change_amount'] = $applyChangeAsAdvance ? 0 : $cashChange;
+            $paymentData['cash_change_advance_amount'] = $applyChangeAsAdvance ? $cashChange : 0;
         }
         $paymentData['received_by'] = $request->user()->id;
         $payment = $this->invoiceService->recordPayment($invoice, $paymentData);

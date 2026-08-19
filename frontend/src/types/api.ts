@@ -420,6 +420,7 @@ export interface Payment {
   amount: number;
   cash_counted_amount?: number | null;
   cash_change_amount?: number | null;
+  cash_change_advance_amount?: number | null;
   payment_method: 'cash' | 'bank_transfer' | 'credit_card' | 'debit_card' | 'mobile_money' | 'other';
   payment_date: string;
   transaction_id: string | null;
@@ -438,6 +439,7 @@ export interface RecordPaymentRequest {
   reference?: string;
   notes?: string;
   cash_breakdown?: Array<{ denomination: number; count: number }>;
+  cash_change_to_advance?: boolean;
 }
 
 export interface InvoiceStatistics {

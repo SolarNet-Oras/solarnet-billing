@@ -458,6 +458,7 @@ class InvoiceService
                 'amount' => $amount,
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_change_amount' => $paymentData['cash_change_amount'] ?? null,
+                'cash_change_advance_amount' => $paymentData['cash_change_advance_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payer_signature' => $paymentData['payer_signature'] ?? null,
                 'payer_signature_similarity' => $paymentData['payer_signature_similarity'] ?? null,
@@ -483,6 +484,33 @@ class InvoiceService
             }
 
             $invoice->save();
+
+            $cashChangeAdvance = round((float) ($paymentData['cash_change_advance_amount'] ?? 0), 2);
+            if ($cashChangeAdvance > 0) {
+                $cashTendered = round((float) ($paymentData['cash_counted_amount'] ?? 0), 2);
+                $availableChange = max(0, round($cashTendered - $amount, 2));
+                if ($payment->payment_method !== 'cash' || $cashChangeAdvance > $availableChange) {
+                    throw new \RuntimeException('Advance credit from change must match cash received above the invoice payment amount.');
+                }
+
+                $changeAdvancePayment = Payment::create([
+                    'customer_id' => $invoice->customer_id,
+                    'collector_id' => $paymentData['collector_id'] ?? null,
+                    'received_by' => $paymentData['received_by'] ?? null,
+                    'payment_number' => $this->generatePaymentNumber(),
+                    'amount' => $cashChangeAdvance,
+                    'cash_counted_amount' => 0,
+                    'cash_change_amount' => 0,
+                    'cash_change_advance_amount' => 0,
+                    'payment_method' => 'cash',
+                    'payment_date' => $paymentData['payment_date'] ?? now(),
+                    'transaction_id' => 'ADV-CHANGE-' . $payment->id,
+                    'reference' => $paymentData['reference'] ?? null,
+                    'notes' => 'Client-approved change retained as advance credit from payment ' . $payment->payment_number . ' for invoice ' . $invoice->invoice_number . '.',
+                ]);
+
+                $this->createAdvanceCredits($invoice->customer, $changeAdvancePayment, $cashChangeAdvance, null);
+            }
 
             // Re-evaluate every unpaid invoice after commit. A settled balance
             // restores a suspended/expired customer; another eligible overdue
@@ -569,6 +597,7 @@ class InvoiceService
                 'amount' => $amount,
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_change_amount' => $paymentData['cash_change_amount'] ?? null,
+                'cash_change_advance_amount' => $paymentData['cash_change_advance_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
                 'payment_method' => $paymentData['payment_method'],
                 'payment_date' => $paymentData['payment_date'] ?? now(),
