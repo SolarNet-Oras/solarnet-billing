@@ -46,6 +46,7 @@ class Customer extends Model
         'portal_password_set_at',
         'welcome_email_sent_at',
         'installation_date',
+        'billing_cycle_day',
         'router_id',
         'service_plan_id',
         'monthly_fee',
@@ -85,6 +86,7 @@ class Customer extends Model
             'cash_signature_reference_at' => 'datetime',
             'monthly_fee' => 'float',
             'installation_date' => 'date',
+            'billing_cycle_day' => 'integer',
             'location_accuracy_meters' => 'float',
             'location_captured_at' => 'datetime',
             'location_confirmed_at' => 'datetime',
@@ -128,6 +130,21 @@ class Customer extends Model
         $this->loadMissing('servicePlan');
         return $this->servicePlan !== null
             && str_contains(mb_strtolower((string) $this->servicePlan->name), 'company owned');
+    }
+
+    /**
+     * The monthly due-day agreed with the subscriber. Older records safely
+     * fall back to the installation anniversary until a migration/setup user
+     * sets an explicit due date.
+     */
+    public function billingCycleDay(): ?int
+    {
+        $configuredDay = (int) ($this->billing_cycle_day ?? 0);
+        if ($configuredDay >= 1 && $configuredDay <= 31) {
+            return $configuredDay;
+        }
+
+        return $this->installation_date?->day;
     }
 
     public function profileChangeRequests(): HasMany

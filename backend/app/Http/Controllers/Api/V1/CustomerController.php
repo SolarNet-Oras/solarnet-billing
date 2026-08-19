@@ -13,6 +13,7 @@ use App\Services\MikrotikService;
 use App\Services\QueueService;
 use App\Services\InvoiceService;
 use App\Support\CustomerPortalUrl;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -350,6 +351,7 @@ class CustomerController extends Controller
             'contact_number' => 'sometimes|required|string|max:20',
             'email' => 'nullable|email|max:255',
             'installation_date' => 'sometimes|required|date',
+            'billing_cycle_day' => 'nullable|integer|min:1|max:31',
             'router_id' => 'nullable|exists:routers,id',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'monthly_fee' => 'sometimes|required|numeric|min:0',
@@ -449,6 +451,207 @@ class CustomerController extends Controller
             'status'  => 'success',
             'message' => "Deleted {$deleted} customer(s)",
             'deleted' => $deleted,
+        ]);
+    }
+
+    /**
+     * Controlled setup for customers that existed before SolarNet Billing.
+     *
+     * This intentionally separates a customer's agreed billing due-day from
+     * their historical installation date. The operation is database-only:
+     * it does not write RouterOS queues, firewall rules, or DHCP records.
+     */
+    public function bulkSetup(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'customer_ids' => 'required|array|min:1|max:500',
+            'customer_ids.*' => 'required|uuid|exists:customers,id',
+            'action' => 'required|in:billing_due_date,previous_balance,discount,status',
+            'due_date' => 'nullable|date',
+            'update_open_invoices' => 'nullable|boolean',
+            'previous_balance' => 'nullable|numeric|gt:0|max:1000000',
+            'previous_balance_due_date' => 'nullable|date',
+            'discount_amount' => 'nullable|numeric|gt:0|max:1000000',
+            'status' => 'nullable|in:active,suspended,expired,pending',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
+        $action = $validated['action'];
+        $requiredField = match ($action) {
+            'billing_due_date' => 'due_date',
+            'previous_balance' => 'previous_balance',
+            'discount' => 'discount_amount',
+            'status' => 'status',
+        };
+
+        if (!array_key_exists($requiredField, $validated) || $validated[$requiredField] === null || $validated[$requiredField] === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => "{$requiredField} is required for this client setup action.",
+            ], 422);
+        }
+        if ($action === 'previous_balance' && empty($validated['previous_balance_due_date'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'previous_balance_due_date is required when recording a previous bill balance.',
+            ], 422);
+        }
+
+        $customerIds = array_values(array_unique($validated['customer_ids']));
+        $summary = DB::transaction(function () use ($customerIds, $validated, $action) {
+            $customers = Customer::query()
+                ->whereIn('id', $customerIds)
+                ->with('servicePlan')
+                ->lockForUpdate()
+                ->get();
+
+            $updatedCustomers = 0;
+            $updatedInvoices = 0;
+            $skipped = [];
+            $results = [];
+
+            foreach ($customers as $customer) {
+                if ($action === 'billing_due_date') {
+                    $dueDate = Carbon::parse($validated['due_date'])->startOfDay();
+                    $customer->update(['billing_cycle_day' => $dueDate->day]);
+                    $updatedCustomers++;
+
+                    $openInvoicesUpdated = 0;
+                    if (($validated['update_open_invoices'] ?? true) === true) {
+                        $openInvoices = $customer->invoices()
+                            ->unpaid()
+                            ->lockForUpdate()
+                            ->get();
+                        foreach ($openInvoices as $invoice) {
+                            $invoice->update(['due_date' => $dueDate]);
+                            $openInvoicesUpdated++;
+                        }
+                        $updatedInvoices += $openInvoicesUpdated;
+                    }
+
+                    $results[] = [
+                        'customer_id' => $customer->id,
+                        'account_number' => $customer->account_number,
+                        'status' => 'updated',
+                        'message' => "Monthly due day set to {$dueDate->format('j')}. {$openInvoicesUpdated} open invoice(s) updated.",
+                    ];
+                    continue;
+                }
+
+                if ($action === 'previous_balance') {
+                    if ($customer->hasCompanyOwnedPlan()) {
+                        $skipped[] = "{$customer->account_number}: Company Owned plans cannot receive a previous balance invoice.";
+                        continue;
+                    }
+
+                    $existing = $customer->invoices()
+                        ->where('notes', 'like', 'Migrated opening balance%')
+                        ->first();
+                    if ($existing) {
+                        $skipped[] = "{$customer->account_number}: an opening balance invoice already exists ({$existing->invoice_number}).";
+                        continue;
+                    }
+
+                    $balanceDueDate = Carbon::parse($validated['previous_balance_due_date'])->startOfDay();
+                    $invoice = $this->invoiceService->createMigrationOpeningBalanceInvoice(
+                        $customer,
+                        (float) $validated['previous_balance'],
+                        0,
+                        $balanceDueDate->copy()->subMonthNoOverflow(),
+                        $balanceDueDate,
+                    );
+
+                    if (!$invoice) {
+                        $skipped[] = "{$customer->account_number}: no opening balance invoice was created.";
+                        continue;
+                    }
+
+                    $updatedInvoices++;
+                    $results[] = [
+                        'customer_id' => $customer->id,
+                        'account_number' => $customer->account_number,
+                        'status' => 'updated',
+                        'message' => "Previous balance invoice {$invoice->invoice_number} created.",
+                    ];
+                    continue;
+                }
+
+                if ($action === 'discount') {
+                    $openInvoices = $customer->invoices()
+                        ->unpaid()
+                        ->with('items')
+                        ->lockForUpdate()
+                        ->get();
+                    if ($openInvoices->isEmpty()) {
+                        $skipped[] = "{$customer->account_number}: no open invoice can receive a discount.";
+                        continue;
+                    }
+
+                    $discounted = 0;
+                    foreach ($openInvoices as $invoice) {
+                        $gross = round((float) $invoice->items->sum('total'), 2);
+                        $remainingDiscountRoom = max(0, $gross - (float) $invoice->paid_amount - (float) $invoice->discount);
+                        $additionalDiscount = min((float) $validated['discount_amount'], $remainingDiscountRoom);
+                        if ($additionalDiscount <= 0) {
+                            continue;
+                        }
+
+                        $invoice->update(['discount' => round((float) $invoice->discount + $additionalDiscount, 2)]);
+                        $this->invoiceService->calculateInvoiceTotals($invoice->fresh(['items']));
+                        $invoice->refresh();
+                        if ((float) $invoice->balance <= 0) {
+                            $invoice->update(['status' => 'paid', 'paid_at' => $invoice->paid_at ?? now()]);
+                        }
+                        $discounted++;
+                    }
+
+                    if ($discounted === 0) {
+                        $skipped[] = "{$customer->account_number}: the selected discount exceeds no remaining open balance.";
+                        continue;
+                    }
+
+                    $updatedInvoices += $discounted;
+                    $results[] = [
+                        'customer_id' => $customer->id,
+                        'account_number' => $customer->account_number,
+                        'status' => 'updated',
+                        'message' => "Discount added to {$discounted} open invoice(s).",
+                    ];
+                    continue;
+                }
+
+                // Status setup is intentionally database-only. Use the normal
+                // customer suspend/restore actions when a RouterOS write is
+                // required and has been reviewed by an operator.
+                $status = $validated['status'];
+                $customer->update([
+                    'status' => $status,
+                    'suspension_source' => in_array($status, ['suspended', 'expired'], true) ? 'manual' : null,
+                ]);
+                $updatedCustomers++;
+                $results[] = [
+                    'customer_id' => $customer->id,
+                    'account_number' => $customer->account_number,
+                    'status' => 'updated',
+                    'message' => "Account status set to {$status}. No MikroTik change was sent.",
+                ];
+            }
+
+            return compact('updatedCustomers', 'updatedInvoices', 'skipped', 'results');
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Client setup applied to {$summary['updatedCustomers']} customer(s) and {$summary['updatedInvoices']} invoice(s).",
+            'data' => $summary,
         ]);
     }
 

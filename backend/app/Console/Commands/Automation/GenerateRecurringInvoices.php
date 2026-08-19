@@ -12,8 +12,8 @@ use Carbon\Carbon;
 use Illuminate\Console\Command;
 
 /**
- * Creates one sent invoice each month on the customer's installation-day
- * anniversary. Due dates use the configurable billing.due_days setting.
+ * Creates one sent invoice each month on the customer's configured billing
+ * anniversary. Older records still fall back to installation-day.
  */
 class GenerateRecurringInvoices extends Command
 {
@@ -23,7 +23,7 @@ class GenerateRecurringInvoices extends Command
                             {--triggered-by=schedule}
                             {--user-id=}';
 
-    protected $description = 'Generate monthly invoices on each customer installation-date anniversary';
+    protected $description = 'Generate monthly invoices on each customer billing-cycle anniversary';
 
     public function handle(InvoiceService $invoices): int
     {
@@ -64,7 +64,7 @@ class GenerateRecurringInvoices extends Command
             // a shorter month. This is the normal anniversary rule and avoids
             // silently skipping customers in February.
             ->filter(fn (Customer $customer) => min(
-                $customer->installation_date->day,
+                $customer->billingCycleDay(),
                 $cycleDate->daysInMonth,
             ) === $cycleDate->day);
 

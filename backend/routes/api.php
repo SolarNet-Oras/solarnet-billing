@@ -137,6 +137,7 @@ Route::prefix('v1')->group(function () {
         Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
         Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
+        Route::post('customers/bulk-setup', [CustomerController::class, 'bulkSetup'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
         
         // Router routes (MikroTik) - require permission

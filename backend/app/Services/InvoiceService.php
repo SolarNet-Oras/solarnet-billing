@@ -21,7 +21,7 @@ class InvoiceService
     /**
      * Creates a one-time opening balance from a verified client-migration row.
      * It deliberately has no recurring cycle, so normal monthly billing remains
-     * anchored to the customer's installation anniversary.
+     * anchored to the customer's configured billing anniversary.
      */
     public function createMigrationOpeningBalanceInvoice(Customer $customer, float $previousBalance, float $currentBalance, Carbon $installationDate, ?Carbon $dueDate): ?Invoice
     {
@@ -194,7 +194,7 @@ class InvoiceService
                            ->with('servicePlan')
                            ->get()
                            ->filter(fn (Customer $customer) => min(
-                               $customer->installation_date->day,
+                               $customer->billingCycleDay(),
                                $billingDate->daysInMonth,
                            ) === $billingDate->day);
 
@@ -717,7 +717,7 @@ class InvoiceService
             return false;
         }
 
-        return $cycleDate->day === min($customer->installation_date->day, $cycleDate->daysInMonth);
+        return $cycleDate->day === min($customer->billingCycleDay(), $cycleDate->daysInMonth);
     }
 
     public function creditSummary(Customer $customer): array
@@ -744,7 +744,7 @@ class InvoiceService
         if (!$customer->installation_date) return null;
         $timezone = config('app.timezone', 'Asia/Manila');
         $fromDate = $fromDate->copy()->setTimezone($timezone)->startOfDay();
-        $day = $customer->installation_date->day;
+        $day = $customer->billingCycleDay();
         $cycle = $fromDate->copy()->startOfMonth()->setDay(min($day, $fromDate->daysInMonth));
         return $cycle->lte($fromDate) ? $cycle->addMonthNoOverflow() : $cycle;
     }

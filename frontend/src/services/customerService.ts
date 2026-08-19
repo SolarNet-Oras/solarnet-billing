@@ -1,6 +1,35 @@
 import api from './api';
 import type { Customer, PaginatedResponse } from '../types/api';
 
+export type ClientSetupAction = 'billing_due_date' | 'previous_balance' | 'discount' | 'status';
+
+export interface BulkClientSetupPayload {
+  customer_ids: string[];
+  action: ClientSetupAction;
+  due_date?: string;
+  update_open_invoices?: boolean;
+  previous_balance?: number;
+  previous_balance_due_date?: string;
+  discount_amount?: number;
+  status?: 'active' | 'suspended' | 'expired' | 'pending';
+}
+
+export interface BulkClientSetupResponse {
+  status: string;
+  message: string;
+  data: {
+    updatedCustomers: number;
+    updatedInvoices: number;
+    skipped: string[];
+    results: Array<{
+      customer_id: string;
+      account_number: string;
+      status: string;
+      message: string;
+    }>;
+  };
+}
+
 export const customerService = {
   /** Get all customers with optional filters */
   getCustomers: async (params?: {
@@ -39,6 +68,12 @@ export const customerService = {
       '/customers/bulk-delete',
       { customer_ids: ids }
     );
+    return response.data;
+  },
+
+  /** Controlled migration/setup changes for selected existing subscribers. */
+  bulkSetupCustomers: async (payload: BulkClientSetupPayload): Promise<BulkClientSetupResponse> => {
+    const response = await api.post<BulkClientSetupResponse>('/customers/bulk-setup', payload);
     return response.data;
   },
 };

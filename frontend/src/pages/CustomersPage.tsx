@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
-import { customerService } from '@/services/customerService';
+import { customerService, type ClientSetupAction } from '@/services/customerService';
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
 import { MapPin } from 'lucide-react';
@@ -14,6 +14,16 @@ const CustomersPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
+  const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
+  const [clientSetupAction, setClientSetupAction] = useState<ClientSetupAction | 'delete'>('billing_due_date');
+  const [clientSetupSearch, setClientSetupSearch] = useState<string>('');
+  const [setupDueDate, setSetupDueDate] = useState<string>('');
+  const [setupUpdatesOpenInvoices, setSetupUpdatesOpenInvoices] = useState<boolean>(true);
+  const [setupPreviousBalance, setSetupPreviousBalance] = useState<string>('');
+  const [setupPreviousBalanceDueDate, setSetupPreviousBalanceDueDate] = useState<string>('');
+  const [setupDiscount, setSetupDiscount] = useState<string>('');
+  const [setupStatus, setSetupStatus] = useState<'active' | 'suspended' | 'expired' | 'pending'>('active');
+  const [setupSubmitting, setSetupSubmitting] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<boolean>(false);
   const [notice, setNotice] = useState<string>('');
@@ -91,6 +101,85 @@ const CustomersPage: React.FC = () => {
     }
   };
 
+  const setupCustomers = customers.filter((customer) => {
+    const needle = clientSetupSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return [customer.full_name, customer.account_number, customer.address]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(needle));
+  });
+
+  const toggleSetupCustomers = (): void => {
+    const filteredIds = setupCustomers.map((customer) => customer.id);
+    if (filteredIds.length === 0) return;
+    const allFilteredSelected = filteredIds.every((id) => selectedIds.has(id));
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      filteredIds.forEach((id) => {
+        if (allFilteredSelected) next.delete(id);
+        else next.add(id);
+      });
+      return next;
+    });
+  };
+
+  const handleClientSetup = async (): Promise<void> => {
+    if (selectedIds.size === 0) {
+      setError('Select at least one client before applying a setup action.');
+      return;
+    }
+
+    const selectedCustomerIds = Array.from(selectedIds);
+    setSetupSubmitting(true);
+    setError('');
+    try {
+      if (clientSetupAction === 'delete') {
+        const response = await customerService.bulkDeleteCustomers(selectedCustomerIds);
+        setNotice(`${response.deleted} client record(s) archived.`);
+        setCustomers((previous) => previous.filter((customer) => !selectedIds.has(customer.id)));
+      } else {
+        if (clientSetupAction === 'billing_due_date' && !setupDueDate) {
+          throw new Error('Choose the clients’ original monthly due date.');
+        }
+        if (clientSetupAction === 'previous_balance' && (!setupPreviousBalance || !setupPreviousBalanceDueDate)) {
+          throw new Error('Enter the previous balance and its due date.');
+        }
+        if (clientSetupAction === 'discount' && !setupDiscount) {
+          throw new Error('Enter the discount amount.');
+        }
+
+        const response = await customerService.bulkSetupCustomers({
+          customer_ids: selectedCustomerIds,
+          action: clientSetupAction,
+          ...(clientSetupAction === 'billing_due_date' ? {
+            due_date: setupDueDate,
+            update_open_invoices: setupUpdatesOpenInvoices,
+          } : {}),
+          ...(clientSetupAction === 'previous_balance' ? {
+            previous_balance: Number(setupPreviousBalance),
+            previous_balance_due_date: setupPreviousBalanceDueDate,
+          } : {}),
+          ...(clientSetupAction === 'discount' ? { discount_amount: Number(setupDiscount) } : {}),
+          ...(clientSetupAction === 'status' ? { status: setupStatus } : {}),
+        });
+        const skipped = response.data.skipped.length > 0
+          ? ` ${response.data.skipped.length} item(s) were skipped safely.`
+          : '';
+        setNotice(`${response.message}${skipped}`);
+      }
+
+      setSelectedIds(new Set());
+      setClientSetupOpen(false);
+      await fetchCustomers();
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Unable to apply the client setup.';
+      setError(message);
+      logger.error('Failed to apply client setup', err);
+    } finally {
+      setSetupSubmitting(false);
+    }
+  };
+
   const toggleOne = (id: string): void => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -109,6 +198,8 @@ const CustomersPage: React.FC = () => {
 
   const allSelected = customers.length > 0 && selectedIds.size === customers.length;
   const someSelected = selectedIds.size > 0 && selectedIds.size < customers.length;
+  const allVisibleSetupCustomersSelected = setupCustomers.length > 0
+    && setupCustomers.every((customer) => selectedIds.has(customer.id));
 
   const getStatusBadge = (status: string): JSX.Element => {
     const colors = {
@@ -141,17 +232,27 @@ const CustomersPage: React.FC = () => {
           </div>
         )}
         {/* Header */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Customers</h1>
             <p className="text-muted-foreground mt-1">Manage your ISP subscribers</p>
           </div>
-          <Link
-            to="/customers/create"
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity"
-          >
-            + Add Customer
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setClientSetupOpen(true); setError(''); }}
+              className="px-4 py-2 border border-primary/40 text-primary bg-primary/5 rounded-md hover:bg-primary/10 transition-colors"
+              data-testid="client-setups-btn"
+            >
+              Client Setups
+            </button>
+            <Link
+              to="/customers/create"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity"
+            >
+              + Add Customer
+            </Link>
+          </div>
         </div>
 
         {/* Filters */}
@@ -355,6 +456,233 @@ const CustomersPage: React.FC = () => {
           </>)}
         </div>
       </div>
+
+      {/* Existing-client migration/setup modal */}
+      {clientSetupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4"
+          data-testid="client-setups-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="client-setups-title"
+        >
+          <div className="w-full max-w-5xl max-h-[calc(100vh-1.5rem)] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-border bg-card px-4 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 id="client-setups-title" className="text-lg font-semibold text-foreground">Client Setups</h2>
+                  <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                    One-time setup for clients that existed before SolarNet Billing. Select clients, then apply one controlled change.
+                    Their real installation history is never replaced when setting an original monthly due date.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setClientSetupOpen(false)}
+                  disabled={setupSubmitting}
+                  className="self-start rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(19rem,0.8fr)]">
+              <section className="min-w-0">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-medium text-foreground">Select clients</h3>
+                    <p className="text-xs text-muted-foreground">{selectedIds.size} selected. You can also select rows from the Customers table before opening this card.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleSetupCustomers}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    {allVisibleSetupCustomersSelected ? 'Clear visible' : 'Select visible'}
+                  </button>
+                </div>
+                <input
+                  type="search"
+                  value={clientSetupSearch}
+                  onChange={(event) => setClientSetupSearch(event.target.value)}
+                  placeholder="Find by client, account number, or address"
+                  className="mb-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <div className="max-h-[42vh] overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                  {setupCustomers.length === 0 ? (
+                    <p className="p-4 text-sm text-muted-foreground">No matching customers.</p>
+                  ) : setupCustomers.map((customer) => (
+                    <label
+                      key={customer.id}
+                      className="flex cursor-pointer items-start gap-3 px-3 py-3 hover:bg-secondary/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(customer.id)}
+                        onChange={() => toggleOne(customer.id)}
+                        className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{customer.full_name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {customer.account_number} · {customer.address || 'No address saved'} · {customer.status}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border bg-muted/20 p-4 sm:p-5">
+                <h3 className="font-medium text-foreground">Choose setup action</h3>
+                <select
+                  value={clientSetupAction}
+                  onChange={(event) => setClientSetupAction(event.target.value as ClientSetupAction | 'delete')}
+                  className="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="billing_due_date">Set original monthly due date</option>
+                  <option value="previous_balance">Add previous bill balance</option>
+                  <option value="discount">Add discount to open invoices</option>
+                  <option value="status">Set account status</option>
+                  <option value="delete">Delete selected clients</option>
+                </select>
+
+                {clientSetupAction === 'billing_due_date' && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-foreground">
+                      Original monthly due date
+                      <input
+                        type="date"
+                        value={setupDueDate}
+                        onChange={(event) => setSetupDueDate(event.target.value)}
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </label>
+                    <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                      Only the day of the month is saved as the future billing cycle. For example, selecting August 25 means the client is billed on the 25th of every month. It does not change the installation date.
+                    </p>
+                    <label className="flex items-start gap-2 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={setupUpdatesOpenInvoices}
+                        onChange={(event) => setSetupUpdatesOpenInvoices(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
+                      />
+                      <span>Also move each selected client’s currently open invoice to this due date.</span>
+                    </label>
+                  </div>
+                )}
+
+                {clientSetupAction === 'previous_balance' && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-foreground">
+                      Previous bill balance per selected client
+                      <div className="relative mt-1.5">
+                        <span className="absolute left-3 top-2 text-sm text-muted-foreground">₱</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={setupPreviousBalance}
+                          onChange={(event) => setSetupPreviousBalance(event.target.value)}
+                          placeholder="0.00"
+                          className="w-full rounded-md border border-input bg-background py-2 pl-7 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </label>
+                    <label className="block text-sm font-medium text-foreground">
+                      Previous bill due date
+                      <input
+                        type="date"
+                        value={setupPreviousBalanceDueDate}
+                        onChange={(event) => setSetupPreviousBalanceDueDate(event.target.value)}
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </label>
+                    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                      This creates one non-recurring opening-balance invoice for each selected billable client. It will not start automatic reminders, change plan prices, or duplicate a balance invoice that already exists.
+                    </p>
+                  </div>
+                )}
+
+                {clientSetupAction === 'discount' && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-foreground">
+                      Add this discount to every selected client’s open invoice
+                      <div className="relative mt-1.5">
+                        <span className="absolute left-3 top-2 text-sm text-muted-foreground">₱</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={setupDiscount}
+                          onChange={(event) => setSetupDiscount(event.target.value)}
+                          placeholder="0.00"
+                          className="w-full rounded-md border border-input bg-background py-2 pl-7 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    </label>
+                    <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                      The same peso amount is added to each selected client’s existing unpaid invoice. No invoice is created and the service-plan price is not changed. Paid invoices are never touched.
+                    </p>
+                  </div>
+                )}
+
+                {clientSetupAction === 'status' && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-foreground">
+                      Account status
+                      <select
+                        value={setupStatus}
+                        onChange={(event) => setSetupStatus(event.target.value as typeof setupStatus)}
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                        <option value="expired">Expired</option>
+                        <option value="pending">Pending</option>
+                      </select>
+                    </label>
+                    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                      This bulk setup updates the account record only. It does not send a MikroTik queue, firewall, DHCP, or connection change. Use the normal suspend or restore action when a reviewed network change is needed.
+                    </p>
+                  </div>
+                )}
+
+                {clientSetupAction === 'delete' && (
+                  <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+                    Deletes (soft-archives) every selected customer record. Use this only for accidental imports or test clients. This action requires the separate delete-customers permission.
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-border bg-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-xs text-muted-foreground">{selectedIds.size} client{selectedIds.size === 1 ? '' : 's'} will be affected.</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setClientSetupOpen(false)}
+                  disabled={setupSubmitting}
+                  className="rounded-md bg-secondary px-4 py-2 text-sm text-secondary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClientSetup}
+                  disabled={setupSubmitting || selectedIds.size === 0}
+                  className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${clientSetupAction === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:opacity-90'}`}
+                  data-testid="client-setups-apply"
+                >
+                  {setupSubmitting ? 'Applying…' : clientSetupAction === 'delete' ? `Delete ${selectedIds.size} selected` : 'Apply client setup'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation modal */}
       {deleteTarget && (
