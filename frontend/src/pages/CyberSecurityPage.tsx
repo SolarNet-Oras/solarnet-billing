@@ -155,6 +155,9 @@ export default function CyberSecurityPage() {
   const dashboardHost = typeof window === 'undefined' ? 'SolarNet billing' : window.location.hostname;
   const vpnRelayHost = useMemo(() => routers.find((router) => /vpn|wireguard/i.test(router.host))?.host || 'Router management relay', [routers]);
   const flowMotion = totalRx + totalTx > 100_000_000 ? 'security-flow-fast' : totalRx + totalTx > 1_000_000 ? 'security-flow-normal' : 'security-flow-calm';
+  const firewallDropRules = samples.reduce((total, sample) => total + sample.firewall_drop_rules, 0);
+  const protectionFlowState = pending.length > 0 ? 'Review required' : firewallSignals > 0 ? 'Controls observed' : 'Monitoring only';
+  const protectionFlowStateClass = pending.length > 0 ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : firewallSignals > 0 ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100' : 'border-slate-500/40 bg-slate-800/70 text-slate-200';
   const threatSignalBreakdown = useMemo(() => routers.map((router) => {
     const sample = monitoring[router.id];
     const pendingMatches = (observations[router.id] || []).filter((item) => item.status === 'pending').length;
@@ -203,8 +206,9 @@ export default function CyberSecurityPage() {
 
         <header className="flex flex-col gap-5 border-b border-slate-800 pb-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-3xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300">SolarNet network defense</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">Cybersecurity Center</h1>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-cyan-300">SolarNet network defense</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-[0.12em] text-white sm:text-4xl">Cyber Security</h1>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.34em] text-cyan-300">Live protection flow</p>
             <p className="mt-2 text-sm leading-6 text-slate-400">A live, read-only view of RouterOS perimeter signals and threat-feed observations. It does not claim endpoint antivirus, and it never changes firewall rules without an administrator’s explicit review.</p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -278,33 +282,39 @@ export default function CyberSecurityPage() {
               <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200"><span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-300" /></span> Read-only live sample</span>
             </div>
 
-            <div className={`security-topology ${flowMotion} relative mt-7 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5`}>
+            <div className={`security-command-flow ${flowMotion} relative mt-7 overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-4 sm:p-5`}>
               <div className="pointer-events-none absolute inset-0 security-topology-grid opacity-70" />
               <div className="relative">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">Aggregate RouterOS interface traffic</p>
-                  <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-semibold text-cyan-100">RX <strong>{formatRate(totalRx)}</strong> · TX <strong>{formatRate(totalTx)}</strong></span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] md:items-center">
-                  <div className="security-node border-cyan-300/30 bg-cyan-400/10 text-cyan-100"><Network className="h-5 w-5" /><div><p className="font-semibold">Internet edge</p><p className="text-xs text-cyan-100/70">External traffic</p></div></div>
-                  <div className="security-data-link" aria-label="Live inbound and outbound traffic flow"><span className="security-flow-label security-flow-label-rx">Inbound</span><span className="security-flow-label security-flow-label-tx">Outbound</span><span className="security-data-packet security-data-packet-rx" /><span className="security-data-packet security-data-packet-rx delay-1" /><span className="security-data-packet security-data-packet-tx" /><span className="security-data-packet security-data-packet-tx delay-2" /></div>
-                  <div className="security-node border-violet-300/30 bg-violet-400/10 text-violet-100"><ShieldCheck className="h-5 w-5" /><div><p className="font-semibold">MikroTik perimeter</p><p className="text-xs text-violet-100/70">Signals observed</p></div></div>
-                  <div className="security-data-link" aria-label="Live DNS path flow"><span className="security-flow-label security-flow-label-rx">Requests</span><span className="security-flow-label security-flow-label-tx">Replies</span><span className="security-data-packet security-data-packet-rx" /><span className="security-data-packet security-data-packet-rx delay-2" /><span className="security-data-packet security-data-packet-tx" /><span className="security-data-packet security-data-packet-tx delay-1" /></div>
-                  <div className="security-node border-sky-300/30 bg-sky-400/10 text-sky-100"><CircleDot className="h-5 w-5" /><div><p className="font-semibold">DNS path</p><p className="text-xs text-sky-100/70">Resolver path only</p></div></div>
-                  <div className="security-data-link" aria-label="Live subscriber data flow"><span className="security-flow-label security-flow-label-rx">Download</span><span className="security-flow-label security-flow-label-tx">Upload</span><span className="security-data-packet security-data-packet-rx" /><span className="security-data-packet security-data-packet-rx delay-1" /><span className="security-data-packet security-data-packet-tx" /><span className="security-data-packet security-data-packet-tx delay-2" /></div>
-                  <div className="security-node border-emerald-300/30 bg-emerald-400/10 text-emerald-100"><Wifi className="h-5 w-5" /><div><p className="font-semibold">SolarNet clients</p><p className="text-xs text-emerald-100/70">Service continuity</p></div></div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-cyan-200">Live protection flow</p><p className="mt-1 text-xs text-slate-400">Blue = aggregate RX / download · Red = aggregate TX / upload</p></div>
+                  <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${protectionFlowStateClass}`}>System state: {protectionFlowState}</span>
                 </div>
 
-                <div className="security-management-rail mt-5 border-t border-dashed border-slate-700 pt-5">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200">Secure management path</p><span className="text-[10px] text-slate-500">Separate from customer internet traffic</span></div>
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] md:items-center">
-                    <div className="security-node border-indigo-300/30 bg-indigo-400/10 text-indigo-100"><Server className="h-5 w-5" /><div><p className="font-semibold">Billing VPS / API</p><p className="truncate text-xs text-indigo-100/70">{dashboardHost} · {billingApiStatus === 'online' ? 'API reachable' : billingApiStatus === 'offline' ? 'API unavailable' : 'Checking API'}</p></div></div>
-                    <div className="security-management-link"><span className="security-management-packet" /><span className="security-management-packet delay-2" /></div>
-                    <div className="security-node border-violet-300/30 bg-violet-400/10 text-violet-100"><Network className="h-5 w-5" /><div><p className="font-semibold">VPN / management path</p><p className="truncate text-xs text-violet-100/70">{vpnRelayHost} · not tunnel-probed</p></div></div>
-                    <div className="security-management-link security-management-link-return"><span className="security-management-packet" /><span className="security-management-packet delay-1" /></div>
-                    <div className="security-node border-emerald-300/30 bg-emerald-400/10 text-emerald-100"><ShieldCheck className="h-5 w-5" /><div><p className="font-semibold">RouterOS API</p><p className="text-xs text-emerald-100/70">Read-only monitoring</p></div></div>
-                  </div>
+                <div className="security-command-grid mt-6">
+                  <article className="security-command-node security-command-node-cyan"><span className="security-command-orb"><Network className="h-6 w-6" /></span><p className="security-command-tag">Internet</p><h3>Internet edge</h3><p>RX {formatRate(totalRx)}</p></article>
+                  <div className="security-command-link security-command-link-cyan"><span /><span /><span /><i /><i /></div>
+                  <article className="security-command-node security-command-node-blue"><span className="security-command-orb"><ShieldCheck className="h-6 w-6" /></span><p className="security-command-tag">Firewall</p><h3>MikroTik firewall</h3><p>{firewallDropRules} enabled drop rule{firewallDropRules === 1 ? '' : 's'}</p></article>
+                  <div className="security-command-link security-command-link-emerald"><span /><span /><span /><i /><i /></div>
+                  <article className="security-command-node security-command-node-emerald"><span className="security-command-orb"><CircleDot className="h-6 w-6" /></span><p className="security-command-tag">Threat monitor</p><h3>Feed review</h3><p>{pending.length} pending candidate{pending.length === 1 ? '' : 's'}</p></article>
+                  <div className="security-command-link security-command-link-amber"><span /><span /><span /><i /><i /></div>
+                  <article className="security-command-node security-command-node-amber"><span className="security-command-orb"><Server className="h-6 w-6" /></span><p className="security-command-tag">Secure gateway</p><h3>Billing VPS / API</h3><p>{billingApiStatus === 'online' ? 'API reachable' : billingApiStatus === 'offline' ? 'API unavailable' : 'Checking API'}</p></article>
+                  <div className="security-command-link security-command-link-cyan"><span /><span /><span /><i /><i /></div>
+                  <article className="security-command-node security-command-node-core"><span className="security-command-orb"><Network className="h-6 w-6" /></span><p className="security-command-tag">SolarNet network</p><h3>SolarNet core</h3><p>{onlineRouters}/{activeRouters || routers.length} RouterOS online</p><div className="security-command-mini"><span>VPN</span><span>DNS</span><span>API</span></div></article>
+                  <div className="security-command-link security-command-link-emerald"><span /><span /><span /><i /><i /></div>
+                  <article className="security-command-node security-command-node-green"><span className="security-command-orb"><Wifi className="h-6 w-6" /></span><p className="security-command-tag">Customer network</p><h3>Subscriber paths</h3><p>Queues and leases stay unchanged</p><div className="security-command-mini"><span>Router</span><span>Phone</span><span>PC</span></div></article>
                 </div>
+
+                <div className="security-response-track mt-6">
+                  <div className="security-response-item security-response-item-red"><ShieldAlert className="h-4 w-4" /><div><strong>Signal identified</strong><span>{firewallSignals} rules/list entries</span></div></div>
+                  <div className="security-response-link security-response-link-red"><span /><span /></div>
+                  <div className="security-response-item security-response-item-amber"><ScanSearch className="h-4 w-4" /><div><strong>Read-only feed scan</strong><span>Operator initiated</span></div></div>
+                  <div className="security-response-link security-response-link-amber"><span /><span /></div>
+                  <div className="security-response-item security-response-item-cyan"><Eye className="h-4 w-4" /><div><strong>Manual review</strong><span>{pending.length} candidate{pending.length === 1 ? '' : 's'} pending</span></div></div>
+                  <div className="security-response-link security-response-link-green"><span /><span /></div>
+                  <div className="security-response-item security-response-item-green"><CheckCircle2 className="h-4 w-4" /><div><strong>Traffic decision</strong><span>No automatic block</span></div></div>
+                </div>
+
+                <div className="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-3"><p><strong className="text-cyan-200">VPS:</strong> {dashboardHost}</p><p><strong className="text-violet-200">VPN path:</strong> {vpnRelayHost} (not tunnel-probed)</p><p><strong className="text-sky-200">DNS path:</strong> topology only until inspected</p></div>
               </div>
             </div>
 
