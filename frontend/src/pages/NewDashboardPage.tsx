@@ -161,6 +161,50 @@ const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history:
   </div>;
 };
 
+/**
+ * A compact, native usage dial. The dial is deliberately scaled to the recent
+ * aggregate peak rather than a guessed router capacity, so it remains an
+ * honest visualisation when the router has multiple WANs or VLANs.
+ */
+const UsageSpeedGauge = ({
+  label,
+  rate,
+  history,
+  color,
+  tint,
+}: {
+  label: string;
+  rate: number;
+  history: number[];
+  color: string;
+  tint: string;
+}): React.JSX.Element => {
+  const recentPeak = Math.max(1, rate, ...history);
+  const level = Math.min(100, Math.max(0, (rate / recentPeak) * 100));
+
+  return <article className="min-w-0 rounded-xl border border-border/70 bg-card p-3 shadow-sm">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">Current aggregate</p>
+      </div>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${tint}`}><Activity className="h-3.5 w-3.5" /></span>
+    </div>
+    <div className="mt-1 grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2">
+      <svg viewBox="0 0 120 76" className="h-[66px] w-24" role="img" aria-label={`${label} usage gauge`}>
+        <path d="M 14 62 A 46 46 0 0 1 106 62" fill="none" stroke="currentColor" className="text-muted/90" strokeWidth="10" strokeLinecap="round" pathLength="100" />
+        <path d="M 14 62 A 46 46 0 0 1 106 62" fill="none" stroke={color} strokeWidth="10" strokeLinecap="round" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - level} className="transition-[stroke-dashoffset] duration-700" />
+        <text x="60" y="56" textAnchor="middle" className="fill-foreground text-[15px] font-bold">{formatRate(rate)}</text>
+        <text x="60" y="70" textAnchor="middle" className="fill-muted-foreground text-[8px]">LIVE</text>
+      </svg>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold tabular-nums text-foreground">{formatRate(rate)}</p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">Recent peak {formatRate(recentPeak)}</p>
+      </div>
+    </div>
+  </article>;
+};
+
 const MetricTile = ({ label, value, Icon, tone }: { label: string; value: string | number; Icon: LucideIcon; tone: string }) => (
   <div className="group relative overflow-hidden rounded-md border border-border/70 bg-card p-2 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
     <div className={`absolute -right-5 -top-5 h-16 w-16 rounded-full opacity-20 blur-2xl ${tone}`} />
@@ -185,6 +229,7 @@ const NewDashboardPageContent: React.FC = () => {
   const [query, setQuery] = useState('');
   const [clientMonitor, setClientMonitor] = useState<ClientMonitor[]>([]);
   const [trafficHistory, setTrafficHistory] = useState<Record<string, TrafficSample[]>>({});
+  const [networkTrafficHistory, setNetworkTrafficHistory] = useState<TrafficSample[]>([]);
   const [locations, setLocations] = useState<ClientLocation[]>([]);
   const [locationQuery, setLocationQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<ClientLocation | null>(null);
@@ -221,15 +266,21 @@ const NewDashboardPageContent: React.FC = () => {
         params: { _: Date.now() },
         headers: { 'Cache-Control': 'no-cache' },
       });
-      setClientMonitor(response.data.data ?? []);
+      const monitoredCustomers = response.data.data ?? [];
+      setClientMonitor(monitoredCustomers);
       setTrafficHistory((previous) => {
         const next = { ...previous };
-        (response.data.data ?? []).forEach((customer) => {
+        monitoredCustomers.forEach((customer) => {
           const sample = { download: customer.traffic.download_bps ?? 0, upload: customer.traffic.upload_bps ?? 0 };
           next[customer.customer_id] = [...(next[customer.customer_id] ?? []), sample].slice(-18);
         });
         return next;
       });
+      const aggregate = monitoredCustomers.reduce<TrafficSample>((total, customer) => ({
+        download: total.download + (customer.traffic.download_bps ?? 0),
+        upload: total.upload + (customer.traffic.upload_bps ?? 0),
+      }), { download: 0, upload: 0 });
+      setNetworkTrafficHistory((previous) => [...previous, aggregate].slice(-18));
     } catch (error) {
       // Preserve the last good counters when a router is temporarily offline.
       logger.error('Failed to refresh client queue monitor', error);
@@ -293,6 +344,22 @@ const NewDashboardPageContent: React.FC = () => {
         .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
     );
   }, [clientMonitor, query]);
+
+  const usageMonitoring = useMemo(() => {
+    const current = clientMonitor.reduce<TrafficSample>((total, customer) => ({
+      download: total.download + (customer.traffic.download_bps ?? 0),
+      upload: total.upload + (customer.traffic.upload_bps ?? 0),
+    }), { download: 0, upload: 0 });
+    const currentLeaseCount = clientMonitor.filter((customer) => customer.lease_status.toLowerCase() === 'bound').length;
+    const queueCount = clientMonitor.filter((customer) => customer.queue_found).length;
+
+    return {
+      ...current,
+      currentLeaseCount,
+      queueCount,
+      noLiveLeaseCount: clientMonitor.length - currentLeaseCount,
+    };
+  }, [clientMonitor]);
 
   const collectionRate = Math.min(100, Math.max(0, metrics?.collection_rate ?? 0));
   const locationMatches = useMemo(() => {
@@ -426,11 +493,34 @@ const NewDashboardPageContent: React.FC = () => {
           </div>
         </section>}
 
+        {!collector && <section className="overflow-hidden rounded-xl border border-border/70 bg-gradient-to-br from-sky-500/[0.05] via-card to-rose-500/[0.04] p-3 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Usage monitoring</h2></div>
+              <p className="mt-1 text-[10px] text-muted-foreground">Live aggregate of current Simple Queue samples. Blue is download; red is upload.</p>
+            </div>
+            <p className="text-[10px] font-medium tabular-nums text-muted-foreground">{clientMonitor.length} registered clients loaded</p>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]">
+            <UsageSpeedGauge label="Download" rate={usageMonitoring.download} history={networkTrafficHistory.map((sample) => sample.download)} color="#0ea5e9" tint="bg-sky-500/10 text-sky-600 dark:text-sky-300" />
+            <UsageSpeedGauge label="Upload" rate={usageMonitoring.upload} history={networkTrafficHistory.map((sample) => sample.upload)} color="#ef4444" tint="bg-red-500/10 text-red-600 dark:text-red-300" />
+            <article className="rounded-xl border border-border/70 bg-card p-3 shadow-sm sm:col-span-2 xl:col-span-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Monitor coverage</p>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                <div><p className="text-lg font-bold tabular-nums text-foreground">{clientMonitor.length}</p><p className="text-[9px] text-muted-foreground">Registered</p></div>
+                <div><p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{usageMonitoring.queueCount}</p><p className="text-[9px] text-muted-foreground">Live queues</p></div>
+                <div><p className="text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">{usageMonitoring.noLiveLeaseCount}</p><p className="text-[9px] text-muted-foreground">No lease</p></div>
+              </div>
+              <p className="mt-2 border-t border-border/70 pt-2 text-[10px] text-muted-foreground">All registered customers stay visible, including those without a current lease or traffic sample.</p>
+            </article>
+          </div>
+        </section>}
+
         {!collector && <section className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
           <div className="flex flex-col gap-2 border-b border-border/70 p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Live queue & lease monitor</h2></div>
-              <p className="mt-1 text-[10px] text-muted-foreground">All registered clients are listed. Traffic appears when the client has a current DHCP lease and Simple Queue.</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">Showing {customers.length} of {clientMonitor.length} registered clients. Traffic appears when a client has a current DHCP lease and Simple Queue.</p>
             </div>
             <label className="relative block md:w-60"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search clients" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
