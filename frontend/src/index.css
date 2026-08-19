@@ -79,6 +79,25 @@
   100% { left: calc(100% - 8px); opacity: 0; transform: translateY(-50%) scale(1); }
 }
 
+@keyframes security-packet-forward {
+  0% { left: 2%; opacity: 0; transform: translate(-50%, -50%) scale(0.45); }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: 98%; opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+@keyframes security-packet-reverse {
+  0% { left: 98%; opacity: 0; transform: translate(-50%, -50%) scale(0.45); }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: 2%; opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+@keyframes security-rail-glow {
+  0%, 100% { opacity: 0.25; filter: saturate(0.85); }
+  50% { opacity: 0.95; filter: saturate(1.3); }
+}
+
 .security-grid {
   background-image:
     linear-gradient(rgba(34, 211, 238, 0.055) 1px, transparent 1px),
@@ -102,6 +121,106 @@
   padding: 0.9rem;
   box-shadow: inset 0 0 26px rgba(15, 23, 42, 0.42), 0 0 30px -22px currentColor;
 }
+
+.security-topology-grid {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(103, 232, 249, 0.18) 1px, transparent 0),
+    linear-gradient(90deg, rgba(103, 232, 249, 0.05) 1px, transparent 1px);
+  background-size: 18px 18px, 54px 100%;
+  mask-image: linear-gradient(to bottom, transparent, black 16%, black 84%, transparent);
+}
+
+.security-data-link,
+.security-management-link {
+  position: relative;
+  min-width: 3.4rem;
+  height: 3rem;
+}
+
+.security-data-link::before,
+.security-data-link::after,
+.security-management-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.85) 18%, rgba(103, 232, 249, 0.85) 82%, transparent);
+  animation: security-rail-glow 1.8s ease-in-out infinite;
+}
+
+.security-data-link::before { top: 34%; }
+.security-data-link::after {
+  top: 68%;
+  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.85) 18%, rgba(167, 139, 250, 0.85) 82%, transparent);
+  animation-delay: 0.4s;
+}
+
+.security-management-link::before {
+  top: 50%;
+  background: linear-gradient(90deg, transparent, rgba(196, 181, 253, 0.9) 18%, rgba(196, 181, 253, 0.9) 82%, transparent);
+}
+
+.security-data-packet,
+.security-management-packet {
+  position: absolute;
+  z-index: 1;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.security-data-packet-rx {
+  top: 34%;
+  background: #a5f3fc;
+  box-shadow: 0 0 12px 3px rgba(103, 232, 249, 0.95);
+  animation-name: security-packet-forward;
+  animation-duration: 1.75s;
+}
+
+.security-data-packet-tx {
+  top: 68%;
+  background: #ddd6fe;
+  box-shadow: 0 0 12px 3px rgba(167, 139, 250, 0.95);
+  animation-name: security-packet-reverse;
+  animation-duration: 2.05s;
+}
+
+.security-management-packet {
+  top: 50%;
+  background: #ede9fe;
+  box-shadow: 0 0 12px 3px rgba(196, 181, 253, 0.9);
+  animation-name: security-packet-forward;
+  animation-duration: 2.3s;
+}
+
+.security-management-link-return .security-management-packet { animation-name: security-packet-reverse; }
+.security-data-packet.delay-1,
+.security-management-packet.delay-1 { animation-delay: 0.55s; }
+.security-data-packet.delay-2,
+.security-management-packet.delay-2 { animation-delay: 1.1s; }
+
+.security-flow-label {
+  position: absolute;
+  z-index: 2;
+  top: -0.35rem;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.security-flow-label-rx { left: 4%; color: rgb(165 243 252 / 0.88); }
+.security-flow-label-tx { right: 4%; top: 1.88rem; color: rgb(221 214 254 / 0.88); }
+
+.security-flow-fast .security-data-packet-rx { animation-duration: 1s; }
+.security-flow-fast .security-data-packet-tx { animation-duration: 1.2s; }
+.security-flow-normal .security-data-packet-rx { animation-duration: 1.5s; }
+.security-flow-normal .security-data-packet-tx { animation-duration: 1.75s; }
+.security-flow-calm .security-data-packet-rx { animation-duration: 2.3s; }
+.security-flow-calm .security-data-packet-tx { animation-duration: 2.55s; }
 
 .security-flow-arrow {
   position: relative;
@@ -138,11 +257,19 @@
 
 @media (max-width: 767px) {
   .security-flow-arrow { transform: rotate(90deg); margin: -0.2rem auto; }
+  .security-data-link,
+  .security-management-link { width: 4.5rem; margin: -0.1rem auto; transform: rotate(90deg); }
+  .security-flow-label { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .security-scanline,
-  .security-flow-packet { animation: none; }
+.security-scanline,
+  .security-flow-packet,
+  .security-data-packet,
+  .security-management-packet,
+  .security-data-link::before,
+  .security-data-link::after,
+  .security-management-link::before { animation: none; }
 }
 
 .traffic-flow {
