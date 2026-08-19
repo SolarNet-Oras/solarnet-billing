@@ -362,7 +362,20 @@ export default function CyberSecurityPage() {
             <p className="mt-4 text-xs text-slate-500">Last RouterOS sample: <span className="font-medium text-slate-300">{formatDateTime(latestRead)}</span> · animated particles are driven by aggregate RX/TX counters, which can include bridges and VLANs. DNS and VPN are topology paths until explicitly inspected.</p>
           </article>
 
-          <article className="w-full self-end rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-3 sm:max-w-md sm:p-4">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.58fr)]">
+          <section className="rounded-xl border border-slate-700/80 bg-slate-950/75 p-3 sm:p-4">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-300">Router perimeter</p><h2 className="mt-0.5 text-base font-bold text-white">Live device posture</h2><p className="mt-1 text-xs leading-5 text-slate-400">Live RouterOS values. No configuration is changed.</p></div><Gauge className="h-5 w-5 shrink-0 text-violet-300" /></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {routers.map((router) => {
+                const sample = monitoring[router.id];
+                const online = router.connection_status === 'online';
+                return <article key={router.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{router.name}</p><p className="truncate text-[11px] text-slate-500">{router.host}</p></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold ${online ? 'bg-emerald-400/10 text-emerald-200' : 'bg-red-400/10 text-red-200'}`}>{online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}{router.connection_status}</span></div><div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-md bg-cyan-400/10 p-2"><p className="text-sm font-bold text-cyan-200">{formatRate(sample?.rx_bps)}</p><p className="text-[10px] text-slate-500">RX</p></div><div className="rounded-md bg-violet-400/10 p-2"><p className="text-sm font-bold text-violet-200">{formatRate(sample?.tx_bps)}</p><p className="text-[10px] text-slate-500">TX</p></div></div><p className="mt-2 text-[11px] text-slate-500">{sample ? `${sample.running_interfaces} running interfaces - CPU ${sample.cpu_load}%` : 'No monitoring sample yet'}</p></article>;
+              })}
+              {!loading && routers.length === 0 && <p className="rounded-lg border border-dashed border-slate-700 p-3 text-xs text-slate-400">No MikroTik router is configured yet.</p>}
+            </div>
+          </section>
+
+          <article className="w-full self-end rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-3 sm:p-4">
             <div className="flex items-start gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-amber-300/30 bg-amber-400/10 text-amber-200"><ScanSearch className="h-4 w-4" /></span><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">Manual threat review</p><h2 className="mt-0.5 text-base font-bold text-white">Run a safe connection scan</h2></div></div>
             <p className="mt-3 text-xs leading-5 text-slate-400">Compares a bounded RouterOS connection sample with the configured threat feed. It records candidates only—no device scan and no automatic block.</p>
             <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Router to inspect</label>
@@ -378,6 +391,7 @@ export default function CyberSecurityPage() {
             </button>
             <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5 text-[11px] leading-4 text-slate-400"><span className="font-semibold text-slate-200">Safety:</span> a pending observation needs explicit administrator review before a SolarNet-owned firewall entry is added.</div>
           </article>
+          </div>
         </div>
         </div>
 
@@ -422,8 +436,8 @@ export default function CyberSecurityPage() {
           <p className="mt-3 text-xs leading-5 text-slate-500">{baseline.safety}</p>
         </section>}
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-          <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
+        <div className="mt-5">
+          {false && <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
             <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Router perimeter</p><h2 className="mt-1 text-xl font-bold text-white">Live device posture</h2><p className="mt-1 text-sm text-slate-400">Actual RouterOS monitoring values, sampled without altering device configuration.</p></div><Gauge className="h-6 w-6 text-violet-300" /></div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {routers.map((router) => {
@@ -433,7 +447,7 @@ export default function CyberSecurityPage() {
               })}
               {!loading && routers.length === 0 && <p className="rounded-xl border border-dashed border-slate-700 p-5 text-sm text-slate-400">No MikroTik router is configured yet. Add one in Network Devices to begin monitoring.</p>}
             </div>
-          </section>
+          </section>}
 
           <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
             <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Observation queue</p><h2 className="mt-1 text-xl font-bold text-white">Threat candidates awaiting review</h2><p className="mt-1 text-sm text-slate-400">A candidate is an observation, not a confirmed infection.</p></div><Eye className="h-6 w-6 text-amber-300" /></div>
