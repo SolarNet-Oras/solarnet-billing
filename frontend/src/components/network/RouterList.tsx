@@ -1,6 +1,6 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { type Router, routerService } from '@/services/routerService';
-import { Wifi, WifiOff, Circle, TestTube, RefreshCw, Edit, Trash2, FileCode, Users, ShieldCheck, ShieldAlert, Terminal, Network } from 'lucide-react';
+import { Circle, Edit, FileCode, Network, RefreshCw, Server, ShieldAlert, ShieldCheck, Terminal, TestTube, Trash2, Users, Wifi, WifiOff } from 'lucide-react';
 import { SetupScriptModal } from './SetupScriptModal';
 import { RouterConsoleModal } from './RouterConsoleModal';
 import { RouterDnsBrandingModal } from './RouterDnsBrandingModal';
@@ -32,20 +32,15 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const handleTest = async (id: string) => {
     setTestingId(id);
     setTestResult(null);
-    
     try {
       const result = await routerService.testConnection(id);
       setTestResult({ id, success: result.success, message: result.message });
       onTestConnection(id);
     } catch (error: any) {
-      setTestResult({ 
-        id, 
-        success: false, 
-        message: error.response?.data?.message || error.message || 'Test failed' 
-      });
+      setTestResult({ id, success: false, message: error.response?.data?.message || error.message || 'Test failed' });
     } finally {
       setTestingId(null);
-      setTimeout(() => setTestResult(null), 5000);
+      setTimeout(() => setTestResult(null), 5_000);
     }
   };
 
@@ -59,11 +54,6 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     } finally {
       setSyncingId(null);
     }
-  };
-
-  const handleGenerateScript = (router: Router) => {
-    setSelectedRouter(router);
-    setScriptModalOpen(true);
   };
 
   const handleDhcpSync = async (id: string) => {
@@ -81,8 +71,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   };
 
   const handleInstallBillingAccess = async (router: Router) => {
-    if (!confirm(`Install or update Solarnet payment-only firewall rules on ${router.name}?\n\nSuspended customers will be allowed DNS and the configured payment portal, while other forwarded internet traffic is blocked. Existing Solarnet billing rules will be replaced; unrelated firewall rules are not changed.`)) return;
-
+    if (!confirm(`Install or update SolarNet payment-only firewall rules on ${router.name}?\n\nSuspended customers will be allowed DNS and the configured payment portal, while other forwarded internet traffic is blocked. Existing SolarNet billing rules will be replaced; unrelated firewall rules are not changed.`)) return;
     setBillingActionId(router.id);
     setBillingResult(null);
     try {
@@ -90,13 +79,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
       setBillingResult({ id: router.id, success: result.success, message: result.message });
     } catch (error: any) {
       const timedOut = error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''));
-      setBillingResult({
-        id: router.id,
-        success: false,
-        message: timedOut
-          ? 'Billing-rule installation exceeded the three-minute browser limit. Do not click Install again; wait one minute, then use Verify billing access to check whether the router completed the idempotent update.'
-          : error.response?.data?.message || error.message || 'Failed to install billing access rules.',
-      });
+      setBillingResult({ id: router.id, success: false, message: timedOut ? 'Billing-rule installation exceeded the three-minute browser limit. Do not click Install again; wait one minute, then use Verify billing access to check the idempotent update.' : error.response?.data?.message || error.message || 'Failed to install billing access rules.' });
     } finally {
       setBillingActionId(null);
     }
@@ -107,13 +90,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     setBillingResult(null);
     try {
       const result = await routerService.billingAccessStatus(router.id);
-      setBillingResult({
-        id: router.id,
-        success: result.installed,
-        message: result.installed
-          ? `Billing access is installed and verified (${result.rule_count} rules).`
-          : `Billing access is incomplete (${result.rule_count} of 4 rules found).`,
-      });
+      setBillingResult({ id: router.id, success: result.installed, message: result.installed ? `Billing access is installed and verified (${result.rule_count} rules).` : `Billing access is incomplete (${result.rule_count} of 4 rules found).` });
     } catch (error: any) {
       setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to verify billing access rules.' });
     } finally {
@@ -126,14 +103,8 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     setBillingResult(null);
     try {
       const result = await routerService.billingAccessAudit(router.id);
-      const interfaces = result.audit.customer_interfaces
-        .map((item) => `${item.interface}${item.gateway ? ` (${item.gateway})` : ''}`)
-        .join(', ');
-      setBillingResult({
-        id: router.id,
-        success: true,
-        message: `Safety audit: ${result.audit.dhcp_server_count} DHCP server(s) on ${interfaces || 'no detected customer interfaces'}. ${result.audit.safety_note}`,
-      });
+      const interfaces = result.audit.customer_interfaces.map((item) => `${item.interface}${item.gateway ? ` (${item.gateway})` : ''}`).join(', ');
+      setBillingResult({ id: router.id, success: true, message: `Safety audit: ${result.audit.dhcp_server_count} DHCP server(s) on ${interfaces || 'no detected customer interfaces'}. ${result.audit.safety_note}` });
     } catch (error: any) {
       setBillingResult({ id: router.id, success: false, message: error.response?.data?.message || error.message || 'Failed to audit router configuration.' });
     } finally {
@@ -142,8 +113,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   };
 
   const handleRemoveBillingAccess = async (router: Router) => {
-    if (!confirm(`Remove only Solarnet billing firewall rules from ${router.name}?\n\nSuspended customers will no longer have payment-only access restrictions from this router.`)) return;
-
+    if (!confirm(`Remove only SolarNet billing firewall rules from ${router.name}?\n\nSuspended customers will no longer have payment-only access restrictions from this router.`)) return;
     setBillingActionId(router.id);
     setBillingResult(null);
     try {
@@ -165,315 +135,67 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
       const failed = results.length - successful;
       setDnsScanAllMessage(`Read-only DNS scan finished: ${successful} compatible API scan${successful === 1 ? '' : 's'}${failed ? `, ${failed} unavailable` : ''}. No router configuration was changed.`);
     } catch (error: any) {
-      setDnsScanAllMessage(error.response?.data?.message || error.message || 'Could not scan the router DNS configuration. No router configuration was changed.');
+      setDnsScanAllMessage(error.response?.data?.message || error.message || 'Could not scan router DNS configuration. No router configuration was changed.');
     } finally {
       setDnsScanAllBusy(false);
     }
   };
 
-  const getStatusIcon = (status: Router['connection_status']) => {
-    switch (status) {
-      case 'online':
-        return <Wifi className="h-5 w-5 text-green-600" />;
-      case 'offline':
-        return <WifiOff className="h-5 w-5 text-red-600" />;
-      default:
-        return <Circle className="h-5 w-5 text-gray-400" />;
-    }
-  };
+  const statusPresentation = (status: Router['connection_status']) => status === 'online'
+    ? { label: 'Online', icon: <Wifi className="h-3.5 w-3.5" />, className: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200', led: 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]' }
+    : status === 'offline'
+      ? { label: 'Offline', icon: <WifiOff className="h-3.5 w-3.5" />, className: 'border-red-400/30 bg-red-500/10 text-red-700 dark:text-red-200', led: 'bg-red-400 shadow-[0_0_12px_rgba(248,113,113,0.9)]' }
+      : { label: 'Unknown', icon: <Circle className="h-3.5 w-3.5" />, className: 'border-slate-400/30 bg-slate-500/10 text-slate-600 dark:text-slate-300', led: 'bg-slate-400' };
 
-  const getStatusBadge = (status: Router['connection_status']) => {
-    const colors = {
-      online: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-      offline: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      unknown: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-    };
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${colors[status]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
-
-  if (routers.length === 0) {
-    return (
-      <div className="bg-card border border-border rounded-lg p-12 text-center">
-        <Wifi className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-foreground mb-2">No routers configured</h3>
-        <p className="text-muted-foreground">
-          Add your first MikroTik router to start managing your network.
-        </p>
-      </div>
-    );
-  }
+  if (routers.length === 0) return <div className="rounded-xl border border-dashed border-border p-10 text-center"><Server className="mx-auto mb-3 h-10 w-10 text-muted-foreground" /><h3 className="text-lg font-semibold text-foreground">No routers configured</h3><p className="mt-1 text-sm text-muted-foreground">Add a MikroTik router to start managing the network.</p></div>;
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
-        <div><h3 className="text-sm font-semibold text-foreground">Router List</h3><p className="text-xs text-muted-foreground">Manage router access, billing tools, and guarded internal DNS branding.</p></div>
-        <button
-          type="button"
-          onClick={() => void handleDnsScanAll()}
-          disabled={dnsScanAllBusy}
-          className="inline-flex items-center gap-2 rounded-md border border-cyan-500/40 px-3 py-2 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 disabled:opacity-50 dark:text-cyan-200 dark:hover:bg-cyan-900/20"
-          title="Run a read-only internal DNS compatibility scan on each router"
-        >
-          {dnsScanAllBusy ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" /> : <Network className="h-3.5 w-3.5" />}
-          Scan All Routers DNS
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+        <div><h3 className="text-sm font-semibold text-foreground">Router racks</h3><p className="text-xs text-muted-foreground">All existing router actions are available from each rack.</p></div>
+        <button type="button" onClick={() => void handleDnsScanAll()} disabled={dnsScanAllBusy} className="inline-flex items-center gap-2 rounded-md border border-cyan-500/40 px-3 py-2 text-xs font-semibold text-cyan-800 hover:bg-cyan-50 disabled:opacity-50 dark:text-cyan-200 dark:hover:bg-cyan-900/20" title="Run a read-only internal DNS compatibility scan on each router">
+          {dnsScanAllBusy ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" /> : <Network className="h-3.5 w-3.5" />} Scan all routers DNS
         </button>
       </div>
-      {dnsScanAllMessage && <div className="border-b border-border bg-cyan-500/5 px-5 py-2 text-xs text-cyan-900 dark:text-cyan-100">{dnsScanAllMessage}</div>}
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-muted">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Name
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Host:Port
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Location
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Version
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {routers.map((router) => (
-              <Fragment key={router.id}>
-              <tr className="hover:bg-muted/50 transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center space-x-2">
-                    {getStatusIcon(router.connection_status)}
-                    {getStatusBadge(router.connection_status)}
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-foreground">{router.name}</div>
-                  {router.dhcp_pool_name && (
-                    <div className="text-xs text-muted-foreground">Pool: {router.dhcp_pool_name}</div>
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-foreground">{router.host}:{router.port}</div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="text-sm text-muted-foreground">{router.location || '-'}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-muted-foreground">{router.routeros_version || '-'}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-2">
-                    <button
-                      onClick={() => setProvisioningRouter(router)}
-                      className="rounded px-2 py-1 text-xs font-semibold text-cyan-700 hover:bg-cyan-50 dark:text-cyan-300 dark:hover:bg-cyan-900/20"
-                      title="Set up a new, clean router using IPoE"
-                      aria-label="Set Up MikroTik"
-                      data-testid="router-provision-btn"
-                    >
-                      Set Up
-                    </button>
-                    <button
-                      onClick={() => setDnsBrandingRouter(router)}
-                      className="rounded px-2 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-900/20"
-                      title="DNS Management: internal SolarNet DNS branding"
-                      aria-label="DNS Management"
-                      data-testid="router-dns-management-btn"
-                    >
-                      DNS
-                    </button>
-                    <button
-                      onClick={() => handleGenerateScript(router)}
-                      className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors"
-                      title="Generate Setup Script"
-                      aria-label="Generate Setup Script"
-                    >
-                      <FileCode className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setConsoleRouter(router)}
-                      className="p-2 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 rounded transition-colors"
-                      title="Open MikroTik console"
-                      aria-label="Open MikroTik console"
-                      data-testid="router-console-btn"
-                    >
-                      <Terminal className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleInstallBillingAccess(router)}
-                      disabled={billingActionId === router.id}
-                      className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Install payment-only billing access"
-                      aria-label="Install payment-only billing access"
-                      data-testid="router-install-billing-access-btn"
-                    >
-                      {billingActionId === router.id ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-emerald-600 border-t-transparent rounded-full" />
-                      ) : (
-                        <ShieldCheck className="h-4 w-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleAuditBillingAccess(router)}
-                      disabled={billingActionId === router.id}
-                      className="p-2 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Read network safety audit"
-                      aria-label="Read network safety audit"
-                      data-testid="router-billing-audit-btn"
-                    >
-                      <Network className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleVerifyBillingAccess(router)}
-                      disabled={billingActionId === router.id}
-                      className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Verify billing access rules"
-                      aria-label="Verify billing access rules"
-                      data-testid="router-verify-billing-access-btn"
-                    >
-                      <ShieldAlert className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleRemoveBillingAccess(router)}
-                      disabled={billingActionId === router.id}
-                      className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Remove Solarnet billing rules"
-                      aria-label="Remove Solarnet billing rules"
-                      data-testid="router-remove-billing-access-btn"
-                    >
-                      Remove billing
-                    </button>
-                    <button
-                      onClick={() => handleDhcpSync(router.id)}
-                      disabled={dhcpSyncingId === router.id}
-                      className="p-2 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Sync DHCP Leases"
-                      aria-label="Sync DHCP"
-                    >
-                      {dhcpSyncingId === router.id ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-orange-600 border-t-transparent rounded-full" />
-                      ) : (
-                        <Users className="h-4 w-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleTest(router.id)}
-                      disabled={testingId === router.id}
-                      data-testid="router-test-btn"
-                      className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Test Connection"
-                      aria-label="Test Connection"
-                    >
-                      {testingId === router.id ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
-                      ) : (
-                        <TestTube className="h-4 w-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleSync(router.id)}
-                      disabled={syncingId === router.id}
-                      data-testid="router-sync-btn"
-                      className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50"
-                      title="Sync Now"
-                      aria-label="Sync Now"
-                    >
-                      {syncingId === router.id ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => onEdit(router)}
-                      data-testid="router-edit-btn"
-                      className="p-2 text-foreground hover:bg-secondary rounded transition-colors"
-                      title="Edit Router"
-                      aria-label="Edit Router"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(router.id)}
-                      data-testid="router-delete-btn"
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                      title="Delete Router"
-                      aria-label="Delete Router"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              {billingResult?.id === router.id && (
-                <tr>
-                  <td colSpan={6} className={`px-6 py-3 text-sm ${billingResult.success ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200' : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200'}`}>
-                    {billingResult.message}
-                  </td>
-                </tr>
-              )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+      {dnsScanAllMessage && <div className="border-b border-border bg-cyan-500/5 px-4 py-2 text-xs text-cyan-900 dark:text-cyan-100">{dnsScanAllMessage}</div>}
+
+      <div className="space-y-3 bg-muted/25 p-3 sm:p-4">
+        {routers.map((router) => {
+          const status = statusPresentation(router.connection_status);
+          const busy = billingActionId === router.id;
+          return <article key={router.id} className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent" />
+            <div className="grid gap-4 p-3 sm:p-4 xl:grid-cols-[auto_minmax(0,1fr)_minmax(25rem,0.9fr)] xl:items-center">
+              <div className="flex items-center gap-3 xl:items-stretch">
+                <div className="grid h-20 w-14 shrink-0 grid-rows-[auto_repeat(4,minmax(0,1fr))] rounded-lg border border-slate-700 bg-slate-950 p-2 shadow-inner">
+                  <span className="flex items-center gap-1"><i className={`h-2 w-2 rounded-full ${status.led}`} /><i className="h-1 w-1 rounded-full bg-cyan-300" /></span>
+                  <span className="rounded-sm bg-slate-700/80" /><span className="rounded-sm bg-slate-700/80" /><span className="rounded-sm bg-slate-700/80" /><span className="rounded-sm bg-slate-700/80" />
+                </div>
+                <div className="min-w-0 xl:hidden"><p className="truncate font-semibold text-foreground">{router.name}</p><p className="truncate text-xs text-muted-foreground">{router.host}:{router.port}</p></div>
+              </div>
+
+              <div className="min-w-0">
+                <div className="hidden items-start justify-between gap-3 xl:flex"><div><p className="truncate text-base font-semibold text-foreground">{router.name}</p><p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{router.host}:{router.port}</p></div></div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold ${status.className}`}>{status.icon}{status.label}</span>{router.location && <span className="rounded-full bg-muted px-2 py-1 text-muted-foreground">{router.location}</span>}{router.routeros_version && <span className="rounded-full bg-muted px-2 py-1 text-muted-foreground">RouterOS {router.routeros_version}</span>}{router.dhcp_pool_name && <span className="rounded-full bg-muted px-2 py-1 text-muted-foreground">Pool: {router.dhcp_pool_name}</span>}</div>
+              </div>
+
+              <div className="grid gap-2 text-xs sm:grid-cols-3 xl:grid-cols-1">
+                <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 font-medium text-muted-foreground">Router tools</span><button onClick={() => setProvisioningRouter(router)} className="rounded-md border border-cyan-500/35 px-2 py-1.5 font-semibold text-cyan-700 hover:bg-cyan-50 dark:text-cyan-300 dark:hover:bg-cyan-900/20" title="Set up a new, clean router using IPoE" data-testid="router-provision-btn">Set up</button><button onClick={() => setDnsBrandingRouter(router)} className="rounded-md border border-teal-500/35 px-2 py-1.5 font-semibold text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-900/20" title="DNS Management: internal SolarNet DNS branding" data-testid="router-dns-management-btn">DNS</button><button onClick={() => { setSelectedRouter(router); setScriptModalOpen(true); }} className="rounded-md border border-violet-500/35 p-1.5 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20" title="Generate setup script" aria-label="Generate setup script"><FileCode className="h-3.5 w-3.5" /></button><button onClick={() => setConsoleRouter(router)} className="rounded-md border border-slate-400/35 p-1.5 text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800" title="Open MikroTik console" aria-label="Open MikroTik console" data-testid="router-console-btn"><Terminal className="h-3.5 w-3.5" /></button></div>
+                <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 font-medium text-muted-foreground">Billing access</span><button onClick={() => void handleInstallBillingAccess(router)} disabled={busy} className="rounded-md border border-emerald-500/35 p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20" title="Install payment-only billing access" aria-label="Install payment-only billing access" data-testid="router-install-billing-access-btn">{busy ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" /> : <ShieldCheck className="h-3.5 w-3.5" />}</button><button onClick={() => void handleAuditBillingAccess(router)} disabled={busy} className="rounded-md border border-cyan-500/35 p-1.5 text-cyan-700 hover:bg-cyan-50 disabled:opacity-50 dark:text-cyan-300 dark:hover:bg-cyan-900/20" title="Read network safety audit" aria-label="Read network safety audit" data-testid="router-billing-audit-btn"><Network className="h-3.5 w-3.5" /></button><button onClick={() => void handleVerifyBillingAccess(router)} disabled={busy} className="rounded-md border border-amber-500/35 p-1.5 text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:text-amber-300 dark:hover:bg-amber-900/20" title="Verify billing access rules" aria-label="Verify billing access rules" data-testid="router-verify-billing-access-btn"><ShieldAlert className="h-3.5 w-3.5" /></button><button onClick={() => void handleRemoveBillingAccess(router)} disabled={busy} className="rounded-md border border-red-500/35 px-2 py-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-900/20" title="Remove SolarNet billing rules" data-testid="router-remove-billing-access-btn">Remove</button></div>
+                <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 font-medium text-muted-foreground">Maintenance</span><button onClick={() => void handleDhcpSync(router.id)} disabled={dhcpSyncingId === router.id} className="rounded-md border border-orange-500/35 p-1.5 text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:text-orange-300 dark:hover:bg-orange-900/20" title="Sync DHCP leases" aria-label="Sync DHCP">{dhcpSyncingId === router.id ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-orange-600 border-t-transparent" /> : <Users className="h-3.5 w-3.5" />}</button><button onClick={() => void handleTest(router.id)} disabled={testingId === router.id} className="rounded-md border border-blue-500/35 p-1.5 text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-900/20" title="Test connection" aria-label="Test connection" data-testid="router-test-btn">{testingId === router.id ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" /> : <TestTube className="h-3.5 w-3.5" />}</button><button onClick={() => void handleSync(router.id)} disabled={syncingId === router.id} className="rounded-md border border-emerald-500/35 p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20" title="Sync router" aria-label="Sync router" data-testid="router-sync-btn">{syncingId === router.id ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" /> : <RefreshCw className="h-3.5 w-3.5" />}</button><button onClick={() => onEdit(router)} className="rounded-md border border-slate-400/35 p-1.5 text-foreground hover:bg-secondary" title="Edit router" aria-label="Edit router" data-testid="router-edit-btn"><Edit className="h-3.5 w-3.5" /></button><button onClick={() => onDelete(router.id)} className="rounded-md border border-red-500/35 p-1.5 text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" title="Delete router" aria-label="Delete router" data-testid="router-delete-btn"><Trash2 className="h-3.5 w-3.5" /></button></div>
+              </div>
+            </div>
+            {billingResult?.id === router.id && <div className={`border-t px-4 py-2 text-xs ${billingResult.success ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-800 dark:text-emerald-200' : 'border-red-500/20 bg-red-500/5 text-red-800 dark:text-red-200'}`}>{billingResult.message}</div>}
+          </article>;
+        })}
       </div>
-      
-      {/* Test Result Toast */}
-      {testResult && (
-        <div className={`m-4 p-4 rounded-lg border ${
-          testResult.success 
-            ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' 
-            : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
-        }`}>
-          <p className={`text-sm font-medium ${
-            testResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'
-          }`}>
-            {testResult.message}
-          </p>
-        </div>
-      )}
-      
-      {/* Setup Script Modal */}
-      {selectedRouter && (
-        <SetupScriptModal
-          isOpen={scriptModalOpen}
-          onClose={() => setScriptModalOpen(false)}
-          routerId={selectedRouter.id}
-          routerName={selectedRouter.name}
-        />
-      )}
-      {consoleRouter && (
-        <RouterConsoleModal
-          isOpen={true}
-          onClose={() => setConsoleRouter(null)}
-          routerId={consoleRouter.id}
-          routerName={consoleRouter.name}
-        />
-      )}
-      {provisioningRouter && (
-        <RouterProvisioningModal
-          isOpen={true}
-          router={provisioningRouter}
-          onClose={() => setProvisioningRouter(null)}
-        />
-      )}
-      {dnsBrandingRouter && (
-        <RouterDnsBrandingModal
-          isOpen={true}
-          router={dnsBrandingRouter}
-          onClose={() => setDnsBrandingRouter(null)}
-        />
-      )}
+
+      {testResult && <div className={`m-3 rounded-lg border p-3 text-sm ${testResult.success ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'}`}>{testResult.message}</div>}
+
+      {selectedRouter && <SetupScriptModal isOpen={scriptModalOpen} onClose={() => setScriptModalOpen(false)} routerId={selectedRouter.id} routerName={selectedRouter.name} />}
+      {consoleRouter && <RouterConsoleModal isOpen={true} onClose={() => setConsoleRouter(null)} routerId={consoleRouter.id} routerName={consoleRouter.name} />}
+      {provisioningRouter && <RouterProvisioningModal isOpen={true} router={provisioningRouter} onClose={() => setProvisioningRouter(null)} />}
+      {dnsBrandingRouter && <RouterDnsBrandingModal isOpen={true} router={dnsBrandingRouter} onClose={() => setDnsBrandingRouter(null)} />}
     </div>
   );
 }

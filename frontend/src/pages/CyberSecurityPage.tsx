@@ -437,7 +437,7 @@ export default function CyberSecurityPage() {
         </section>}
 
         <div className="mt-5">
-          {false && <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
+          <section aria-hidden="true" className="hidden rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
             <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Router perimeter</p><h2 className="mt-1 text-xl font-bold text-white">Live device posture</h2><p className="mt-1 text-sm text-slate-400">Actual RouterOS monitoring values, sampled without altering device configuration.</p></div><Gauge className="h-6 w-6 text-violet-300" /></div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {routers.map((router) => {
@@ -447,7 +447,7 @@ export default function CyberSecurityPage() {
               })}
               {!loading && routers.length === 0 && <p className="rounded-xl border border-dashed border-slate-700 p-5 text-sm text-slate-400">No MikroTik router is configured yet. Add one in Network Devices to begin monitoring.</p>}
             </div>
-          </section>}
+          </section>
 
           <section className="rounded-2xl border border-slate-700/80 bg-slate-950/75 p-5">
             <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Observation queue</p><h2 className="mt-1 text-xl font-bold text-white">Threat candidates awaiting review</h2><p className="mt-1 text-sm text-slate-400">A candidate is an observation, not a confirmed infection.</p></div><Eye className="h-6 w-6 text-amber-300" /></div>
