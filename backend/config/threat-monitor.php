@@ -12,4 +12,8 @@ return [
     // router or a VPN/port-forwarded API connection.
     'connection_limit' => (int) env('THREAT_MONITOR_CONNECTION_LIMIT', 2000),
     'connection_socket_timeout' => (int) env('THREAT_MONITOR_CONNECTION_SOCKET_TIMEOUT', 15),
+    // A reviewed feed match is not a permanent reputation verdict. New
+    // SolarNet-owned RouterOS address-list entries therefore expire unless an
+    // administrator deliberately re-approves the indicator after a later scan.
+    'manual_block_timeout' => env('THREAT_MONITOR_MANUAL_BLOCK_TIMEOUT', '1d'),
 ];

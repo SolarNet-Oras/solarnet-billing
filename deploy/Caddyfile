@@ -30,6 +30,11 @@
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         Referrer-Policy strict-origin-when-cross-origin
+        # These policies tighten browser behavior without blocking SolarNet's
+        # same-origin GPS capture, API calls, or PayMongo-hosted checkout.
+        Content-Security-Policy "base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://*.paymongo.com; object-src 'none'; upgrade-insecure-requests"
+        Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
+        X-Permitted-Cross-Domain-Policies "none"
         -Server
     }
 

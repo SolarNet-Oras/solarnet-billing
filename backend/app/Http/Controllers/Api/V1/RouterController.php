@@ -254,6 +254,7 @@ class RouterController extends Controller
                 'reviewed_at' => now(),
                 'review_note' => $data['note'] ?? null,
                 'blocked_at' => now(),
+                'block_expires_at' => now()->addSeconds((int) ($result['timeout_seconds'] ?? 86_400)),
             ]);
         } else {
             $candidate->update([
@@ -261,6 +262,7 @@ class RouterController extends Controller
                 'reviewed_by' => $request->user()->id,
                 'reviewed_at' => now(),
                 'review_note' => $data['note'] ?? null,
+                'block_expires_at' => null,
             ]);
             $result = ['success' => true, 'message' => 'Threat candidate dismissed. No RouterOS change was made.'];
         }

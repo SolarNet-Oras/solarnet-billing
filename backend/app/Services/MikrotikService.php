@@ -1380,6 +1380,8 @@ class MikrotikService
 
         try {
             $client = new Client($this->makeConfig($router));
+            $timeout = $this->reviewedThreatBlockTimeout();
+            $timeoutSeconds = $this->reviewedThreatBlockTimeoutSeconds($timeout);
             $entries = $client->query(
                 (new Query('/ip/firewall/address-list/print'))
                     ->where('list', self::THREAT_FEED_ADDRESS_LIST)
@@ -1391,6 +1393,7 @@ class MikrotikService
                     (new Query('/ip/firewall/address-list/add'))
                         ->equal('list', self::THREAT_FEED_ADDRESS_LIST)
                         ->equal('address', $remoteIp)
+                        ->equal('timeout', $timeout)
                         ->equal('comment', self::THREAT_FEED_RULE_PREFIX . ' — ' . $feedName)
                 )->read();
             }
@@ -1399,13 +1402,58 @@ class MikrotikService
 
             return [
                 'success' => true,
-                'message' => "{$remoteIp} was added to the SolarNet threat-feed block list after manual approval.",
+                'message' => "{$remoteIp} was added to the SolarNet threat-feed block list after manual approval. The new block expires after {$timeout}.",
                 'address_list' => self::THREAT_FEED_ADDRESS_LIST,
+                'timeout' => $timeout,
+                'timeout_seconds' => $timeoutSeconds,
             ];
         } catch (Throwable $e) {
             Log::warning('Could not apply reviewed threat block', ['router_id' => $router->id, 'remote_ip' => $remoteIp, 'error' => $e->getMessage()]);
             return ['success' => false, 'message' => 'No threat block was applied: ' . $e->getMessage()];
         }
+    }
+
+    /**
+     * RouterOS accepts rich duration strings, but this guard deliberately
+     * limits the environment setting to a simple, auditable temporary period.
+     * An invalid deployment value safely falls back to one day.
+     */
+    private function reviewedThreatBlockTimeout(): string
+    {
+        $timeout = strtolower(trim((string) config('threat-monitor.manual_block_timeout', '1d')));
+
+        if (preg_match('/^(\d+)(s|m|h|d|w)$/', $timeout, $matches) !== 1) return '1d';
+        $quantity = (int) $matches[1];
+        if ($quantity < 1) return '1d';
+
+        $multiplier = match ($matches[2]) {
+            's' => 1,
+            'm' => 60,
+            'h' => 3_600,
+            'd' => 86_400,
+            'w' => 604_800,
+        };
+
+        return ($quantity * $multiplier) <= 604_800 ? $timeout : '1w';
+    }
+
+    private function reviewedThreatBlockTimeoutSeconds(string $timeout): int
+    {
+        if (preg_match('/^(\d+)(s|m|h|d|w)$/', $timeout, $matches) !== 1) return 86_400;
+        $quantity = (int) $matches[1];
+        if ($quantity < 1) return 86_400;
+
+        $multiplier = match ($matches[2]) {
+            's' => 1,
+            'm' => 60,
+            'h' => 3_600,
+            'd' => 86_400,
+            'w' => 604_800,
+        };
+
+        // The product keeps a confirmed block temporary by design. A longer
+        // policy needs a fresh review rather than an accidental forever-ban.
+        return min(604_800, $quantity * $multiplier);
     }
 
     private function ipv4FromRouterAddress(mixed $address): ?string

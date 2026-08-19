@@ -22,6 +22,7 @@ class RouterThreatObservation extends Model
         'reviewed_at',
         'review_note',
         'blocked_at',
+        'block_expires_at',
     ];
 
     protected function casts(): array
@@ -32,6 +33,7 @@ class RouterThreatObservation extends Model
             'last_observed_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'blocked_at' => 'datetime',
+            'block_expires_at' => 'datetime',
         ];
     }
 

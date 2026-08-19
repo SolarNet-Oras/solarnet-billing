@@ -41,6 +41,16 @@ class ThreatFeedService
                 if (!$observation->exists) {
                     $observation->status = 'pending';
                     $observation->first_observed_at = now();
+                } elseif ($observation->status === 'blocked' && $observation->block_expires_at?->isPast()) {
+                    // The RouterOS list entry was intentionally temporary.
+                    // If the same indicator is seen again after expiry, make
+                    // a fresh, auditable operator review mandatory.
+                    $observation->status = 'pending';
+                    $observation->reviewed_by = null;
+                    $observation->reviewed_at = null;
+                    $observation->review_note = null;
+                    $observation->blocked_at = null;
+                    $observation->block_expires_at = null;
                 }
 
                 $observation->connection_directions = $match['directions'];
