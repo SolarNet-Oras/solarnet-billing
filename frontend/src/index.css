@@ -149,18 +149,20 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 3px;
   border-radius: 999px;
-  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(103, 232, 249, 0.98) 4px 10px, transparent 10px 17px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(103, 232, 249, 0.98) 4px 12px, transparent 12px 18px);
   background-size: 34px 100%;
   box-shadow: 0 0 10px rgba(103, 232, 249, 0.45);
   animation: security-dashed-flow-forward 900ms linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
 }
 
 .security-data-link::before { top: 34%; }
 .security-data-link::after {
   top: 68%;
-  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(251, 113, 133, 0.98) 4px 10px, transparent 10px 17px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(251, 113, 133, 0.98) 4px 12px, transparent 12px 18px);
   box-shadow: 0 0 10px rgba(251, 113, 133, 0.48);
   animation-name: security-dashed-flow-reverse;
   animation-duration: 1.05s;
@@ -168,7 +170,7 @@
 
 .security-management-link::before {
   top: 50%;
-  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(196, 181, 253, 0.98) 4px 10px, transparent 10px 17px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(196, 181, 253, 0.98) 4px 12px, transparent 12px 18px);
   box-shadow: 0 0 10px rgba(196, 181, 253, 0.5);
   animation-duration: 1.25s;
 }
@@ -177,11 +179,12 @@
 .security-management-packet {
   position: absolute;
   z-index: 1;
-  width: 0.48rem;
-  height: 0.48rem;
+  width: 0.7rem;
+  height: 0.7rem;
   border-radius: 999px;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+  will-change: left, transform, opacity;
 }
 
 .security-data-packet-rx {
@@ -278,16 +281,6 @@
   .security-data-link,
   .security-management-link { width: 4.5rem; margin: -0.1rem auto; transform: rotate(90deg); }
   .security-flow-label { display: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-.security-scanline,
-  .security-flow-packet,
-  .security-data-packet,
-  .security-management-packet,
-  .security-data-link::before,
-  .security-data-link::after,
-  .security-management-link::before { animation: none; }
 }
 
 .traffic-flow {
