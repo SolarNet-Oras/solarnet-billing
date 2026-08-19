@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\Customer;
+use Carbon\Carbon;
 use Tests\TestCase;
 
 class CustomerBillingCycleDayTest extends TestCase
@@ -20,5 +21,15 @@ class CustomerBillingCycleDayTest extends TestCase
         $customer = new Customer(['installation_date' => '2026-08-14']);
 
         $this->assertSame(14, $customer->billingCycleDay());
+    }
+
+    public function test_next_due_date_uses_the_configured_monthly_day_without_creating_an_invoice(): void
+    {
+        $customer = new Customer(['installation_date' => '2026-08-14']);
+        $customer->billing_cycle_day = 25;
+
+        $nextDueDate = $customer->nextBillingDueDate(Carbon::parse('2026-08-19', 'Asia/Manila'));
+
+        $this->assertSame('2026-08-25', $nextDueDate?->toDateString());
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -145,6 +146,30 @@ class Customer extends Model
         }
 
         return $this->installation_date?->day;
+    }
+
+    /**
+     * Return the next calendar occurrence of the configured monthly due-day.
+     * This is a schedule preview only; it does not create an invoice or alter
+     * the billing/suspension automation.
+     */
+    public function nextBillingDueDate(?Carbon $fromDate = null): ?Carbon
+    {
+        $day = $this->billingCycleDay();
+        if ($day === null) {
+            return null;
+        }
+
+        $timezone = config('app.timezone', 'Asia/Manila');
+        $fromDate = ($fromDate ?? now($timezone))->copy()->setTimezone($timezone)->startOfDay();
+        $candidate = $fromDate->copy()->startOfMonth()->setDay(min($day, $fromDate->daysInMonth));
+
+        if ($candidate->lt($fromDate)) {
+            $nextMonth = $fromDate->copy()->addMonthNoOverflow()->startOfMonth();
+            $candidate = $nextMonth->setDay(min($day, $nextMonth->daysInMonth));
+        }
+
+        return $candidate;
     }
 
     public function profileChangeRequests(): HasMany

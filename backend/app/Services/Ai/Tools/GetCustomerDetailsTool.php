@@ -71,6 +71,8 @@ class GetCustomerDetailsTool implements AiTool
             ->whereNotIn('status', ['closed', 'resolved'])
             ->latest('created_at')
             ->first();
+        $openInvoiceDueDate = $unpaidInvoices->first()?->due_date;
+        $scheduledDueDate = $openInvoiceDueDate ? null : $customer->nextBillingDueDate();
 
         return [
             'found' => true,
@@ -102,7 +104,15 @@ class GetCustomerDetailsTool implements AiTool
                 'billing' => [
                     'outstanding_balance' => round((float) $unpaidInvoices->sum('balance'), 2),
                     'unpaid_invoice_count' => $unpaidInvoices->count(),
-                    'next_due_date' => $unpaidInvoices->first()?->due_date?->toDateString(),
+                    // Prefer an actual unpaid invoice. When there is no
+                    // invoice yet, expose the configured recurring due day so
+                    // the AI does not incorrectly claim that an established
+                    // migrated customer has no due date.
+                    'billing_cycle_day' => $customer->billingCycleDay(),
+                    'next_due_date' => ($openInvoiceDueDate ?? $scheduledDueDate)?->toDateString(),
+                    'next_due_date_source' => $openInvoiceDueDate
+                        ? 'open_invoice'
+                        : ($scheduledDueDate ? 'configured_billing_cycle' : 'not_configured'),
                     'unpaid_invoices' => $unpaidInvoices->map(fn (Invoice $invoice) => [
                         'invoice_number' => $invoice->invoice_number,
                         'due_date' => $invoice->due_date?->toDateString(),
