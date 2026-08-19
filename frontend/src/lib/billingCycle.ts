@@ -10,13 +10,12 @@ const ordinal = (day: number): string => {
 };
 
 /**
- * The customer's installation-date day is SolarNet's monthly billing cycle.
- * Work from the date string instead of Date parsing to avoid timezone shifts.
+ * The customer's explicitly configured billing_cycle_day is SolarNet's
+ * monthly billing cycle.
  */
-export const monthlyDueDateLabel = (installationDate: string): string => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(installationDate);
-  const day = Number(match?.[3]);
+export const monthlyDueDateLabel = (billingCycleDay: number | string | null | undefined): string => {
+  const day = Number(billingCycleDay);
   return day >= 1 && day <= 31
     ? `Due date: every ${ordinal(day)} of the month`
-    : 'Select an installation date to set the monthly due date.';
+    : 'Set a monthly due day for this client.';
 };

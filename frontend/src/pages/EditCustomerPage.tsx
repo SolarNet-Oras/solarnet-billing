@@ -34,6 +34,7 @@ interface FormData {
   contact_number: string;
   email: string;
   installation_date: string;
+  billing_cycle_day: string;
   service_plan_id: string;
   router_id: string;
   monthly_fee: string;
@@ -49,7 +50,7 @@ interface FormData {
 
 const EMPTY: FormData = {
   account_number: '', full_name: '', address: '', contact_number: '', email: '',
-  installation_date: '', service_plan_id: '', router_id: '', monthly_fee: '0',
+  installation_date: '', billing_cycle_day: '', service_plan_id: '', router_id: '', monthly_fee: '0',
   mac_address: '', ip_address: '', vlan: '', status: 'active',
   onu_information: '', olt_port: '', notes: '', coordinates: '',
 };
@@ -89,13 +90,15 @@ const EditCustomerPage: React.FC = () => {
       // API returns { data: { ... } } — customerService.getCustomer already unwraps to Customer
       const c = customerResponse.data.data;
       setDhcpLease(customerResponse.data.dhcp_lease ?? null);
+      const installationDate = (c.installation_date ?? '').split('T')[0];
       setFormData({
         account_number: c.account_number ?? '',
         full_name: c.full_name ?? '',
         address: c.address ?? '',
         contact_number: c.contact_number ?? '',
         email: c.email ?? '',
-        installation_date: (c.installation_date ?? '').split('T')[0],
+        installation_date: installationDate,
+        billing_cycle_day: String(c.billing_cycle_day ?? (Number(installationDate.slice(-2)) || '')),
         service_plan_id: c.service_plan_id ?? '',
         router_id: (c as any).router_id ?? '',
         monthly_fee: String(c.monthly_fee ?? '0'),
@@ -354,9 +357,20 @@ const EditCustomerPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Field label="Installation Date *" name="installation_date" value={formData.installation_date} onChange={handleChange} type="date" required testId="edit-installation-date" />
-                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(formData.installation_date)}</p>
               </div>
               <Field label="Monthly Fee (₱) *" name="monthly_fee" value={formData.monthly_fee} onChange={handleChange} type="number" required testId="edit-monthly-fee" />
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Monthly Due Day *</label>
+                <select name="billing_cycle_day" value={formData.billing_cycle_day} onChange={handleChange} required
+                  className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  data-testid="edit-billing-cycle-day">
+                  <option value="">Select due day</option>
+                  {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{monthlyDueDateLabel(day).replace('Due date: every ', '')}</option>)}
+                </select>
+                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(formData.billing_cycle_day)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">This is the real monthly billing due day. It does not change the installation date.</p>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Service Plan</label>

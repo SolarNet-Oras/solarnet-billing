@@ -1,12 +1,14 @@
 import api from './api';
 import type { Customer, PaginatedResponse } from '../types/api';
 
-export type ClientSetupAction = 'billing_due_date' | 'previous_balance' | 'discount' | 'status' | 'address_updates';
+export type ClientSetupAction = 'installation_date' | 'billing_due_date' | 'previous_balance' | 'discount' | 'status' | 'address_updates';
 
 export interface BulkClientSetupPayload {
   customer_ids: string[];
   action: ClientSetupAction;
+  installation_date?: string;
   due_date?: string;
+  billing_cycle_day?: number;
   update_open_invoices?: boolean;
   previous_balance?: number;
   previous_balance_due_date?: string;

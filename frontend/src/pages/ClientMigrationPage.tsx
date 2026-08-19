@@ -104,6 +104,7 @@ const ClientMigrationPage: React.FC = () => {
         full_name: item.record.Name,
         address: item.record.Address,
         installation_date: item.record['Installation Date'],
+        due_date: item.record['Due Date'],
         service_plan_id: item.service_plan?.id,
         monthly_fee: item.service_plan?.price,
         lease_id: item.lease_id,

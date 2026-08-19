@@ -373,6 +373,9 @@ class UnregisteredLeaseController extends Controller
                     'contact_number'    => $request->input('contact_number', 'N/A'),
                     'email'             => $request->input('email'),
                     'installation_date' => $installationDate->toDateString(),
+                    'billing_cycle_day' => $request->filled('migration_due_date')
+                        ? \Carbon\Carbon::parse($request->input('migration_due_date'))->day
+                        : $installationDate->day,
                     'router_id'         => $lease->router_id,
                     'service_plan_id'   => $planId,
                     'monthly_fee'       => $monthlyFee,

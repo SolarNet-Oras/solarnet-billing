@@ -125,6 +125,7 @@ class ClientMigrationController extends Controller
             'full_name' => 'nullable|string|max:255',
             'address' => 'nullable|string',
             'installation_date' => 'required',
+            'due_date' => 'nullable',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'monthly_fee' => 'nullable|numeric|min:0',
             'lease_id' => 'required|exists:dhcp_leases,id',
@@ -150,6 +151,10 @@ class ClientMigrationController extends Controller
         }
         // Excel is authoritative for historical migration dates, even when different from created_at.
         $updates['installation_date'] = $installationDate;
+        $migrationDueDate = $historicalDate->parse($validated['due_date'] ?? null);
+        if ($migrationDueDate) {
+            $updates['billing_cycle_day'] = \Carbon\Carbon::parse($migrationDueDate)->day;
+        }
 
         $oldInstallationDate = $customer->installation_date?->toDateString();
 

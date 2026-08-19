@@ -379,7 +379,7 @@ const CreateCustomerPage: React.FC = () => {
                   className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   data-testid="input-installation-date"
                 />
-                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(formData.installation_date)}</p>
+                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(Number(formData.installation_date.slice(-2)))}</p>
               </div>
 
               <div>

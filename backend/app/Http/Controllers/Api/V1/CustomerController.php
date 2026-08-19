@@ -99,6 +99,7 @@ class CustomerController extends Controller
             'contact_number' => 'required|string|max:20',
             'email' => 'nullable|email|max:255',
             'installation_date' => 'required|date',
+            'billing_cycle_day' => 'nullable|integer|min:1|max:31',
             'router_id' => 'nullable|exists:routers,id',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'monthly_fee' => 'required|numeric|min:0',
@@ -128,9 +129,9 @@ class CustomerController extends Controller
         $validated = $validator->validated();
         $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
         $validated['installation_date'] = $installationDate->toDateString();
-        // Keep the legacy field aligned for integrations that still read it;
-        // Customer::billingCycleDay() uses the installation date as truth.
-        $validated['billing_cycle_day'] = $installationDate->day;
+        // New clients start with their installation anniversary by default,
+        // but an explicitly agreed monthly due day is always retained.
+        $validated['billing_cycle_day'] = (int) ($validated['billing_cycle_day'] ?? $installationDate->day);
         $lease = null;
 
         if (!empty($validated['dhcp_lease_id'])) {
@@ -382,13 +383,6 @@ class CustomerController extends Controller
         if (array_key_exists('installation_date', $validated)) {
             $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
             $validated['installation_date'] = $installationDate->toDateString();
-            // A date correction is also a billing-cycle correction. Never
-            // allow the two fields to silently diverge.
-            $validated['billing_cycle_day'] = $installationDate->day;
-        } elseif ($customer->installation_date) {
-            // Ignore a standalone legacy day edit for a customer that already
-            // has an installation date. The date itself is authoritative.
-            $validated['billing_cycle_day'] = $customer->installation_date->day;
         }
         $hardwareBinding = null;
         $matchedLeaseId = null;
@@ -651,17 +645,19 @@ class CustomerController extends Controller
     /**
      * Controlled setup for customers that existed before SolarNet Billing.
      *
-     * The historical installation date is the source of truth for the
-     * monthly due-day. The operation is database-only: it does not write
-     * RouterOS queues, firewall rules, or DHCP records.
+     * Installation date and monthly due day are intentionally separate. The
+     * operation is database-only: it does not write RouterOS queues,
+     * firewall rules, or DHCP records.
      */
     public function bulkSetup(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'customer_ids' => 'required|array|min:1|max:500',
             'customer_ids.*' => 'required|uuid|exists:customers,id',
-            'action' => 'required|in:billing_due_date,previous_balance,discount,status,address_updates',
+            'action' => 'required|in:installation_date,billing_due_date,previous_balance,discount,status,address_updates',
+            'installation_date' => 'nullable|date',
             'due_date' => 'nullable|date',
+            'billing_cycle_day' => 'nullable|integer|min:1|max:31',
             'update_open_invoices' => 'nullable|boolean',
             'previous_balance' => 'nullable|numeric|gt:0|max:1000000',
             'previous_balance_due_date' => 'nullable|date',
@@ -681,9 +677,18 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        // Keep accepting the old due_date field for a safe frontend rollout.
+        // New clients send billing_cycle_day directly so no historical date is
+        // accidentally treated as a billing setting.
+        if ($validated['action'] === 'billing_due_date'
+            && empty($validated['billing_cycle_day'])
+            && ! empty($validated['due_date'])) {
+            $validated['billing_cycle_day'] = Carbon::parse($validated['due_date'])->day;
+        }
         $action = $validated['action'];
         $requiredField = match ($action) {
-            'billing_due_date' => 'due_date',
+            'installation_date' => 'installation_date',
+            'billing_due_date' => 'billing_cycle_day',
             'previous_balance' => 'previous_balance',
             'discount' => 'discount_amount',
             'status' => 'status',
@@ -736,12 +741,25 @@ class CustomerController extends Controller
                 : collect();
 
             foreach ($customers as $customer) {
-                if ($action === 'billing_due_date') {
-                    $installationDate = Carbon::parse($validated['due_date'])->startOfDay();
+                if ($action === 'installation_date') {
+                    $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
                     $customer->update([
                         'installation_date' => $installationDate->toDateString(),
-                        'billing_cycle_day' => $installationDate->day,
                     ]);
+                    $updatedCustomers++;
+
+                    $results[] = [
+                        'customer_id' => $customer->id,
+                        'account_number' => $customer->account_number,
+                        'status' => 'updated',
+                        'message' => "Installation date set to {$installationDate->toDateString()}. Monthly due day remains " . ($customer->fresh()->billingCycleDay() ?? 'not set') . '.',
+                    ];
+                    continue;
+                }
+
+                if ($action === 'billing_due_date') {
+                    $dueDay = (int) $validated['billing_cycle_day'];
+                    $customer->update(['billing_cycle_day' => $dueDay]);
                     $updatedCustomers++;
 
                     $openInvoicesUpdated = 0;
@@ -770,7 +788,7 @@ class CustomerController extends Controller
                         'customer_id' => $customer->id,
                         'account_number' => $customer->account_number,
                         'status' => 'updated',
-                        'message' => "Installation date set to {$installationDate->toDateString()}; monthly due day is now {$installationDate->format('j')}.{$invoiceMessage}",
+                        'message' => "Monthly due day set to {$dueDay}. Historical installation date was not changed.{$invoiceMessage}",
                     ];
                     continue;
                 }

@@ -131,6 +131,7 @@ export interface Customer {
   contact_number: string;
   email: string;
   installation_date: string;
+  billing_cycle_day?: number | null;
   status: 'active' | 'suspended' | 'expired' | 'pending';
   router_id: string | null;
   service_plan_id: string | null;
@@ -160,6 +161,7 @@ export interface CreateCustomerRequest {
   contact_number: string;
   email: string;
   installation_date: string;
+  billing_cycle_day?: number;
   router_id?: string;
   service_plan_id: string;
   monthly_fee: number;

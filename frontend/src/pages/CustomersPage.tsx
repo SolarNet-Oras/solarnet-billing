@@ -5,6 +5,7 @@ import api from '@/services/api';
 import { customerService, type ClientSetupAction } from '@/services/customerService';
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
+import { monthlyDueDateLabel } from '@/lib/billingCycle';
 import { MapPin } from 'lucide-react';
 
 const CustomersPage: React.FC = () => {
@@ -17,7 +18,8 @@ const CustomersPage: React.FC = () => {
   const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
   const [clientSetupAction, setClientSetupAction] = useState<ClientSetupAction | 'delete'>('billing_due_date');
   const [clientSetupSearch, setClientSetupSearch] = useState<string>('');
-  const [setupDueDate, setSetupDueDate] = useState<string>('');
+  const [setupInstallationDate, setSetupInstallationDate] = useState<string>('');
+  const [setupDueDay, setSetupDueDay] = useState<string>('');
   const [setupUpdatesOpenInvoices, setSetupUpdatesOpenInvoices] = useState<boolean>(true);
   const [setupPreviousBalance, setSetupPreviousBalance] = useState<string>('');
   const [setupPreviousBalanceDueDate, setSetupPreviousBalanceDueDate] = useState<string>('');
@@ -139,8 +141,11 @@ const CustomersPage: React.FC = () => {
         setNotice(`${response.deleted} client record(s) archived.`);
         setCustomers((previous) => previous.filter((customer) => !selectedIds.has(customer.id)));
       } else {
-        if (clientSetupAction === 'billing_due_date' && !setupDueDate) {
+        if (clientSetupAction === 'installation_date' && !setupInstallationDate) {
           throw new Error('Choose the clients’ original installation date.');
+        }
+        if (clientSetupAction === 'billing_due_date' && !setupDueDay) {
+          throw new Error('Choose the clients’ monthly billing due day.');
         }
         if (clientSetupAction === 'previous_balance' && (!setupPreviousBalance || !setupPreviousBalanceDueDate)) {
           throw new Error('Enter the previous balance and its due date.');
@@ -155,8 +160,11 @@ const CustomersPage: React.FC = () => {
         const response = await customerService.bulkSetupCustomers({
           customer_ids: selectedCustomerIds,
           action: clientSetupAction,
+          ...(clientSetupAction === 'installation_date' ? {
+            installation_date: setupInstallationDate,
+          } : {}),
           ...(clientSetupAction === 'billing_due_date' ? {
-            due_date: setupDueDate,
+            billing_cycle_day: Number(setupDueDay),
             update_open_invoices: setupUpdatesOpenInvoices,
           } : {}),
           ...(clientSetupAction === 'previous_balance' ? {
@@ -552,7 +560,8 @@ const CustomersPage: React.FC = () => {
                   onChange={(event) => setClientSetupAction(event.target.value as ClientSetupAction | 'delete')}
                   className="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="billing_due_date">Set installation date & monthly due day</option>
+                  <option value="billing_due_date">Set monthly billing due day</option>
+                  <option value="installation_date">Set original installation date</option>
                   <option value="address_updates">Update selected client addresses</option>
                   <option value="previous_balance">Add previous bill balance</option>
                   <option value="discount">Add discount to open invoices</option>
@@ -563,16 +572,18 @@ const CustomersPage: React.FC = () => {
                 {clientSetupAction === 'billing_due_date' && (
                   <div className="mt-4 space-y-3">
                     <label className="block text-sm font-medium text-foreground">
-                      Original installation date
-                      <input
-                        type="date"
-                        value={setupDueDate}
-                        onChange={(event) => setSetupDueDate(event.target.value)}
+                      Monthly due day
+                      <select
+                        value={setupDueDay}
+                        onChange={(event) => setSetupDueDay(event.target.value)}
                         className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
+                      >
+                        <option value="">Select due day</option>
+                        {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{monthlyDueDateLabel(day).replace('Due date: every ', '')}</option>)}
+                      </select>
                     </label>
                     <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                      This is the billing reference. For example, selecting August 1, 2026 saves the installation date as August 1, 2026 and makes the monthly due day the 1st. Existing records never use today as a replacement date.
+                      This updates the real <code>billing_cycle_day</code> only. It does not alter the historical installation date. For example, choosing the 20th bills this client every 20th of the month.
                     </p>
                     <label className="flex items-start gap-2 text-sm text-foreground">
                       <input
@@ -583,6 +594,23 @@ const CustomersPage: React.FC = () => {
                       />
                       <span>Also move each selected client’s open invoice to the next occurrence of this monthly due day.</span>
                     </label>
+                  </div>
+                )}
+
+                {clientSetupAction === 'installation_date' && (
+                  <div className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-foreground">
+                      Original installation date
+                      <input
+                        type="date"
+                        value={setupInstallationDate}
+                        onChange={(event) => setSetupInstallationDate(event.target.value)}
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </label>
+                    <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                      This changes the historical installation record only. The client&apos;s real monthly billing due day remains unchanged.
+                    </p>
                   </div>
                 )}
 

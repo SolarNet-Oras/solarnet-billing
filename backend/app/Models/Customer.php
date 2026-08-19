@@ -134,25 +134,31 @@ class Customer extends Model
     }
 
     /**
-     * The installation anniversary is the authoritative monthly billing day.
-     *
-     * `billing_cycle_day` remains only as a compatibility fallback for older
-     * records that genuinely have no installation date. New and migrated
-     * customers must use their recorded installation date as the source of
-     * their monthly due date.
+     * The explicitly configured monthly due day is authoritative. Installation
+     * date records when the service started; it must not silently overwrite an
+     * agreed billing due day for an existing subscriber.
      */
     public function billingCycleDay(): ?int
     {
-        if ($this->installation_date) {
-            return $this->installation_date->day;
-        }
-
         $configuredDay = (int) ($this->billing_cycle_day ?? 0);
         if ($configuredDay >= 1 && $configuredDay <= 31) {
             return $configuredDay;
         }
 
-        return null;
+        return $this->installation_date?->day;
+    }
+
+    /** New records default their due day to their installation day only once. */
+    protected static function booted(): void
+    {
+        static::creating(function (self $customer): void {
+            $configuredDay = (int) ($customer->billing_cycle_day ?? 0);
+            if (($configuredDay >= 1 && $configuredDay <= 31) || ! $customer->installation_date) {
+                return;
+            }
+
+            $customer->billing_cycle_day = Carbon::parse($customer->installation_date)->day;
+        });
     }
 
     /**
