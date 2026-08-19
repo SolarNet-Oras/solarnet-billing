@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\OltSnmpController;
 use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
+use App\Http\Controllers\Api\V1\FinancialMonitoringController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
@@ -295,6 +296,11 @@ Route::prefix('v1')->group(function () {
         Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');
         Route::post('transaction-definitions', [FinancialEntryController::class, 'createDefinition'])->middleware('permission:edit-settings');
         Route::delete('transaction-definitions/{transactionDefinition}', [FinancialEntryController::class, 'deactivateDefinition'])->middleware('permission:edit-settings');
+
+        // Read-only operational finance monitoring. Sidebar visibility is not
+        // relied on for access control; the endpoint is role-gated as well.
+        Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
+            ->middleware('role:super_admin|admin|cashier');
         
         // Ticket routes (require permission)
         Route::middleware(['permission:view-tickets'])->group(function () {

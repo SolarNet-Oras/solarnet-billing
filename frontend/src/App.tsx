@@ -30,6 +30,7 @@ import SuspendedAccountPage from '@/pages/SuspendedAccountPage';
 import RemittancesPage from '@/pages/RemittancesPage';
 import ClientMigrationPage from '@/pages/ClientMigrationPage';
 import RadiusIpOePage from '@/pages/RadiusIpOePage';
+import FinancialMonitoringPage from '@/pages/FinancialMonitoringPage';
 
 // ============================================================================
 // Main App Component
@@ -136,6 +137,10 @@ const App: React.FC = (): JSX.Element => {
               <Route
                 path="/operations"
                 element={<ProtectedRoute><OperationsLedgerPage /></ProtectedRoute>}
+              />
+              <Route
+                path="/financial-monitoring"
+                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier']}><FinancialMonitoringPage /></ProtectedRoute>}
               />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />

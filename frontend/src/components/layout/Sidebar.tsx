@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   ClipboardList,
+  ChartNoAxesCombined,
   LayoutDashboard,
   Moon,
   Network,
@@ -43,6 +44,7 @@ const navItems: NavItem[] = [
   { name: 'Billing', path: '/billing', icon: PhilippinePeso, permission: 'view-invoices' },
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
+  { name: 'Financial Monitoring', path: '/financial-monitoring', icon: ChartNoAxesCombined, roles: ['super_admin', 'admin', 'cashier'] },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },

@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use App\Services\Ai\Tools\GetCustomerDetailsTool;
+use App\Services\Ai\Tools\GetFinancialMonitoringTool;
 use App\Services\Ai\Tools\GetNetworkStatusTool;
 use App\Services\Ai\Tools\ListCustomersTool;
 use App\Services\Ai\Tools\ListSourceFilesTool;
@@ -23,9 +24,10 @@ class AiToolRegistry
     /** @var array<string, AiTool> */
     protected array $tools = [];
 
-    public function __construct()
+    public function __construct(\App\Services\FinancialMonitoringService $financialMonitoring)
     {
         $this->register(new GetNetworkStatusTool());
+        $this->register(new GetFinancialMonitoringTool($financialMonitoring));
         $this->register(new ListCustomersTool());
         $this->register(new GetCustomerDetailsTool());
         $this->register(new SearchByMacOrIpTool());
