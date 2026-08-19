@@ -4,6 +4,7 @@ import {
   ClipboardList,
   ChartNoAxesCombined,
   LayoutDashboard,
+  MapPinned,
   Moon,
   Network,
   Radio,
@@ -48,6 +49,7 @@ const navItems: NavItem[] = [
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
+  { name: 'Operations Map', path: '/operations-map', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin', 'technician', 'noc'] },
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'RADIUS / IPoE', path: '/radius-ipoe', icon: Radio, roles: ['super_admin', 'admin'] },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
@@ -103,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard').map((item) => {
+          {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard' || item.path === '/operations-map').map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);

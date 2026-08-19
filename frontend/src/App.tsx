@@ -31,6 +31,7 @@ import RemittancesPage from '@/pages/RemittancesPage';
 import ClientMigrationPage from '@/pages/ClientMigrationPage';
 import RadiusIpOePage from '@/pages/RadiusIpOePage';
 import FinancialMonitoringPage from '@/pages/FinancialMonitoringPage';
+import OperationsMapPage from '@/pages/OperationsMapPage';
 
 // ============================================================================
 // Main App Component
@@ -141,6 +142,10 @@ const App: React.FC = (): JSX.Element => {
               <Route
                 path="/financial-monitoring"
                 element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'accounting']}><FinancialMonitoringPage /></ProtectedRoute>}
+              />
+              <Route
+                path="/operations-map"
+                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin', 'technician', 'noc']}><OperationsMapPage /></ProtectedRoute>}
               />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />

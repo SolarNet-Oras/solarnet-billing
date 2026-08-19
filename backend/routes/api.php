@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\FinancialMonitoringController;
+use App\Http\Controllers\Api\V1\OperationsMapController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
@@ -301,6 +302,17 @@ Route::prefix('v1')->group(function () {
         // relied on for access control; the endpoint is role-gated as well.
         Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
             ->middleware('role:super_admin|admin|cashier|accounting');
+
+        // Operations Map reads saved GPS points and the latest stored DHCP
+        // lease state only. Asset writes are geographic field references and
+        // never alter MikroTik, OLT, DHCP, queues, or billing.
+        Route::get('operations-map', [OperationsMapController::class, 'index'])
+            ->middleware('role:super_admin|admin|office_admin|technician|noc');
+        Route::middleware('role:super_admin|admin|technician|noc')->group(function () {
+            Route::post('operations-map/assets', [OperationsMapController::class, 'store']);
+            Route::put('operations-map/assets/{operationsMapAsset}', [OperationsMapController::class, 'update']);
+            Route::delete('operations-map/assets/{operationsMapAsset}', [OperationsMapController::class, 'destroy']);
+        });
         
         // Ticket routes (require permission)
         Route::middleware(['permission:view-tickets'])->group(function () {
