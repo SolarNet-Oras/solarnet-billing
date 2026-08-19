@@ -5,6 +5,7 @@ import api from '@/services/api';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { routerService, type Router } from '@/services/routerService';
 import type { Customer } from '@/types/api';
+import { monthlyDueDateLabel } from '@/lib/billingCycle';
 import { Activity, Ban, CheckCircle2, Crosshair, MapPin, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
 
 interface DhcpLease {
@@ -351,7 +352,10 @@ const EditCustomerPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Service Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Installation Date *" name="installation_date" value={formData.installation_date} onChange={handleChange} type="date" required testId="edit-installation-date" />
+              <div>
+                <Field label="Installation Date *" name="installation_date" value={formData.installation_date} onChange={handleChange} type="date" required testId="edit-installation-date" />
+                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(formData.installation_date)}</p>
+              </div>
               <Field label="Monthly Fee (₱) *" name="monthly_fee" value={formData.monthly_fee} onChange={handleChange} type="number" required testId="edit-monthly-fee" />
 
               <div>
