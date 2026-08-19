@@ -12,6 +12,7 @@ use App\Services\DhcpSyncService;
 use App\Services\MikrotikService;
 use App\Services\InvoiceService;
 use App\Services\QueueService;
+use App\Services\TechnicianMacMatchService;
 use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,7 +34,7 @@ class UnregisteredLeaseController extends Controller
     protected CustomerAccountService $accountService;
     protected QueueService $queueService;
 
-    public function __construct(CustomerAccountService $accountService, QueueService $queueService, protected InvoiceService $invoiceService)
+    public function __construct(CustomerAccountService $accountService, QueueService $queueService, protected InvoiceService $invoiceService, protected TechnicianMacMatchService $technicianMacMatchService)
     {
         $this->accountService = $accountService;
         $this->queueService   = $queueService;
@@ -108,11 +109,11 @@ class UnregisteredLeaseController extends Controller
     /**
      * Register a field-installed client from the technician dashboard.
      *
-     * Exact MAC matches bind immediately. A one-character MAC discrepancy
-     * (11/12 positions, at least 90% identical) returns a confirmation
-     * preview; the technician must explicitly confirm before binding. If no
-     * current lease exists, the registration is saved as pending and DHCP
-     * sync will bind it later on an exact MAC match.
+     * Exact MAC matches bind immediately. A unique unregistered lease that
+     * differs only in the final MAC character is automatically corrected to
+     * the MikroTik MAC. Other 90%+ fuzzy matches still require explicit
+     * confirmation. If no current lease exists, the registration is saved as
+     * pending and DHCP sync will bind it later on an exact MAC match.
      */
     public function technicianRegister(Request $request): JsonResponse
     {
@@ -178,15 +179,10 @@ class UnregisteredLeaseController extends Controller
             ->map(function (DhcpLease $lease) use ($inputMac) {
                 $leaseMac = $this->normalizeMacForMatch($lease->mac_address);
                 if (!$leaseMac) return null;
-
-                $samePositions = 0;
-                $inputBytes = str_replace(':', '', $inputMac);
-                $leaseBytes = str_replace(':', '', $leaseMac);
-                for ($index = 0; $index < 12; $index++) {
-                    if ($inputBytes[$index] === $leaseBytes[$index]) $samePositions++;
-                }
-                $lease->mac_match_score = round(($samePositions / 12) * 100, 1);
-                $lease->mac_match_type = $samePositions === 12 ? 'exact' : 'fuzzy_90_plus';
+                $comparison = $this->technicianMacMatchService->compare($inputMac, $leaseMac);
+                $lease->mac_match_score = $comparison['score'];
+                $lease->mac_match_type = $comparison['type'];
+                $lease->mac_corrected_from_input = $comparison['type'] === 'last_character_correction';
                 return $lease;
             })
             ->filter(fn (?DhcpLease $lease) => $lease && $lease->mac_match_score >= 90)
@@ -249,7 +245,7 @@ class UnregisteredLeaseController extends Controller
         }
 
         $lease = $best->first();
-        if ($lease->mac_match_type !== 'exact' && !$request->boolean('confirm_fuzzy_match')) {
+        if ($lease->mac_match_type === 'fuzzy_90_plus' && !$request->boolean('confirm_fuzzy_match')) {
             return response()->json([
                 'success' => false,
                 'requires_confirmation' => true,
@@ -279,6 +275,12 @@ class UnregisteredLeaseController extends Controller
                 'score' => (float) $lease->mac_match_score,
                 'lease_mac' => $lease->mac_address,
                 'entered_mac' => $inputMac,
+            ],
+            'mac_correction' => [
+                'applied' => (bool) ($lease->mac_corrected_from_input ?? false),
+                'entered_mac' => $inputMac,
+                'mikrotik_mac' => $lease->mac_address,
+                'reason' => 'The only discrepancy was the final MAC character; the current MikroTik lease MAC was used.',
             ],
         ]));
         return $response;
