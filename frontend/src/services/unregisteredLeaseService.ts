@@ -31,12 +31,32 @@ export interface UnregisteredLease {
 }
 
 export interface QuickRegisterPayload {
+  /** Links the current DHCP lease to an existing customer instead of creating one. */
+  existing_customer_id?: string;
   full_name?: string;
   service_plan_id?: string;
   contact_number?: string;
   address?: string;
   email?: string;
   monthly_fee?: number;
+}
+
+export interface CustomerLinkCandidate {
+  id: string;
+  account_number: string;
+  full_name: string;
+  address: string;
+  status: 'active' | 'suspended' | 'expired';
+  service_plan_id: string | null;
+  monthly_fee: number;
+  mac_address: string | null;
+  service_plan?: {
+    id: string;
+    name: string;
+    price: number;
+    download_speed: number;
+    upload_speed: number;
+  } | null;
 }
 
 export interface QuickRegisterResponse {
@@ -70,6 +90,14 @@ export const unregisteredLeaseService = {
   async listDynamic(): Promise<UnregisteredLease[]> {
     const response = await api.get<{ success: boolean; data: UnregisteredLease[] }>(
       '/unregistered-leases/dynamic'
+    );
+    return response.data.data;
+  },
+
+  /** Existing customer accounts that may receive an unregistered DHCP lease. */
+  async customerLinkCandidates(): Promise<CustomerLinkCandidate[]> {
+    const response = await api.get<{ success: boolean; data: CustomerLinkCandidate[] }>(
+      '/unregistered-leases/customer-link-candidates'
     );
     return response.data.data;
   },

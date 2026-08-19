@@ -107,6 +107,35 @@ class UnregisteredLeaseController extends Controller
     }
 
     /**
+     * Customers that may be linked to an unregistered DHCP lease. This is a
+     * small purpose-built list so a DHCP administrator does not need the
+     * general customer-list permission just to bind replacement hardware.
+     */
+    public function customerLinkCandidates(Request $request): JsonResponse
+    {
+        $search = trim((string) $request->input('search', ''));
+
+        $customers = Customer::query()
+            ->with('servicePlan:id,name,price,download_speed,upload_speed')
+            ->where('status', '!=', 'pending')
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($nested) use ($search) {
+                    $nested->where('full_name', 'ilike', "%{$search}%")
+                        ->orWhere('account_number', 'ilike', "%{$search}%")
+                        ->orWhere('address', 'ilike', "%{$search}%");
+                });
+            })
+            ->orderBy('full_name')
+            ->limit(100)
+            ->get(['id', 'account_number', 'full_name', 'address', 'status', 'service_plan_id', 'monthly_fee', 'mac_address']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $customers,
+        ]);
+    }
+
+    /**
      * Register a field-installed client from the technician dashboard.
      *
      * Exact MAC matches bind immediately. A unique unregistered lease that
@@ -311,6 +340,7 @@ class UnregisteredLeaseController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            'existing_customer_id' => 'nullable|uuid|exists:customers,id',
             'full_name'       => 'nullable|string|max:255',
             'service_plan_id' => 'nullable|exists:service_plans,id',
             'contact_number'  => 'nullable|string|max:20',
@@ -341,21 +371,52 @@ class UnregisteredLeaseController extends Controller
             ], 422);
         }
 
+        if (! $lease->is_current || $lease->status !== 'bound' || ! $lease->router || ! $lease->mac_address) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This DHCP lease is no longer a current bound lease. Refresh MikroTik leases and try again; no customer was changed.',
+            ], 422);
+        }
+
+        $existingCustomerId = $request->input('existing_customer_id');
+        $existingCustomer = null;
+        if ($existingCustomerId) {
+            $existingCustomer = Customer::query()
+                ->with('servicePlan')
+                ->whereKey($existingCustomerId)
+                ->where('status', '!=', 'pending')
+                ->first();
+
+            if (! $existingCustomer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Choose an existing registered customer. Pending applications must be approved through the installation workflow.',
+                ], 422);
+            }
+            if (! $existingCustomer->servicePlan) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The selected customer has no service plan. Set their plan on the customer record before binding this DHCP lease.',
+                ], 422);
+            }
+        }
+
         // Snapshot lease's ORIGINAL MikroTik state BEFORE we mutate anything.
         // A "static + commented" lease keeps its MikroTik comment. A dynamic or
         // uncommented lease gets the customer's name pushed to MikroTik as comment.
         $originalComment    = trim((string) ($lease->comment ?? ''));
         $wasStaticCommented = !$lease->is_dynamic && $originalComment !== '';
 
-        $fullName = $request->input('full_name') ?: ($originalComment !== '' ? $originalComment : ('Client ' . substr($lease->mac_address, -5)));
+        $fullName = $existingCustomer?->full_name
+            ?: ($request->input('full_name') ?: ($originalComment !== '' ? $originalComment : ('Client ' . substr($lease->mac_address, -5))));
         $plans    = ServicePlan::where('is_active', true)->get();
-        $planId   = $request->input('service_plan_id');
+        $planId   = $existingCustomer?->service_plan_id ?: $request->input('service_plan_id');
         if (!$planId) {
             $suggested = $this->matchPlanByRateLimit($lease->rate_limit, $plans);
             $planId    = $suggested['id'] ?? null;
         }
         $plan       = $planId ? ServicePlan::find($planId) : null;
-        $monthlyFee = $request->input('monthly_fee', $plan?->price ?? 0);
+        $monthlyFee = $existingCustomer ? (float) $existingCustomer->monthly_fee : $request->input('monthly_fee', $plan?->price ?? 0);
 
         // Business rule: rate-limit is ALWAYS derived from the plan (nearest match).
         // Only falls back to the lease's existing rate-limit if no plan is picked.
@@ -364,7 +425,51 @@ class UnregisteredLeaseController extends Controller
             : ($lease->rate_limit ?: null);
 
         try {
-            $registration = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment) {
+            $registration = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment, $existingCustomerId) {
+                if ($existingCustomerId) {
+                    $customer = Customer::query()
+                        ->with('servicePlan')
+                        ->lockForUpdate()
+                        ->whereKey($existingCustomerId)
+                        ->where('status', '!=', 'pending')
+                        ->firstOrFail();
+
+                    if (! $customer->servicePlan) {
+                        throw new \RuntimeException('The selected customer has no service plan. Set their plan before binding this DHCP lease.');
+                    }
+
+                    // A selected existing account is a hardware binding only.
+                    // Its name, contact, address, installation date, due day,
+                    // plan, fee, invoices, and credits are intentionally kept.
+                    // Any still-current old lease is detached locally so the
+                    // account has one authoritative active DHCP identity.
+                    DhcpLease::query()
+                        ->where('customer_id', $customer->id)
+                        ->where('id', '!=', $lease->id)
+                        ->presentOnRouter()
+                        ->update([
+                            'customer_id' => null,
+                            'is_matched' => false,
+                            'match_source' => null,
+                            'match_note' => 'Local customer lease link replaced after an administrator selected a new DHCP lease.',
+                        ]);
+
+                    $customer->update([
+                        'router_id' => $lease->router_id,
+                        'mac_address' => $lease->mac_address,
+                        'ip_address' => $lease->ip_address,
+                        'mac_binding_status' => 'matched',
+                    ]);
+                    $lease->update([
+                        'customer_id' => $customer->id,
+                        'is_matched' => true,
+                        'match_source' => 'existing_customer_link',
+                        'match_note' => 'Exact current DHCP lease linked to an existing customer from Unregistered Clients.',
+                    ]);
+
+                    return ['customer' => $customer->fresh(), 'opening_invoice' => null, 'linked_existing' => true];
+                }
+
                 $installationDate = $request->filled('installation_date') ? \Carbon\Carbon::parse($request->input('installation_date'))->startOfDay() : now()->startOfDay();
                 $customer = Customer::create([
                     'account_number'    => $this->generateAccountNumber(),
@@ -395,6 +500,8 @@ class UnregisteredLeaseController extends Controller
                 $lease->update([
                     'customer_id' => $customer->id,
                     'is_matched'  => true,
+                    'match_source' => 'quick_register',
+                    'match_note' => 'Customer created from a current unregistered DHCP lease.',
                 ]);
 
                 $openingInvoice = $this->invoiceService->createMigrationOpeningBalanceInvoice(
@@ -405,10 +512,11 @@ class UnregisteredLeaseController extends Controller
                     $request->filled('migration_due_date') ? \Carbon\Carbon::parse($request->input('migration_due_date'))->startOfDay() : null,
                 );
 
-                return ['customer' => $customer, 'opening_invoice' => $openingInvoice];
+                return ['customer' => $customer, 'opening_invoice' => $openingInvoice, 'linked_existing' => false];
             });
             $customer = $registration['customer'];
             $openingInvoice = $registration['opening_invoice'];
+            $linkedExisting = $registration['linked_existing'];
         } catch (\Throwable $e) {
             Log::error('Failed to convert lease to customer', [
                 'lease_id' => $lease->id,
@@ -424,7 +532,7 @@ class UnregisteredLeaseController extends Controller
 
         // Optional: provision portal credentials + welcome email if email present
         $portalCreds = null;
-        if (!empty($customer->email)) {
+        if (! $linkedExisting && !empty($customer->email)) {
             try {
                 $plain = $this->accountService->provisionPortalCredentials($customer);
                 $sent  = $this->accountService->sendWelcomeEmail($customer, $plain);
@@ -448,10 +556,11 @@ class UnregisteredLeaseController extends Controller
         $mikrotikResult = null;
         if ($lease->router && $lease->mac_address) {
             try {
-                // Commented static leases keep their MikroTik comment intact.
-                // Dynamic/uncommented leases receive the customer's name.
-                $mikrotikComment  = $wasStaticCommented ? $originalComment : $customer->full_name;
-                $preserveComment  = $wasStaticCommented;
+                // A link to an existing account must always show that account
+                // name on RouterOS. A one-click new registration preserves a
+                // deliberate existing static comment as before.
+                $preserveComment = $wasStaticCommented && ! $linkedExisting;
+                $mikrotikComment = $preserveComment ? $originalComment : $customer->full_name;
 
                 $mikrotikResult = app(MikrotikService::class)->updateOrMakeStaticLease(
                     $lease->router,
@@ -475,7 +584,7 @@ class UnregisteredLeaseController extends Controller
             // Reflect the FINAL state locally: is_dynamic=false, rate_limit=plan-forced,
             // and comment reflects whichever comment we settled on (kept vs pushed).
             $lease->update([
-                'comment'    => $wasStaticCommented ? $originalComment : $customer->full_name,
+                'comment'    => ($wasStaticCommented && ! $linkedExisting) ? $originalComment : $customer->full_name,
                 'rate_limit' => $rateLimit,
                 'is_dynamic' => false,
             ]);
@@ -483,14 +592,15 @@ class UnregisteredLeaseController extends Controller
 
         return response()->json([
             'success'            => true,
-            'message'            => 'Client registered from DHCP lease',
+            'message'            => $linkedExisting ? 'Existing customer linked to DHCP lease' : 'Client registered from DHCP lease',
             'data'               => $customer->load(['servicePlan', 'router']),
             'portal_credentials' => $portalCreds,
             'mikrotik_sync'      => $mikrotikResult,
             'migration_opening_invoice' => $openingInvoice?->fresh(['items']),
             'business_rule'      => [
                 'was_static_commented'   => $wasStaticCommented,
-                'mikrotik_comment_kept'  => $wasStaticCommented,
+                'mikrotik_comment_kept'  => $wasStaticCommented && ! $linkedExisting,
+                'linked_existing_customer' => $linkedExisting,
                 'rate_limit_pushed'      => $rateLimit,
                 'plan_used'              => $plan?->name,
             ],

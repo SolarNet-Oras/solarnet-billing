@@ -220,6 +220,7 @@ Route::prefix('v1')->group(function () {
             Route::post('sync-all',                 [UnregisteredLeaseController::class, 'syncAll'])->middleware('permission:sync-dhcp');
             Route::get('static-commented',          [UnregisteredLeaseController::class, 'staticCommented'])->middleware('permission:view-dhcp');
             Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic'])->middleware('permission:view-dhcp');
+            Route::get('customer-link-candidates',  [UnregisteredLeaseController::class, 'customerLinkCandidates'])->middleware('permission:create-customers|manage-dhcp');
             Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister'])->middleware('permission:create-customers|manage-dhcp');
         });
 

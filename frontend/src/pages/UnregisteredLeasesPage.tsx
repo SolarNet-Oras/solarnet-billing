@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { unregisteredLeaseService, type UnregisteredLease } from '@/services/unregisteredLeaseService';
+import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X } from 'lucide-react';
@@ -15,6 +15,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [dynamicLeases, setDynamicLeases] = useState<UnregisteredLease[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
   const [plans, setPlans] = useState<ServicePlan[]>([]);
+  const [customerLinkCandidates, setCustomerLinkCandidates] = useState<CustomerLinkCandidate[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
@@ -31,16 +32,18 @@ const UnregisteredLeasesPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [s, d, r, p] = await Promise.all([
+      const [s, d, r, p, customers] = await Promise.all([
         unregisteredLeaseService.listStaticCommented(),
         unregisteredLeaseService.listDynamic(),
         routerService.getAll().catch(() => [] as Router[]),
         servicePlanService.getAll().catch(() => [] as ServicePlan[]),
+        unregisteredLeaseService.customerLinkCandidates().catch(() => [] as CustomerLinkCandidate[]),
       ]);
       setStaticLeases(s);
       setDynamicLeases(d);
       setRouters(r);
       setPlans(p.filter((pl) => pl.is_active));
+      setCustomerLinkCandidates(customers);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to load DHCP leases');
     } finally {
@@ -67,13 +70,14 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const handleQuickRegister = async (
     lease: UnregisteredLease,
-    overrides?: { full_name?: string; service_plan_id?: string; monthly_fee?: number },
+    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number },
   ): Promise<void> => {
     setRegisteringId(lease.id);
     setError('');
     setNotice('');
     try {
       const res = await unregisteredLeaseService.quickRegister(lease.id, {
+        existing_customer_id: overrides?.existing_customer_id,
         full_name: overrides?.full_name ?? (lease.comment || undefined),
         service_plan_id: overrides?.service_plan_id ?? lease.suggested_plan?.id,
         monthly_fee: overrides?.monthly_fee ?? lease.suggested_plan?.price,
@@ -241,7 +245,7 @@ const UnregisteredLeasesPage: React.FC = () => {
           <StaticLeasesTable
             leases={filteredStaticLeases}
             routerName={routerName}
-            onRegister={handleQuickRegister}
+            onRegister={(lease) => setModalLease(lease)}
             registeringId={registeringId}
           />
         ) : (
@@ -258,6 +262,7 @@ const UnregisteredLeasesPage: React.FC = () => {
           <QuickRegisterModal
             lease={modalLease}
             plans={plans}
+            customers={customerLinkCandidates}
             busy={registeringId === modalLease.id}
             onClose={() => setModalLease(null)}
             onSubmit={(payload) => handleQuickRegister(modalLease, payload)}
@@ -512,14 +517,18 @@ const EmptyState: React.FC<{ icon: React.ReactNode; title: string; subtitle: str
 const QuickRegisterModal: React.FC<{
   lease: UnregisteredLease;
   plans: ServicePlan[];
+  customers: CustomerLinkCandidate[];
   busy: boolean;
   onClose: () => void;
-  onSubmit: (payload: { full_name: string; service_plan_id?: string; monthly_fee?: number }) => void;
-}> = ({ lease, plans, busy, onClose, onSubmit }) => {
+  onSubmit: (payload: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number }) => void;
+}> = ({ lease, plans, customers, busy, onClose, onSubmit }) => {
   const [fullName, setFullName] = useState<string>(
     lease.comment || lease.hostname || `Client ${lease.mac_address.slice(-5)}`
   );
-  const [planId, setPlanId] = useState<string>(plans[0]?.id ?? '');
+  const [planId, setPlanId] = useState<string>(lease.suggested_plan?.id ?? plans[0]?.id ?? '');
+  const [existingCustomerId, setExistingCustomerId] = useState<string>('');
+  const selectedCustomer = customers.find((customer) => customer.id === existingCustomerId);
+  const linkingExistingCustomer = Boolean(selectedCustomer);
   const chosenPlan = plans.find((p) => p.id === planId);
 
   return (
@@ -556,11 +565,46 @@ const QuickRegisterModal: React.FC<{
         </div>
 
         <div>
+          <label className="block text-sm font-medium mb-1.5">Link to an existing customer (optional)</label>
+          <select
+            value={existingCustomerId}
+            onChange={(event) => {
+              const selectedId = event.target.value;
+              const customer = customers.find((candidate) => candidate.id === selectedId);
+              setExistingCustomerId(selectedId);
+              if (customer) {
+                setFullName(customer.full_name);
+                setPlanId(customer.service_plan_id ?? '');
+              }
+            }}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid="quick-register-existing-customer"
+          >
+            <option value="">Create a new customer from this lease</option>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id} disabled={!customer.service_plan_id}>
+                {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Select a registered customer for an ONU/router replacement. Their billing profile, due date, plan, and balance stay unchanged.
+          </p>
+          {selectedCustomer && (
+            <div className="mt-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              <div className="font-medium text-foreground">{selectedCustomer.full_name} · {selectedCustomer.account_number}</div>
+              <div>{selectedCustomer.address || 'Address to be updated'}</div>
+            </div>
+          )}
+        </div>
+
+        <div>
           <label className="block text-sm font-medium mb-1.5">Full name</label>
           <input
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
+            disabled={linkingExistingCustomer}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             data-testid="quick-register-full-name"
           />
@@ -571,6 +615,7 @@ const QuickRegisterModal: React.FC<{
           <select
             value={planId}
             onChange={(e) => setPlanId(e.target.value)}
+            disabled={linkingExistingCustomer}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             data-testid="quick-register-plan"
           >
@@ -599,19 +644,20 @@ const QuickRegisterModal: React.FC<{
           </button>
           <button
             type="button"
-            disabled={busy || !fullName.trim()}
+            disabled={busy || (!linkingExistingCustomer && !fullName.trim())}
             onClick={() =>
               onSubmit({
-                full_name: fullName.trim(),
-                service_plan_id: planId || undefined,
-                monthly_fee: chosenPlan?.price,
+                existing_customer_id: existingCustomerId || undefined,
+                full_name: linkingExistingCustomer ? undefined : fullName.trim(),
+                service_plan_id: linkingExistingCustomer ? undefined : (planId || undefined),
+                monthly_fee: linkingExistingCustomer ? undefined : chosenPlan?.price,
               })
             }
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
             data-testid="quick-register-submit"
           >
             <UserPlus className="w-4 h-4" />
-            {busy ? 'Registering…' : 'Register + Push to MikroTik'}
+            {busy ? 'Saving…' : linkingExistingCustomer ? 'Link + Push to MikroTik' : 'Register + Push to MikroTik'}
           </button>
         </div>
       </div>
