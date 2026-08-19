@@ -31,6 +31,7 @@ class HistoricalDataCleanupService
         'past_transactions' => 'Past transaction records',
         'daily_operations' => 'Daily-operation entries',
         'invoices' => 'Historical paid/cancelled invoices',
+        'advance_credits' => 'Zero-balance test invoices and advance credits',
         'tickets' => 'Closed repair tickets',
         'liquidations' => 'Historical submitted/received remittances',
         'installation_applications' => 'Finished/rejected installation applications',
@@ -131,7 +132,7 @@ class HistoricalDataCleanupService
             'to_date' => $to->toDateString(),
             'modules' => $items,
             'customer_records_deleted' => 0,
-            'warning' => 'Customers, users, routers, leases, configuration, active invoices, and advance-credit payments are never deleted. To remove linked test payments, select Past transactions together with the matching Invoices and/or Liquidations module.',
+            'warning' => 'Customers, users, routers, leases, configuration, and active invoices are never deleted. To remove linked test payments, select Past transactions together with the matching Invoices and/or Liquidations module. Advance-credit payments remain protected unless you deliberately select Zero-balance test invoices and advance credits for confirmed dummy data.',
         ];
     }
 
@@ -145,6 +146,10 @@ class HistoricalDataCleanupService
         foreach (['daily_operations', 'tickets', 'installation_applications'] as $module) {
             if (isset($scopes[$module])) $deleted[$module] = $this->deleteScope($scopes[$module]);
         }
+
+        // Advance credit allocations must go before their payment rows. This is
+        // intentionally opt-in and date-bounded for confirmed dummy data only.
+        if (isset($scopes['advance_credits'])) $deleted['advance_credits'] = $this->deleteScope($scopes['advance_credits']);
 
         // A remittance with payments can be deleted only in coordinated test-data
         // cleanup, so payment rows are not left pointing to a removed header.
@@ -172,6 +177,7 @@ class HistoricalDataCleanupService
                 'past_transactions' => $this->transactionScope($modules, $from, $to),
                 'daily_operations' => FinancialEntry::query()->whereBetween('entry_date', [$from->toDateString(), $to->toDateString()]),
                 'invoices' => $this->invoiceScope($modules, $from, $to),
+                'advance_credits' => $this->advanceCreditScope($modules, $from, $to),
                 'tickets' => Ticket::query()->where('ticket_type', '!=', 'installation')->where('status', 'closed')->whereBetween('closed_at', [$from, $to]),
                 'liquidations' => $this->liquidationScope($modules, $from, $to),
                 'installation_applications' => Ticket::query()->where('ticket_type', 'installation')->whereIn('workflow_status', ['registered', 'rejected', 'cancelled'])->whereBetween('created_at', [$from, $to]),
@@ -189,21 +195,27 @@ class HistoricalDataCleanupService
                 ->whereNotIn('id', $this->invoiceScope($modules, $from, $to)->select('id'))->count(),
             'liquidations' => Remittance::query()->whereBetween('submitted_at', [$from, $to])
                 ->whereNotIn('id', $this->liquidationScope($modules, $from, $to)->select('id'))->count(),
+            'advance_credits' => CustomerCredit::query()
+                ->whereNotNull('payment_id')
+                ->whereIn('payment_id', Payment::query()->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])->select('id'))
+                ->whereNotIn('id', $this->advanceCreditScope($modules, $from, $to)->select('id'))
+                ->count(),
             default => 0,
         };
     }
 
     private function transactionScope(array $modules, Carbon $from, Carbon $to)
     {
-        return Payment::query()
-            ->whereNotIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'))
+        $scope = Payment::query()
             ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
             ->where(function ($query) use ($modules, $from, $to) {
                 $query->whereNull('invoice_id');
                 if (in_array('invoices', $modules, true)) {
                     $query->orWhereHas('invoice', fn ($invoice) => $invoice
-                        ->whereIn('status', ['paid', 'cancelled'])
-                        ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]));
+                        ->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()])
+                        ->where(fn ($eligible) => $eligible
+                            ->whereIn('status', ['paid', 'cancelled'])
+                            ->orWhere('balance', '<=', 0)));
                 }
             })
             ->where(function ($query) use ($modules, $from, $to) {
@@ -212,16 +224,32 @@ class HistoricalDataCleanupService
                     $query->orWhereHas('remittance', fn ($remittance) => $remittance->whereBetween('submitted_at', [$from, $to]));
                 }
             });
+
+        if (! in_array('advance_credits', $modules, true)) {
+            $scope->whereNotIn('id', CustomerCredit::query()->whereNotNull('payment_id')->select('payment_id'));
+        }
+
+        return $scope;
     }
 
     private function invoiceScope(array $modules, Carbon $from, Carbon $to)
     {
         $scope = Invoice::query()->whereBetween('issue_date', [$from->toDateString(), $to->toDateString()]);
         if (in_array('past_transactions', $modules, true)) {
-            return $scope->whereIn('status', ['paid', 'cancelled'])
+            return $scope->where(function ($query) {
+                $query->whereIn('status', ['paid', 'cancelled'])
+                    ->orWhere('balance', '<=', 0);
+            })
                 ->whereDoesntHave('payments', fn ($payment) => $payment->whereNotIn('id', $this->transactionScope($modules, $from, $to)->select('id')));
         }
         return $scope->where('status', 'cancelled')->whereDoesntHave('payments');
+    }
+
+    private function advanceCreditScope(array $modules, Carbon $from, Carbon $to)
+    {
+        return CustomerCredit::query()
+            ->whereNotNull('payment_id')
+            ->whereIn('payment_id', $this->transactionScope($modules, $from, $to)->select('id'));
     }
 
     private function liquidationScope(array $modules, Carbon $from, Carbon $to)
@@ -246,6 +274,10 @@ class HistoricalDataCleanupService
     {
         $modules = array_values(array_unique(array_filter($modules, fn ($module) => array_key_exists($module, self::MODULES))));
         if ($modules === []) throw new RuntimeException('Select at least one cleanup module.');
+        if (in_array('advance_credits', $modules, true)
+            && (! in_array('past_transactions', $modules, true) || ! in_array('invoices', $modules, true))) {
+            throw new RuntimeException('Select both Past transactions and Historical invoices before removing zero-balance test invoices and advance credits.');
+        }
         return $modules;
     }
 

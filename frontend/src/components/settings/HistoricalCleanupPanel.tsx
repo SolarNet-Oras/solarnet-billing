@@ -10,7 +10,8 @@ import {
 const MODULES: Array<{ value: HistoricalCleanupModule; label: string; detail: string }> = [
   { value: 'past_transactions', label: 'Past transactions', detail: 'Select with Invoices and Liquidations to remove linked test payment bundles.' },
   { value: 'daily_operations', label: 'Daily-operation records', detail: 'Historical operational entries only.' },
-  { value: 'invoices', label: 'Historical invoices', detail: 'Paid/cancelled invoices whose selected-range payments are also removed.' },
+  { value: 'invoices', label: 'Historical invoices', detail: 'Paid/cancelled invoices, plus selected zero-balance test invoices when their linked payments are also removed.' },
+  { value: 'advance_credits', label: 'Zero-balance test invoices & advance credits', detail: 'Confirmed dummy data only. Select with both Past transactions and Historical invoices to remove advance-credit payments and zero-balance invoices in the same date range.' },
   { value: 'tickets', label: 'Closed repair tickets', detail: 'Closed repair tickets and their child comments/history.' },
   { value: 'liquidations', label: 'Historical remittances', detail: 'Select with Past transactions to remove its linked test payments safely.' },
   { value: 'installation_applications', label: 'Finished or rejected installation applications', detail: 'The application ticket only; never the customer.' },

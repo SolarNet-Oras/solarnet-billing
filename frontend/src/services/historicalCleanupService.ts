@@ -2,7 +2,7 @@ import api from './api';
 
 export const HISTORICAL_CLEANUP_CONFIRMATION = 'DELETE HISTORICAL DATA';
 
-export type HistoricalCleanupModule = 'past_transactions' | 'daily_operations' | 'invoices' | 'tickets' | 'liquidations' | 'installation_applications';
+export type HistoricalCleanupModule = 'past_transactions' | 'daily_operations' | 'invoices' | 'advance_credits' | 'tickets' | 'liquidations' | 'installation_applications';
 
 export interface CleanupPreview {
   preview_token: string;
