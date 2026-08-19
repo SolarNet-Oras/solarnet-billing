@@ -362,21 +362,21 @@ export default function CyberSecurityPage() {
             <p className="mt-4 text-xs text-slate-500">Last RouterOS sample: <span className="font-medium text-slate-300">{formatDateTime(latestRead)}</span> · animated particles are driven by aggregate RX/TX counters, which can include bridges and VLANs. DNS and VPN are topology paths until explicitly inspected.</p>
           </article>
 
-          <article className="rounded-2xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-5">
-            <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl border border-amber-300/30 bg-amber-400/10 text-amber-200"><ScanSearch className="h-5 w-5" /></span><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Manual threat review</p><h2 className="mt-1 text-xl font-bold text-white">Run a safe connection scan</h2></div></div>
-            <p className="mt-4 text-sm leading-6 text-slate-400">The scan compares a bounded sample of active RouterOS connections against the configured threat feed. It records a possible match only; it does not scan customer devices and it does not block an IP automatically.</p>
-            <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Router to inspect</label>
-            <select value={selectedRouterId} onChange={(event) => { setSelectedRouterId(event.target.value); setBaseline(null); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-white outline-none transition focus:border-cyan-300">
+          <article className="rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-3 sm:p-4">
+            <div className="flex items-start gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-amber-300/30 bg-amber-400/10 text-amber-200"><ScanSearch className="h-4 w-4" /></span><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">Manual threat review</p><h2 className="mt-0.5 text-base font-bold text-white">Run a safe connection scan</h2></div></div>
+            <p className="mt-3 text-xs leading-5 text-slate-400">Compares a bounded RouterOS connection sample with the configured threat feed. It records candidates only—no device scan and no automatic block.</p>
+            <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Router to inspect</label>
+            <select value={selectedRouterId} onChange={(event) => { setSelectedRouterId(event.target.value); setBaseline(null); }} className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300">
               <option value="">Select a router</option>
               {routers.map((router) => <option key={router.id} value={router.id}>{router.name} · {router.connection_status}</option>)}
             </select>
-            <button type="button" onClick={() => void scanSelectedRouter()} disabled={scanning || !selectedRouter} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={() => void scanSelectedRouter()} disabled={scanning || !selectedRouter} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50">
               <ScanSearch className={`h-4 w-4 ${scanning ? 'animate-pulse' : ''}`} /> {scanning ? 'Scanning live connections…' : 'Run read-only threat scan'}
             </button>
-            <button type="button" onClick={() => void inspectSecurityBaseline()} disabled={baselineLoading || !selectedRouter} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={() => void inspectSecurityBaseline()} disabled={baselineLoading || !selectedRouter} className="mt-1.5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50">
               <ShieldCheck className={`h-4 w-4 ${baselineLoading ? 'animate-pulse' : ''}`} /> {baselineLoading ? 'Inspecting RouterOS baseline…' : 'Inspect read-only security baseline'}
             </button>
-            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs leading-5 text-slate-400"><span className="font-semibold text-slate-200">Safety rule:</span> a pending observation needs explicit administrator review in Network Devices before any SolarNet-owned firewall entry is added.</div>
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5 text-[11px] leading-4 text-slate-400"><span className="font-semibold text-slate-200">Safety:</span> a pending observation needs explicit administrator review before a SolarNet-owned firewall entry is added.</div>
           </article>
         </div>
         </div>
