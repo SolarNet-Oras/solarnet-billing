@@ -33,6 +33,25 @@ export interface RadiusSubscriberRow {
   router: { id: string; name: string } | null;
 }
 
+export interface RadiusTestCandidate {
+  id: string;
+  account_number: string;
+  full_name: string;
+  status: string;
+  mac_address: string;
+  ip_address: string | null;
+  router: { id: string; name: string };
+  service_plan: { name: string; download_speed: number; upload_speed: number };
+  rate_limit: string;
+}
+
+export interface RadiusRouterCandidate {
+  id: string;
+  name: string;
+  suggested_source_ip: string | null;
+  connection_status: string | null;
+}
+
 export interface RadiusNasClient {
   id: string;
   router_id: string | null;
@@ -46,6 +65,17 @@ export interface RadiusNasClient {
   router: { id: string; name: string } | null;
 }
 
+export interface RadiusNasInput {
+  router_id: string | null;
+  name: string;
+  nas_address: string;
+  shortname: string;
+  shared_secret: string;
+  enabled: boolean;
+  test_mode: boolean;
+  source_verified: boolean;
+}
+
 export const radiusIpOeService = {
   async status(): Promise<RadiusConfigurationStatus> {
     const response = await api.get<{ success: boolean; data: RadiusConfigurationStatus }>('/radius/status');
@@ -54,6 +84,16 @@ export const radiusIpOeService = {
 
   async list(search = ''): Promise<RadiusSubscriberRow[]> {
     const response = await api.get<{ success: boolean; data: RadiusSubscriberRow[] }>('/radius/subscribers', { params: { search, per_page: 100 } });
+    return response.data.data;
+  },
+
+  async testCandidates(): Promise<RadiusTestCandidate[]> {
+    const response = await api.get<{ success: boolean; data: RadiusTestCandidate[] }>('/radius/test-candidates');
+    return response.data.data;
+  },
+
+  async routerCandidates(): Promise<RadiusRouterCandidate[]> {
+    const response = await api.get<{ success: boolean; data: RadiusRouterCandidate[] }>('/radius/router-candidates');
     return response.data.data;
   },
 
@@ -75,7 +115,7 @@ export const radiusIpOeService = {
     return response.data.data;
   },
 
-  async createNasClient(input: { name: string; nas_address: string; shortname: string; shared_secret: string; enabled: boolean; test_mode: boolean }): Promise<void> {
+  async createNasClient(input: RadiusNasInput): Promise<void> {
     await api.post('/radius/nas-clients', input);
   },
 

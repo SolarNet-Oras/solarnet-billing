@@ -120,6 +120,8 @@ Route::prefix('v1')->group(function () {
         // secret and no RouterOS write endpoint.
         Route::middleware('role:super_admin|admin')->prefix('radius')->group(function () {
             Route::get('status', [RadiusIpOeController::class, 'status']);
+            Route::get('test-candidates', [RadiusIpOeController::class, 'testCandidates']);
+            Route::get('router-candidates', [RadiusIpOeController::class, 'routerCandidates']);
             Route::get('subscribers', [RadiusIpOeController::class, 'index']);
             Route::get('subscribers/{customerId}', [RadiusIpOeController::class, 'show']);
             Route::post('subscribers/{customerId}/sync', [RadiusIpOeController::class, 'sync']);

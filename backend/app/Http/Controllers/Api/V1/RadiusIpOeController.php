@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\RadiusAuthorizationLog;
 use App\Models\RadiusNasClient;
 use App\Models\RadiusSubscriber;
+use App\Models\Router;
 use App\Services\FreeRadiusSqlSyncService;
 use App\Services\RadiusSubscriberService;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,88 @@ class RadiusIpOeController extends Controller
     public function status(): JsonResponse
     {
         return response()->json(['success' => true, 'data' => $this->radius->configurationStatus()]);
+    }
+
+    /**
+     * Returns only customers that already have every local prerequisite for a
+     * safe policy test. The administrator chooses a customer; the MAC, plan,
+     * router, and current IP are read from SolarNet rather than typed again.
+     */
+    public function testCandidates(): JsonResponse
+    {
+        $rows = Customer::query()
+            ->whereIn('status', ['active', 'suspended', 'expired'])
+            ->with([
+                'router:id,name,host,is_active',
+                'servicePlan:id,name,download_speed,upload_speed',
+            ])
+            ->select([
+                'id', 'account_number', 'full_name', 'status', 'mac_address',
+                'ip_address', 'router_id', 'service_plan_id',
+            ])
+            ->orderBy('full_name')
+            ->get()
+            ->map(function (Customer $customer): array {
+                $mac = RadiusSubscriberService::normalizeMac($customer->mac_address);
+                $rateLimit = RadiusSubscriberService::rateLimitFromPlan($customer->servicePlan);
+
+                return [
+                    'id' => $customer->id,
+                    'account_number' => $customer->account_number,
+                    'full_name' => $customer->full_name,
+                    'status' => $customer->status,
+                    'mac_address' => $mac,
+                    'ip_address' => $customer->ip_address,
+                    'router' => $customer->router ? [
+                        'id' => $customer->router->id,
+                        'name' => $customer->router->name,
+                    ] : null,
+                    'service_plan' => $customer->servicePlan ? [
+                        'name' => $customer->servicePlan->name,
+                        'download_speed' => (int) $customer->servicePlan->download_speed,
+                        'upload_speed' => (int) $customer->servicePlan->upload_speed,
+                    ] : null,
+                    'rate_limit' => $rateLimit,
+                ];
+            });
+
+        $macCounts = $rows->pluck('mac_address')->filter()->countBy();
+        $candidates = $rows
+            ->filter(fn (array $row) => $row['mac_address'] !== null
+                && ($macCounts[$row['mac_address']] ?? 0) === 1
+                && $row['router'] !== null
+                && $row['rate_limit'] !== null)
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $candidates,
+            'meta' => [
+                'eligible' => $candidates->count(),
+                'excluded' => $rows->count() - $candidates->count(),
+                'message' => 'Only clients with one complete MAC address, an assigned router, and a complete service plan are shown.',
+            ],
+        ]);
+    }
+
+    /** Read-only router choices used only to prefill an isolated NAS form. */
+    public function routerCandidates(): JsonResponse
+    {
+        $routers = Router::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'host', 'connection_status'])
+            ->map(fn (Router $router) => [
+                'id' => $router->id,
+                'name' => $router->name,
+                // A management hostname is not necessarily the packet source.
+                // Offer only a known literal IPv4 address as a suggestion; the
+                // administrator must still confirm the exact NAS source.
+                'suggested_source_ip' => filter_var($router->host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $router->host : null,
+                'connection_status' => $router->connection_status,
+            ]);
+
+        return response()->json(['success' => true, 'data' => $routers]);
     }
 
     public function index(Request $request): JsonResponse
@@ -112,6 +195,7 @@ class RadiusIpOeController extends Controller
             'shared_secret' => ['required', 'string', 'min:16', 'max:255'],
             'enabled' => ['required', 'boolean'],
             'test_mode' => ['required', 'boolean'],
+            'source_verified' => ['required', 'accepted'],
         ]);
         if (!$validated['test_mode']) {
             return response()->json([
@@ -119,6 +203,11 @@ class RadiusIpOeController extends Controller
                 'message' => 'Only an isolated test NAS can be approved in this release. Production RouterOS RADIUS rollout is intentionally blocked.',
             ], 422);
         }
+        unset($validated['source_verified']);
+        $validated['metadata'] = [
+            'source_verified_at' => now()->toIso8601String(),
+            'source_verified_by' => $request->user()?->id,
+        ];
         $nas = RadiusNasClient::create($validated);
         return response()->json([
             'success' => true,
