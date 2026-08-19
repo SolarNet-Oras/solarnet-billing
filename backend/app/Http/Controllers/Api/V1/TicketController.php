@@ -95,7 +95,15 @@ class TicketController extends Controller
 
     public function approveInstallation(Request $request, string $id): JsonResponse
     {
-        return response()->json(['message' => 'Installation approved and customer registered.', 'data' => $this->workflow->approveInstallation(Ticket::findOrFail($id), $request->user())]);
+        $data = $this->workflow->approveInstallation(Ticket::findOrFail($id), $request->user());
+        $mikrotik = $data['mikrotik_sync'] ?? null;
+
+        return response()->json([
+            'message' => ($mikrotik['success'] ?? false)
+                ? 'Installation approved, customer registered, and MikroTik lease/queue synchronized.'
+                : 'Installation approved and customer registered, but MikroTik synchronization needs attention: ' . ($mikrotik['message'] ?? 'unknown error'),
+            'data' => $data,
+        ]);
     }
 
     public function returnInstallation(Request $request, string $id): JsonResponse

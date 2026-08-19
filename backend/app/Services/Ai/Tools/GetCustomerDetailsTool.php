@@ -72,7 +72,28 @@ class GetCustomerDetailsTool implements AiTool
             ->latest('created_at')
             ->first();
         $openInvoiceDueDate = $unpaidInvoices->first()?->due_date;
-        $scheduledDueDate = $openInvoiceDueDate ? null : $customer->nextBillingDueDate();
+        // Some migrated customers predate installation dates and the later
+        // billing-cycle-day field. A previous invoice is a real billing
+        // record, so it can safely explain the monthly schedule to the AI
+        // without silently writing or altering the customer record.
+        $historicalInvoice = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->whereNotNull('due_date')
+            ->latest('due_date')
+            ->first(['due_date']);
+        $historicalDueDate = $historicalInvoice?->due_date;
+        $configuredCycleDay = $customer->billingCycleDay();
+        $historicalCycleDay = $historicalDueDate?->day;
+        $scheduledDueDate = $openInvoiceDueDate
+            ? null
+            : ($configuredCycleDay
+                ? $customer->nextBillingDueDate()
+                : ($historicalCycleDay ? $this->nextDueDateForDay($historicalCycleDay) : null));
+        $scheduledDueDateSource = $openInvoiceDueDate
+            ? 'open_invoice'
+            : ($configuredCycleDay
+                ? 'configured_billing_cycle'
+                : ($historicalCycleDay ? 'historical_invoice_cycle' : 'not_configured'));
 
         return [
             'found' => true,
@@ -108,11 +129,10 @@ class GetCustomerDetailsTool implements AiTool
                     // invoice yet, expose the configured recurring due day so
                     // the AI does not incorrectly claim that an established
                     // migrated customer has no due date.
-                    'billing_cycle_day' => $customer->billingCycleDay(),
+                    'billing_cycle_day' => $configuredCycleDay ?? $historicalCycleDay,
                     'next_due_date' => ($openInvoiceDueDate ?? $scheduledDueDate)?->toDateString(),
-                    'next_due_date_source' => $openInvoiceDueDate
-                        ? 'open_invoice'
-                        : ($scheduledDueDate ? 'configured_billing_cycle' : 'not_configured'),
+                    'next_due_date_source' => $scheduledDueDateSource,
+                    'historical_invoice_due_date' => $historicalDueDate?->toDateString(),
                     'unpaid_invoices' => $unpaidInvoices->map(fn (Invoice $invoice) => [
                         'invoice_number' => $invoice->invoice_number,
                         'due_date' => $invoice->due_date?->toDateString(),
@@ -142,5 +162,20 @@ class GetCustomerDetailsTool implements AiTool
                 'as_of' => now()->toIso8601String(),
             ],
         ];
+    }
+
+    /** Return the next calendar occurrence of a verified historical due day. */
+    private function nextDueDateForDay(int $day): \Carbon\Carbon
+    {
+        $timezone = config('app.timezone', 'Asia/Manila');
+        $today = now($timezone)->startOfDay();
+        $candidate = $today->copy()->startOfMonth()->setDay(min($day, $today->daysInMonth));
+
+        if ($candidate->lt($today)) {
+            $nextMonth = $today->copy()->addMonthNoOverflow()->startOfMonth();
+            $candidate = $nextMonth->setDay(min($day, $nextMonth->daysInMonth));
+        }
+
+        return $candidate;
     }
 }

@@ -159,23 +159,64 @@ class TicketWorkflowService
                 'account_number' => str_starts_with($customer->account_number, 'PENDING-') ? $this->generateAccountNumber() : $customer->account_number,
                 'status' => 'active', 'installation_date' => now()->toDateString(),
                 'technician_id' => $locked->assigned_to, 'router_id' => $lease->router_id,
-                'mac_address' => $lease->mac_address, 'ip_address' => $lease->ip_address,
+                'mac_address' => $lease->mac_address, 'mac_binding_status' => 'matched', 'ip_address' => $lease->ip_address,
                 'notes' => trim((string) $customer->notes . "\nInstallation approved from ticket {$locked->ticket_number}. {$locked->installation_notes}"),
             ])->save();
-            $lease->update(['customer_id' => $customer->id, 'is_matched' => true]);
+            $lease->update([
+                'customer_id' => $customer->id,
+                'is_matched' => true,
+                'match_source' => 'installation_approval',
+                'match_note' => 'Exact current DHCP lease approved for a self-signup installation application.',
+            ]);
 
             $locked->update(['status' => 'closed', 'workflow_status' => 'registered', 'approved_by' => $admin->id, 'approved_at' => now(), 'registered_at' => now(), 'closed_at' => now(), 'closed_by' => $admin->id]);
             $this->history($locked, $admin, 'installation_approved', 'waiting_admin_approval', 'approved', null, ['mac_address' => $mac, 'lease_id' => $lease->id]);
             $this->history($locked, $admin, 'customer_registered', 'approved', 'registered', "Customer {$customer->account_number} registered and ticket closed.");
             $this->history($locked, $admin, 'ticket_closed', 'registered', 'closed', "Installation {$locked->ticket_number} completed.");
-            return ['ticket' => $locked->fresh($this->relations()), 'customer' => $customer->fresh(['servicePlan', 'router'])];
+            return [
+                'ticket' => $locked->fresh($this->relations()),
+                'customer' => $customer->fresh(['servicePlan', 'router']),
+                'lease_id' => $lease->id,
+            ];
         });
 
         try {
-            $result['mikrotik_sync'] = app(QueueService::class)->syncCustomerQueue($result['customer'], true);
+            $lease = DhcpLease::with('router')->findOrFail($result['lease_id']);
+            $plan = $result['customer']->servicePlan;
+            $rateLimit = $plan->download_speed . 'M/' . $plan->upload_speed . 'M';
+            $leaseSync = app(MikrotikService::class)->updateOrMakeStaticLease(
+                $lease->router,
+                $lease->mac_address,
+                $result['customer']->full_name,
+                $rateLimit,
+                $lease->ip_address,
+                $lease->server ?: 'default',
+            );
+
+            $queueSync = null;
+            if ($leaseSync['success']) {
+                $lease->update([
+                    'comment' => $result['customer']->full_name,
+                    'rate_limit' => $rateLimit,
+                    'is_dynamic' => false,
+                ]);
+                $queueSync = app(QueueService::class)->syncCustomerQueue($result['customer'], true);
+            }
+
+            $result['mikrotik_sync'] = [
+                'success' => (bool) $leaseSync['success'] && ($queueSync === null || (bool) $queueSync['success']),
+                'message' => !$leaseSync['success']
+                    ? 'Customer registration completed, but the matching DHCP lease could not be made static: ' . ($leaseSync['message'] ?? 'unknown error')
+                    : (($queueSync['success'] ?? false)
+                        ? 'The matched DHCP lease was made static and the customer queue was synchronized to the selected plan.'
+                        : 'The DHCP lease was made static, but the customer queue needs attention: ' . ($queueSync['message'] ?? 'unknown error')),
+                'lease' => $leaseSync,
+                'queue' => $queueSync,
+            ];
         } catch (\Throwable $exception) {
             $result['mikrotik_sync'] = ['success' => false, 'message' => $exception->getMessage()];
         }
+        unset($result['lease_id']);
         return $result;
     }
 
