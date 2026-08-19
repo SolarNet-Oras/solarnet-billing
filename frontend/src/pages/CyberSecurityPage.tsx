@@ -258,14 +258,15 @@ export default function CyberSecurityPage() {
 
         {notice && <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${notice.tone === 'error' ? 'border-red-400/30 bg-red-500/10 text-red-100' : notice.tone === 'warning' ? 'border-amber-400/30 bg-amber-500/10 text-amber-100' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100'}`}>{notice.text}</div>}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="flex flex-col">
+        <div className="order-2 mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SecurityMetric label="Protected routers" value={`${protectedRouters}/${activeRouters || routers.length}`} helper="RouterOS signals" tone="emerald" icon={ShieldCheck} />
           <SecurityMetric label="Live perimeter" value={`${onlineRouters}/${routers.length}`} helper="Routers online" tone="cyan" icon={Wifi} />
           <SecurityMetric label="Threat signals" value={firewallSignals} helper="Rules + lists" tone="violet" icon={ShieldAlert} />
           <SecurityMetric label="Review queue" value={pending.length} helper="Manual review" tone="amber" icon={AlertTriangle} />
         </div>
 
-        <section className="mt-5 rounded-2xl border border-violet-300/20 bg-slate-950/75 p-4 shadow-[0_20px_48px_-36px_rgba(167,139,250,0.65)] sm:p-5">
+        <section className="order-3 mt-5 rounded-2xl border border-violet-300/20 bg-slate-950/75 p-4 shadow-[0_20px_48px_-36px_rgba(167,139,250,0.65)] sm:p-5">
           <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Threat signal identification</p>
@@ -307,7 +308,7 @@ export default function CyberSecurityPage() {
           <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-300/15 bg-amber-400/5 p-3 text-xs leading-5 text-slate-300 sm:flex-row sm:items-center sm:justify-between"><span><strong className="text-amber-100">Risk scale:</strong> configuration count alone does not increase risk. Amber is one or two pending feed candidates; red is three or more. Confirm a candidate before taking action.</span><Link to="/network-devices" className="shrink-0 font-semibold text-cyan-300 hover:text-cyan-100">Open manual review <ArrowRight className="inline h-3.5 w-3.5" /></Link></div>
         </section>
 
-        <div className="mt-5 grid gap-5 2xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="order-1 mt-5 grid gap-5 2xl:grid-cols-[1.25fr_0.75fr]">
           <article className="relative overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/75 p-5 shadow-[0_25px_60px_-38px_rgba(34,211,238,0.95)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -377,6 +378,7 @@ export default function CyberSecurityPage() {
             </button>
             <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs leading-5 text-slate-400"><span className="font-semibold text-slate-200">Safety rule:</span> a pending observation needs explicit administrator review in Network Devices before any SolarNet-owned firewall entry is added.</div>
           </article>
+        </div>
         </div>
 
         {baseline && <section className="mt-5 rounded-2xl border border-cyan-300/20 bg-slate-950/80 p-5 shadow-[0_25px_60px_-42px_rgba(34,211,238,0.9)]">
