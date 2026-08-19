@@ -65,6 +65,86 @@
   to { background-position: 28px 0; }
 }
 
+@keyframes security-scanline {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 0.9; }
+  88% { opacity: 0.8; }
+  100% { transform: translateY(700px); opacity: 0; }
+}
+
+@keyframes security-packet-travel {
+  0% { left: 0; opacity: 0; transform: translateY(-50%) scale(0.55); }
+  12% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { left: calc(100% - 8px); opacity: 0; transform: translateY(-50%) scale(1); }
+}
+
+.security-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.055) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: linear-gradient(to bottom, black, transparent 92%);
+}
+
+.security-scanline {
+  animation: security-scanline 7s linear infinite;
+  box-shadow: 0 0 20px 2px rgba(103, 232, 249, 0.65);
+}
+
+.security-node {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-width: 1px;
+  border-radius: 0.85rem;
+  padding: 0.9rem;
+  box-shadow: inset 0 0 26px rgba(15, 23, 42, 0.42), 0 0 30px -22px currentColor;
+}
+
+.security-flow-arrow {
+  position: relative;
+  min-width: 3.5rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  color: rgb(103 232 249 / 0.9);
+}
+
+.security-flow-arrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.9), transparent);
+}
+
+.security-flow-packet {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: rgb(255 255 255);
+  box-shadow: 0 0 12px 3px rgba(103, 232, 249, 0.95);
+  animation: security-packet-travel 1.8s linear infinite;
+}
+
+.security-flow-arrow-reverse .security-flow-packet { animation-delay: 0.9s; }
+
+@media (max-width: 767px) {
+  .security-flow-arrow { transform: rotate(90deg); margin: -0.2rem auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .security-scanline,
+  .security-flow-packet { animation: none; }
+}
+
 .traffic-flow {
   background-size: 28px 100%;
   animation: traffic-flow 900ms linear infinite;
