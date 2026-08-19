@@ -652,9 +652,9 @@ const InvoicesPage: React.FC = () => {
 
       {/* Record Payment Modal */}
       {showPaymentModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 p-3 sm:flex sm:items-center sm:justify-center sm:p-6">
+          <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+            <div className="max-h-[calc(100vh-1.5rem)] overflow-y-auto p-4 sm:max-h-[calc(100vh-3rem)] sm:p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">{isAdvancePayment ? 'Record Advance Payment' : 'Record Payment'}</h2>
               <div className="mb-4 p-4 bg-blue-50 rounded-lg">
                 <div className="text-sm text-gray-600">Invoice: {selectedInvoice.invoice_number}</div>
@@ -711,12 +711,12 @@ const InvoicesPage: React.FC = () => {
                     <p className="mt-1 text-xs text-gray-500">Leave blank to reserve this payment for the next billing anniversary. Larger payments reserve later cycles in order; partial credit reduces that future invoice.</p>
                   </div>}
 
-                  {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-emerald-950">Cash received and change</h3><p className="mt-1 text-xs text-emerald-800">Count the bills given by the client. You can return excess cash or, with the client’s approval, save it as advance credit for a future bill.</p></div><div className={`rounded-lg px-3 py-2 text-right text-sm ${cashCoversPayment ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Cash received</p><b>{formatPHP(cashCounted)}</b></div></div>
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="rounded border border-emerald-200 bg-white px-2 py-1.5" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div>
-                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div className="rounded-lg bg-white/75 p-3"><p className="text-xs text-emerald-800">Payment amount</p><b className="text-emerald-950">{formatPHP(paymentAmount)}</b></div><div className={`rounded-lg p-3 ${cashChange > 0 ? 'bg-amber-100 text-amber-950' : 'bg-white/75 text-emerald-950'}`}><p className="text-xs">Change to return</p><b>{formatPHP(changeToReturn)}</b></div></div>
-                    {supportsChangeAsAdvance && <label className={`mt-3 flex items-start gap-3 rounded-lg border p-3 text-sm ${hasCashChange ? 'cursor-pointer border-emerald-300 bg-white/75 text-emerald-950' : 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-500'}`}><input type="checkbox" disabled={!hasCashChange} checked={hasCashChange && cashChangeToAdvance} onChange={(event) => setCashChangeToAdvance(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" /><span><span className="block font-semibold">Save excess cash as advance credit</span><span className="mt-0.5 block text-xs">{hasCashChange ? `Client approved: save ${formatPHP(cashChange)} instead of returning change. SolarNet will create a separate advance-credit receipt for the next eligible bill.` : 'This option unlocks after cash received is higher than the payment amount.'}</span></span></label>}
-                    {advanceCreditFromChange > 0 && <div className="mt-3 rounded-lg bg-sky-100 p-3 text-sm text-sky-950"><p className="text-xs">Advance credit from change</p><b>{formatPHP(advanceCreditFromChange)}</b></div>}
+                  {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-semibold text-emerald-950">Cash received and change</h3><p className="mt-1 text-xs leading-5 text-emerald-800">Count the bills given by the client. You can return excess cash or, with the client’s approval, save it as advance credit for a future bill.</p></div><div className={`self-start rounded-lg px-3 py-2 text-left text-sm sm:text-right ${cashCoversPayment ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Cash received</p><b>{formatPHP(cashCounted)}</b></div></div>
+                    <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-2 sm:p-3"><div className="grid grid-cols-[4.5rem_minmax(6rem,1fr)_minmax(5.5rem,1fr)] gap-x-2 gap-y-2 text-sm sm:grid-cols-[minmax(6rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)] sm:gap-x-3"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" inputMode="numeric" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="min-w-0 rounded border border-emerald-200 bg-white px-2 py-2 text-base" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div></div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div className="rounded-lg bg-white/75 p-3"><p className="text-xs text-emerald-800">Payment amount</p><b className="text-emerald-950">{formatPHP(paymentAmount)}</b></div><div className={`rounded-lg p-3 ${cashChange > 0 ? 'bg-amber-100 text-amber-950' : 'bg-white/75 text-emerald-950'}`}><p className="text-xs">Change to return</p><b>{formatPHP(changeToReturn)}</b></div></div>
+                    {supportsChangeAsAdvance && <label className={`mt-4 flex items-start gap-3 rounded-lg border p-3 text-sm ${hasCashChange ? 'cursor-pointer border-emerald-300 bg-white/75 text-emerald-950' : 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-500'}`}><input type="checkbox" disabled={!hasCashChange} checked={hasCashChange && cashChangeToAdvance} onChange={(event) => setCashChangeToAdvance(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" /><span><span className="block font-semibold">Save excess cash as advance credit</span><span className="mt-1 block text-xs leading-5">{hasCashChange ? `Client approved: save ${formatPHP(cashChange)} instead of returning change. SolarNet will create a separate advance-credit receipt for the next eligible bill.` : 'This option unlocks after cash received is higher than the payment amount.'}</span></span></label>}
+                    {advanceCreditFromChange > 0 && <div className="mt-4 rounded-lg bg-sky-100 p-3 text-sm text-sky-950"><p className="text-xs">Advance credit from change</p><b>{formatPHP(advanceCreditFromChange)}</b></div>}
                     <p className={`mt-3 text-xs font-medium ${cashCoversPayment ? 'text-emerald-700' : 'text-amber-800'}`}>{cashCoversPayment ? (cashChange > 0 ? (advanceCreditFromChange > 0 ? `${formatPHP(advanceCreditFromChange)} will be saved as advance credit. No cash change will be returned.` : `Return ${formatPHP(changeToReturn)} change to the client, then record the payment.`) : 'Exact cash received. You may record this payment.') : `Need ${formatPHP(cashShortfall)} more cash to cover the payment.`}</p>
                   </section>}
 
@@ -762,21 +762,21 @@ const InvoicesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="mt-6 flex justify-end gap-3">
+                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"
                     onClick={() => {
                       setShowPaymentModal(false);
                       resetPaymentForm();
                     }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 sm:w-auto"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={(paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     {isAdvancePayment ? 'Save advance credit' : 'Record Payment'}
                   </button>
