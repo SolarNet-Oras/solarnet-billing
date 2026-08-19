@@ -551,7 +551,28 @@ class RouterController extends Controller
             ], 404);
         }
 
+        // Keep the existing router inventory/queue snapshot, then use the
+        // verified DHCP sync path as well. The latter is what safely binds
+        // registered customers and converts only their current dynamic leases
+        // to static leases with the selected service-plan rate limit.
         $result = $this->mikrotikService->syncRouter($router);
+        if (($result['synced_items']['system'] ?? false) === true) {
+            $dhcpResult = app(\App\Services\DhcpSyncService::class)->syncRouterLeases($router, false);
+            $result['dhcp_sync'] = $dhcpResult;
+            $result['synced_items']['dhcp_leases'] = $dhcpResult['leases_stored'];
+            $result['errors'] = array_values(array_unique(array_merge(
+                $result['errors'] ?? [],
+                $dhcpResult['errors'] ?? [],
+            )));
+            $result['success'] = empty($result['errors']);
+            $result['message'] = sprintf(
+                '%s Registered DHCP leases matched: %d; dynamic leases made static: %d; already static or safely skipped: %d.',
+                $result['message'],
+                $dhcpResult['customers_matched'],
+                $dhcpResult['static_leases_converted'],
+                $dhcpResult['static_lease_skipped'],
+            );
+        }
 
         return response()->json($result);
     }

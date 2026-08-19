@@ -59,6 +59,9 @@ class SyncDhcpLeases extends Command
         $this->line("  Customers created: {$result['customers_created']}");
         $this->line("  IPs updated: {$result['ips_updated']}");
         $this->line("  Queues synced: {$result['queues_synced']}");
+        $this->line("  Dynamic registered leases made static: {$result['static_leases_converted']}");
+        $this->line("  Static lease checks skipped: {$result['static_lease_skipped']}");
+        $this->line("  Queues synchronized after static lease: {$result['queue_syncs_after_static_lease']}");
         
         if (!empty($result['errors'])) {
             $this->error("  Errors: " . implode(', ', $result['errors']));

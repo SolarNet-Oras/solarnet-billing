@@ -37,6 +37,9 @@ class DhcpSyncService
             'customers_created' => 0,
             'ips_updated' => 0,
             'queues_synced' => 0,
+            'static_leases_converted' => 0,
+            'static_lease_skipped' => 0,
+            'queue_syncs_after_static_lease' => 0,
             'cross_router_matches_detached' => 0,
             'errors' => [],
         ];
@@ -78,14 +81,39 @@ class DhcpSyncService
                 
                 if ($customer) {
                     $result['customers_matched']++;
+
+                    // The matcher may have filled in a previously missing
+                    // router/MAC or released a waiting replacement device.
+                    // Always use the committed customer record below.
+                    $customer = $customer->fresh(['servicePlan', 'router']);
                     
                     // Update customer IP if changed
                     if ($customer->ip_address !== $lease->ip_address) {
                         $customer->update(['ip_address' => $lease->ip_address]);
+                        $customer = $customer->fresh(['servicePlan', 'router']);
                         $result['ips_updated']++;
                         
                         // Trigger queue sync (observer will handle this)
                         $result['queues_synced']++;
+                    }
+
+                    // Sync is allowed to convert only a currently observed,
+                    // registered customer's dynamic lease. No unmatched,
+                    // pending application, stale, or ambiguous lease reaches
+                    // RouterOS here.
+                    $staticLease = $this->ensureRegisteredLeaseIsStatic($customer, $lease->fresh('router'));
+                    if (!$staticLease['attempted']) {
+                        $result['static_lease_skipped']++;
+                    } elseif ($staticLease['lease_static']) {
+                        $result['static_leases_converted']++;
+                        if (($staticLease['queue_sync']['success'] ?? false) === true) {
+                            $result['queue_syncs_after_static_lease']++;
+                        }
+                        if (!$staticLease['success']) {
+                            $result['errors'][] = 'static lease queue sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
+                        }
+                    } else {
+                        $result['errors'][] = 'static lease sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
                     }
                 } elseif ($autoCreateCustomers && $leaseData['status'] === 'bound') {
                     // Auto-create customer from unknown MAC
@@ -219,8 +247,10 @@ class DhcpSyncService
      * Match a read-only DHCP lease to a customer. An exact registered MAC is
      * preferred. A unique, exact account number in the lease comment is a
      * safe fallback only when it does not conflict with a registered MAC.
-     * This writes SolarNet's database association only; it never writes to
-     * RouterOS DHCP, pools, VLANs, NAT, firewall, QoS, or routing.
+     * The matching itself writes only the SolarNet database association. The
+     * outer verified-sync loop may then make that exact registered customer's
+     * dynamic DHCP lease static; it never changes pools, VLANs, NAT, firewall,
+     * routing, or unregistered leases.
      */
     protected function matchLeaseToCustomer(DhcpLease $lease): ?Customer
     {
@@ -277,10 +307,6 @@ class DhcpSyncService
                     ? 'Exact waiting hardware MAC appeared in a current bound DHCP lease; customer binding activated.'
                     : 'Exact registered MAC address and router match.',
             ]);
-
-            if ($waitingForMacBinding) {
-                $this->applyWaitingHardwareBinding($customer->fresh(['servicePlan', 'router']), $lease->fresh('router'));
-            }
 
             return $customer;
         }
@@ -342,27 +368,48 @@ class DhcpSyncService
             'match_note' => 'Exact account number in RouterOS lease comment matched one eligible customer.',
         ]);
 
-        if ($missingCustomerMac) {
-            $this->applyWaitingHardwareBinding($customer->fresh(['servicePlan', 'router']), $lease->fresh('router'));
-        }
-
         return $customer;
     }
 
     /**
-     * An exact DHCP match is the only deferred event allowed to change
-     * RouterOS for a customer whose MAC was entered before the new ONU/router
-     * appeared. It converts that exact lease to static and then moves the
-     * SolarNet queue target to the lease IP with the selected plan limit.
+     * Convert a dynamic lease only after this sync has proved it is the exact,
+     * current bound lease for an already registered customer. The same
+     * operation also applies the selected service-plan rate and moves the
+     * SolarNet queue to the current lease IP.
+     *
+     * @return array{success: bool, attempted: bool, lease_static: bool, message: string, queue_sync?: array}
      */
-    protected function applyWaitingHardwareBinding(Customer $customer, DhcpLease $lease): void
+    protected function ensureRegisteredLeaseIsStatic(Customer $customer, DhcpLease $lease): array
     {
+        if (!$lease->is_dynamic) {
+            return [
+                'success' => true,
+                'attempted' => false,
+                'lease_static' => false,
+                'message' => 'Lease is already static.',
+            ];
+        }
+
+        if ($customer->status === 'pending') {
+            return [
+                'success' => true,
+                'attempted' => false,
+                'lease_static' => false,
+                'message' => 'Pending installation applications are never made static by DHCP sync.',
+            ];
+        }
+
         if (!$lease->router || !$lease->mac_address || !$lease->ip_address || !$customer->servicePlan) {
-            Log::warning('Deferred hardware binding could not be applied because required customer or lease data is missing.', [
+            Log::warning('Registered DHCP lease was not made static because required customer or lease data is missing.', [
                 'customer_id' => $customer->id,
                 'lease_id' => $lease->id,
             ]);
-            return;
+            return [
+                'success' => false,
+                'attempted' => true,
+                'lease_static' => false,
+                'message' => 'Customer router, current DHCP lease, or service plan is missing.',
+            ];
         }
 
         $rateLimit = $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
@@ -376,12 +423,17 @@ class DhcpSyncService
         );
 
         if (!$leaseResult['success']) {
-            Log::warning('Deferred hardware binding was matched locally but MikroTik static-lease sync failed.', [
+            Log::warning('Registered DHCP lease was matched locally but MikroTik static-lease sync failed.', [
                 'customer_id' => $customer->id,
                 'lease_id' => $lease->id,
                 'message' => $leaseResult['message'] ?? 'Unknown MikroTik error',
             ]);
-            return;
+            return [
+                'success' => false,
+                'attempted' => true,
+                'lease_static' => false,
+                'message' => $leaseResult['message'] ?? 'MikroTik static-lease sync failed.',
+            ];
         }
 
         $lease->update([
@@ -391,12 +443,22 @@ class DhcpSyncService
         ]);
         $queueResult = $this->queueService->syncCustomerQueue($customer, true);
         if (!$queueResult['success']) {
-            Log::warning('Deferred hardware binding static lease succeeded but customer queue sync failed.', [
+            Log::warning('Registered DHCP static lease succeeded but customer queue sync failed.', [
                 'customer_id' => $customer->id,
                 'lease_id' => $lease->id,
                 'message' => $queueResult['message'] ?? 'Unknown queue error',
             ]);
         }
+
+        return [
+            'success' => (bool) $queueResult['success'],
+            'attempted' => true,
+            'lease_static' => true,
+            'message' => $queueResult['success']
+                ? 'Lease made static and customer queue synchronized.'
+                : 'Lease made static, but queue synchronization failed: ' . ($queueResult['message'] ?? 'unknown error'),
+            'queue_sync' => $queueResult,
+        ];
     }
 
     /** @return array<int, string> */
