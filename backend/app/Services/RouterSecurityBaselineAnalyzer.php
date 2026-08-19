@@ -156,7 +156,7 @@ class RouterSecurityBaselineAnalyzer
                 'ipv6_filter_rules' => count($ipv6Filters),
                 'solarnet_threat_list_entries' => count($threatEntries),
             ],
-            'safety' => 'This inspection used RouterOS read-only print commands only. It did not alter firewall, NAT, DHCP, queues, VLANs, VPN, DNS, or billing controls.',
+            'safety' => 'No RouterOS configuration was changed. This inspection used RouterOS read-only print commands only and did not alter firewall, NAT, DHCP, queues, VLANs, VPN, DNS, or billing controls.',
         ];
     }
 
