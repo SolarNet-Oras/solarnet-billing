@@ -72,6 +72,24 @@ function SecurityMetric({
   );
 }
 
+type ThreatRiskBand = 'protected' | 'attention' | 'high' | 'no_signal' | 'unavailable';
+
+const riskPresentation: Record<ThreatRiskBand, { label: string; className: string }> = {
+  protected: { label: 'Configured / no candidate', className: 'border-emerald-300/25 bg-emerald-400/10 text-emerald-100' },
+  attention: { label: 'Candidate needs review', className: 'border-amber-300/25 bg-amber-400/10 text-amber-100' },
+  high: { label: 'Several candidates', className: 'border-red-300/30 bg-red-400/10 text-red-100' },
+  no_signal: { label: 'No labeled threat signal', className: 'border-slate-500/40 bg-slate-700/40 text-slate-200' },
+  unavailable: { label: 'Waiting for monitor', className: 'border-slate-600 bg-slate-800/70 text-slate-300' },
+};
+
+function assessThreatRisk(sample: RouterMonitoringSnapshot | undefined, pendingMatches: number): { band: ThreatRiskBand; treatment: string } {
+  if (!sample) return { band: 'unavailable', treatment: 'Refresh the router monitor first. No threat judgment is available until RouterOS data is read.' };
+  if (pendingMatches >= 3) return { band: 'high', treatment: 'Several possible C2/botnet connection candidates need review. Verify the IP and direction, rule out trusted services, then manually block or dismiss each candidate in Network Devices.' };
+  if (pendingMatches > 0) return { band: 'attention', treatment: 'A threat-feed candidate needs review. Confirm the IP and direction, then manually block or dismiss it in Network Devices. No automatic block is applied.' };
+  if (sample.threat_signal_rules + sample.threat_address_list_entries > 0) return { band: 'protected', treatment: sample.threat_blocked_packets > 0 ? 'Protection rules or address-list entries are configured. Their RouterOS packet counters are lifetime counters, so a non-zero total alone is not proof of a current attack. Keep monitoring and run a read-only scan when activity is unexpected.' : 'Labeled protection rules or address-list entries are present with no current threat-feed candidate. Keep monitoring; do not delete or move the rule solely because its counter is zero.' };
+  return { band: 'no_signal', treatment: 'No enabled firewall rule or address list with a threat-related name was found. This does not prove the router is unprotected; review the RouterOS firewall configuration before adding any rule.' };
+}
+
 export default function CyberSecurityPage() {
   const [routers, setRouters] = useState<Router[]>([]);
   const [monitoring, setMonitoring] = useState<Record<string, RouterMonitoringSnapshot>>({});
@@ -137,6 +155,20 @@ export default function CyberSecurityPage() {
   const dashboardHost = typeof window === 'undefined' ? 'SolarNet billing' : window.location.hostname;
   const vpnRelayHost = useMemo(() => routers.find((router) => /vpn|wireguard/i.test(router.host))?.host || 'Router management relay', [routers]);
   const flowMotion = totalRx + totalTx > 100_000_000 ? 'security-flow-fast' : totalRx + totalTx > 1_000_000 ? 'security-flow-normal' : 'security-flow-calm';
+  const threatSignalBreakdown = useMemo(() => routers.map((router) => {
+    const sample = monitoring[router.id];
+    const pendingMatches = (observations[router.id] || []).filter((item) => item.status === 'pending').length;
+    return {
+      router,
+      sample,
+      pendingMatches,
+      risk: assessThreatRisk(sample, pendingMatches),
+      rules: sample?.threat_signal_details?.firewall_rules || [],
+      lists: sample?.threat_signal_details?.address_list_entries || [],
+      hiddenRules: sample?.threat_signal_details?.firewall_rules_hidden || 0,
+      hiddenLists: sample?.threat_signal_details?.address_list_entries_hidden || 0,
+    };
+  }).filter((item) => item.sample && (item.sample.threat_signal_rules + item.sample.threat_address_list_entries > 0 || item.pendingMatches > 0)), [routers, monitoring, observations]);
 
   const scanSelectedRouter = async () => {
     if (!selectedRouter) {
@@ -193,6 +225,48 @@ export default function CyberSecurityPage() {
           <SecurityMetric label="Threat signals" value={firewallSignals} helper="Rules + lists" tone="violet" icon={ShieldAlert} />
           <SecurityMetric label="Review queue" value={pending.length} helper="Manual review" tone="amber" icon={AlertTriangle} />
         </div>
+
+        <section className="mt-5 rounded-2xl border border-violet-300/20 bg-slate-950/75 p-4 shadow-[0_20px_48px_-36px_rgba(167,139,250,0.65)] sm:p-5">
+          <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">Threat signal identification</p>
+              <h2 className="mt-1 text-xl font-bold text-white">What “{firewallSignals}” means and how to treat it</h2>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-400">This is a count of enabled RouterOS <strong className="font-medium text-slate-200">drop rules</strong> whose comment has a security keyword, plus address-list entries whose list name has one. It is configuration evidence, not a count of viruses or confirmed infected clients.</p>
+            </div>
+            <span className="w-fit rounded-full border border-violet-300/25 bg-violet-400/10 px-3 py-1.5 text-xs font-semibold text-violet-100">Read-only identification</span>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {threatSignalBreakdown.map(({ router, sample, pendingMatches, risk, rules, lists, hiddenRules, hiddenLists }) => {
+              const presentation = riskPresentation[risk.band];
+              const detailIsAvailable = Boolean(sample?.threat_signal_details);
+              return <article key={router.id} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0"><p className="truncate font-semibold text-white">{router.name}</p><p className="truncate text-xs text-slate-500">{router.host}</p></div>
+                  <span className={`w-fit rounded-full border px-2.5 py-1 text-[11px] font-semibold ${presentation.className}`}>{presentation.label}</span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-lg bg-violet-400/10 p-2.5"><p className="text-lg font-bold text-violet-100">{sample?.threat_signal_rules ?? 0}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Named drop rules</p></div>
+                  <div className="rounded-lg bg-cyan-400/10 p-2.5"><p className="text-lg font-bold text-cyan-100">{sample?.threat_address_list_entries ?? 0}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">List entries</p></div>
+                  <div className="rounded-lg bg-amber-400/10 p-2.5"><p className="text-lg font-bold text-amber-100">{pendingMatches}</p><p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Feed candidates</p></div>
+                </div>
+
+                {!detailIsAvailable && <p className="mt-3 rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">Rule and list names will appear after the latest backend deployment refreshes this monitor.</p>}
+                {detailIsAvailable && <div className="mt-3 space-y-2">
+                  {rules.map((rule) => <div key={rule.id || rule.comment} className="rounded-lg border border-violet-300/15 bg-violet-400/5 px-3 py-2"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-words text-xs font-semibold text-violet-100">Firewall rule: {rule.comment}</p><span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{rule.chain || 'unknown'} · {rule.action || 'drop'}</span></div><p className="mt-1 text-[11px] text-slate-400">{rule.match_reason} Lifetime packets: {rule.packets.toLocaleString()}.</p></div>)}
+                  {lists.map((entry) => <div key={entry.id || `${entry.list}:${entry.address}`} className="rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all text-xs font-semibold text-cyan-100">List: {entry.list} · {entry.address || 'no address value'}</p><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{entry.dynamic ? 'dynamic' : 'static'}</span></div><p className="mt-1 text-[11px] text-slate-400">{entry.comment || entry.match_reason}{entry.timeout ? ` · timeout ${entry.timeout}` : ''}</p></div>)}
+                  {hiddenRules + hiddenLists > 0 && <p className="text-[11px] text-slate-500">{hiddenRules + hiddenLists} additional matched record{hiddenRules + hiddenLists === 1 ? '' : 's'} are not shown here to keep this live monitor fast.</p>}
+                </div>}
+
+                <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/65 p-3"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Safe treatment</p><p className="mt-1 text-xs leading-5 text-slate-300">{risk.treatment}</p></div>
+              </article>;
+            })}
+            {!loading && threatSignalBreakdown.length === 0 && <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-4 text-sm leading-6 text-slate-400">No named threat rules or matching address-list entries were found in the available RouterOS samples. This does not prove a router has no firewall protection; it only means this monitor did not identify a rule/list with the security keywords it recognizes.</div>}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-300/15 bg-amber-400/5 p-3 text-xs leading-5 text-slate-300 sm:flex-row sm:items-center sm:justify-between"><span><strong className="text-amber-100">Risk scale:</strong> configuration count alone does not increase risk. Amber is one or two pending feed candidates; red is three or more. Confirm a candidate before taking action.</span><Link to="/network-devices" className="shrink-0 font-semibold text-cyan-300 hover:text-cyan-100">Open manual review <ArrowRight className="inline h-3.5 w-3.5" /></Link></div>
+        </section>
 
         <div className="mt-5 grid gap-5 2xl:grid-cols-[1.25fr_0.75fr]">
           <article className="relative overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/75 p-5 shadow-[0_25px_60px_-38px_rgba(34,211,238,0.95)]">

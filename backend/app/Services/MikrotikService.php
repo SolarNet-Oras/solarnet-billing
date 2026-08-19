@@ -557,6 +557,29 @@ class MikrotikService
             $threatRules = array_values(array_filter($dropRules, fn (array $rule) => preg_match($keywordPattern, (string) ($rule['comment'] ?? '')) === 1));
             $threatLists = array_values(array_filter($addressLists, fn (array $entry) => preg_match($keywordPattern, (string) ($entry['list'] ?? '')) === 1));
             $blockedPackets = array_sum(array_map(fn (array $rule) => (int) ($rule['packets'] ?? 0), $threatRules));
+            // These are identification details for an operator, not a verdict
+            // that a client device is infected. Keep the response bounded so a
+            // large administrator-maintained address list cannot slow down the
+            // regular five-second dashboard monitor.
+            $detailLimit = 50;
+            $threatRuleDetails = array_map(fn (array $rule) => [
+                'id' => (string) ($rule['.id'] ?? ''),
+                'comment' => trim((string) ($rule['comment'] ?? '')) ?: 'Unnamed threat-related drop rule',
+                'chain' => (string) ($rule['chain'] ?? ''),
+                'action' => (string) ($rule['action'] ?? ''),
+                'packets' => (int) ($rule['packets'] ?? 0),
+                'bytes' => (int) ($rule['bytes'] ?? 0),
+                'match_reason' => 'Enabled drop rule comment matches the threat-signal keywords.',
+            ], array_slice($threatRules, 0, $detailLimit));
+            $threatListDetails = array_map(fn (array $entry) => [
+                'id' => (string) ($entry['.id'] ?? ''),
+                'list' => (string) ($entry['list'] ?? ''),
+                'address' => (string) ($entry['address'] ?? ''),
+                'comment' => trim((string) ($entry['comment'] ?? '')) ?: null,
+                'dynamic' => ($entry['dynamic'] ?? 'false') === 'true',
+                'timeout' => ($entry['timeout'] ?? '') !== '' ? (string) $entry['timeout'] : null,
+                'match_reason' => 'Address-list name matches the threat-signal keywords.',
+            ], array_slice($threatLists, 0, $detailLimit));
 
             return [
                 'success' => true,
@@ -574,6 +597,12 @@ class MikrotikService
                     'threat_signal_rules' => count($threatRules),
                     'threat_address_list_entries' => count($threatLists),
                     'threat_blocked_packets' => $blockedPackets,
+                    'threat_signal_details' => [
+                        'firewall_rules' => $threatRuleDetails,
+                        'address_list_entries' => $threatListDetails,
+                        'firewall_rules_hidden' => max(0, count($threatRules) - count($threatRuleDetails)),
+                        'address_list_entries_hidden' => max(0, count($threatLists) - count($threatListDetails)),
+                    ],
                     'scanned_at' => now()->toIso8601String(),
                 ],
             ];

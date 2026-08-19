@@ -69,6 +69,28 @@ export interface RouterMonitoringSnapshot {
   threat_signal_rules: number;
   threat_address_list_entries: number;
   threat_blocked_packets: number;
+  threat_signal_details?: {
+    firewall_rules: Array<{
+      id: string;
+      comment: string;
+      chain: string;
+      action: string;
+      packets: number;
+      bytes: number;
+      match_reason: string;
+    }>;
+    address_list_entries: Array<{
+      id: string;
+      list: string;
+      address: string;
+      comment: string | null;
+      dynamic: boolean;
+      timeout: string | null;
+      match_reason: string;
+    }>;
+    firewall_rules_hidden: number;
+    address_list_entries_hidden: number;
+  };
   scanned_at: string;
 }
 
