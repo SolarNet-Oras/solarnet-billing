@@ -249,6 +249,7 @@ const UnregisteredLeasesPage: React.FC = () => {
           <DynamicLeasesTable
             leases={filteredDynamicLeases}
             routerName={routerName}
+            onQuickRegister={(lease) => setModalLease(lease)}
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
           />
@@ -361,14 +362,15 @@ const StaticLeasesTable: React.FC<{
 };
 
 // -----------------------------------------------------------------------------
-// Dynamic leases: reference-only until an operator uses a controlled workflow.
+// Dynamic leases require an explicit operator choice; they are never auto-registered.
 // -----------------------------------------------------------------------------
 const DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
+  onQuickRegister: (lease: UnregisteredLease) => void;
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
-}> = ({ leases, routerName, onManualRegister, onClientMigration }) => {
+}> = ({ leases, routerName, onQuickRegister, onManualRegister, onClientMigration }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -430,11 +432,20 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex items-center gap-2 justify-end">
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onQuickRegister(lease)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
+                      data-testid={`quick-register-dynamic-btn-${lease.id}`}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Link / register
+                    </button>
                     <button
                       type="button"
                       onClick={() => onManualRegister(lease)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
                       data-testid={`manual-register-dynamic-btn-${lease.id}`}
                     >
                       <UserPlus className="w-4 h-4" />
