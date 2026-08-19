@@ -73,7 +73,9 @@ const InvoicesPage: React.FC = () => {
   const [cashCounts, setCashCounts] = useState<Record<number, number>>({});
   const cashBreakdown = useMemo(() => [1000, 500, 200, 100, 50, 20, 10, 5, 1].map((denomination) => ({ denomination, count: Number(cashCounts[denomination] || 0), amount: denomination * Number(cashCounts[denomination] || 0) })), [cashCounts]);
   const cashCounted = useMemo(() => cashBreakdown.reduce((total, line) => total + line.amount, 0), [cashBreakdown]);
-  const cashMatches = Math.round(cashCounted * 100) === Math.round(Number(paymentData.amount || 0) * 100);
+  const paymentAmount = Number(paymentData.amount || 0);
+  const advanceAmountIsValid = !isAdvancePayment || paymentAmount > 0;
+  const cashMatches = Math.round(cashCounted * 100) === Math.round(paymentAmount * 100);
 
   useEffect(() => {
     fetchInvoices();
@@ -131,6 +133,10 @@ const InvoicesPage: React.FC = () => {
     e.preventDefault();
     if (!selectedInvoice) return;
 
+    if (isAdvancePayment && !advanceAmountIsValid) {
+      window.alert('Enter a cash amount greater than ₱0.00 to create advance credit. A ₱0.00 payment cannot be recorded as customer credit.');
+      return;
+    }
     if (paymentData.payment_method === 'cash' && !cashMatches) {
       window.alert('Count the cash bills until the total exactly matches the payment amount.');
       return;
@@ -138,6 +144,7 @@ const InvoicesPage: React.FC = () => {
     try {
       const requestData = {
         ...paymentData,
+        amount: paymentAmount,
         ...(paymentData.payment_method === 'cash' ? { cash_breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })) } : {}),
       };
       if (isAdvancePayment) {
@@ -642,11 +649,16 @@ const InvoicesPage: React.FC = () => {
                 <div className="text-lg font-bold text-gray-900 mt-2">
                   {isAdvancePayment ? 'This payment will be saved as credit for the customer’s next invoice.' : `Balance Due: ${formatPHP(selectedInvoice.balance)}`}
                 </div>
+                {isAdvancePayment && (
+                  <p className="mt-2 text-sm text-emerald-800">
+                    Current balance is {formatPHP(selectedInvoice.balance)}. Enter any cash amount above ₱0.00; it will appear as advance credit and automatically reduce the next eligible billing cycle.
+                  </p>
+                )}
               </div>
               <form onSubmit={handleRecordPayment}>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{isAdvancePayment ? 'Advance amount' : 'Amount'}</label>
                     <input
                       type="number"
                       step="0.01"
@@ -655,8 +667,10 @@ const InvoicesPage: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       max={isAdvancePayment ? undefined : selectedInvoice.balance}
                       min="0.01"
+                      placeholder="0.00"
                       required
                     />
+                    {isAdvancePayment && <p className="mt-1 text-xs text-gray-500">The invoice can be ₱0.00; the payment itself must be greater than ₱0.00 to create advance credit.</p>}
                   </div>
 
                   {!isAdvancePayment && <div>
@@ -681,7 +695,7 @@ const InvoicesPage: React.FC = () => {
                   {isAdvancePayment && <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Future billing cycle due date</label>
                     <input type="date" value={paymentData.covered_cycle_date} onChange={(e) => setPaymentData({ ...paymentData, covered_cycle_date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    <p className="mt-1 text-xs text-gray-500">Leave blank to reserve this payment for the next billing anniversary. Larger payments reserve later cycles in order.</p>
+                    <p className="mt-1 text-xs text-gray-500">Leave blank to reserve this payment for the next billing anniversary. Larger payments reserve later cycles in order; partial credit reduces that future invoice.</p>
                   </div>}
 
                   {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
@@ -745,7 +759,7 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={paymentData.payment_method === 'cash' && !cashMatches}
+                    disabled={(paymentData.payment_method === 'cash' && !cashMatches) || !advanceAmountIsValid}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isAdvancePayment ? 'Save advance credit' : 'Record Payment'}
