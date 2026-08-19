@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LogIn, CreditCard } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
@@ -43,49 +43,49 @@ const CustomerLoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/45 to-primary/10 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
           <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="w-16 h-16 mx-auto mb-4 object-contain" />
-          <h1 className="text-3xl font-bold text-gray-900">{branding.name}</h1>
-          <p className="text-gray-600 mt-2">Customer Portal</p>
+          <h1 className="text-3xl font-bold text-foreground">{branding.name}</h1>
+          <p className="text-muted-foreground mt-2">Customer Portal</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Sign In</h2>
+        <div className="bg-card border border-border rounded-2xl shadow-xl p-8">
+          <h2 className="text-2xl font-bold text-foreground mb-6">Sign In</h2>
 
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm" role="alert">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 Email Address
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-input rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="your.email@example.com"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 Password
               </label>
               <input
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-input rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Your portal password"
                 required
               />
@@ -94,7 +94,7 @@ const CustomerLoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -110,23 +110,23 @@ const CustomerLoginPage: React.FC = () => {
             </button>
           </form>
 
-          <p className="mt-4 text-center text-xs text-gray-500">
+            <p className="mt-4 text-center text-xs text-muted-foreground">
             New accounts use a temporary password and must change it after their first sign-in.
           </p>
-          <p className="mt-2 text-center text-xs text-gray-500">
+            <p className="mt-2 text-center text-xs text-muted-foreground">
             If you have not created your own password yet, use <strong>Solarnet123</strong>, then change it immediately.
           </p>
 
-          <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
-            <p className="text-center text-sm text-gray-600">
+          <div className="mt-6 pt-6 border-t border-border space-y-3">
+            <p className="text-center text-sm text-muted-foreground">
               New to Solarnet?{' '}
-              <a href="/signup" className="text-blue-600 hover:text-blue-700 font-medium" data-testid="customer-login-signup-link">
+              <a href="/signup" className="text-primary hover:text-primary/80 font-medium" data-testid="customer-login-signup-link">
                 Sign up for service
               </a>
             </p>
-            <p className="text-center text-sm text-gray-600">
-              Need help? {branding.email && <><a href={`mailto:${branding.email}`} className="text-blue-600 hover:text-blue-700">Email customer support</a>{branding.facebook_url && ' or '}</>}
-              {branding.facebook_url && <a href={branding.facebook_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700">message us on Facebook</a>}
+            <p className="text-center text-sm text-muted-foreground">
+              Need help? {branding.email && <><a href={`mailto:${branding.email}`} className="text-primary hover:text-primary/80">Email customer support</a>{branding.facebook_url && ' or '}</>}
+              {branding.facebook_url && <a href={branding.facebook_url} target="_blank" rel="noreferrer" className="text-primary hover:text-primary/80">message us on Facebook</a>}
             </p>
           </div>
         </div>

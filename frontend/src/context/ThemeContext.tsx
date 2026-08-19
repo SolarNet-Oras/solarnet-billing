@@ -1,16 +1,33 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'system';
+export type ResolvedTheme = Exclude<Theme, 'system'>;
 
 interface ThemeContextType {
   theme: Theme;
+  resolvedTheme: ResolvedTheme;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
 }
+
+const THEME_STORAGE_KEY = 'solarnet-theme';
+const LEGACY_THEME_STORAGE_KEY = 'theme';
+
+const getSystemTheme = (): ResolvedTheme =>
+  window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+const getStoredTheme = (): Theme => {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  } catch {
+    return 'system';
+  }
+};
 
 // ============================================================================
 // Context
@@ -27,52 +44,55 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Check localStorage first
-    const savedTheme = localStorage.getItem('theme') as Theme | null;
-    if (savedTheme) {
-      return savedTheme;
-    }
-    
-    // Check system preference
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    
-    return 'light';
+  const [theme, setThemeState] = useState<Theme>(getStoredTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
+    const preference = getStoredTheme();
+    return preference === 'system' ? getSystemTheme() : preference;
   });
 
   useEffect(() => {
     const root = window.document.documentElement;
-    
-    // Remove old theme class
-    root.classList.remove('light', 'dark');
-    
-    // Add new theme class
-    root.classList.add(theme);
-    
-    // Save to localStorage
+    const applyTheme = (): void => {
+      const nextResolved = theme === 'system' ? getSystemTheme() : theme;
+      setResolvedTheme(nextResolved);
+      root.classList.remove('light', 'dark');
+      root.classList.add(nextResolved);
+      root.style.colorScheme = nextResolved;
+      root.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', nextResolved === 'dark' ? '#020817' : '#eef2f7');
+    };
+
+    applyTheme();
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const syncSystemTheme = (): void => {
+      if (theme === 'system') applyTheme();
+    };
+    media.addEventListener('change', syncSystemTheme);
+
     try {
-      localStorage.setItem('theme', theme);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      // Keep the existing key in sync so older app shells do not flash a conflicting theme.
+      localStorage.setItem(LEGACY_THEME_STORAGE_KEY, theme);
     } catch (error) {
-      // Handle localStorage errors gracefully
       console.warn('Failed to save theme preference:', error);
     }
+
+    return () => media.removeEventListener('change', syncSystemTheme);
   }, [theme]);
 
-  const setTheme = (newTheme: Theme): void => {
-    setThemeState(newTheme);
-  };
+  const setTheme = useCallback((newTheme: Theme): void => setThemeState(newTheme), []);
 
-  const toggleTheme = (): void => {
-    setThemeState((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
-  };
+  const toggleTheme = useCallback((): void => {
+    setThemeState((previous) => previous === 'light' ? 'dark' : previous === 'dark' ? 'system' : 'light');
+  }, []);
 
-  const value: ThemeContextType = {
+  const value = useMemo<ThemeContextType>(() => ({
     theme,
+    resolvedTheme,
     toggleTheme,
     setTheme,
-  };
+  }), [theme, resolvedTheme, setTheme, toggleTheme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
