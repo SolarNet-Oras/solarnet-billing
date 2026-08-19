@@ -136,6 +136,12 @@ normal permission scope before returning data.
 - Add one role-scoped, read-only `get_financial_monitoring` AI tool backed by
   that same deterministic service. It may explain the resulting figures but
   cannot propose, approve, or apply a financial change.
+- Add a daily collections/expenses/net-movement graph, deterministic study,
+  review-only anomaly candidates, and an allocation **planning** formula. The
+  formula uses 80% of recognized monthly collections as a planning base, split
+  40% Business Line of Credit limit, 30% Payroll funding, 10% Emergency fund,
+  and 20% Dividend partners. The other 20% remains outside the plan for
+  operations. It never moves or reserves money.
 - Make the page label the figures as operational monitoring and state the
   exact data sources.  It creates no AI result and writes no financial data.
 

@@ -41,4 +41,17 @@ class FinancialMonitoringServiceTest extends TestCase
         $this->assertSame(0.0, $wallets['cash']['collections']);
         $this->assertSame(0.0, $wallets['gcash']['collections']);
     }
+
+    public function test_it_calculates_the_requested_80_percent_collectibles_plan_without_moving_funds(): void
+    {
+        $plan = FinancialMonitoringService::allocationPlan(10000);
+
+        $this->assertSame(10000.0, $plan['collection_base']);
+        $this->assertSame(8000.0, $plan['planning_base']);
+        $this->assertSame(2000.0, $plan['retained_operations']);
+        $this->assertSame(3200.0, $plan['allocations'][0]['amount']);
+        $this->assertSame(2400.0, $plan['allocations'][1]['amount']);
+        $this->assertSame(800.0, $plan['allocations'][2]['amount']);
+        $this->assertSame(1600.0, $plan['allocations'][3]['amount']);
+    }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Banknote, CircleDollarSign, Landmark, RefreshCw, ReceiptText, ShieldCheck, WalletCards } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Landmark, RefreshCw, ReceiptText, ShieldAlert, ShieldCheck, Sparkles, WalletCards } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatPHP } from '@/lib/currency';
 import api from '@/services/api';
@@ -13,12 +13,19 @@ type Wallet = {
   expenses: number;
   balance: number;
 };
+type DailyMetric = { date: string; billed: number; collections: number; cash_in: number; expenses: number; net_operating_movement: number };
+type Allocation = { key: string; label: string; percent_of_planning_base: number; percent_of_collections: number; amount: number };
+type Anomaly = { type: string; severity: 'review' | 'monitor'; message: string; amount_total?: number; customer?: { account_number?: string | null; full_name?: string | null }; payment_numbers?: string[]; invoice_numbers?: string[]; payment_count?: number; invoice_count?: number; remittance_count?: number };
 type MonitoringData = {
   period: { month: string; start: string; end: string; timezone: string };
-  flow: { billed: number; collections: number; cash_in: number; expenses: number; net_operating_movement: number };
+  flow: { billed: number; collections: number; cash_in: number; expenses: number; net_operating_movement: number; collection_rate_percent: number | null; expense_ratio_percent: number | null };
   wallets: Record<WalletName, Wallet>;
+  daily_metrics: DailyMetric[];
+  allocation_plan: { collection_base: number; planning_base: number; retained_operations: number; allocations: Allocation[]; note: string };
   accounts_receivable: { open_invoice_count: number; outstanding_balance: number; overdue_balance: number; available_advance_credit: number };
   remittances: { pending_count: number; pending_declared_amount: number };
+  study: { headline: string; findings: string[]; action_required: string };
+  anomalies: { summary: { review_count: number; duplicate_payment_count: number; duplicate_invoice_count: number }; items: Anomaly[] };
   data_sources: string[];
   limitations: string[];
   generated_at: string;
@@ -56,8 +63,14 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   useEffect(() => { void load(); }, [load]);
 
   const wallets = data?.wallets;
+  const anomalies = data?.anomalies.items ?? [];
   const totalWalletMovement = WALLET_DISPLAY.reduce((total, wallet) => total + (wallets?.[wallet.key]?.balance ?? 0), 0);
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
+  const askFinanceAi = (): void => {
+    window.dispatchEvent(new CustomEvent('solarnet:open-ai', {
+      detail: { prompt: `Explain the verified Financial Monitoring study for ${month}. Use the finance tool, show Result, Data source, Calculation, Findings, Risk, Recommendation, and Action required. Do not change any financial record.` },
+    }));
+  };
 
   return (
     <DashboardLayout>
@@ -83,6 +96,12 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><ChartNoAxesCombined className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Daily metrics graph</h2></div><p className="mt-1 text-sm text-muted-foreground">Collections, approved expenses, and net operating movement by day. Transfers are excluded from net movement.</p></div><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />Collections</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-500" />Expenses</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-sky-500" />Net movement</span></div></div>
+          <FinanceMetricsGraph metrics={data?.daily_metrics ?? []} />
+          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2"><p>Operational collected-to-billed ratio: <b className="text-foreground">{data?.flow.collection_rate_percent === null || data?.flow.collection_rate_percent === undefined ? '—' : `${data.flow.collection_rate_percent.toFixed(2)}%`}</b></p><p>Expense-to-collections ratio: <b className="text-foreground">{data?.flow.expense_ratio_percent === null || data?.flow.expense_ratio_percent === undefined ? '—' : `${data.flow.expense_ratio_percent.toFixed(2)}%`}</b></p></div>
+        </section>
+
+        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-foreground">Financial flow</h2><p className="mt-1 text-sm text-muted-foreground">Invoices are billed amounts. Only recorded payments are shown as collections.</p></div>{refreshedAt && <p className="text-xs text-muted-foreground">Updated {refreshedAt}</p>}</div>
           <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch">
             <FlowStep label="Invoiced" value={formatPHP(data?.flow.billed)} detail="Issued during selected month" />
@@ -93,6 +112,21 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
             <FlowArrow />
             <FlowStep label="Net movement" value={formatPHP(data?.flow.net_operating_movement)} detail="Transfers excluded" accent={(data?.flow.net_operating_movement ?? 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'} />
           </div>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <article className="rounded-2xl border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Landmark className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Collectibles allocation plan</h2></div><p className="mt-1 text-sm text-muted-foreground">Planning only. It does not reserve, transfer, approve, or lend funds.</p></div><p className="rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary">80% planning base</p></div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2"><AllocationCard label="Planning base" value={formatPHP(data?.allocation_plan.planning_base)} detail={`80% of ${formatPHP(data?.allocation_plan.collection_base)}`} accent="text-primary" />{data?.allocation_plan.allocations.map((allocation) => <AllocationCard key={allocation.key} label={allocation.label} value={formatPHP(allocation.amount)} detail={`${allocation.percent_of_planning_base}% of plan · ${allocation.percent_of_collections}% of collections`} />)}<AllocationCard label="Operations retained" value={formatPHP(data?.allocation_plan.retained_operations)} detail="20% outside the allocation plan" /></div>
+            <p className="mt-4 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">{data?.allocation_plan.note ?? 'Loading allocation policy…'}</p>
+          </article>
+
+          <article className="rounded-2xl border border-violet-200 bg-violet-50/50 p-4 sm:p-5 dark:border-violet-900/60 dark:bg-violet-950/20"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-2"><BrainCircuit className="mt-0.5 h-5 w-5 shrink-0 text-violet-700 dark:text-violet-300" /><div><h2 className="font-semibold text-foreground">Finance study & AI interpreter</h2><p className="mt-1 text-sm text-muted-foreground">Deterministic study first; the AI only explains verified data.</p></div></div><button type="button" onClick={askFinanceAi} className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800 dark:bg-violet-500 dark:text-slate-950 dark:hover:bg-violet-400"><Sparkles className="h-4 w-4" />Ask Finance AI</button></div>
+            <p className="mt-4 font-semibold text-foreground">{data?.study.headline ?? 'Loading finance study…'}</p><ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{data?.study.findings.map((item) => <li key={item}>{item}</li>)}</ul><p className="mt-4 rounded-xl border border-violet-200 bg-background/80 px-3 py-2 text-xs text-muted-foreground dark:border-violet-900/60"><b className="text-foreground">Action required:</b> {data?.study.action_required ?? 'Loading…'}</p>
+          </article>
+        </section>
+
+        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-2"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><h2 className="font-semibold text-foreground">Detection anomalies</h2><p className="mt-1 text-sm text-muted-foreground">Read-only candidates from deterministic rules. Nothing is corrected automatically.</p></div></div><div className="flex gap-2 text-xs"><span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{data?.anomalies.summary.review_count ?? 0} to review</span><span className="rounded-full bg-muted px-2 py-1 font-semibold text-muted-foreground">Payments {data?.anomalies.summary.duplicate_payment_count ?? 0} · Invoices {data?.anomalies.summary.duplicate_invoice_count ?? 0}</span></div></div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">{anomalies.length ? anomalies.map((item, index) => <AnomalyCard key={`${item.type}-${index}`} item={item} />) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No review candidates were detected by the current duplicate-payment, duplicate-invoice, remittance, and overdue-receivable checks.</p>}</div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
@@ -140,4 +174,26 @@ function FlowArrow(): React.JSX.Element {
 
 function ReviewRow({ label, value, detail, warning = false }: { label: string; value: string; detail: string; warning?: boolean }): React.JSX.Element {
   return <div className="rounded-xl border border-border bg-background p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-foreground">{label}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div><p className={`shrink-0 text-sm font-bold ${warning ? 'text-amber-700 dark:text-amber-400' : 'text-foreground'}`}>{value}</p></div></div>;
+}
+
+function AllocationCard({ label, value, detail, accent = 'text-foreground' }: { label: string; value: string; detail: string; accent?: string }): React.JSX.Element {
+  return <div className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
+}
+
+function AnomalyCard({ item }: { item: Anomaly }): React.JSX.Element {
+  const identity = [item.customer?.full_name, item.customer?.account_number].filter(Boolean).join(' · ');
+  const records = item.payment_numbers?.length ? item.payment_numbers.join(', ') : item.invoice_numbers?.join(', ');
+  return <article className="rounded-xl border border-border bg-background p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-semibold capitalize text-foreground">{item.type.replaceAll('_', ' ')}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.severity === 'review' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{item.severity}</span></div><p className="mt-2 text-sm text-muted-foreground">{item.message}</p>{identity && <p className="mt-2 text-xs font-medium text-foreground">{identity}</p>}{records && <p className="mt-1 break-words text-xs text-muted-foreground">{records}</p>}{item.amount_total !== undefined && <p className="mt-3 text-sm font-bold text-foreground">{formatPHP(item.amount_total)}</p>}</article>;
+}
+
+function FinanceMetricsGraph({ metrics }: { metrics: DailyMetric[] }): React.JSX.Element {
+  if (!metrics.length) return <p className="mt-5 rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No days are available to graph for this period.</p>;
+  const width = 760; const height = 260; const left = 44; const right = 16; const top = 18; const bottom = 34;
+  const values = metrics.flatMap((metric) => [metric.collections, metric.expenses, metric.net_operating_movement]);
+  const maximum = Math.max(1, ...values, 0); const minimum = Math.min(0, ...values); const range = Math.max(1, maximum - minimum);
+  const x = (index: number): number => left + (index / Math.max(1, metrics.length - 1)) * (width - left - right);
+  const y = (value: number): number => top + ((maximum - value) / range) * (height - top - bottom);
+  const points = (key: keyof Pick<DailyMetric, 'collections' | 'expenses' | 'net_operating_movement'>): string => metrics.map((metric, index) => `${x(index)},${y(metric[key])}`).join(' ');
+  const zeroLine = y(0); const labels = metrics.filter((_, index) => index === 0 || index === metrics.length - 1 || index % Math.max(1, Math.ceil(metrics.length / 6)) === 0);
+  return <div className="mt-4 overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[42rem] w-full" role="img" aria-label="Daily collections, expenses, and net operating movement graph"><line x1={left} x2={width - right} y1={zeroLine} y2={zeroLine} className="stroke-border" strokeDasharray="4 4" /><text x={6} y={top + 4} className="fill-muted-foreground text-[11px]">{formatPHP(maximum)}</text><text x={6} y={height - bottom + 4} className="fill-muted-foreground text-[11px]">{formatPHP(minimum)}</text><polyline fill="none" stroke="currentColor" className="text-emerald-500" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points('collections')} /><polyline fill="none" stroke="currentColor" className="text-amber-500" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points('expenses')} /><polyline fill="none" stroke="currentColor" className="text-sky-500" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points('net_operating_movement')} />{labels.map((metric) => { const index = metrics.indexOf(metric); return <text key={metric.date} x={x(index)} y={height - 10} textAnchor="middle" className="fill-muted-foreground text-[10px]">{metric.date.slice(8)}</text>; })}</svg></div>;
 }

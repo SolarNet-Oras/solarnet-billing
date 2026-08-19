@@ -19,6 +19,12 @@ const SUGGESTIONS: string[] = [
   'How many unregistered leases are ready to register?',
 ];
 
+const FINANCE_SUGGESTIONS: string[] = [
+  'Explain this month\'s verified financial monitoring study.',
+  'How much did SolarNet recognize as collections this month by payment channel?',
+  'What finance review candidates need human attention this month?',
+];
+
 const SUPER_ADMIN_SUGGESTIONS: string[] = [
   'Review /app/backend/app/Services/Ai/AiService.php and suggest 2 improvements',
   'Where do we validate account_number? Show the code and suggest a cleaner regex.',
@@ -114,6 +120,20 @@ const FloatingAiAssistant: React.FC = () => {
     }
   }, [open, isAuthenticated]);
 
+  // Pages can open the assistant with a safe, user-reviewable prompt. The
+  // message is not sent automatically; the user still chooses whether to send
+  // it, and all server-side finance tools retain their own role checks.
+  useEffect(() => {
+    const openWithPrompt = (event: Event): void => {
+      const detail = (event as CustomEvent<{ prompt?: string }>).detail;
+      setShowSidebar(false);
+      if (detail?.prompt) setMessage(detail.prompt);
+      setOpen(true);
+    };
+    window.addEventListener('solarnet:open-ai', openWithPrompt);
+    return () => window.removeEventListener('solarnet:open-ai', openWithPrompt);
+  }, []);
+
   useEffect(() => {
     // Auto-scroll to bottom on new message
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -199,8 +219,10 @@ const FloatingAiAssistant: React.FC = () => {
 
   if (!isAuthenticated) return null;
 
-  const isSuperAdmin = Boolean((user as any)?.roles?.some?.((r: any) => (typeof r === 'string' ? r : r?.name) === 'super_admin'));
-  const suggestions = isSuperAdmin ? [...SUGGESTIONS, ...SUPER_ADMIN_SUGGESTIONS] : SUGGESTIONS;
+  const roleNames = [(user as any)?.role, ...(((user as any)?.roles || []).map((role: any) => typeof role === 'string' ? role : role?.name))].filter(Boolean);
+  const isSuperAdmin = roleNames.includes('super_admin');
+  const isFinanceRole = roleNames.some((role: string) => ['super_admin', 'admin', 'cashier', 'accounting'].includes(role));
+  const suggestions = [...SUGGESTIONS, ...(isFinanceRole ? FINANCE_SUGGESTIONS : []), ...(isSuperAdmin ? SUPER_ADMIN_SUGGESTIONS : [])];
 
   return (
     <>
