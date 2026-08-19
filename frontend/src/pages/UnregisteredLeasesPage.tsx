@@ -1,18 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X } from 'lucide-react';
 
-type Tab = 'static' | 'dynamic';
-
 const UnregisteredLeasesPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>('static');
   const [staticLeases, setStaticLeases] = useState<UnregisteredLease[]>([]);
-  const [dynamicLeases, setDynamicLeases] = useState<UnregisteredLease[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
   const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [customerLinkCandidates, setCustomerLinkCandidates] = useState<CustomerLinkCandidate[]>([]);
@@ -32,15 +26,13 @@ const UnregisteredLeasesPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [s, d, r, p, customers] = await Promise.all([
+      const [s, r, p, customers] = await Promise.all([
         unregisteredLeaseService.listStaticCommented(),
-        unregisteredLeaseService.listDynamic(),
         routerService.getAll().catch(() => [] as Router[]),
         servicePlanService.getAll().catch(() => [] as ServicePlan[]),
         unregisteredLeaseService.customerLinkCandidates().catch(() => [] as CustomerLinkCandidate[]),
       ]);
       setStaticLeases(s);
-      setDynamicLeases(d);
       setRouters(r);
       setPlans(p.filter((pl) => pl.is_active));
       setCustomerLinkCandidates(customers);
@@ -100,7 +92,6 @@ const UnregisteredLeasesPage: React.FC = () => {
       }
       setNotice(parts.join(' · '));
       setStaticLeases((prev) => prev.filter((l) => l.id !== lease.id));
-      setDynamicLeases((prev) => prev.filter((l) => l.id !== lease.id));
       setModalLease(null);
     } catch (err: any) {
       // Prefer the backend's structured error over a generic message.
@@ -114,17 +105,6 @@ const UnregisteredLeasesPage: React.FC = () => {
     } finally {
       setRegisteringId(null);
     }
-  };
-
-  const handleManualAdd = (lease: UnregisteredLease): void => {
-    // Prefill the CreateCustomer form using query string.
-    const params = new URLSearchParams({
-      mac: lease.mac_address ?? '',
-      ip: lease.ip_address ?? '',
-      router: lease.router_id,
-      hostname: lease.hostname ?? '',
-    });
-    navigate(`/customers/new?${params.toString()}`);
   };
 
   const routerName = (id: string): string =>
@@ -147,7 +127,6 @@ const UnregisteredLeasesPage: React.FC = () => {
   };
 
   const filteredStaticLeases = filterLeases(staticLeases);
-  const filteredDynamicLeases = filterLeases(dynamicLeases);
 
   return (
     <DashboardLayout>
@@ -162,7 +141,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  DHCP leases synced from MikroTik that are not yet linked to a customer.
+                  Static DHCP leases with a MikroTik comment that are not yet linked to a customer.
                 </p>
               </div>
             </div>
@@ -175,7 +154,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             data-testid="sync-all-leases-btn"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing…' : 'Sync from all routers'}
+            {syncing ? 'Syncing…' : 'Sync static + comment leases'}
           </button>
         </div>
 
@@ -217,43 +196,22 @@ const UnregisteredLeasesPage: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
           )}
-          <p className="mt-1.5 text-xs text-muted-foreground">Searches all unregistered lease details from both MikroTik routers.</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Searches static, commented DHCP leases from both MikroTik routers.</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-border">
-          <TabButton
-            active={tab === 'static'}
-            onClick={() => setTab('static')}
-            label={`Static + Comment`}
-            count={filteredStaticLeases.length}
-            testId="tab-static"
-          />
-          <TabButton
-            active={tab === 'dynamic'}
-            onClick={() => setTab('dynamic')}
-            label={`Dynamic / Manual`}
-            count={filteredDynamicLeases.length}
-            testId="tab-dynamic"
-          />
+        <div className="border-b border-border pb-2 text-sm font-medium text-primary" data-testid="static-commented-count">
+          Static + Comment <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs">{filteredStaticLeases.length}</span>
         </div>
 
         {/* Body */}
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">Loading leases…</div>
-        ) : tab === 'static' ? (
+        ) : (
           <StaticLeasesTable
             leases={filteredStaticLeases}
             routerName={routerName}
             onRegister={(lease) => setModalLease(lease)}
             registeringId={registeringId}
-          />
-        ) : (
-          <DynamicLeasesTable
-            leases={filteredDynamicLeases}
-            routerName={routerName}
-            onRegister={(l) => setModalLease(l)}
-            onAdd={handleManualAdd}
           />
         )}
 
@@ -272,37 +230,6 @@ const UnregisteredLeasesPage: React.FC = () => {
     </DashboardLayout>
   );
 };
-
-// -----------------------------------------------------------------------------
-// Tab button
-// -----------------------------------------------------------------------------
-const TabButton: React.FC<{
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-  testId: string;
-}> = ({ active, onClick, label, count, testId }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    data-testid={testId}
-    className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${
-      active
-        ? 'border-primary text-primary'
-        : 'border-transparent text-muted-foreground hover:text-foreground'
-    }`}
-  >
-    {label}
-    <span
-      className={`ml-2 inline-flex items-center justify-center min-w-[22px] px-1.5 py-0.5 rounded-full text-xs ${
-        active ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'
-      }`}
-    >
-      {count}
-    </span>
-  </button>
-);
 
 // -----------------------------------------------------------------------------
 // Static + Comment tab
@@ -397,7 +324,7 @@ const StaticLeasesTable: React.FC<{
 // -----------------------------------------------------------------------------
 // Dynamic tab (manual add)
 // -----------------------------------------------------------------------------
-const DynamicLeasesTable: React.FC<{
+const _DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
   onRegister: (lease: UnregisteredLease) => void;
