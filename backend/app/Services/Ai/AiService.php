@@ -311,10 +311,10 @@ PROMPT;
         if (in_array('technician', $roles, true)) {
             return 'Technician mode: give concise diagnostic detail, state what is observed versus unknown, preserve networking terminology, and recommend only safe field checks. Do not make billing promises.';
         }
-        if (array_intersect($roles, ['super_admin', 'admin', 'cashier'])) {
+        if (array_intersect($roles, ['super_admin', 'admin', 'cashier', 'accounting'])) {
             return 'Finance monitoring mode: use verified finance tools for money questions, clearly separate billed from collected amounts, and never propose a direct correction as if it were already approved.';
         }
-        if (array_intersect($roles, ['office_admin', 'noc', 'accounting'])) {
+        if (array_intersect($roles, ['office_admin', 'noc'])) {
             return 'Administrator mode: give operational, billing, and technical context clearly. Separate verified system facts from recommendations. Customer-ready wording must remain polite and non-judgmental.';
         }
         if (in_array('collector', $roles, true)) {

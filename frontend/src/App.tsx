@@ -140,7 +140,7 @@ const App: React.FC = (): JSX.Element => {
               />
               <Route
                 path="/financial-monitoring"
-                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier']}><FinancialMonitoringPage /></ProtectedRoute>}
+                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'accounting']}><FinancialMonitoringPage /></ProtectedRoute>}
               />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />

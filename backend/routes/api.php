@@ -300,7 +300,7 @@ Route::prefix('v1')->group(function () {
         // Read-only operational finance monitoring. Sidebar visibility is not
         // relied on for access control; the endpoint is role-gated as well.
         Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
-            ->middleware('role:super_admin|admin|cashier');
+            ->middleware('role:super_admin|admin|cashier|accounting');
         
         // Ticket routes (require permission)
         Route::middleware(['permission:view-tickets'])->group(function () {

@@ -46,7 +46,7 @@ class GetFinancialMonitoringTool implements AiTool
 
     public function authorize(User $user): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin', 'cashier']);
+        return $user->hasAnyRole(['super_admin', 'admin', 'cashier', 'accounting']);
     }
 
     public function execute(User $user, array $arguments): array

@@ -130,7 +130,7 @@ normal permission scope before returning data.
 ### Phase 0 — implemented in this change
 
 - Add a role-scoped **Financial Monitoring** navigation entry and page for
-  Super Administrator, Administrator, and Cashier.
+  Super Administrator, Administrator, Cashier, and Accounting.
 - Add a read-only endpoint that derives a concise flow from existing invoices,
   payments, remittances, credits, and daily-operation entries.
 - Add one role-scoped, read-only `get_financial_monitoring` AI tool backed by
@@ -195,7 +195,8 @@ No Finance AI tool will directly call an Eloquent `create`, `update`,
 | Super Administrator | All finance monitoring | All authorized finance reads | Yes | Yes, after policy checks |
 | Administrator | All finance monitoring | Operational/AR/collection reads | Proposed only | No by default |
 | Cashier | Channel and remittance monitoring | Collection/cash/remittance reads | No | No |
-| Office Admin / Accounting | No new access in Phase 0 | Explicitly add later through policy | No | No |
+| Accounting | All finance monitoring | Read-only finance overview | No | No |
+| Office Admin | No new access in Phase 0 | Explicitly add later through policy | No | No |
 | Collector | Existing scoped collections only | Own collection scope only if added | No | No |
 | Technician / NOC / Viewer / Customer | No financial monitoring | No Finance AI tools | No | No |
 
