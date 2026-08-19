@@ -1676,11 +1676,15 @@ class MikrotikService
             $saved = $client->query($verify)->read()[0] ?? null;
             $expectedLimit = $updates['max-limit'] ?? null;
             $savedLimit = $saved['max-limit'] ?? null;
+            $expectedTarget = $updates['target'] ?? null;
+            $savedTarget = $saved['target'] ?? null;
+            $normalizeTarget = static fn (?string $target): string => (string) preg_replace('/\\/32$/', '', str_replace(' ', '', (string) $target));
             if (!$saved || ($expectedLimit && !$this->sameRateLimit($expectedLimit, $savedLimit))
+                || ($expectedTarget && $normalizeTarget($savedTarget) !== $normalizeTarget($expectedTarget))
                 || (isset($updates['comment']) && ($saved['comment'] ?? '') !== $updates['comment'])) {
                 return [
                     'success' => false,
-                    'message' => 'RouterOS did not save the requested queue limit. Expected ' . ($expectedLimit ?? 'queue update') . ', found ' . ($savedLimit ?? 'no queue') . '.',
+                    'message' => 'RouterOS did not save the requested queue settings. Expected target ' . ($expectedTarget ?? 'unchanged') . ' and limit ' . ($expectedLimit ?? 'unchanged') . '.',
                 ];
             }
             

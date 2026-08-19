@@ -173,9 +173,9 @@ const EditCustomerPage: React.FC = () => {
     }
 
     try {
-      await api.put(`/customers/${id}`, payload);
-      setNotice('Customer updated.');
-      setTimeout(() => navigate('/customers'), 700);
+      const response = await api.put<{ message?: string; mac_binding?: { status?: string } }>(`/customers/${id}`, payload);
+      setNotice(response.data.message || 'Customer updated.');
+      setTimeout(() => navigate('/customers'), response.data.mac_binding?.status === 'waiting_for_match' ? 2200 : 1300);
     } catch (err: any) {
       const validation = err.response?.data?.errors;
       if (validation && typeof validation === 'object') {
@@ -400,7 +400,12 @@ const EditCustomerPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Network Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="MAC Address" name="mac_address" value={formData.mac_address} onChange={handleChange} placeholder="00:00:00:00:00:00" testId="edit-mac-address" />
+              <div>
+                <Field label="MAC Address" name="mac_address" value={formData.mac_address} onChange={handleChange} placeholder="00:00:00:00:00:00" testId="edit-mac-address" />
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  For a replacement ONU/router, save the full MAC after it appears in DHCP. An exact bound lease is made static and receives this client&apos;s plan limit. If it has not appeared yet, the client safely waits for an exact match.
+                </p>
+              </div>
               <Field label="IP Address" name="ip_address" value={formData.ip_address} onChange={handleChange} placeholder="192.168.1.1" testId="edit-ip-address" />
               <Field label="VLAN" name="vlan" value={formData.vlan} onChange={handleChange} testId="edit-vlan" />
             </div>

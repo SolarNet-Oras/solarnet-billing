@@ -229,33 +229,41 @@ class DhcpSyncService
         }
 
         $customer = Customer::query()
-            ->whereRaw('upper(mac_address) = ?', [$this->normalizeMacAddress($lease->mac_address)])
+            ->whereRaw(
+                "upper(replace(replace(mac_address, ':', ''), '-', '')) = ?",
+                [str_replace(':', '', $this->normalizeMacAddress($lease->mac_address))],
+            )
             // A customer assigned to Router A must never be claimed by a
             // lease from Router B, even if both networks reuse a MAC/IP.
+            // The one exception is an explicit waiting replacement-MAC
+            // record: it still requires an exact MAC, but may move to the
+            // router where the replacement device actually appeared.
             ->where(function ($query) use ($lease) {
                 $query->where('router_id', $lease->router_id)
-                    ->orWhereNull('router_id');
+                    ->orWhereNull('router_id')
+                    ->orWhere('mac_binding_status', 'waiting_for_match');
             })
-            ->orderByRaw('case when router_id = ? then 0 else 1 end', [$lease->router_id])
+            ->orderByRaw('case when router_id = ? then 0 when router_id is null then 1 else 2 end', [$lease->router_id])
             ->first();
 
         if ($customer) {
             $customerUpdates = [];
-            $activatedWaitingRegistration = $customer->status === 'pending'
-                && $customer->mac_binding_status === 'waiting_for_match';
-            if (!$customer->router_id) {
+            $waitingForMacBinding = $customer->mac_binding_status === 'waiting_for_match';
+            if (!$customer->router_id || $waitingForMacBinding) {
                 $customerUpdates['router_id'] = $lease->router_id;
             }
 
             // A technician may register a client before the ONU has appeared
             // in DHCP.  Only an exact MAC match can release that record from
             // the waiting state; fuzzy matches are never auto-bound here.
-            if ($activatedWaitingRegistration) {
+            if ($waitingForMacBinding) {
                 $routerName = $lease->router?->name ?? 'the router';
-                $customerUpdates['status'] = 'active';
+                if ($customer->status === 'pending') {
+                    $customerUpdates['status'] = 'active';
+                }
                 $customerUpdates['ip_address'] = $lease->ip_address;
                 $customerUpdates['mac_binding_status'] = 'matched';
-                $customerUpdates['notes'] = trim((string) $customer->notes) . " Exact DHCP MAC match received on {$routerName}; registration activated.";
+                $customerUpdates['notes'] = trim((string) $customer->notes) . " Exact DHCP MAC match received on {$routerName}; hardware binding activated.";
             }
             if ($customerUpdates !== []) {
                 $customer->update($customerUpdates);
@@ -265,10 +273,14 @@ class DhcpSyncService
                 'customer_id' => $customer->id,
                 'is_matched' => true,
                 'match_source' => 'mac_address',
-                'match_note' => $activatedWaitingRegistration
-                    ? 'Exact waiting-registration MAC appeared in a current bound DHCP lease; customer activated.'
+                'match_note' => $waitingForMacBinding
+                    ? 'Exact waiting hardware MAC appeared in a current bound DHCP lease; customer binding activated.'
                     : 'Exact registered MAC address and router match.',
             ]);
+
+            if ($waitingForMacBinding) {
+                $this->applyWaitingHardwareBinding($customer->fresh(['servicePlan', 'router']), $lease->fresh('router'));
+            }
 
             return $customer;
         }
@@ -313,7 +325,8 @@ class DhcpSyncService
         if (!$customer->router_id) {
             $customerUpdates['router_id'] = $lease->router_id;
         }
-        if (!$customerMac) {
+        $missingCustomerMac = !$customerMac;
+        if ($missingCustomerMac) {
             // The exact account comment is an administrator-created RouterOS
             // association, so a missing app-side MAC can be recorded safely.
             $customerUpdates['mac_address'] = $leaseMac;
@@ -329,7 +342,61 @@ class DhcpSyncService
             'match_note' => 'Exact account number in RouterOS lease comment matched one eligible customer.',
         ]);
 
+        if ($missingCustomerMac) {
+            $this->applyWaitingHardwareBinding($customer->fresh(['servicePlan', 'router']), $lease->fresh('router'));
+        }
+
         return $customer;
+    }
+
+    /**
+     * An exact DHCP match is the only deferred event allowed to change
+     * RouterOS for a customer whose MAC was entered before the new ONU/router
+     * appeared. It converts that exact lease to static and then moves the
+     * SolarNet queue target to the lease IP with the selected plan limit.
+     */
+    protected function applyWaitingHardwareBinding(Customer $customer, DhcpLease $lease): void
+    {
+        if (!$lease->router || !$lease->mac_address || !$lease->ip_address || !$customer->servicePlan) {
+            Log::warning('Deferred hardware binding could not be applied because required customer or lease data is missing.', [
+                'customer_id' => $customer->id,
+                'lease_id' => $lease->id,
+            ]);
+            return;
+        }
+
+        $rateLimit = $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
+        $leaseResult = $this->mikrotikService->updateOrMakeStaticLease(
+            $lease->router,
+            $lease->mac_address,
+            $customer->full_name,
+            $rateLimit,
+            $lease->ip_address,
+            $lease->server ?: 'default',
+        );
+
+        if (!$leaseResult['success']) {
+            Log::warning('Deferred hardware binding was matched locally but MikroTik static-lease sync failed.', [
+                'customer_id' => $customer->id,
+                'lease_id' => $lease->id,
+                'message' => $leaseResult['message'] ?? 'Unknown MikroTik error',
+            ]);
+            return;
+        }
+
+        $lease->update([
+            'comment' => $customer->full_name,
+            'rate_limit' => $rateLimit,
+            'is_dynamic' => false,
+        ]);
+        $queueResult = $this->queueService->syncCustomerQueue($customer, true);
+        if (!$queueResult['success']) {
+            Log::warning('Deferred hardware binding static lease succeeded but customer queue sync failed.', [
+                'customer_id' => $customer->id,
+                'lease_id' => $lease->id,
+                'message' => $queueResult['message'] ?? 'Unknown queue error',
+            ]);
+        }
     }
 
     /** @return array<int, string> */
@@ -435,7 +502,12 @@ class DhcpSyncService
 
     protected function normalizeMacAddress(string $macAddress): string
     {
-        return strtoupper(trim($macAddress));
+        $hex = strtoupper((string) preg_replace('/[^A-Fa-f0-9]/', '', $macAddress));
+        if (strlen($hex) !== 12 || preg_match('/^[A-F0-9]{12}$/', $hex) !== 1) {
+            return strtoupper(trim($macAddress));
+        }
+
+        return implode(':', str_split($hex, 2));
     }
 
     protected function detachCrossRouterMatches(Router $router): int

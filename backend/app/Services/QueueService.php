@@ -29,6 +29,18 @@ class QueueService
         // Load relationships
         $customer->load(['servicePlan', 'router']);
 
+        // A technician or administrator may save a replacement ONU/router
+        // MAC before that device has received a DHCP lease.  Until an exact
+        // current lease appears, keep the existing customer queue untouched:
+        // a manually typed IP must never become a RouterOS queue target.
+        if ($customer->mac_binding_status === 'waiting_for_match') {
+            return [
+                'success' => true,
+                'message' => 'Skipped queue sync — replacement MAC is waiting for an exact current DHCP lease.',
+                'skipped' => true,
+            ];
+        }
+
         // Short-circuit when the router is not verified as reachable.
         // Attempting a live MikroTik API call during a synchronous HTTP request
         // (e.g. Add Client / Convert Lease) against an offline router hangs
@@ -150,6 +162,10 @@ class QueueService
             // max-limit, so send RouterOS' explicit disabled burst values when
             // the selected plan has no burst configuration.
             $updates = [
+                // A router replacement can receive a new DHCP IP. Keep the
+                // existing SolarNet-owned queue on the new /32 as well as
+                // updating its plan speed.
+                'target' => $queueData['target'],
                 'max-limit' => $queueData['max_limit'],
                 'priority' => $queueData['priority'] . '/' . $queueData['priority'],
                 'comment' => $queueData['comment'],
@@ -222,6 +238,7 @@ class QueueService
         } else {
             // Update existing queue to throttled speed
             return $this->mikrotikService->updateQueue($router, $queueName, [
+                'target' => $customer->ip_address . '/32',
                 'max-limit' => $this->suspendedLimit(),
                 'comment' => strtoupper($customer->status) . " - {$customer->full_name} - {$customer->account_number}",
             ]);

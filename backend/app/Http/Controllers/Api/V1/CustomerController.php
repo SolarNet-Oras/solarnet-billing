@@ -374,6 +374,103 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        $hardwareBinding = null;
+        $matchedLeaseId = null;
+
+        // MAC address entry/replacement has a stricter path than a normal
+        // profile edit. We accept only a complete MAC, bind it only to one
+        // exact current DHCP lease, and use that lease's router/IP rather
+        // than trusting browser-entered network coordinates.
+        if (array_key_exists('mac_address', $validated) && trim((string) $validated['mac_address']) !== '') {
+            $enteredMac = $this->normalizeMacForBinding((string) $validated['mac_address']);
+            if (!$enteredMac) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Enter a complete 12-character MAC address, for example AA:BB:CC:DD:EE:FF.',
+                ], 422);
+            }
+
+            $currentMac = $this->normalizeMacForBinding((string) $customer->mac_address);
+            $validated['mac_address'] = $enteredMac;
+
+            if ($enteredMac !== $currentMac) {
+                $macHex = str_replace(':', '', $enteredMac);
+                $alreadyAssigned = Customer::query()
+                    ->where('id', '!=', $customer->id)
+                    ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macHex])
+                    ->exists();
+                if ($alreadyAssigned) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'This MAC address is already assigned to another customer. Verify the replacement ONU/router before saving.',
+                    ], 422);
+                }
+
+                $matchingLeases = DhcpLease::query()
+                    ->with('router')
+                    ->presentOnRouter()
+                    ->active()
+                    ->whereNotNull('mac_address')
+                    ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macHex])
+                    ->get();
+
+                if ($matchingLeases->count() > 1) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'This MAC appears in more than one current DHCP lease. Select the correct router after resolving the duplicate lease before changing this client.',
+                    ], 422);
+                }
+
+                $matchedLease = $matchingLeases->first();
+                if ($matchedLease && $matchedLease->customer_id && $matchedLease->customer_id !== $customer->id) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'This current DHCP lease is already linked to another customer. No MAC or MikroTik change was made.',
+                    ], 422);
+                }
+
+                if ($matchedLease && !$matchedLease->router) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'The matching DHCP lease has no configured MikroTik router. No MAC change was made.',
+                    ], 422);
+                }
+
+                if ($matchedLease) {
+                    $customer->loadMissing('servicePlan');
+                    if (!$customer->servicePlan && empty($validated['service_plan_id'])) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Assign a service plan before binding a router MAC, so MikroTik receives the correct speed limit.',
+                        ], 422);
+                    }
+
+                    // The exact DHCP lease is authoritative for the new
+                    // hardware identity. This prevents an old form value
+                    // from moving a queue to the wrong router/IP.
+                    $validated['router_id'] = $matchedLease->router_id;
+                    $validated['ip_address'] = $matchedLease->ip_address;
+                    $validated['mac_binding_status'] = 'matched';
+                    $matchedLeaseId = $matchedLease->id;
+                    $hardwareBinding = [
+                        'status' => 'matched',
+                        'lease_id' => $matchedLease->id,
+                        'router_id' => $matchedLease->router_id,
+                        'ip_address' => $matchedLease->ip_address,
+                    ];
+                } else {
+                    // Do not create a static lease or change a queue from an
+                    // unobserved device. DHCP sync will bind it only after an
+                    // exact, current, bound lease is present on a router.
+                    $validated['mac_binding_status'] = 'waiting_for_match';
+                    $hardwareBinding = [
+                        'status' => 'waiting_for_match',
+                        'lease_id' => null,
+                    ];
+                }
+            }
+        }
+
         $statusWasChanged = array_key_exists('status', $validated) && $validated['status'] !== $customer->status;
         $manualRestorationRequested = $statusWasChanged
             && $validated['status'] === 'active'
@@ -390,7 +487,74 @@ class CustomerController extends Controller
             // requires queue and firewall restoration confirmation.
             unset($validated['status'], $validated['suspension_source']);
         }
-        $customer->update($validated);
+
+        // Link the matched lease and detach only its previous local customer
+        // association atomically. We do not delete or alter old RouterOS
+        // leases, firewall rules, pools, or VLAN configuration.
+        try {
+            $customer = DB::transaction(function () use ($customer, $validated, $matchedLeaseId) {
+                if (!$matchedLeaseId) {
+                    $customer->update($validated);
+                    return $customer->fresh();
+                }
+
+                $lease = DhcpLease::query()
+                    ->with('router')
+                    ->lockForUpdate()
+                    ->findOrFail($matchedLeaseId);
+
+                $newMacHex = str_replace(':', '', (string) $validated['mac_address']);
+                $leaseMacHex = str_replace([':', '-'], '', strtoupper((string) $lease->mac_address));
+                if (!$lease->is_current || $lease->status !== 'bound' || $leaseMacHex !== $newMacHex || !$lease->router) {
+                    throw new \RuntimeException('The matching DHCP lease changed before it could be bound. Refresh DHCP leases and try again.');
+                }
+                if ($lease->customer_id && $lease->customer_id !== $customer->id) {
+                    throw new \RuntimeException('The matching DHCP lease was linked to another customer before it could be bound.');
+                }
+
+                DhcpLease::query()
+                    ->where('customer_id', $customer->id)
+                    ->where('id', '!=', $lease->id)
+                    ->presentOnRouter()
+                    ->update([
+                        'customer_id' => null,
+                        'is_matched' => false,
+                        'match_source' => null,
+                        'match_note' => 'Local customer lease link replaced after an approved router/ONU MAC change.',
+                    ]);
+
+                $customer->update($validated);
+                $lease->update([
+                    'customer_id' => $customer->id,
+                    'is_matched' => true,
+                    'match_source' => 'customer_mac_update',
+                    'match_note' => 'Exact current DHCP lease bound after an approved router/ONU MAC change.',
+                ]);
+
+                return $customer->fresh();
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        $mikrotikSync = null;
+        $queueSync = null;
+        if ($matchedLeaseId) {
+            $lease = DhcpLease::with('router')->findOrFail($matchedLeaseId);
+            $customer->load(['servicePlan', 'router']);
+            $mikrotikSync = $this->syncLeaseToMikrotik($lease, $customer);
+            if ($mikrotikSync['success']) {
+                $lease->update([
+                    'comment' => $customer->full_name,
+                    'rate_limit' => $this->rateLimitFor($customer),
+                    'is_dynamic' => false,
+                ]);
+                $queueSync = $this->queueService->syncCustomerQueue($customer, true);
+            }
+        }
 
         if ($manualRestorationRequested) {
             app(BillingSuspensionService::class)->restoreCustomer(
@@ -404,10 +568,24 @@ class CustomerController extends Controller
         }
         $customer->refresh();
 
+        $message = 'Customer updated successfully';
+        if (($hardwareBinding['status'] ?? null) === 'waiting_for_match') {
+            $message = 'Customer updated. The replacement MAC is waiting for an exact current DHCP lease; no MikroTik lease or queue was changed.';
+        } elseif ($mikrotikSync && !$mikrotikSync['success']) {
+            $message = 'Customer was updated, but MikroTik could not make the matched lease static: ' . ($mikrotikSync['message'] ?? 'unknown error');
+        } elseif (($hardwareBinding['status'] ?? null) === 'matched') {
+            $message = ($queueSync['success'] ?? false)
+                ? 'Customer updated. The exact DHCP lease was made static and the customer queue now uses the replacement device IP and plan limit.'
+                : 'Customer updated and the DHCP lease was made static. The queue sync still needs attention: ' . ($queueSync['message'] ?? 'unknown error');
+        }
+
         return response()->json([
             'status' => 'success',
-            'message' => 'Customer updated successfully',
+            'message' => $message,
             'data' => $customer->load(['technician', 'servicePlan']),
+            'mac_binding' => $hardwareBinding,
+            'mikrotik_sync' => $mikrotikSync,
+            'queue_sync' => $queueSync,
         ]);
     }
 
@@ -910,5 +1088,16 @@ class CustomerController extends Controller
         }
 
         return $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
+    }
+
+    /** Normalize only complete, unambiguous MAC addresses for hardware binding. */
+    protected function normalizeMacForBinding(string $macAddress): ?string
+    {
+        $hex = strtoupper((string) preg_replace('/[^A-Fa-f0-9]/', '', $macAddress));
+        if (strlen($hex) !== 12 || preg_match('/^[A-F0-9]{12}$/', $hex) !== 1) {
+            return null;
+        }
+
+        return implode(':', str_split($hex, 2));
     }
 }
