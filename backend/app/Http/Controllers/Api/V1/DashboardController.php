@@ -83,7 +83,7 @@ class DashboardController extends Controller
 
     public function technicianMonitor(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->matchedLeaseMonitor(), 'refreshed_at' => now()->toIso8601String()])
+        return response()->json(['data' => $this->registeredCustomerMonitor(), 'refreshed_at' => now()->toIso8601String()])
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
     /**
@@ -206,11 +206,9 @@ class DashboardController extends Controller
                 'automation_activity' => AutomationLog::orderByDesc('created_at')
                     ->limit(6)
                     ->get(['id', 'job', 'status', 'summary', 'finished_at']),
-                // Client monitor is based on matched DHCP leases and simple
-                // queue snapshots, not OLT/ONU data. Queue snapshots are
-                // updated during Router Sync and remain safe to display while
-                // a router VPN/API connection is temporarily unavailable.
-                'client_monitor' => $this->matchedLeaseMonitor(),
+                // Every registered customer remains visible. Only a customer
+                // with a current bound DHCP lease can have live queue traffic.
+                'client_monitor' => $this->registeredCustomerMonitor(),
             ],
             'timestamp' => now()->toIso8601String(),
         ]);
@@ -264,33 +262,78 @@ class DashboardController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $this->matchedLeaseMonitor(),
+            'data' => $this->registeredCustomerMonitor(),
             'refreshed_at' => now()->toIso8601String(),
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
           ->header('Pragma', 'no-cache');
     }
 
-    /** Build a compact dashboard monitor from matched DHCP leases and queue snapshots. */
-    protected function matchedLeaseMonitor(?string $technicianId = null): array
+    /**
+     * Build the dashboard monitor for every registered customer.
+     *
+     * Customers are never omitted merely because they are offline, have no
+     * current DHCP lease, or have no current queue snapshot. Those cases are
+     * represented explicitly so staff can tell an offline client from a
+     * missing customer record.
+     */
+    protected function registeredCustomerMonitor(): array
     {
-        $query = DhcpLease::query()
-            ->where('is_matched', true)
-            ->whereNotNull('customer_id')
-            ->presentOnRouter()
-            ->active()
+        $customers = Customer::query()
+            ->where('status', '!=', 'pending')
             ->with([
-                'customer:id,full_name,status,service_plan_id',
-                'customer.servicePlan:id,name,download_speed,upload_speed',
+                'servicePlan:id,name,download_speed,upload_speed',
                 'router:id,name',
             ])
-            ->orderByDesc('last_seen_at');
-        if ($technicianId) $query->whereHas('customer', fn ($customers) => $customers->where('technician_id', $technicianId));
-        $leases = $query->limit(50)->get();
+            ->orderBy('full_name')
+            ->get(['id', 'full_name', 'status', 'service_plan_id', 'router_id']);
+
+        if ($customers->isEmpty()) {
+            return [];
+        }
+
+        // Multiple historic rows can exist per customer. Retain only the most
+        // recently seen live lease from the latest successful router sync.
+        $leasesByCustomer = DhcpLease::query()
+            ->where('is_matched', true)
+            ->whereIn('customer_id', $customers->pluck('id'))
+            ->presentOnRouter()
+            ->active()
+            ->with('router:id,name')
+            ->orderByDesc('last_seen_at')
+            ->get()
+            ->unique('customer_id')
+            ->keyBy('customer_id');
 
         $queueSnapshots = [];
         $monitor = [];
-        foreach ($leases as $lease) {
-            if (!$lease->customer || isset($monitor[$lease->customer_id])) {
+        foreach ($customers as $customer) {
+            /** @var DhcpLease|null $lease */
+            $lease = $leasesByCustomer->get($customer->id);
+
+            if (!$lease) {
+                $monitor[] = [
+                    'customer_id' => $customer->id,
+                    'full_name' => $customer->full_name,
+                    'customer_status' => $customer->status,
+                    'ip_address' => null,
+                    'lease_status' => 'No live DHCP lease',
+                    'last_seen_at' => null,
+                    'router_name' => $customer->router?->name,
+                    'queue_name' => 'No live queue',
+                    'queue_found' => false,
+                    'queue_snapshot_at' => null,
+                    'traffic' => [
+                        'download_bps' => null,
+                        'upload_bps' => null,
+                        'download_bytes' => null,
+                        'upload_bytes' => null,
+                    ],
+                    'service_plan' => $customer->servicePlan ? [
+                        'name' => $customer->servicePlan->name,
+                        'download_speed' => $customer->servicePlan->download_speed,
+                        'upload_speed' => $customer->servicePlan->upload_speed,
+                    ] : null,
+                ];
                 continue;
             }
 
@@ -318,10 +361,10 @@ class DashboardController extends Controller
                 ($rate[1] ?? 0) > 0 ? $rate[1] : $derivedRate[1],
             ];
 
-            $monitor[$lease->customer_id] = [
-                'customer_id' => $lease->customer_id,
-                'full_name' => $lease->customer->full_name,
-                'customer_status' => $lease->customer->status,
+            $monitor[] = [
+                'customer_id' => $customer->id,
+                'full_name' => $customer->full_name,
+                'customer_status' => $customer->status,
                 'ip_address' => $lease->ip_address,
                 'lease_status' => $lease->status,
                 'last_seen_at' => $lease->last_seen_at?->toIso8601String(),
@@ -337,19 +380,15 @@ class DashboardController extends Controller
                     'download_bytes' => $bytes[0],
                     'upload_bytes' => $bytes[1],
                 ],
-                'service_plan' => $lease->customer->servicePlan ? [
-                    'name' => $lease->customer->servicePlan->name,
-                    'download_speed' => $lease->customer->servicePlan->download_speed,
-                    'upload_speed' => $lease->customer->servicePlan->upload_speed,
+                'service_plan' => $customer->servicePlan ? [
+                    'name' => $customer->servicePlan->name,
+                    'download_speed' => $customer->servicePlan->download_speed,
+                    'upload_speed' => $customer->servicePlan->upload_speed,
                 ] : null,
             ];
-
-            if (count($monitor) >= 6) {
-                break;
-            }
         }
 
-        return array_values($monitor);
+        return $monitor;
     }
 
     /**

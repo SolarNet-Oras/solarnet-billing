@@ -29,7 +29,7 @@ interface ClientMonitor {
   customer_id: string;
   full_name: string;
   customer_status: string;
-  ip_address: string;
+  ip_address: string | null;
   lease_status: string;
   last_seen_at: string | null;
   router_name: string | null;
@@ -157,7 +157,7 @@ const QueueTraffic = ({ customer, history }: { customer: ClientMonitor; history:
       <path d={path('download')} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
       <path d={path('upload')} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
     </svg>
-    <p className="mt-0.5 text-[10px] text-muted-foreground">Blue download · Red upload · 2s samples</p>
+    <p className="mt-0.5 text-[10px] text-muted-foreground">Blue download · Red upload</p>
   </div>;
 };
 
@@ -430,6 +430,7 @@ const NewDashboardPageContent: React.FC = () => {
           <div className="flex flex-col gap-2 border-b border-border/70 p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-primary" /><h2 className="text-sm font-semibold text-foreground">Live queue & lease monitor</h2></div>
+              <p className="mt-1 text-[10px] text-muted-foreground">All registered clients are listed. Traffic appears when the client has a current DHCP lease and Simple Queue.</p>
             </div>
             <label className="relative block md:w-60"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search clients" className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-xs outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
           </div>
@@ -437,10 +438,10 @@ const NewDashboardPageContent: React.FC = () => {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-muted/45 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><tr><th className="px-3 py-2">Client</th><th className="px-3 py-2">Lease</th><th className="px-3 py-2">Queue</th><th className="px-3 py-2">Plan</th><th className="px-3 py-2">Traffic</th><th className="px-3 py-2">Status</th></tr></thead>
               <tbody className="divide-y divide-border/70">
-                {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading client monitor…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No matched DHCP client leases yet. Sync a router to populate this monitor.</td></tr> : customers.map((customer) => {
+                {loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">Loading client monitor…</td></tr> : customers.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">No registered clients match this search.</td></tr> : customers.map((customer) => {
                   const theme = statusTheme(customer.customer_status);
                   const StatusIcon = theme.Icon;
-                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-3 py-2 text-xs font-medium text-foreground">{customer.full_name}</td><td className="px-3 py-2 text-xs text-muted-foreground"><p>{customer.ip_address}</p><p className="mt-0.5 text-[10px] capitalize">{customer.lease_status}</p></td><td className="px-3 py-2 text-muted-foreground"><p className="font-mono text-[10px]">{customer.queue_name}</p><p className={`mt-0.5 text-[10px] ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'Awaiting queue sync'}</p></td><td className="px-3 py-2 text-[10px] text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-3 py-2 text-muted-foreground"><QueueTraffic customer={customer} history={trafficHistory[customer.customer_id] ?? []} /></td><td className="px-3 py-2"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.className}`}><StatusIcon className="h-3 w-3" />{theme.label}</span></td></tr>;
+                  return <tr key={customer.customer_id} className="transition-colors hover:bg-muted/35"><td className="px-3 py-2 text-xs font-medium text-foreground">{customer.full_name}</td><td className="px-3 py-2 text-xs text-muted-foreground"><p>{customer.ip_address || '—'}</p><p className="mt-0.5 text-[10px] capitalize">{customer.lease_status}</p></td><td className="px-3 py-2 text-muted-foreground"><p className="font-mono text-[10px]">{customer.queue_name}</p><p className={`mt-0.5 text-[10px] ${customer.queue_found ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>{customer.queue_found ? 'Queue found' : 'No live queue'}</p></td><td className="px-3 py-2 text-[10px] text-muted-foreground">{customer.service_plan ? `${customer.service_plan.name} · ${customer.service_plan.download_speed}/${customer.service_plan.upload_speed} Mbps` : 'No plan'}</td><td className="px-3 py-2 text-muted-foreground"><QueueTraffic customer={customer} history={trafficHistory[customer.customer_id] ?? []} /></td><td className="px-3 py-2"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${theme.className}`}><StatusIcon className="h-3 w-3" />{theme.label}</span></td></tr>;
                 })}
               </tbody>
             </table>
