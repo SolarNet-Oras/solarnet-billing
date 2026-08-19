@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
@@ -6,7 +7,10 @@ import { servicePlanService, type ServicePlan } from '@/services/servicePlanServ
 import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X } from 'lucide-react';
 
 const UnregisteredLeasesPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<'static' | 'dynamic'>('static');
   const [staticLeases, setStaticLeases] = useState<UnregisteredLease[]>([]);
+  const [dynamicLeases, setDynamicLeases] = useState<UnregisteredLease[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
   const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [customerLinkCandidates, setCustomerLinkCandidates] = useState<CustomerLinkCandidate[]>([]);
@@ -26,13 +30,15 @@ const UnregisteredLeasesPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [s, r, p, customers] = await Promise.all([
+      const [s, d, r, p, customers] = await Promise.all([
         unregisteredLeaseService.listStaticCommented(),
+        unregisteredLeaseService.listDynamic(),
         routerService.getAll().catch(() => [] as Router[]),
         servicePlanService.getAll().catch(() => [] as ServicePlan[]),
         unregisteredLeaseService.customerLinkCandidates().catch(() => [] as CustomerLinkCandidate[]),
       ]);
       setStaticLeases(s);
+      setDynamicLeases(d);
       setRouters(r);
       setPlans(p.filter((pl) => pl.is_active));
       setCustomerLinkCandidates(customers);
@@ -107,6 +113,16 @@ const UnregisteredLeasesPage: React.FC = () => {
     }
   };
 
+  const handleManualAdd = (lease: UnregisteredLease): void => {
+    const params = new URLSearchParams({
+      mac: lease.mac_address ?? '',
+      ip: lease.ip_address ?? '',
+      router: lease.router_id,
+      hostname: lease.hostname ?? '',
+    });
+    navigate(`/customers/new?${params.toString()}`);
+  };
+
   const routerName = (id: string): string =>
     routers.find((r) => r.id === id)?.name ?? 'Unknown router';
 
@@ -127,6 +143,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   };
 
   const filteredStaticLeases = filterLeases(staticLeases);
+  const filteredDynamicLeases = filterLeases(dynamicLeases);
 
   return (
     <DashboardLayout>
@@ -141,7 +158,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  Static DHCP leases with a MikroTik comment that are not yet linked to a customer.
+                  DHCP leases from MikroTik that are not yet linked to a customer.
                 </p>
               </div>
             </div>
@@ -154,7 +171,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             data-testid="sync-all-leases-btn"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing…' : 'Sync static + comment leases'}
+            {syncing ? 'Refreshing…' : 'Refresh DHCP leases'}
           </button>
         </div>
 
@@ -196,22 +213,44 @@ const UnregisteredLeasesPage: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
           )}
-          <p className="mt-1.5 text-xs text-muted-foreground">Searches static, commented DHCP leases from both MikroTik routers.</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Searches static and dynamic DHCP leases from both MikroTik routers.</p>
         </div>
 
-        <div className="border-b border-border pb-2 text-sm font-medium text-primary" data-testid="static-commented-count">
-          Static + Comment <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs">{filteredStaticLeases.length}</span>
+        <div className="flex gap-1 border-b border-border">
+          <button
+            type="button"
+            onClick={() => setTab('static')}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${tab === 'static' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            data-testid="tab-static"
+          >
+            Static + Comment <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs">{filteredStaticLeases.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('dynamic')}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${tab === 'dynamic' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            data-testid="tab-dynamic"
+          >
+            Dynamic / Manual <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-secondary px-1.5 py-0.5 text-xs text-muted-foreground">{filteredDynamicLeases.length}</span>
+          </button>
         </div>
 
         {/* Body */}
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">Loading leases…</div>
-        ) : (
+        ) : tab === 'static' ? (
           <StaticLeasesTable
             leases={filteredStaticLeases}
             routerName={routerName}
             onRegister={(lease) => setModalLease(lease)}
             registeringId={registeringId}
+          />
+        ) : (
+          <DynamicLeasesTable
+            leases={filteredDynamicLeases}
+            routerName={routerName}
+            onManualRegister={handleManualAdd}
+            onClientMigration={() => navigate('/super-admin/client-migrations')}
           />
         )}
 
@@ -322,20 +361,20 @@ const StaticLeasesTable: React.FC<{
 };
 
 // -----------------------------------------------------------------------------
-// Dynamic tab (manual add)
+// Dynamic leases: reference-only until an operator uses a controlled workflow.
 // -----------------------------------------------------------------------------
-const _DynamicLeasesTable: React.FC<{
+const DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
-  onRegister: (lease: UnregisteredLease) => void;
-  onAdd: (lease: UnregisteredLease) => void;
-}> = ({ leases, routerName, onRegister, onAdd }) => {
+  onManualRegister: (lease: UnregisteredLease) => void;
+  onClientMigration: () => void;
+}> = ({ leases, routerName, onManualRegister, onClientMigration }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
         icon={<MapPin className="w-8 h-8 text-muted-foreground" />}
         title="No unmatched dynamic leases"
-        subtitle="Dynamic MikroTik DHCP leases (or static leases without a comment) will appear here for manual client creation."
+        subtitle="Dynamic MikroTik DHCP leases (or static leases without a comment) appear here for review. Use Manual Registration or Client Migration to bind one."
       />
     );
   }
@@ -394,20 +433,20 @@ const _DynamicLeasesTable: React.FC<{
                   <div className="flex items-center gap-2 justify-end">
                     <button
                       type="button"
-                      onClick={() => onRegister(lease)}
+                      onClick={() => onManualRegister(lease)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
-                      data-testid={`quick-register-dynamic-btn-${lease.id}`}
+                      data-testid={`manual-register-dynamic-btn-${lease.id}`}
                     >
                       <UserPlus className="w-4 h-4" />
-                      Register
+                      Manual registration
                     </button>
                     <button
                       type="button"
-                      onClick={() => onAdd(lease)}
+                      onClick={onClientMigration}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
-                      data-testid={`manual-add-btn-${lease.id}`}
+                      data-testid={`client-migration-dynamic-btn-${lease.id}`}
                     >
-                      Full form
+                      Client migration
                     </button>
                   </div>
                 </td>
