@@ -26,8 +26,19 @@ const CustomersPage: React.FC = () => {
       if (search) params.append('search', search);
       if (statusFilter) params.append('status', statusFilter);
       
-      const response = await api.get<{ data: Customer[] }>(`/customers?${params.toString()}`);
-      setCustomers(response.data.data);
+      params.set('per_page', '100');
+      params.set('page', '1');
+      const response = await api.get<{ data: Customer[]; meta?: { last_page?: number } }>(`/customers?${params.toString()}`);
+      const allCustomers = [...response.data.data];
+      const lastPage = response.data.meta?.last_page || 1;
+
+      for (let page = 2; page <= lastPage; page += 1) {
+        params.set('page', String(page));
+        const pageResponse = await api.get<{ data: Customer[] }>(`/customers?${params.toString()}`);
+        allCustomers.push(...pageResponse.data.data);
+      }
+
+      setCustomers(allCustomers);
     } catch (error) {
       logger.error('Failed to fetch customers', error);
     } finally {
@@ -210,8 +221,8 @@ const CustomersPage: React.FC = () => {
             <div className="p-8 text-center text-muted-foreground">
               No customers found. Click &quot;Add Customer&quot; to create one.
             </div>
-          ) : (
-            <div className="overflow-x-auto max-h-[calc(100vh-360px)] overflow-y-auto">
+          ) : (<>
+            <div className="max-h-[70vh] overflow-auto overscroll-contain">
               <table className="w-full">
                 <thead className="bg-secondary sticky top-0 z-10">
                   <tr>
@@ -338,7 +349,10 @@ const CustomersPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          )}
+            <div className="border-t border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+              Showing all {customers.length.toLocaleString('en-PH')} matching customer{customers.length === 1 ? '' : 's'} — scroll the list to view the rest.
+            </div>
+          </>)}
         </div>
       </div>
 

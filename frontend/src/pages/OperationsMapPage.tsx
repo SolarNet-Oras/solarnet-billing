@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Cable, CircleDot, Crosshair, Edit3, Layers3, MapPinned, MapPin, Navigation, Network, Plus, RefreshCw, Search, Trash2, Wifi, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
@@ -111,6 +111,16 @@ function worldPoint(point: Coordinates, zoom: number): { x: number; y: number } 
   return {
     x: ((point.longitude + 180) / 360) * scale,
     y: ((1 - (mercator / Math.PI)) / 2) * scale,
+  };
+}
+
+function coordinatesFromWorld(point: { x: number; y: number }, zoom: number): Coordinates {
+  const scale = TILE_SIZE * (2 ** zoom);
+  const wrappedX = ((point.x % scale) + scale) % scale;
+  const mercator = Math.PI - ((2 * Math.PI * point.y) / scale);
+  return {
+    longitude: (wrappedX / scale) * 360 - 180,
+    latitude: clamp((180 / Math.PI) * Math.atan(Math.sinh(mercator)), -MAX_MERCATOR_LATITUDE, MAX_MERCATOR_LATITUDE),
   };
 }
 
@@ -303,6 +313,65 @@ function RealOperationsMap({ view, clients, assets, layers, selectedKey, onSelec
   const tiles = useMemo(() => mapTiles(view), [view]);
   const zoom = (change: number): void => onChangeView({ ...view, zoom: clamp(view.zoom + change, MIN_ZOOM, MAX_ZOOM) });
   const point = (coordinates: Coordinates): { x: number; y: number } => screenPoint(coordinates, view);
+  const drag = useRef<{ pointerId: number; clientX: number; clientY: number; view: MapView; moved: boolean } | null>(null);
+  const suppressPinClick = useRef(false);
+  const latestView = useRef(view);
+
+  useEffect(() => { latestView.current = view; }, [view]);
+
+  useEffect(() => {
+    const canvas = document.querySelector<SVGSVGElement>('svg[aria-label="OpenStreetMap with SolarNet client and infrastructure overlays"]');
+    if (!canvas) return undefined;
+
+    canvas.style.cursor = 'grab';
+    canvas.style.touchAction = 'none';
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0) return;
+      canvas.setPointerCapture(event.pointerId);
+      drag.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, view: latestView.current, moved: false };
+    };
+    const onPointerMove = (event: PointerEvent): void => {
+      const activeDrag = drag.current;
+      if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+      const deltaX = event.clientX - activeDrag.clientX;
+      const deltaY = event.clientY - activeDrag.clientY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) activeDrag.moved = true;
+      if (!activeDrag.moved) return;
+      const bounds = canvas.getBoundingClientRect();
+      const start = worldPoint(activeDrag.view, activeDrag.view.zoom);
+      const center = coordinatesFromWorld({
+        x: start.x - ((deltaX / bounds.width) * MAP_WIDTH),
+        y: start.y - ((deltaY / bounds.height) * MAP_HEIGHT),
+      }, activeDrag.view.zoom);
+      onChangeView({ ...center, zoom: activeDrag.view.zoom });
+    };
+    const endDrag = (event: PointerEvent): void => {
+      const activeDrag = drag.current;
+      if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+      suppressPinClick.current = activeDrag.moved;
+      drag.current = null;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    };
+    const suppressClick = (event: MouseEvent): void => {
+      if (!suppressPinClick.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressPinClick.current = false;
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('click', suppressClick, true);
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', endDrag);
+      canvas.removeEventListener('pointercancel', endDrag);
+      canvas.removeEventListener('click', suppressClick, true);
+    };
+  }, [onChangeView]);
   return <div className="relative min-h-[420px] overflow-hidden bg-slate-200"><svg viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} className="block min-h-[420px] w-full" role="img" aria-label="OpenStreetMap with SolarNet client and infrastructure overlays"><rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="#cbd5e1" />{tiles.map((tile) => <image key={tile.id} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} preserveAspectRatio="none" />)}<defs><filter id="operations-map-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>{layers.fiber && assets.filter((asset) => asset.asset_type === 'fiber_route' && (asset.route_coordinates || []).length > 1).map((asset) => <polyline key={asset.id} points={(asset.route_coordinates || []).map((coordinates) => { const position = point(coordinates); return `${position.x},${position.y}`; }).join(' ')} fill="none" stroke="#0284c7" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" opacity=".9" onClick={() => onSelect(`asset:${asset.id}`)} className="cursor-pointer" />)}{layers.clients && clients.map((client) => { const position = point(client); const selected = selectedKey === `client:${client.id}`; const color = layers.status ? STATE_STYLE[client.network_state].marker : '#0284c7'; return <g key={client.id} role="button" tabIndex={0} onClick={() => onSelect(`client:${client.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`client:${client.id}`); }} className="cursor-pointer"><circle cx={position.x} cy={position.y} r={selected ? 16 : 12} fill={color} opacity=".3" filter="url(#operations-map-glow)" /><circle cx={position.x} cy={position.y} r={selected ? 8 : 6} fill={color} stroke="#fff" strokeWidth={selected ? 3 : 2} /><title>{`${client.full_name} · ${client.network_label}`}</title></g>; })}{layers.naps && assets.filter((asset) => asset.asset_type === 'nap' && asset.latitude !== null && asset.longitude !== null).map((asset) => { const position = point({ latitude: asset.latitude as number, longitude: asset.longitude as number }); const selected = selectedKey === `asset:${asset.id}`; return <g key={asset.id} role="button" tabIndex={0} onClick={() => onSelect(`asset:${asset.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`asset:${asset.id}`); }} className="cursor-pointer"><rect x={position.x - 9} y={position.y - 9} width="18" height="18" rx="4" fill="#7e22ce" stroke={selected ? '#fff' : '#f3e8ff'} strokeWidth={selected ? 3 : 1.5} /><title>{`NAP · ${asset.name}`}</title></g>; })}{layers.poles && assets.filter((asset) => asset.asset_type === 'pole' && asset.latitude !== null && asset.longitude !== null).map((asset) => { const position = point({ latitude: asset.latitude as number, longitude: asset.longitude as number }); const selected = selectedKey === `asset:${asset.id}`; return <g key={asset.id} role="button" tabIndex={0} onClick={() => onSelect(`asset:${asset.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`asset:${asset.id}`); }} className="cursor-pointer"><path d={`M ${position.x} ${position.y - 10} L ${position.x} ${position.y + 10} M ${position.x - 7} ${position.y - 3} L ${position.x + 7} ${position.y - 3}`} stroke={selected ? '#fff' : '#b45309'} strokeWidth={selected ? 4.5 : 3.5} strokeLinecap="round" /><title>{`Pole attachment · ${asset.name}`}</title></g>; })}</svg><div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg"><button type="button" onClick={() => zoom(1)} disabled={view.zoom >= MAX_ZOOM} aria-label="Zoom in" className="grid h-9 w-9 place-items-center border-b border-slate-200 text-slate-800 hover:bg-slate-100 disabled:opacity-40"><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => zoom(-1)} disabled={view.zoom <= MIN_ZOOM} aria-label="Zoom out" className="grid h-9 w-9 place-items-center text-slate-800 hover:bg-slate-100 disabled:opacity-40"><ZoomOut className="h-4 w-4" /></button></div><button type="button" onClick={onFit} className="absolute bottom-8 right-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white/95 px-2.5 py-2 text-xs font-semibold text-slate-800 shadow hover:bg-white"><Crosshair className="h-3.5 w-3.5" />Fit service area</button><p className="absolute bottom-0 left-0 right-0 bg-slate-950/75 px-3 py-1.5 text-[11px] text-slate-100">{clients.length} displayed client pin{clients.length === 1 ? '' : 's'} · Base map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap contributors</a></p></div>;
 }
 
