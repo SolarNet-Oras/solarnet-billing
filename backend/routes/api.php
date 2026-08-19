@@ -109,14 +109,23 @@ Route::prefix('v1')->group(function () {
         
         // Customer routes (require permission)
         Route::get('customers-statistics', [CustomerController::class, 'statistics'])->middleware('permission:view-customers');
-        Route::apiResource('customers', CustomerController::class)->only(['index', 'show'])->middleware('permission:view-customers');
-        Route::apiResource('customers', CustomerController::class)->only(['store'])->middleware('permission:create-customers');
-        Route::apiResource('customers', CustomerController::class)->only(['update'])->middleware('permission:edit-customers');
-        Route::apiResource('customers', CustomerController::class)->only(['destroy'])->middleware('permission:delete-customers');
+        // Keep fixed and action-specific customer routes before the generic
+        // /customers/{customer} resource route. Laravel otherwise treats a
+        // word such as "bulk-setup" as a customer id and rejects POST before
+        // it can reach the intended action.
+        Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
+        Route::post('customers/bulk-setup', [CustomerController::class, 'bulkSetup'])->middleware('permission:edit-customers');
+        Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
+        Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
+        Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
         Route::post('customers/{id}/sync-queue', [CustomerController::class, 'syncQueue'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
+        Route::apiResource('customers', CustomerController::class)->only(['index', 'show'])->middleware('permission:view-customers');
+        Route::apiResource('customers', CustomerController::class)->only(['store'])->middleware('permission:create-customers');
+        Route::apiResource('customers', CustomerController::class)->only(['update'])->middleware('permission:edit-customers');
+        Route::apiResource('customers', CustomerController::class)->only(['destroy'])->middleware('permission:delete-customers');
 
         // Policy staging is admin-only. It intentionally exposes no RADIUS
         // secret and no RouterOS write endpoint.
@@ -134,12 +143,6 @@ Route::prefix('v1')->group(function () {
             Route::put('nas-clients/{id}', [RadiusIpOeController::class, 'updateNasClient']);
             Route::post('nas-clients/{id}/sync', [RadiusIpOeController::class, 'syncNasClient']);
         });
-        Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
-        Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
-        Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
-        Route::post('customers/bulk-setup', [CustomerController::class, 'bulkSetup'])->middleware('permission:edit-customers');
-        Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
-        
         // Router routes (MikroTik) - require permission
         Route::apiResource('routers', RouterController::class)->only(['index', 'show'])->middleware('permission:view-routers');
         Route::apiResource('routers', RouterController::class)->only(['store'])->middleware('permission:create-routers');
