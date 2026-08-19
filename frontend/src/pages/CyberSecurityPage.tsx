@@ -308,7 +308,7 @@ export default function CyberSecurityPage() {
           <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-300/15 bg-amber-400/5 p-3 text-xs leading-5 text-slate-300 sm:flex-row sm:items-center sm:justify-between"><span><strong className="text-amber-100">Risk scale:</strong> configuration count alone does not increase risk. Amber is one or two pending feed candidates; red is three or more. Confirm a candidate before taking action.</span><Link to="/network-devices" className="shrink-0 font-semibold text-cyan-300 hover:text-cyan-100">Open manual review <ArrowRight className="inline h-3.5 w-3.5" /></Link></div>
         </section>
 
-        <div className="order-1 mt-5 grid gap-5 2xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="order-1 mt-5 flex flex-col gap-3">
           <article className="relative overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/75 p-5 shadow-[0_25px_60px_-38px_rgba(34,211,238,0.95)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -362,7 +362,7 @@ export default function CyberSecurityPage() {
             <p className="mt-4 text-xs text-slate-500">Last RouterOS sample: <span className="font-medium text-slate-300">{formatDateTime(latestRead)}</span> · animated particles are driven by aggregate RX/TX counters, which can include bridges and VLANs. DNS and VPN are topology paths until explicitly inspected.</p>
           </article>
 
-          <article className="rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-3 sm:p-4">
+          <article className="w-full self-end rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-500/10 via-slate-950/80 to-slate-950/80 p-3 sm:max-w-md sm:p-4">
             <div className="flex items-start gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-amber-300/30 bg-amber-400/10 text-amber-200"><ScanSearch className="h-4 w-4" /></span><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">Manual threat review</p><h2 className="mt-0.5 text-base font-bold text-white">Run a safe connection scan</h2></div></div>
             <p className="mt-3 text-xs leading-5 text-slate-400">Compares a bounded RouterOS connection sample with the configured threat feed. It records candidates only—no device scan and no automatic block.</p>
             <label className="mt-3 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Router to inspect</label>
