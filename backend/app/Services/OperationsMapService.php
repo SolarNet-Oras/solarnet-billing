@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\CustomerLocationEvent;
 use App\Models\DhcpLease;
 use App\Models\OperationsMapAsset;
 use Illuminate\Support\Collection;
@@ -19,12 +20,31 @@ class OperationsMapService
     /** @return array<string, mixed> */
     public function snapshot(): array
     {
-        $customers = Customer::query()
-            ->whereNotNull('gps_coordinates')
+        $allCustomers = Customer::query()
             ->with('router:id,name')
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'router_id', 'gps_coordinates'])
-            ->filter(fn (Customer $customer): bool => $this->hasCoordinates($customer->gps_coordinates))
+            ->values();
+
+        // Some older location-capture flows wrote an auditable location event
+        // before the customer profile's JSON field was updated. Use the latest
+        // valid saved event only as a display fallback; do not rewrite any
+        // customer record while an Operations Map is opened.
+        $latestLocationEvents = CustomerLocationEvent::query()
+            ->whereIn('customer_id', $allCustomers->pluck('id'))
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->latest('created_at')
+            ->get(['customer_id', 'source', 'latitude', 'longitude', 'created_at'])
+            ->filter(fn (CustomerLocationEvent $event): bool => $this->hasCoordinates([
+                'latitude' => $event->latitude,
+                'longitude' => $event->longitude,
+            ]))
+            ->unique('customer_id')
+            ->keyBy('customer_id');
+
+        $customers = $allCustomers
+            ->filter(fn (Customer $customer): bool => $this->coordinatesFor($customer, $latestLocationEvents->get($customer->id)) !== null)
             ->values();
 
         $leasesByCustomer = DhcpLease::query()
@@ -35,13 +55,13 @@ class OperationsMapService
             ->get(['id', 'customer_id', 'router_id', 'ip_address', 'status', 'last_seen_at', 'is_current'])
             ->groupBy('customer_id');
 
-        $clients = $customers->map(function (Customer $customer) use ($leasesByCustomer): array {
+        $clients = $customers->map(function (Customer $customer) use ($leasesByCustomer, $latestLocationEvents): array {
             /** @var Collection<int, DhcpLease> $customerLeases */
             $customerLeases = $leasesByCustomer->get($customer->id, collect());
             $boundLease = $customerLeases->first(fn (DhcpLease $lease): bool => strtolower((string) $lease->status) === 'bound');
             $lease = $boundLease ?: $customerLeases->first();
             $state = $this->networkState((string) $customer->status, $boundLease !== null);
-            $coordinates = $customer->gps_coordinates;
+            $coordinates = $this->coordinatesFor($customer, $latestLocationEvents->get($customer->id));
 
             return [
                 'id' => $customer->id,
@@ -51,6 +71,7 @@ class OperationsMapService
                 'customer_status' => $customer->status,
                 'latitude' => (float) $coordinates['latitude'],
                 'longitude' => (float) $coordinates['longitude'],
+                'location_source' => $coordinates['source'],
                 'network_state' => $state,
                 'network_label' => match ($state) {
                     'online' => 'Live DHCP lease',
@@ -87,7 +108,7 @@ class OperationsMapService
             'assets' => $assets,
             'summary' => [
                 'mapped_clients' => $clients->count(),
-                'unmapped_clients' => max(0, Customer::query()->count() - $clients->count()),
+                'unmapped_clients' => max(0, $allCustomers->count() - $clients->count()),
                 'network_states' => $counts,
                 'assets' => [
                     'naps' => $assets->where('asset_type', 'nap')->count(),
@@ -109,6 +130,28 @@ class OperationsMapService
             && (float) $coordinates['latitude'] <= 90
             && (float) $coordinates['longitude'] >= -180
             && (float) $coordinates['longitude'] <= 180;
+    }
+
+    /** @return array{latitude: float, longitude: float, source: string}|null */
+    private function coordinatesFor(Customer $customer, ?CustomerLocationEvent $latestEvent): ?array
+    {
+        if ($this->hasCoordinates($customer->gps_coordinates)) {
+            return [
+                'latitude' => (float) $customer->gps_coordinates['latitude'],
+                'longitude' => (float) $customer->gps_coordinates['longitude'],
+                'source' => $customer->location_source ?: 'customer_record',
+            ];
+        }
+
+        if ($latestEvent && $this->hasCoordinates(['latitude' => $latestEvent->latitude, 'longitude' => $latestEvent->longitude])) {
+            return [
+                'latitude' => (float) $latestEvent->latitude,
+                'longitude' => (float) $latestEvent->longitude,
+                'source' => 'location_event:' . ($latestEvent->source ?: 'saved_capture'),
+            ];
+        }
+
+        return null;
     }
 
     private function networkState(string $customerStatus, bool $hasBoundLease): string
