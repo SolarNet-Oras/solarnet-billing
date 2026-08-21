@@ -55,8 +55,14 @@ const UnregisteredLeasesPage: React.FC = () => {
     setNotice('');
     try {
       const result = await unregisteredLeaseService.syncAll();
+      const routerResults = result.routers || [];
+      const madeStatic = routerResults.reduce<number>((total: number, router: any) => total + Number(router.static_leases_converted || 0), 0);
+      const ownershipComments = routerResults.reduce<number>((total: number, router: any) => total + Number(router.ownership_comments_applied || 0), 0);
+      const verifiedStatic = routerResults.reduce<number>((total: number, router: any) => total + Number(router.registered_static_leases_verified || 0), 0);
+      const ownershipSummary = ` ${madeStatic} exact customer lease${madeStatic === 1 ? '' : 's'} made static; ${ownershipComments} ownership comment${ownershipComments === 1 ? '' : 's'} applied; ${verifiedStatic} registered static lease${verifiedStatic === 1 ? '' : 's'} verified.`;
       setNotice(
         `Synced ${result.total_routers} router${result.total_routers === 1 ? '' : 's'} — ${result.success} succeeded, ${result.failed} failed.`
+          + ownershipSummary
       );
       await loadAll();
     } catch (err: any) {

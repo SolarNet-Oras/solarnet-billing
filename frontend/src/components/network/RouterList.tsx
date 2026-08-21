@@ -60,7 +60,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     setDhcpSyncingId(id);
     try {
       const result = await routerService.syncDhcp(id, true);
-      alert(`DHCP Sync Complete!\nFetched: ${result.leases_fetched}\nCustomers Created: ${result.customers_created}\nMatched: ${result.customers_matched}\nIPs Updated: ${result.ips_updated}`);
+      alert(`DHCP Sync Complete!\nFetched: ${result.leases_fetched}\nMatched: ${result.customers_matched}\nIPs Updated: ${result.ips_updated}\nMade static: ${result.static_leases_converted || 0}\nOwnership comments applied: ${result.ownership_comments_applied || 0}\nRegistered static leases verified: ${result.registered_static_leases_verified || 0}`);
       onSync(id);
     } catch (error) {
       console.error('DHCP sync failed:', error);

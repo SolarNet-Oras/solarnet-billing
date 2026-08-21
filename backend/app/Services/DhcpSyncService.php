@@ -38,6 +38,8 @@ class DhcpSyncService
             'ips_updated' => 0,
             'queues_synced' => 0,
             'static_leases_converted' => 0,
+            'registered_static_leases_verified' => 0,
+            'ownership_comments_applied' => 0,
             'static_lease_skipped' => 0,
             'queue_syncs_after_static_lease' => 0,
             'cross_router_matches_detached' => 0,
@@ -105,7 +107,13 @@ class DhcpSyncService
                     if (!$staticLease['attempted']) {
                         $result['static_lease_skipped']++;
                     } elseif ($staticLease['lease_static']) {
-                        $result['static_leases_converted']++;
+                        $result['registered_static_leases_verified']++;
+                        if ($staticLease['converted_from_dynamic']) {
+                            $result['static_leases_converted']++;
+                        }
+                        if ($staticLease['ownership_comment_applied']) {
+                            $result['ownership_comments_applied']++;
+                        }
                         if (($staticLease['queue_sync']['success'] ?? false) === true) {
                             $result['queue_syncs_after_static_lease']++;
                         }
@@ -258,7 +266,7 @@ class DhcpSyncService
             return null;
         }
 
-        $customer = Customer::query()
+        $customers = Customer::query()
             ->whereRaw(
                 "upper(replace(replace(mac_address, ':', ''), '-', '')) = ?",
                 [str_replace(':', '', $this->normalizeMacAddress($lease->mac_address))],
@@ -274,7 +282,17 @@ class DhcpSyncService
                     ->orWhere('mac_binding_status', 'waiting_for_match');
             })
             ->orderByRaw('case when router_id = ? then 0 when router_id is null then 1 else 2 end', [$lease->router_id])
-            ->first();
+            ->get();
+
+        if ($customers->count() > 1) {
+            $this->markLeaseUnmatched(
+                $lease,
+                'Multiple registered customers share this exact MAC address. Staff must resolve the duplicate before any RouterOS lease can be changed.',
+            );
+            return null;
+        }
+
+        $customer = $customers->first();
 
         if ($customer) {
             $customerUpdates = [];
@@ -372,30 +390,41 @@ class DhcpSyncService
     }
 
     /**
-     * Convert a dynamic lease only after this sync has proved it is the exact,
+     * Ensure a lease is static only after this sync has proved it is the exact,
      * current bound lease for an already registered customer. The same
-     * operation also applies the selected service-plan rate and moves the
-     * SolarNet queue to the current lease IP.
+     * operation applies a durable SolarNet ownership comment, the selected
+     * service-plan rate, and moves the SolarNet queue to the current lease IP.
      *
-     * @return array{success: bool, attempted: bool, lease_static: bool, message: string, queue_sync?: array}
+     * A comment-only account match is deliberately not enough to change
+     * RouterOS. The customer must already have the exact full MAC shown by
+     * the live lease. This keeps a typo, a replacement ONU, or an old manual
+     * comment from being made static by "Sync all".
+     *
+     * @return array{success: bool, attempted: bool, lease_static: bool, converted_from_dynamic: bool, ownership_comment_applied: bool, message: string, queue_sync?: array}
      */
     protected function ensureRegisteredLeaseIsStatic(Customer $customer, DhcpLease $lease): array
     {
-        if (!$lease->is_dynamic) {
-            return [
-                'success' => true,
-                'attempted' => false,
-                'lease_static' => false,
-                'message' => 'Lease is already static.',
-            ];
-        }
-
         if ($customer->status === 'pending') {
             return [
                 'success' => true,
                 'attempted' => false,
                 'lease_static' => false,
+                'converted_from_dynamic' => false,
+                'ownership_comment_applied' => false,
                 'message' => 'Pending installation applications are never made static by DHCP sync.',
+            ];
+        }
+
+        $leaseMac = $this->normalizeMacAddress((string) $lease->mac_address);
+        $customerMac = $this->normalizeMacAddress((string) $customer->mac_address);
+        if ($lease->match_source !== 'mac_address' || $leaseMac === '' || $customerMac === '' || $leaseMac !== $customerMac) {
+            return [
+                'success' => true,
+                'attempted' => false,
+                'lease_static' => false,
+                'converted_from_dynamic' => false,
+                'ownership_comment_applied' => false,
+                'message' => 'A full exact customer MAC match is required before Sync all can make a DHCP lease static.',
             ];
         }
 
@@ -408,15 +437,19 @@ class DhcpSyncService
                 'success' => false,
                 'attempted' => true,
                 'lease_static' => false,
+                'converted_from_dynamic' => false,
+                'ownership_comment_applied' => false,
                 'message' => 'Customer router, current DHCP lease, or service plan is missing.',
             ];
         }
 
         $rateLimit = $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
+        $ownershipComment = $this->customerLeaseComment($customer);
+        $wasDynamic = (bool) $lease->is_dynamic;
         $leaseResult = $this->mikrotikService->updateOrMakeStaticLease(
             $lease->router,
             $lease->mac_address,
-            $customer->full_name,
+            $ownershipComment,
             $rateLimit,
             $lease->ip_address,
             $lease->server ?: 'default',
@@ -432,12 +465,14 @@ class DhcpSyncService
                 'success' => false,
                 'attempted' => true,
                 'lease_static' => false,
+                'converted_from_dynamic' => false,
+                'ownership_comment_applied' => false,
                 'message' => $leaseResult['message'] ?? 'MikroTik static-lease sync failed.',
             ];
         }
 
         $lease->update([
-            'comment' => $customer->full_name,
+            'comment' => $ownershipComment,
             'rate_limit' => $rateLimit,
             'is_dynamic' => false,
         ]);
@@ -454,11 +489,26 @@ class DhcpSyncService
             'success' => (bool) $queueResult['success'],
             'attempted' => true,
             'lease_static' => true,
+            'converted_from_dynamic' => $wasDynamic,
+            'ownership_comment_applied' => true,
             'message' => $queueResult['success']
-                ? 'Lease made static and customer queue synchronized.'
-                : 'Lease made static, but queue synchronization failed: ' . ($queueResult['message'] ?? 'unknown error'),
+                ? ($wasDynamic ? 'Lease made static, ownership comment applied, and customer queue synchronized.' : 'Static lease ownership comment and customer queue synchronized.')
+                : ($wasDynamic ? 'Lease made static and ownership comment applied, but queue synchronization failed: ' : 'Static lease ownership comment applied, but queue synchronization failed: ') . ($queueResult['message'] ?? 'unknown error'),
             'queue_sync' => $queueResult,
         ];
+    }
+
+    /**
+     * A consistent, searchable RouterOS marker. It identifies the account
+     * without relying on a display-name-only comment, and is used only after
+     * an exact MAC match has been verified.
+     */
+    protected function customerLeaseComment(Customer $customer): string
+    {
+        $accountNumber = trim((string) $customer->account_number) ?: 'UNKNOWN';
+        $name = trim((string) preg_replace('/\s+/', ' ', str_replace('|', '/', (string) $customer->full_name)));
+
+        return 'SolarNet | ' . $accountNumber . ' | ' . substr($name ?: 'Unnamed customer', 0, 120);
     }
 
     /** @return array<int, string> */

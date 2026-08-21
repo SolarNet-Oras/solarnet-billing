@@ -320,10 +320,9 @@ class UnregisteredLeaseController extends Controller
      * Uses lease comment as full_name and rate_limit to match a ServicePlan.
      *
      * MikroTik update rules (applied AFTER the customer is safely persisted):
-     *   - Static + commented lease  -> keep the existing MikroTik comment as-is,
-     *                                  but force the rate-limit to match the nearest plan
-     *   - Dynamic / uncommented lease -> convert to static, set comment = customer name,
-     *                                  and apply the plan's rate-limit
+     *   - Any current bound lease -> convert to static if needed, set a
+     *                                 SolarNet account ownership comment, and
+     *                                 apply the selected plan's rate-limit.
      *
      * MikroTik failures NEVER cause the registration to fail — the customer is
      * already committed by then. We surface the sync result in the response.
@@ -401,9 +400,10 @@ class UnregisteredLeaseController extends Controller
             }
         }
 
-        // Snapshot lease's ORIGINAL MikroTik state BEFORE we mutate anything.
-        // A "static + commented" lease keeps its MikroTik comment. A dynamic or
-        // uncommented lease gets the customer's name pushed to MikroTik as comment.
+        // Retain the source comment in the new customer's notes for audit, but
+        // write a clear SolarNet ownership comment to RouterOS after the
+        // registration succeeds. This makes manual registration and Sync all
+        // use the same account-identifying comment format.
         $originalComment    = trim((string) ($lease->comment ?? ''));
         $wasStaticCommented = !$lease->is_dynamic && $originalComment !== '';
 
@@ -550,17 +550,13 @@ class UnregisteredLeaseController extends Controller
             }
         }
 
-        // Push comment (only for dynamic/uncommented) and rate-limit to MikroTik.
+        // Push the customer ownership comment and rate-limit to MikroTik.
         // Wrap in a broad try/catch so ANY MikroTik hiccup is surfaced but does
         // not fail the already-committed registration.
         $mikrotikResult = null;
         if ($lease->router && $lease->mac_address) {
             try {
-                // A link to an existing account must always show that account
-                // name on RouterOS. A one-click new registration preserves a
-                // deliberate existing static comment as before.
-                $preserveComment = $wasStaticCommented && ! $linkedExisting;
-                $mikrotikComment = $preserveComment ? $originalComment : $customer->full_name;
+                $mikrotikComment = $this->customerLeaseComment($customer);
 
                 $mikrotikResult = app(MikrotikService::class)->updateOrMakeStaticLease(
                     $lease->router,
@@ -568,8 +564,7 @@ class UnregisteredLeaseController extends Controller
                     $mikrotikComment,
                     $rateLimit,
                     $lease->ip_address,
-                    'default',
-                    $preserveComment
+                    $lease->server ?: 'default'
                 );
             } catch (\Throwable $e) {
                 Log::warning('MikroTik lease sync raised an exception after register', [
@@ -581,13 +576,16 @@ class UnregisteredLeaseController extends Controller
                 ];
             }
 
-            // Reflect the FINAL state locally: is_dynamic=false, rate_limit=plan-forced,
-            // and comment reflects whichever comment we settled on (kept vs pushed).
-            $lease->update([
-                'comment'    => ($wasStaticCommented && ! $linkedExisting) ? $originalComment : $customer->full_name,
-                'rate_limit' => $rateLimit,
-                'is_dynamic' => false,
-            ]);
+            // Update local state only once RouterOS confirms it made/updated
+            // the static lease. A failed router call must remain visible for
+            // the next safe retry rather than being marked static locally.
+            if (($mikrotikResult['success'] ?? false) === true) {
+                $lease->update([
+                    'comment'    => $mikrotikComment,
+                    'rate_limit' => $rateLimit,
+                    'is_dynamic' => false,
+                ]);
+            }
         }
 
         return response()->json([
@@ -599,12 +597,27 @@ class UnregisteredLeaseController extends Controller
             'migration_opening_invoice' => $openingInvoice?->fresh(['items']),
             'business_rule'      => [
                 'was_static_commented'   => $wasStaticCommented,
-                'mikrotik_comment_kept'  => $wasStaticCommented && ! $linkedExisting,
+                'mikrotik_comment'       => $lease->router && $lease->mac_address ? $this->customerLeaseComment($customer) : null,
+                'mikrotik_comment_kept'  => false,
                 'linked_existing_customer' => $linkedExisting,
                 'rate_limit_pushed'      => $rateLimit,
                 'plan_used'              => $plan?->name,
             ],
         ], 201);
+    }
+
+    /**
+     * Standard RouterOS comment for a registered SolarNet account. The
+     * account number remains searchable even where two customers share a
+     * similar name, while the original lease comment stays in the customer
+     * notes for historical reference.
+     */
+    protected function customerLeaseComment(Customer $customer): string
+    {
+        $accountNumber = trim((string) $customer->account_number) ?: 'UNKNOWN';
+        $name = trim((string) preg_replace('/\s+/', ' ', str_replace('|', '/', (string) $customer->full_name)));
+
+        return 'SolarNet | ' . $accountNumber . ' | ' . substr($name ?: 'Unnamed customer', 0, 120);
     }
 
     /**
