@@ -123,6 +123,10 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
+        // Customer primary keys are UUIDs. This makes the resource route
+        // unable to swallow fixed paths such as /customers/pdf even if an
+        // old route cache is ever rebuilt with a different route order.
+        Route::pattern('customer', '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
         Route::apiResource('customers', CustomerController::class)->only(['index', 'show'])->middleware('permission:view-customers');
         Route::apiResource('customers', CustomerController::class)->only(['store'])->middleware('permission:create-customers');
         Route::apiResource('customers', CustomerController::class)->only(['update'])->middleware('permission:edit-customers');
