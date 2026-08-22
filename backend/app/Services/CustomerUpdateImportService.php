@@ -147,16 +147,22 @@ class CustomerUpdateImportService
         if ($text === '') {
             return null;
         }
-        if (is_numeric($value) && (float) $value > 31 && (float) $value < 100000) {
+        if (preg_match('/^\d+(?:\.0+)?$/', $text) === 1) {
+            $number = (float) $text;
+            if ($number >= 1 && $number <= 31) {
+                return (int) $number;
+            }
+            // Current Excel dates are well beyond the Unix epoch serial. Do
+            // not reinterpret a bad due day such as "32" as 1900-02-01.
+            if ($number < 25569 || $number >= 100000) {
+                return null;
+            }
+
             try {
-                return (int) ExcelDate::excelToDateTimeObject((float) $value)->format('j');
+                return (int) ExcelDate::excelToDateTimeObject($number)->format('j');
             } catch (Throwable) {
                 return null;
             }
-        }
-        if (preg_match('/^\d{1,2}$/', $text) === 1) {
-            $day = (int) $text;
-            return $day >= 1 && $day <= 31 ? $day : null;
         }
 
         try {
