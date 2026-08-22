@@ -116,6 +116,7 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-setup', [CustomerController::class, 'bulkSetup'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
+        Route::get('customers/pdf', [CustomerController::class, 'downloadListPdf'])->middleware('permission:view-customers');
         Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');
         Route::delete('customers/{id}/cash-signature', [CustomerController::class, 'resetCashSignature'])->middleware('role:super_admin|admin');
         Route::post('customers/{id}/sync-queue', [CustomerController::class, 'syncQueue'])->middleware('permission:edit-customers');

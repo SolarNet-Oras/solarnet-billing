@@ -85,6 +85,53 @@ class CustomerController extends Controller
     }
 
     /**
+     * Download a read-only PDF register of all non-pending customers matching
+     * the current Customers-page search and status filters. This never changes
+     * customer, billing, or network data.
+     */
+    public function downloadListPdf(Request $request)
+    {
+        $search = trim((string) $request->input('search', ''));
+        $status = trim((string) $request->input('status', ''));
+
+        $customers = Customer::query()
+            ->with('servicePlan:id,name,download_speed,upload_speed,price')
+            ->where('status', '!=', 'pending')
+            ->when($search !== '', fn ($query) => $query->search($search))
+            ->when($status !== '', fn ($query) => $query->where('status', $status))
+            ->orderBy('full_name')
+            ->get([
+                'id',
+                'account_number',
+                'full_name',
+                'address',
+                'contact_number',
+                'installation_date',
+                'billing_cycle_day',
+                'service_plan_id',
+                'monthly_fee',
+                'status',
+            ]);
+
+        $timezone = config('app.timezone', 'Asia/Manila');
+        $generatedAt = now($timezone);
+        $pdf = \PDF::loadView('customers.pdf', [
+            'company' => $this->invoiceService->getCompanyInfo(),
+            'customers' => $customers,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+            ],
+            'generatedAt' => $generatedAt,
+            'generatedBy' => $request->user()?->name ?? 'SolarNet staff',
+        ])->setPaper('a4', 'landscape');
+
+        $suffix = $status !== '' ? '-' . strtolower(preg_replace('/[^a-z0-9]+/i', '-', $status)) : '';
+
+        return $pdf->download('solarnet-customer-register' . $suffix . '-' . $generatedAt->format('Y-m-d') . '.pdf');
+    }
+
+    /**
      * Store a newly created customer
      */
     public function store(Request $request): JsonResponse

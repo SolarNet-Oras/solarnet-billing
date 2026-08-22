@@ -6,7 +6,7 @@ import { customerService, type ClientSetupAction } from '@/services/customerServ
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
-import { MapPin } from 'lucide-react';
+import { Download, MapPin } from 'lucide-react';
 
 const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -29,6 +29,7 @@ const CustomersPage: React.FC = () => {
   const [setupSubmitting, setSetupSubmitting] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<boolean>(false);
+  const [exportingPdf, setExportingPdf] = useState<boolean>(false);
   const [notice, setNotice] = useState<string>('');
   const [error, setError] = useState<string>('');
 
@@ -101,6 +102,32 @@ const CustomersPage: React.FC = () => {
       logger.error('Failed to bulk-delete customers', err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleDownloadPdf = async (): Promise<void> => {
+    setExportingPdf(true);
+    setError('');
+    try {
+      const pdf = await customerService.downloadCustomersPdf({
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+      });
+      const url = window.URL.createObjectURL(pdf);
+      const link = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `solarnet-customer-register-${date}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setNotice(`Customer register PDF downloaded for ${customers.length} matching customer${customers.length === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to download the customer register PDF.');
+      logger.error('Failed to download customer register PDF', err);
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -257,6 +284,16 @@ const CustomersPage: React.FC = () => {
             <p className="text-muted-foreground mt-1">Manage your ISP subscribers</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={exportingPdf || loading}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-primary/40 text-primary bg-primary/5 rounded-md hover:bg-primary/10 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              data-testid="download-customers-pdf"
+            >
+              <Download className="h-4 w-4" />
+              {exportingPdf ? 'Preparing PDF…' : 'Download PDF'}
+            </button>
             <button
               type="button"
               onClick={() => { setClientSetupOpen(true); setError(''); }}

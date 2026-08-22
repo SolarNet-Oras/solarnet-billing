@@ -74,6 +74,15 @@ export const customerService = {
     return response.data;
   },
 
+  /** Download a read-only PDF register for the current Customers-page filters. */
+  downloadCustomersPdf: async (params?: { search?: string; status?: string }): Promise<Blob> => {
+    const response = await api.get('/customers/pdf', {
+      params,
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   /** Controlled migration/setup changes for selected existing subscribers. */
   bulkSetupCustomers: async (payload: BulkClientSetupPayload): Promise<BulkClientSetupResponse> => {
     const response = await api.post<BulkClientSetupResponse>('/customers/bulk-setup', payload);
