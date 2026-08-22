@@ -25,7 +25,7 @@ const CustomersPage: React.FC = () => {
   const [setupPreviousBalanceDueDate, setSetupPreviousBalanceDueDate] = useState<string>('');
   const [setupDiscount, setSetupDiscount] = useState<string>('');
   const [setupStatus, setSetupStatus] = useState<'active' | 'suspended' | 'expired' | 'pending'>('active');
-  const [setupAddressUpdates, setSetupAddressUpdates] = useState<Record<string, string>>({});
+  const [setupSharedAddress, setSetupSharedAddress] = useState<string>('');
   const [setupSubmitting, setSetupSubmitting] = useState<boolean>(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<boolean>(false);
@@ -180,8 +180,8 @@ const CustomersPage: React.FC = () => {
         if (clientSetupAction === 'discount' && !setupDiscount) {
           throw new Error('Enter the discount amount.');
         }
-        if (clientSetupAction === 'address_updates' && selectedSetupCustomers.some((customer) => !(setupAddressUpdates[customer.id] ?? customer.address ?? '').trim())) {
-          throw new Error('Enter an address for every selected client.');
+        if (clientSetupAction === 'address_updates' && !setupSharedAddress.trim()) {
+          throw new Error('Enter the address to apply to the selected clients.');
         }
 
         const response = await customerService.bulkSetupCustomers({
@@ -203,7 +203,7 @@ const CustomersPage: React.FC = () => {
           ...(clientSetupAction === 'address_updates' ? {
             address_updates: selectedSetupCustomers.map((customer) => ({
               customer_id: customer.id,
-              address: (setupAddressUpdates[customer.id] ?? customer.address ?? '').trim(),
+              address: setupSharedAddress.trim(),
             })),
           } : {}),
         });
@@ -214,6 +214,7 @@ const CustomersPage: React.FC = () => {
       }
 
       setSelectedIds(new Set());
+      setSetupSharedAddress('');
       setClientSetupOpen(false);
       await fetchCustomers();
     } catch (err: any) {
@@ -654,24 +655,18 @@ const CustomersPage: React.FC = () => {
                 {clientSetupAction === 'address_updates' && (
                   <div className="mt-4 space-y-3">
                     <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                      Enter the correct address for each selected client. This updates customer records only; it does not alter GPS coordinates, invoices, service status, or MikroTik settings.
+                      Enter one address to apply to every selected client. This updates customer records only; it does not alter GPS coordinates, invoices, service status, or MikroTik settings.
                     </p>
-                    <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                      {selectedSetupCustomers.length === 0 ? (
-                        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Select clients from the list first.</p>
-                      ) : selectedSetupCustomers.map((customer) => (
-                        <label key={customer.id} className="block rounded-md border border-border bg-background p-3 text-sm font-medium text-foreground">
-                          <span className="block truncate">{customer.full_name}</span>
-                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{customer.account_number}</span>
-                          <input
-                            value={setupAddressUpdates[customer.id] ?? customer.address ?? ''}
-                            onChange={(event) => setSetupAddressUpdates((current) => ({ ...current, [customer.id]: event.target.value }))}
-                            placeholder="Complete client address"
-                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </label>
-                      ))}
-                    </div>
+                    <label className="block text-sm font-medium text-foreground">
+                      New address for all selected clients
+                      <input
+                        value={setupSharedAddress}
+                        onChange={(event) => setSetupSharedAddress(event.target.value)}
+                        placeholder="Complete client address"
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground">{selectedSetupCustomers.length} selected client{selectedSetupCustomers.length === 1 ? '' : 's'} will receive this same address.</p>
                   </div>
                 )}
 
