@@ -86,7 +86,7 @@ class CustomerUpdateImportController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => "{$result['updated']} customer profile(s) updated. MAC addresses, network settings, balances, invoices, plans, and installation dates were not changed.",
+            'message' => "{$result['updated']} customer profile(s) updated. Only full name, home address, and monthly due day can change; MAC addresses, network settings, balances, invoices, plans, and installation dates were not changed.",
             'data' => $result,
         ]);
     }

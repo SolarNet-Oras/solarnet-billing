@@ -16,6 +16,17 @@ class CustomerUpdateImportServiceTest extends TestCase
         $this->assertNotSame('ninacalim', $service->normalizeCustomerName('Nina Calima'));
     }
 
+    public function test_safe_name_variation_accepts_a_unique_surname_extension_or_reordered_name(): void
+    {
+        $service = new CustomerUpdateImportService();
+
+        $this->assertTrue($service->namesAreSafeVariation('Rueza Jade', 'Rueza Jade Pormida'));
+        $this->assertTrue($service->namesAreSafeVariation('Rueza Jade', 'Pormida Rueza Jade'));
+        $this->assertFalse($service->namesAreSafeVariation('Rueza', 'Rueza Jade Pormida'));
+        $this->assertFalse($service->namesAreSafeVariation('Jade Cruz', 'Rueza Jade Pormida'));
+        $this->assertFalse($service->namesAreSafeVariation('Rueza Jade Pormida', 'Rueza Jade'));
+    }
+
     public function test_due_date_import_uses_only_the_calendar_day(): void
     {
         $service = new CustomerUpdateImportService();

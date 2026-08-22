@@ -17,8 +17,9 @@ use Throwable;
  * Safely imports historical customer-profile corrections.
  *
  * This service deliberately has a small scope: it matches existing customer
- * records by a normalized full name, then changes only address and the monthly
- * billing cycle day. Network identity and financial records stay untouched.
+ * records by an exact or safely unique name variation, then changes only name,
+ * address, and the monthly billing cycle day. Network identity and financial
+ * records stay untouched.
  */
 class CustomerUpdateImportService
 {
@@ -69,9 +70,9 @@ class CustomerUpdateImportService
     }
 
     /**
-     * Apply only previewed exact matches. The customer is re-read and rechecked
-     * inside the transaction so a later rename or status change cannot update
-     * the wrong account.
+     * Apply only previewed, unique matches. The customer is re-read and
+     * rechecked inside the transaction so a later rename or status change
+     * cannot update the wrong account.
      *
      * @param array<int,array<string,mixed>> $rows
      * @return array{updated:int,unchanged:int,skipped:array<int,string>}
@@ -97,7 +98,7 @@ class CustomerUpdateImportService
                     $skipped[] = "Row {$row['row']}: pending installation applications are not changed by this import.";
                     continue;
                 }
-                if ($this->normalizeCustomerName($customer->full_name) !== ($row['match_name'] ?? null)) {
+                if ($this->normalizeCustomerName($customer->full_name) !== ($row['matched_customer_name'] ?? $row['match_name'] ?? null)) {
                     $skipped[] = "Row {$row['row']}: customer name changed after preview.";
                     continue;
                 }
@@ -110,6 +111,10 @@ class CustomerUpdateImportService
                 }
 
                 $changes = [];
+                $importedName = trim((string) ($row['client_name'] ?? ''));
+                if ($importedName !== '' && $customer->full_name !== $importedName) {
+                    $changes['full_name'] = $importedName;
+                }
                 if ($customer->address !== $address) {
                     $changes['address'] = $address;
                 }
@@ -135,6 +140,24 @@ class CustomerUpdateImportService
     public function normalizeCustomerName(?string $value): string
     {
         return preg_replace('/[^a-z0-9]+/', '', strtolower(Str::ascii(trim((string) $value)))) ?: '';
+    }
+
+    /**
+     * Accept a name extension or reordered full name only when both sides have
+     * at least two meaningful name parts and the existing code-name tokens are
+     * all contained in the imported name. For example, "Rueza Jade" safely
+     * matches "Pormida Rueza Jade", without allowing a shorter sheet value to
+     * erase a saved surname.
+     */
+    public function namesAreSafeVariation(string $existingName, string $importedName): bool
+    {
+        $existingTokens = $this->nameTokens($existingName);
+        $importedTokens = $this->nameTokens($importedName);
+        if (count($existingTokens) < 2 || count($importedTokens) < 2) {
+            return false;
+        }
+
+        return $this->tokensAreSubset($existingTokens, $importedTokens);
     }
 
     public function dueDayFromCell(mixed $value): ?int
@@ -191,10 +214,10 @@ class CustomerUpdateImportService
             throw new InvalidArgumentException('This import has more than 2,000 rows. Split it into smaller files for safe review.');
         }
 
-        $customersByName = Customer::query()
+        $customers = Customer::query()
             ->select(['id', 'account_number', 'full_name', 'address', 'billing_cycle_day', 'status'])
-            ->get()
-            ->groupBy(fn (Customer $customer) => $this->normalizeCustomerName($customer->full_name));
+            ->get();
+        $customersByName = $customers->groupBy(fn (Customer $customer) => $this->normalizeCustomerName($customer->full_name));
 
         $rows = [];
         $summary = [
@@ -220,10 +243,17 @@ class CustomerUpdateImportService
             $summary['total']++;
             $rowNumber = $index + 2;
             $dueDay = $this->dueDayFromCell($record['due_date']);
-            $matchName = $this->normalizeCustomerName($record['name']);
-            $matches = $matchName !== '' ? ($customersByName->get($matchName, collect())) : collect();
+            $importedNormalizedName = $this->normalizeCustomerName($record['name']);
+            $matches = $importedNormalizedName !== '' ? ($customersByName->get($importedNormalizedName, collect())) : collect();
+            $matchType = 'exact';
+            if ($matches->count() === 0 && $record['name'] !== '') {
+                $matches = $customers->filter(fn (Customer $candidate) => $this->namesAreSafeVariation($candidate->full_name, $record['name']))->values();
+                $matchType = 'name_variation';
+            }
             $status = 'ready';
-            $reason = 'Exact normalized name match. Address and monthly due day are ready for review.';
+            $reason = $matchType === 'exact'
+                ? 'Exact normalized name match. Full name, address, and monthly due day are ready for review.'
+                : 'Unique safe name variation match. Full name, address, and monthly due day are ready for review.';
             $customer = null;
 
             if ($record['name'] === '' || $record['address'] === '' || $dueDay === null) {
@@ -232,7 +262,7 @@ class CustomerUpdateImportService
                 $summary['invalid']++;
             } elseif ($matches->count() === 0) {
                 $status = 'no_match';
-                $reason = 'No existing customer has this normalized full name.';
+                $reason = 'No existing customer has this exact name or a safe two-part name variation.';
                 $summary['no_match']++;
             } elseif ($matches->count() > 1) {
                 $status = 'ambiguous';
@@ -244,12 +274,17 @@ class CustomerUpdateImportService
                     $status = 'pending';
                     $reason = 'This is a pending installation application, so its customer profile is not changed by this import.';
                     $summary['pending']++;
-                } elseif ($customer->address === $record['address'] && (int) $customer->billing_cycle_day === $dueDay) {
-                    $status = 'unchanged';
-                    $reason = 'The saved address and monthly due day already match this row.';
-                    $summary['unchanged']++;
                 } else {
-                    $summary['ready']++;
+                    $sameName = $customer->full_name === $record['name'];
+                    $sameAddress = $customer->address === $record['address'];
+                    $sameDueDay = (int) $customer->billing_cycle_day === $dueDay;
+                    if ($sameName && $sameAddress && $sameDueDay) {
+                        $status = 'unchanged';
+                        $reason = 'The saved full name, address, and monthly due day already match this row.';
+                        $summary['unchanged']++;
+                    } else {
+                        $summary['ready']++;
+                    }
                 }
             }
 
@@ -261,7 +296,10 @@ class CustomerUpdateImportService
                 'address' => $record['address'],
                 'due_date' => $record['due_date'],
                 'due_day' => $dueDay,
-                'match_name' => $matchName,
+                'match_name' => $importedNormalizedName,
+                'matched_customer_name' => $customer ? $this->normalizeCustomerName($customer->full_name) : null,
+                'matched_full_name' => $customer?->full_name,
+                'match_type' => $customer ? $matchType : null,
                 'customer_id' => $customer?->id,
                 'account_number' => $customer?->account_number,
                 'current_address' => $customer?->address,
@@ -301,6 +339,21 @@ class CustomerUpdateImportService
     private function normalizeHeader(string $value): string
     {
         return preg_replace('/[^a-z0-9]+/', '', strtolower(Str::ascii(trim($value)))) ?: '';
+    }
+
+    /** @return array<int,string> */
+    private function nameTokens(string $value): array
+    {
+        $ascii = strtolower(Str::ascii(trim($value)));
+        $tokens = preg_split('/[^a-z0-9]+/', $ascii, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_values(array_unique(array_filter($tokens, fn (string $token) => strlen($token) >= 2)));
+    }
+
+    /** @param array<int,string> $needles @param array<int,string> $haystack */
+    private function tokensAreSubset(array $needles, array $haystack): bool
+    {
+        return count(array_diff($needles, $haystack)) === 0;
     }
 
     private function googleSheetId(string $url): string
