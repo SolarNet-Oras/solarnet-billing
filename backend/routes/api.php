@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AiController;
 use App\Http\Controllers\Api\V1\AutomationController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\CustomerUpdateImportController;
 use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
 use App\Http\Controllers\Api\V1\CustomerTroubleshootingController;
@@ -115,6 +116,8 @@ Route::prefix('v1')->group(function () {
         // it can reach the intended action.
         Route::post('customers/bulk-sync-queues', [CustomerController::class, 'bulkSyncQueues'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-setup', [CustomerController::class, 'bulkSetup'])->middleware('permission:edit-customers');
+        Route::post('customers/update-import/preview', [CustomerUpdateImportController::class, 'preview'])->middleware('permission:edit-customers');
+        Route::post('customers/update-import/apply', [CustomerUpdateImportController::class, 'apply'])->middleware('permission:edit-customers');
         Route::post('customers/bulk-delete', [CustomerController::class, 'bulkDestroy'])->middleware('permission:delete-customers');
         Route::get('customers/pdf', [CustomerController::class, 'downloadListPdf'])->middleware('permission:view-customers');
         Route::get('customers/{id}/cash-signature', [CustomerController::class, 'cashSignature'])->middleware('role:super_admin|admin');

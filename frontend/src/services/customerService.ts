@@ -33,6 +33,50 @@ export interface BulkClientSetupResponse {
   };
 }
 
+export type CustomerUpdateImportRowStatus = 'ready' | 'unchanged' | 'no_match' | 'ambiguous' | 'pending' | 'invalid';
+
+export interface CustomerUpdateImportRow {
+  row: number;
+  status: CustomerUpdateImportRowStatus;
+  reason: string;
+  client_name: string;
+  address: string;
+  due_date: string;
+  due_day: number | null;
+  customer_id: string | null;
+  account_number: string | null;
+  current_address: string | null;
+  current_due_day: number | null;
+}
+
+export interface CustomerUpdateImportPreview {
+  status: 'success';
+  message: string;
+  preview_token: string;
+  expires_in_minutes: number;
+  source_label: string;
+  rows: CustomerUpdateImportRow[];
+  summary: {
+    total: number;
+    ready: number;
+    unchanged: number;
+    no_match: number;
+    ambiguous: number;
+    pending: number;
+    invalid: number;
+  };
+}
+
+export interface CustomerUpdateImportApplyResponse {
+  status: 'success';
+  message: string;
+  data: {
+    updated: number;
+    unchanged: number;
+    skipped: string[];
+  };
+}
+
 export const customerService = {
   /** Get all customers with optional filters */
   getCustomers: async (params?: {
@@ -86,6 +130,25 @@ export const customerService = {
   /** Controlled migration/setup changes for selected existing subscribers. */
   bulkSetupCustomers: async (payload: BulkClientSetupPayload): Promise<BulkClientSetupResponse> => {
     const response = await api.post<BulkClientSetupResponse>('/customers/bulk-setup', payload);
+    return response.data;
+  },
+
+  /** Preview exact name matches before changing only address and due day. */
+  previewCustomerUpdateImport: async (source: { file?: File; googleSheetUrl?: string }): Promise<CustomerUpdateImportPreview> => {
+    const form = new FormData();
+    if (source.file) form.append('file', source.file);
+    if (source.googleSheetUrl?.trim()) form.append('google_sheet_url', source.googleSheetUrl.trim());
+    const response = await api.post<CustomerUpdateImportPreview>('/customers/update-import/preview', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  /** Apply the reviewed preview. The server rechecks the name match first. */
+  applyCustomerUpdateImport: async (previewToken: string): Promise<CustomerUpdateImportApplyResponse> => {
+    const response = await api.post<CustomerUpdateImportApplyResponse>('/customers/update-import/apply', {
+      preview_token: previewToken,
+    });
     return response.data;
   },
 };

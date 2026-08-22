@@ -2,11 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
-import { customerService, type ClientSetupAction } from '@/services/customerService';
+import { customerService, type ClientSetupAction, type CustomerUpdateImportPreview, type CustomerUpdateImportRowStatus } from '@/services/customerService';
 import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
-import { Download, MapPin } from 'lucide-react';
+import { Download, FileUp, Link2, MapPin } from 'lucide-react';
 
 const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -16,6 +16,13 @@ const CustomersPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
   const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
+  const [customerUpdateImportOpen, setCustomerUpdateImportOpen] = useState<boolean>(false);
+  const [customerUpdateImportSource, setCustomerUpdateImportSource] = useState<'file' | 'google_sheet'>('file');
+  const [customerUpdateImportFile, setCustomerUpdateImportFile] = useState<File | null>(null);
+  const [customerUpdateImportSheetUrl, setCustomerUpdateImportSheetUrl] = useState<string>('');
+  const [customerUpdateImportPreview, setCustomerUpdateImportPreview] = useState<CustomerUpdateImportPreview | null>(null);
+  const [customerUpdateImportPreviewing, setCustomerUpdateImportPreviewing] = useState<boolean>(false);
+  const [customerUpdateImportApplying, setCustomerUpdateImportApplying] = useState<boolean>(false);
   const [clientSetupAction, setClientSetupAction] = useState<ClientSetupAction | 'delete'>('billing_due_date');
   const [clientSetupSearch, setClientSetupSearch] = useState<string>('');
   const [setupInstallationDate, setSetupInstallationDate] = useState<string>('');
@@ -128,6 +135,57 @@ const CustomersPage: React.FC = () => {
       logger.error('Failed to download customer register PDF', err);
     } finally {
       setExportingPdf(false);
+    }
+  };
+
+  const closeCustomerUpdateImport = (): void => {
+    setCustomerUpdateImportOpen(false);
+    setCustomerUpdateImportPreview(null);
+    setCustomerUpdateImportFile(null);
+    setCustomerUpdateImportSheetUrl('');
+  };
+
+  const handleCustomerUpdateImportPreview = async (): Promise<void> => {
+    setCustomerUpdateImportPreviewing(true);
+    setError('');
+    try {
+      if (customerUpdateImportSource === 'file' && !customerUpdateImportFile) {
+        throw new Error('Choose an XLSX, XLS, or CSV file first.');
+      }
+      if (customerUpdateImportSource === 'google_sheet' && !customerUpdateImportSheetUrl.trim()) {
+        throw new Error('Paste the shared Google Sheets link first.');
+      }
+      const preview = await customerService.previewCustomerUpdateImport(
+        customerUpdateImportSource === 'file'
+          ? { file: customerUpdateImportFile ?? undefined }
+          : { googleSheetUrl: customerUpdateImportSheetUrl },
+      );
+      setCustomerUpdateImportPreview(preview);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Unable to prepare the customer update preview.';
+      setError(message);
+      logger.error('Failed to preview customer update import', err);
+    } finally {
+      setCustomerUpdateImportPreviewing(false);
+    }
+  };
+
+  const handleCustomerUpdateImportApply = async (): Promise<void> => {
+    if (!customerUpdateImportPreview || customerUpdateImportPreview.summary.ready === 0) return;
+    setCustomerUpdateImportApplying(true);
+    setError('');
+    try {
+      const response = await customerService.applyCustomerUpdateImport(customerUpdateImportPreview.preview_token);
+      const skipped = response.data.skipped.length > 0 ? ` ${response.data.skipped.length} row(s) were skipped safely.` : '';
+      setNotice(`${response.message}${skipped}`);
+      closeCustomerUpdateImport();
+      await fetchCustomers();
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Unable to apply the customer update import.';
+      setError(message);
+      logger.error('Failed to apply customer update import', err);
+    } finally {
+      setCustomerUpdateImportApplying(false);
     }
   };
 
@@ -263,6 +321,24 @@ const CustomersPage: React.FC = () => {
     );
   };
 
+  const importStatusLabel = (status: CustomerUpdateImportRowStatus): string => ({
+    ready: 'Ready to update',
+    unchanged: 'Already current',
+    no_match: 'No match',
+    ambiguous: 'Duplicate name',
+    pending: 'Pending application',
+    invalid: 'Needs correction',
+  }[status]);
+
+  const importStatusClass = (status: CustomerUpdateImportRowStatus): string => ({
+    ready: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200',
+    unchanged: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+    no_match: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200',
+    ambiguous: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200',
+    pending: 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200',
+    invalid: 'bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200',
+  }[status]);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -302,6 +378,15 @@ const CustomersPage: React.FC = () => {
               data-testid="client-setups-btn"
             >
               Client Setups
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCustomerUpdateImportOpen(true); setError(''); }}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-primary/40 text-primary bg-primary/5 rounded-md hover:bg-primary/10 transition-colors"
+              data-testid="customer-update-import-btn"
+            >
+              <FileUp className="h-4 w-4" />
+              Import Updates
             </button>
             <Link
               to="/customers/create"
@@ -513,6 +598,201 @@ const CustomersPage: React.FC = () => {
           </>)}
         </div>
       </div>
+
+      {/* Spreadsheet / Google Sheet profile update import */}
+      {customerUpdateImportOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-update-import-title"
+          data-testid="customer-update-import-modal"
+        >
+          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+            <div className="border-b border-border px-4 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 id="customer-update-import-title" className="text-lg font-semibold text-foreground">Import customer address &amp; due-date updates</h2>
+                  <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
+                    Upload an Excel/CSV file or load a shared Google Sheet. SolarNet matches an existing customer by normalized full name, then updates only the address and monthly billing due day after your review.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCustomerUpdateImport}
+                  disabled={customerUpdateImportPreviewing || customerUpdateImportApplying}
+                  className="self-start rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                >
+                  Close
+                </button>
+              </div>
+              <p className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                Required columns: <strong>Client Name</strong>, <strong>Address</strong>, and <strong>Due Date</strong>. “Customer Name” or “Full Name” also work. MAC address, DHCP lease, router, GPS coordinates, balance, invoices, plan, and installation date are never changed.
+              </p>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              {!customerUpdateImportPreview ? (
+                <div className="mx-auto max-w-2xl space-y-5">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerUpdateImportSource('file')}
+                      className={`rounded-lg border p-4 text-left transition-colors ${customerUpdateImportSource === 'file' ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}
+                    >
+                      <FileUp className="mb-2 h-5 w-5 text-primary" />
+                      <span className="block text-sm font-medium text-foreground">Excel or CSV file</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">XLSX, XLS, or CSV up to 10 MB.</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerUpdateImportSource('google_sheet')}
+                      className={`rounded-lg border p-4 text-left transition-colors ${customerUpdateImportSource === 'google_sheet' ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary/50'}`}
+                    >
+                      <Link2 className="mb-2 h-5 w-5 text-primary" />
+                      <span className="block text-sm font-medium text-foreground">Shared Google Sheet</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">Anyone with the link must be allowed to view.</span>
+                    </button>
+                  </div>
+
+                  {customerUpdateImportSource === 'file' ? (
+                    <label className="block rounded-lg border border-dashed border-border bg-muted/20 p-5 text-sm text-foreground">
+                      <span className="font-medium">Choose the customer update sheet</span>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        onChange={(event) => setCustomerUpdateImportFile(event.target.files?.[0] ?? null)}
+                        className="mt-3 block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:opacity-90"
+                      />
+                      <span className="mt-2 block text-xs text-muted-foreground">{customerUpdateImportFile ? customerUpdateImportFile.name : 'No file selected.'}</span>
+                    </label>
+                  ) : (
+                    <label className="block text-sm font-medium text-foreground">
+                      Google Sheets link
+                      <input
+                        type="url"
+                        value={customerUpdateImportSheetUrl}
+                        onChange={(event) => setCustomerUpdateImportSheetUrl(event.target.value)}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <span className="mt-2 block text-xs font-normal text-muted-foreground">SolarNet downloads a read-only export from Google. Private sheets are not accessed.</span>
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Preview: {customerUpdateImportPreview.source_label}</p>
+                      <p className="text-xs text-muted-foreground">This review expires in {customerUpdateImportPreview.expires_in_minutes} minutes. Only exact, unambiguous existing-client matches can be applied.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerUpdateImportPreview(null)}
+                      disabled={customerUpdateImportApplying}
+                      className="self-start rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground hover:bg-secondary disabled:opacity-50"
+                    >
+                      Choose another source
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                    {[
+                      ['Rows', customerUpdateImportPreview.summary.total, 'text-foreground'],
+                      ['Ready', customerUpdateImportPreview.summary.ready, 'text-emerald-600 dark:text-emerald-400'],
+                      ['Current', customerUpdateImportPreview.summary.unchanged, 'text-muted-foreground'],
+                      ['No match', customerUpdateImportPreview.summary.no_match, 'text-amber-600 dark:text-amber-400'],
+                      ['Duplicate', customerUpdateImportPreview.summary.ambiguous, 'text-amber-600 dark:text-amber-400'],
+                      ['Pending', customerUpdateImportPreview.summary.pending, 'text-blue-600 dark:text-blue-400'],
+                      ['Invalid', customerUpdateImportPreview.summary.invalid, 'text-red-600 dark:text-red-400'],
+                    ].map(([label, value, color]) => (
+                      <div key={String(label)} className="rounded-md border border-border bg-background px-3 py-2">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                        <p className={`mt-0.5 text-lg font-semibold ${color}`}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="overflow-auto rounded-lg border border-border">
+                    <table className="min-w-[920px] w-full text-left text-sm">
+                      <thead className="sticky top-0 z-10 bg-secondary text-xs uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2">Row</th>
+                          <th className="px-3 py-2">Imported client</th>
+                          <th className="px-3 py-2">Matched account</th>
+                          <th className="px-3 py-2">Address</th>
+                          <th className="px-3 py-2">Due day</th>
+                          <th className="px-3 py-2">Result</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {customerUpdateImportPreview.rows.map((row) => (
+                          <tr key={`${row.row}-${row.client_name}`} className="align-top">
+                            <td className="px-3 py-3 text-muted-foreground">{row.row}</td>
+                            <td className="px-3 py-3 font-medium text-foreground">{row.client_name || '—'}</td>
+                            <td className="px-3 py-3 text-foreground">{row.account_number || '—'}</td>
+                            <td className="max-w-72 px-3 py-3 text-muted-foreground">
+                              <span className="block truncate" title={row.address}>{row.address || '—'}</span>
+                              {row.current_address !== null && row.current_address !== row.address && <span className="mt-1 block text-xs">Current: {row.current_address || 'No address'}</span>}
+                            </td>
+                            <td className="px-3 py-3 text-muted-foreground">
+                              {row.due_day ? `Every ${row.due_day}${row.due_day === 1 ? 'st' : row.due_day === 2 ? 'nd' : row.due_day === 3 ? 'rd' : 'th'}` : '—'}
+                              {row.current_due_day !== null && row.current_due_day !== row.due_day && <span className="mt-1 block text-xs">Current: {row.current_due_day}</span>}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${importStatusClass(row.status)}`}>{importStatusLabel(row.status)}</span>
+                              <p className="mt-1 max-w-72 text-xs leading-4 text-muted-foreground">{row.reason}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <p className="text-xs text-muted-foreground">
+                {customerUpdateImportPreview
+                  ? `${customerUpdateImportPreview.summary.ready} exact match(es) can be updated. All other rows are excluded.`
+                  : 'No data is changed until you generate a preview and apply its exact matches.'}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closeCustomerUpdateImport}
+                  disabled={customerUpdateImportPreviewing || customerUpdateImportApplying}
+                  className="rounded-md bg-secondary px-4 py-2 text-sm text-secondary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                {!customerUpdateImportPreview ? (
+                  <button
+                    type="button"
+                    onClick={handleCustomerUpdateImportPreview}
+                    disabled={customerUpdateImportPreviewing}
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {customerUpdateImportPreviewing ? 'Reading sheet…' : 'Generate safe preview'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCustomerUpdateImportApply}
+                    disabled={customerUpdateImportApplying || customerUpdateImportPreview.summary.ready === 0}
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    data-testid="customer-update-import-apply"
+                  >
+                    {customerUpdateImportApplying ? 'Applying…' : `Apply ${customerUpdateImportPreview.summary.ready} matched update(s)`}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Existing-client migration/setup modal */}
       {clientSetupOpen && (
