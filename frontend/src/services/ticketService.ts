@@ -44,6 +44,11 @@ export const ticketService = {
     return response.data;
   },
 
+  correctInstallationMac: async (ticketId: string, data: { mac_address: string; reason: string }): Promise<{ message: string; ticket: Ticket }> => {
+    const response = await api.post(`/tickets/${ticketId}/installation/correct-mac`, data);
+    return response.data;
+  },
+
   getStatistics: async (): Promise<TicketStatistics> => {
     const response = await api.get('/tickets-statistics');
     return response.data;

@@ -40,6 +40,8 @@ const TicketsPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [showMacCorrection, setShowMacCorrection] = useState(false);
+  const [macCorrection, setMacCorrection] = useState({ mac_address: '', reason: '' });
 
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -186,6 +188,29 @@ const TicketsPage: React.FC = () => {
       setInstallationApprovals((current) => current.map((item) => item.id === refreshed.id ? refreshed : item));
     } catch (error: any) {
       window.alert(error.response?.data?.message || 'Could not refresh the MAC validation status.');
+    }
+  };
+
+  const correctInstallationMac = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedTicket) return;
+
+    try {
+      const response = await ticketService.correctInstallationMac(selectedTicket.id, {
+        mac_address: macCorrection.mac_address.trim(),
+        reason: macCorrection.reason.trim(),
+      });
+      setSelectedTicket(response.ticket);
+      setInstallationApprovals((current) => current.map((item) => item.id === response.ticket.id ? response.ticket : item));
+      setShowMacCorrection(false);
+      setMacCorrection({ mac_address: '', reason: '' });
+      await fetchTickets();
+      await fetchInstallationApprovals();
+      window.alert(response.message);
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const firstError = errors ? Object.values(errors).flat()[0] : null;
+      window.alert(String(firstError || error.response?.data?.message || 'Could not correct the pending installation MAC.'));
     }
   };
 
@@ -605,7 +630,7 @@ const TicketsPage: React.FC = () => {
                       {selectedTicket.installation_notes && <div className="mt-3"><p className="text-xs font-semibold uppercase text-violet-700">Technician notes</p><p className="mt-1 whitespace-pre-wrap text-sm text-violet-950">{selectedTicket.installation_notes}</p></div>}
                       {selectedTicket.return_reason && <p className="mt-3 rounded-lg bg-orange-100 p-3 text-sm text-orange-900"><strong>Returned correction:</strong> {selectedTicket.return_reason}</p>}
                       {selectedTicket.workflow_status === 'waiting_admin_approval' && <div className={`mt-4 rounded-xl border p-4 ${selectedTicket.installation_validation?.can_approve ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}><div className="flex flex-wrap items-start justify-between gap-3"><div><p className={`font-bold ${selectedTicket.installation_validation?.can_approve ? 'text-emerald-800' : 'text-rose-800'}`}>{selectedTicket.installation_validation?.can_approve ? '✓ MAC MATCHED — READY TO REGISTER' : '✕ MAC NOT READY — REGISTRATION BLOCKED'}</p><p className="mt-1 text-sm text-gray-700">{selectedTicket.installation_validation?.message || 'Checking the current DHCP lease record is required.'}</p></div><button onClick={() => void refreshInstallationValidation(selectedTicket)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Refresh MAC check</button></div>{selectedTicket.installation_validation?.lease && <dl className="mt-3 grid gap-2 border-t border-black/10 pt-3 text-sm sm:grid-cols-2"><div><dt className="text-gray-500">Lease IP</dt><dd className="font-semibold">{selectedTicket.installation_validation.lease.ip_address || '—'}</dd></div><div><dt className="text-gray-500">Router</dt><dd className="font-semibold">{selectedTicket.installation_validation.lease.router_name || '—'}</dd></div><div><dt className="text-gray-500">DHCP hostname</dt><dd>{selectedTicket.installation_validation.lease.hostname || '—'}</dd></div><div><dt className="text-gray-500">DHCP comment</dt><dd>{selectedTicket.installation_validation.lease.comment || '—'}</dd></div></dl>}</div>}
-                      {canApproveInstallations && selectedTicket.workflow_status === 'waiting_admin_approval' && <div className="mt-4 flex flex-wrap gap-2"><button disabled={!selectedTicket.installation_validation?.can_approve} title={!selectedTicket.installation_validation?.can_approve ? 'A unique current bound DHCP lease match is required.' : undefined} onClick={() => void reviewInstallation(selectedTicket, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-400">APPROVE &amp; REGISTER CUSTOMER</button><button onClick={() => void reviewInstallation(selectedTicket, 'return')} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">RETURN FOR CORRECTION</button></div>}
+                      {canApproveInstallations && selectedTicket.workflow_status === 'waiting_admin_approval' && <div className="mt-4 space-y-3"><div className="flex flex-wrap gap-2"><button disabled={!selectedTicket.installation_validation?.can_approve} title={!selectedTicket.installation_validation?.can_approve ? 'A unique current bound DHCP lease match is required.' : undefined} onClick={() => void reviewInstallation(selectedTicket, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-400">APPROVE &amp; REGISTER CUSTOMER</button><button type="button" onClick={() => { setMacCorrection({ mac_address: selectedTicket.installation_mac || '', reason: '' }); setShowMacCorrection((current) => !current); }} className="rounded-lg border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100">CORRECT PENDING MAC</button><button onClick={() => void reviewInstallation(selectedTicket, 'return')} className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">RETURN FOR CORRECTION</button></div>{showMacCorrection && <form onSubmit={correctInstallationMac} className="rounded-xl border border-violet-300 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div><h4 className="font-semibold text-violet-950">Correct pending installation MAC</h4><p className="mt-1 text-xs text-gray-600">This changes the installation ticket only. The customer, DHCP lease, and MikroTik configuration stay unchanged until safe registration approval.</p></div><button type="button" onClick={() => setShowMacCorrection(false)} className="text-xs font-semibold text-gray-500 hover:text-gray-800">Cancel</button></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium text-gray-700">Correct MAC address<input required value={macCorrection.mac_address} onChange={(event) => setMacCorrection((current) => ({ ...current, mac_address: event.target.value }))} placeholder="88:65:9F:9A:4D:BB" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm uppercase focus:border-violet-500 focus:outline-none" /></label><label className="text-sm font-medium text-gray-700">Correction reason<textarea required minLength={5} value={macCorrection.reason} onChange={(event) => setMacCorrection((current) => ({ ...current, reason: event.target.value }))} placeholder="Verified the ONU label and current DHCP lease." className="mt-1 min-h-20 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none" /></label></div><button type="submit" className="mt-3 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800">SAVE CORRECTED MAC &amp; RECHECK</button></form>}</div>}
                     </div>
                   )}
 

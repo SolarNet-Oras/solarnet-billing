@@ -106,6 +106,28 @@ class TicketController extends Controller
         ]);
     }
 
+    public function correctInstallationMac(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate([
+            'mac_address' => ['required', 'string', 'max:32'],
+            'reason' => ['required', 'string', 'min:5', 'max:2000'],
+        ]);
+
+        $ticket = $this->workflow->correctInstallationMac(
+            Ticket::findOrFail($id),
+            $request->user(),
+            $data['mac_address'],
+            $data['reason'],
+        );
+        $ticket->setAttribute('client_notes', $ticket->customer?->notes);
+        $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));
+
+        return response()->json([
+            'message' => 'Pending installation MAC corrected. Registration remains blocked until the corrected MAC has one safe current DHCP lease match.',
+            'ticket' => $ticket,
+        ]);
+    }
+
     public function returnInstallation(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:2000']]);

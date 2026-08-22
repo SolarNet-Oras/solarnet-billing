@@ -129,6 +129,58 @@ class TicketWorkflowService
         });
     }
 
+    /**
+     * Correct a technician-entered MAC before registration. This intentionally
+     * changes the installation ticket only: it never overwrites a registered
+     * customer's MAC address, DHCP lease, or RouterOS configuration.
+     */
+    public function correctInstallationMac(Ticket $ticket, User $admin, string $macAddress, string $reason): Ticket
+    {
+        $mac = $this->normalizeMac($macAddress);
+        if (! $mac) {
+            throw ValidationException::withMessages(['mac_address' => 'Enter a complete 12-character ONU/router MAC address.']);
+        }
+
+        return DB::transaction(function () use ($ticket, $admin, $mac, $reason) {
+            $locked = Ticket::lockForUpdate()->findOrFail($ticket->id);
+            if ($locked->ticket_type !== 'installation' || $locked->workflow_status !== 'waiting_admin_approval') {
+                throw ValidationException::withMessages(['status' => 'Only a pending installation waiting for approval can have its MAC corrected.']);
+            }
+
+            $customer = Customer::withTrashed()->lockForUpdate()->find($locked->customer_id);
+            if (! $customer || $customer->status !== 'pending') {
+                throw ValidationException::withMessages(['customer' => 'MAC correction is restricted to the pending installation application. Registered customer records are not changed here.']);
+            }
+
+            $duplicate = Customer::withTrashed()
+                ->where('id', '!=', $customer->id)
+                ->whereNotNull('mac_address')
+                ->get(['id', 'account_number', 'full_name', 'mac_address'])
+                ->first(fn (Customer $item) => $this->normalizeMac($item->mac_address) === $mac);
+            if ($duplicate) {
+                throw ValidationException::withMessages(['mac_address' => "MAC ADDRESS ALREADY REGISTERED to {$duplicate->full_name} ({$duplicate->account_number})."]);
+            }
+
+            $previousMac = $this->normalizeMac($locked->installation_mac);
+            if ($previousMac === $mac) {
+                throw ValidationException::withMessages(['mac_address' => 'The corrected MAC is the same as the submitted MAC address.']);
+            }
+
+            $locked->update(['installation_mac' => $mac]);
+            $this->history(
+                $locked,
+                $admin,
+                'installation_mac_corrected',
+                'waiting_admin_approval',
+                'waiting_admin_approval',
+                trim($reason),
+                ['previous_mac_address' => $previousMac, 'mac_address' => $mac],
+            );
+
+            return $locked->fresh($this->relations());
+        });
+    }
+
     public function approveInstallation(Ticket $ticket, User $admin): array
     {
         $result = DB::transaction(function () use ($ticket, $admin) {

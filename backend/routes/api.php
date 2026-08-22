@@ -340,6 +340,7 @@ Route::prefix('v1')->group(function () {
         Route::post('tickets/{id}/repair/mark-in', [TicketController::class, 'markRepairIn'])->middleware('role:technician');
         Route::post('tickets/{id}/repair/resolve', [TicketController::class, 'resolveRepair'])->middleware('role:technician');
         Route::post('tickets/{id}/repair/close', [TicketController::class, 'closeRepair'])->middleware('role:technician');
+        Route::post('tickets/{id}/installation/correct-mac', [TicketController::class, 'correctInstallationMac'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/installation/approve', [TicketController::class, 'approveInstallation'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/installation/return', [TicketController::class, 'returnInstallation'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/comments', [TicketController::class, 'addComment'])->middleware('permission:edit-tickets');
