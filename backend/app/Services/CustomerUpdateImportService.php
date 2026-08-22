@@ -160,6 +160,35 @@ class CustomerUpdateImportService
         return $this->tokensAreSubset($existingTokens, $importedTokens);
     }
 
+    /**
+     * Allows a very small, unique spelling correction from the import sheet.
+     * One-word names require at least eight characters and one edit; multi-word
+     * names require an exact shared name part and at most two edits overall.
+     */
+    public function namesAreSafeTypo(string $existingName, string $importedName): bool
+    {
+        $existing = $this->normalizeCustomerName($existingName);
+        $imported = $this->normalizeCustomerName($importedName);
+        if ($existing === '' || $imported === '' || $existing === $imported) {
+            return false;
+        }
+
+        $shortestLength = min(strlen($existing), strlen($imported));
+        if ($shortestLength < 7) {
+            return false;
+        }
+
+        $existingTokens = $this->nameTokens($existingName);
+        $importedTokens = $this->nameTokens($importedName);
+        $distance = levenshtein($existing, $imported);
+        if (count($existingTokens) === 1 || count($importedTokens) === 1) {
+            return $shortestLength >= 8 && $distance <= 1;
+        }
+
+        $sharedTokens = array_intersect($existingTokens, $importedTokens);
+        return $sharedTokens !== [] && $distance <= 2;
+    }
+
     public function dueDayFromCell(mixed $value): ?int
     {
         if ($value instanceof \DateTimeInterface) {
@@ -250,10 +279,16 @@ class CustomerUpdateImportService
                 $matches = $customers->filter(fn (Customer $candidate) => $this->namesAreSafeVariation($candidate->full_name, $record['name']))->values();
                 $matchType = 'name_variation';
             }
+            if ($matches->count() === 0 && $record['name'] !== '') {
+                $matches = $customers->filter(fn (Customer $candidate) => $this->namesAreSafeTypo($candidate->full_name, $record['name']))->values();
+                $matchType = 'typo_variation';
+            }
             $status = 'ready';
-            $reason = $matchType === 'exact'
-                ? 'Exact normalized name match. Full name, address, and monthly due day are ready for review.'
-                : 'Unique safe name variation match. Full name, address, and monthly due day are ready for review.';
+            $reason = match ($matchType) {
+                'exact' => 'Exact normalized name match. Full name, address, and monthly due day are ready for review.',
+                'name_variation' => 'Unique safe name variation match. Full name, address, and monthly due day are ready for review.',
+                default => 'Unique safe spelling-correction match. Excel will become the full-name reference after review.',
+            };
             $customer = null;
 
             if ($record['name'] === '' || $record['address'] === '' || $dueDay === null) {
@@ -262,11 +297,11 @@ class CustomerUpdateImportService
                 $summary['invalid']++;
             } elseif ($matches->count() === 0) {
                 $status = 'no_match';
-                $reason = 'No existing customer has this exact name or a safe two-part name variation.';
+                $reason = 'No existing customer has this exact name, safe name variation, or small unique spelling correction.';
                 $summary['no_match']++;
             } elseif ($matches->count() > 1) {
                 $status = 'ambiguous';
-                $reason = 'More than one existing customer has this normalized full name. Resolve it manually; SolarNet will not choose one.';
+                $reason = 'More than one existing customer is a possible match. Resolve it manually; SolarNet will not choose one.';
                 $summary['ambiguous']++;
             } else {
                 $customer = $matches->first();

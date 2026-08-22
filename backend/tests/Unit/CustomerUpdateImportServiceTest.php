@@ -27,6 +27,16 @@ class CustomerUpdateImportServiceTest extends TestCase
         $this->assertFalse($service->namesAreSafeVariation('Rueza Jade Pormida', 'Rueza Jade'));
     }
 
+    public function test_safe_typo_matching_accepts_only_small_spelling_corrections(): void
+    {
+        $service = new CustomerUpdateImportService();
+
+        $this->assertTrue($service->namesAreSafeTypo('Sofia Labadatory', 'Sophia Labadatory'));
+        $this->assertTrue($service->namesAreSafeTypo('Jabonillo', 'Jaborillo'));
+        $this->assertFalse($service->namesAreSafeTypo('Sofia', 'Sophia'));
+        $this->assertFalse($service->namesAreSafeTypo('Jabonillo', 'Javierillo'));
+    }
+
     public function test_due_date_import_uses_only_the_calendar_day(): void
     {
         $service = new CustomerUpdateImportService();

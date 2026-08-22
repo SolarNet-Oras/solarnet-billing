@@ -46,7 +46,7 @@ export interface CustomerUpdateImportRow {
   customer_id: string | null;
   account_number: string | null;
   matched_full_name: string | null;
-  match_type: 'exact' | 'name_variation' | null;
+  match_type: 'exact' | 'name_variation' | 'typo_variation' | null;
   current_address: string | null;
   current_due_day: number | null;
 }

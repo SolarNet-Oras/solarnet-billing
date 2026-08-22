@@ -614,7 +614,7 @@ const CustomersPage: React.FC = () => {
                 <div>
                   <h2 id="customer-update-import-title" className="text-lg font-semibold text-foreground">Import customer address &amp; due-date updates</h2>
                   <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-                    Upload an Excel/CSV file or load a shared Google Sheet. SolarNet matches an existing customer by exact name or a unique safe surname/reordered-name variation, then updates the full name, home address, and monthly billing due day after your review.
+                    Upload an Excel/CSV file or load a shared Google Sheet. SolarNet matches an existing customer by exact name, a unique safe surname/reordered-name variation, or a small unique spelling correction, then uses the sheet to update the full name, home address, and monthly billing due day after your review.
                   </p>
                 </div>
                 <button
@@ -627,7 +627,7 @@ const CustomersPage: React.FC = () => {
                 </button>
               </div>
               <p className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                Required columns: <strong>Client Name</strong>, <strong>Address</strong>, and <strong>Due Date</strong>. “Customer Name” or “Full Name” also work. A unique two-part name can safely gain/reorder a surname, such as Rueza Jade → Pormida Rueza Jade. MAC address, DHCP lease, router, GPS coordinates, balance, invoices, plan, and installation date are never changed.
+                Required columns: <strong>Client Name</strong>, <strong>Address</strong>, and <strong>Due Date</strong>. “Customer Name” or “Full Name” also work. A unique two-part name can safely gain/reorder a surname, such as Rueza Jade → Pormida Rueza Jade. Small unique corrections such as Sofia Labadatory → Sophia Labadatory are marked for review. MAC address, DHCP lease, router, GPS coordinates, balance, invoices, plan, and installation date are never changed.
               </p>
             </div>
 
@@ -685,7 +685,7 @@ const CustomersPage: React.FC = () => {
                   <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">Preview: {customerUpdateImportPreview.source_label}</p>
-                      <p className="text-xs text-muted-foreground">This review expires in {customerUpdateImportPreview.expires_in_minutes} minutes. Only exact or unique safe name-variation matches can be applied.</p>
+                      <p className="text-xs text-muted-foreground">This review expires in {customerUpdateImportPreview.expires_in_minutes} minutes. Only exact, unique name-variation, or small unique spelling-correction matches can be applied.</p>
                     </div>
                     <button
                       type="button"
@@ -735,6 +735,7 @@ const CustomersPage: React.FC = () => {
                               <span className="block">{row.account_number || '—'}</span>
                               {row.matched_full_name && <span className="mt-1 block text-xs text-muted-foreground">Current: {row.matched_full_name}</span>}
                               {row.match_type === 'name_variation' && <span className="mt-1 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/50 dark:text-blue-200">Safe name variation</span>}
+                              {row.match_type === 'typo_variation' && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">Spelling correction</span>}
                             </td>
                             <td className="max-w-72 px-3 py-3 text-muted-foreground">
                               <span className="block truncate" title={row.address}>{row.address || '—'}</span>
