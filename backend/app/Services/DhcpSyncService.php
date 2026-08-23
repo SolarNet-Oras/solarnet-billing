@@ -27,7 +27,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = false): array
+    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = true): array
     {
         $result = [
             'router' => $router->name,
@@ -42,6 +42,7 @@ class DhcpSyncService
             'ownership_comments_applied' => 0,
             'static_lease_skipped' => 0,
             'queue_syncs_after_static_lease' => 0,
+            'router_writes_skipped' => 0,
             'cross_router_matches_detached' => 0,
             'errors' => [],
         ];
@@ -99,29 +100,38 @@ class DhcpSyncService
                         $result['queues_synced']++;
                     }
 
-                    // Sync is allowed to convert only a currently observed,
-                    // registered customer's dynamic lease. No unmatched,
-                    // pending application, stale, or ambiguous lease reaches
-                    // RouterOS here.
-                    $staticLease = $this->ensureRegisteredLeaseIsStatic($customer, $lease->fresh('router'));
-                    if (!$staticLease['attempted']) {
-                        $result['static_lease_skipped']++;
-                    } elseif ($staticLease['lease_static']) {
-                        $result['registered_static_leases_verified']++;
-                        if ($staticLease['converted_from_dynamic']) {
-                            $result['static_leases_converted']++;
-                        }
-                        if ($staticLease['ownership_comment_applied']) {
-                            $result['ownership_comments_applied']++;
-                        }
-                        if (($staticLease['queue_sync']['success'] ?? false) === true) {
-                            $result['queue_syncs_after_static_lease']++;
-                        }
-                        if (!$staticLease['success']) {
-                            $result['errors'][] = 'static lease queue sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
-                        }
+                    // The scheduled off-peak refresh uses read-only mode: it
+                    // mirrors active DHCP state locally, but never changes a
+                    // RouterOS lease, queue, comment, pool, VLAN, firewall,
+                    // or an unknown customer. A manual administrator sync
+                    // keeps the existing exact-MAC static-lease enforcement.
+                    if (!$enforceRegisteredLeaseStatic) {
+                        $result['router_writes_skipped']++;
                     } else {
-                        $result['errors'][] = 'static lease sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
+                        // Sync is allowed to convert only a currently observed,
+                        // registered customer's dynamic lease. No unmatched,
+                        // pending application, stale, or ambiguous lease reaches
+                        // RouterOS here.
+                        $staticLease = $this->ensureRegisteredLeaseIsStatic($customer, $lease->fresh('router'));
+                        if (!$staticLease['attempted']) {
+                            $result['static_lease_skipped']++;
+                        } elseif ($staticLease['lease_static']) {
+                            $result['registered_static_leases_verified']++;
+                            if ($staticLease['converted_from_dynamic']) {
+                                $result['static_leases_converted']++;
+                            }
+                            if ($staticLease['ownership_comment_applied']) {
+                                $result['ownership_comments_applied']++;
+                            }
+                            if (($staticLease['queue_sync']['success'] ?? false) === true) {
+                                $result['queue_syncs_after_static_lease']++;
+                            }
+                            if (!$staticLease['success']) {
+                                $result['errors'][] = 'static lease queue sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
+                            }
+                        } else {
+                            $result['errors'][] = 'static lease sync for ' . $customer->account_number . ': ' . ($staticLease['message'] ?? 'failed');
+                        }
                     }
                 } elseif ($autoCreateCustomers && $leaseData['status'] === 'bound') {
                     // Auto-create customer from unknown MAC
@@ -169,7 +179,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncAllRouters(bool $autoCreateCustomers = false): array
+    public function syncAllRouters(bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = true): array
     {
         $routers = Router::where('is_active', true)
                         ->where('connection_status', 'online')
@@ -183,7 +193,7 @@ class DhcpSyncService
         ];
 
         foreach ($routers as $router) {
-            $result = $this->syncRouterLeases($router, $autoCreateCustomers);
+            $result = $this->syncRouterLeases($router, $autoCreateCustomers, $enforceRegisteredLeaseStatic);
             
             if (empty($result['errors'])) {
                 $results['success']++;

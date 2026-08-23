@@ -9,7 +9,9 @@ class SyncDhcpLeases extends Command
 {
     protected $signature = 'dhcp:sync
                             {--router= : Specific router ID to sync}
-                            {--no-auto-create : Disable auto-creating customers from unknown MACs}';
+                            {--auto-create : Explicitly create customers from unknown bound MAC addresses}
+                            {--no-auto-create : Deprecated compatibility option; automatic customer creation is disabled by default}
+                            {--read-only : Mirror live DHCP leases locally without RouterOS lease or queue writes}';
 
     protected $description = 'Sync DHCP leases from MikroTik routers';
 
@@ -17,8 +19,18 @@ class SyncDhcpLeases extends Command
     {
         $this->info('Starting DHCP lease synchronization...');
 
-        $autoCreate = !$this->option('no-auto-create');
+        // Unknown network devices must never become customer accounts simply
+        // because an unattended scheduled job ran.
+        $readOnly = (bool) $this->option('read-only');
+        $autoCreate = (bool) $this->option('auto-create')
+            && !$this->option('no-auto-create')
+            && !$readOnly;
         $routerId = $this->option('router');
+        $hasFailures = false;
+
+        if ($readOnly) {
+            $this->info('Read-only mode: active lease state will be mirrored locally; RouterOS leases and queues will not be changed.');
+        }
 
         if ($routerId) {
             $router = \App\Models\Router::find($routerId);
@@ -28,12 +40,13 @@ class SyncDhcpLeases extends Command
             }
 
             $this->info("Syncing DHCP leases from: {$router->name}");
-            $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate);
+            $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate, !$readOnly);
             
             $this->displayResult($result);
+            $hasFailures = !empty($result['errors']);
         } else {
             $this->info('Syncing DHCP leases from all online routers...');
-            $results = $dhcpSyncService->syncAllRouters($autoCreate);
+            $results = $dhcpSyncService->syncAllRouters($autoCreate, !$readOnly);
             
             $this->info("Total routers: {$results['total_routers']}");
             $this->info("Success: {$results['success']}, Failed: {$results['failed']}");
@@ -42,12 +55,17 @@ class SyncDhcpLeases extends Command
                 $this->newLine();
                 $this->displayResult($result);
             }
+            $hasFailures = $results['failed'] > 0;
         }
 
         $this->newLine();
-        $this->info('DHCP sync completed!');
+        if ($hasFailures) {
+            $this->warn('DHCP sync completed with issues.');
+        } else {
+            $this->info('DHCP sync completed!');
+        }
         
-        return 0;
+        return $hasFailures ? self::FAILURE : self::SUCCESS;
     }
 
     protected function displayResult(array $result): void
@@ -64,6 +82,7 @@ class SyncDhcpLeases extends Command
         $this->line("  SolarNet ownership comments applied: " . ($result['ownership_comments_applied'] ?? 0));
         $this->line("  Static lease checks skipped: {$result['static_lease_skipped']}");
         $this->line("  Queues synchronized after static lease: {$result['queue_syncs_after_static_lease']}");
+        $this->line("  Router writes skipped (read-only mode): " . ($result['router_writes_skipped'] ?? 0));
         
         if (!empty($result['errors'])) {
             $this->error("  Errors: " . implode(', ', $result['errors']));

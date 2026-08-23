@@ -36,6 +36,15 @@ Schedule::command('automation:db-backup')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 03:10 — off-peak DHCP mirror. This is deliberately read-only: it stores
+// current lease state and exact customer matches locally but never changes a
+// MikroTik lease, queue, DHCP server, VLAN, firewall, or unknown client.
+Schedule::command('dhcp:sync --read-only')
+    ->dailyAt('03:10')
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // 08:00 — daily web-push reminders for unpaid invoices. Initial invoice
 // emails are sent once when an invoice is created, not by this reminder job.
 Schedule::command('automation:invoice-reminders')
