@@ -142,6 +142,10 @@ export const customerService = {
     if (source.googleSheetUrl?.trim()) form.append('google_sheet_url', source.googleSheetUrl.trim());
     const response = await api.post<CustomerUpdateImportPreview>('/customers/update-import/preview', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // XLSX parsing and a public Google Sheet export can legitimately take
+      // longer than the normal interactive API timeout. This override applies
+      // only to the preview; no update is made by this request.
+      timeout: 90000,
     });
     return response.data;
   },
