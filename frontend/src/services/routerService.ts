@@ -460,8 +460,8 @@ export const routerService = {
     return response.data;
   },
 
-  async sync(id: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{ success: boolean; message: string }>(`/routers/${id}/sync`);
+  async sync(id: string): Promise<{ success: boolean; message: string; errors?: string[]; dhcp_sync?: { errors?: string[] } }> {
+    const response = await api.post<{ success: boolean; message: string; errors?: string[]; dhcp_sync?: { errors?: string[] } }>(`/routers/${id}/sync`);
     return response.data;
   },
 
@@ -689,11 +689,11 @@ export const routerService = {
     return response.data.data;
   },
 
-  async syncDhcp(id: string, autoCreateCustomers: boolean = true): Promise<any> {
+  async syncDhcp(id: string, autoCreateCustomers: boolean = true): Promise<{ success: boolean; message?: string; data: any }> {
     const response = await api.post<{ success: boolean; data: any }>(`/routers/${id}/sync-dhcp`, { 
       auto_create_customers: autoCreateCustomers 
     });
-    return response.data.data;
+    return response.data;
   },
 
   async getUnmatchedLeases(id: string): Promise<any[]> {

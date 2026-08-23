@@ -49,8 +49,20 @@ class UnregisteredLeaseController extends Controller
         $service = app(DhcpSyncService::class);
         $result  = $service->syncAllRouters(false); // never auto-create; user reviews first
 
+        $failures = collect($result['routers'])
+            ->filter(fn (array $routerResult) => !empty($routerResult['errors']))
+            ->map(fn (array $routerResult) => $routerResult['router'] ?? 'Unknown router')
+            ->values()
+            ->all();
+
         return response()->json([
-            'success' => true,
+            // An all-router refresh can partially succeed. Keep its HTTP
+            // response usable so the screen can show the imported leases,
+            // while making the affected router names explicit to the user.
+            'success' => empty($failures),
+            'message' => empty($failures)
+                ? 'DHCP leases synchronized from all eligible routers.'
+                : 'DHCP sync needs attention for: ' . implode(', ', $failures) . '.',
             'data'    => $result,
         ]);
     }

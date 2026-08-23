@@ -49,8 +49,16 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     try {
       await routerService.sync(id);
       onSync(id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sync failed:', error);
+      const details = error?.response?.data?.errors || error?.response?.data?.dhcp_sync?.errors || [];
+      const explanation = details.length
+        ? details.map((detail: string) => `• ${detail}`).join('\n')
+        : (error?.response?.data?.message || error?.message || 'No error detail was returned.');
+      alert(
+        `Router sync needs attention.\n\n${explanation}\n\n` +
+        'The connection check passed only for basic RouterOS information. The failed item above identifies whether DHCP lease reading, static-lease enforcement, or queue synchronization needs attention.'
+      );
     } finally {
       setSyncingId(null);
     }
@@ -59,12 +67,20 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
   const handleDhcpSync = async (id: string) => {
     setDhcpSyncingId(id);
     try {
-      const result = await routerService.syncDhcp(id, true);
+      const response = await routerService.syncDhcp(id, true);
+      const result = response.data;
       alert(`DHCP Sync Complete!\nFetched: ${result.leases_fetched}\nMatched: ${result.customers_matched}\nIPs Updated: ${result.ips_updated}\nMade static: ${result.static_leases_converted || 0}\nOwnership comments applied: ${result.ownership_comments_applied || 0}\nRegistered static leases verified: ${result.registered_static_leases_verified || 0}`);
       onSync(id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('DHCP sync failed:', error);
-      alert('DHCP sync failed');
+      const details = error?.response?.data?.data?.errors || [];
+      const explanation = details.length
+        ? details.map((detail: string) => `• ${detail}`).join('\n')
+        : (error?.response?.data?.message || error?.message || 'No error detail was returned.');
+      alert(
+        `DHCP sync needs attention.\n\n${explanation}\n\n` +
+        'Connection Test only checks RouterOS system information. DHCP sync also needs access to DHCP leases; exact registered matches additionally need permission to make a lease static and update its queue.'
+      );
     } finally {
       setDhcpSyncingId(null);
     }

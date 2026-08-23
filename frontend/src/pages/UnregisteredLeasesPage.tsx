@@ -64,6 +64,15 @@ const UnregisteredLeasesPage: React.FC = () => {
         `Synced ${result.total_routers} router${result.total_routers === 1 ? '' : 's'} — ${result.success} succeeded, ${result.failed} failed.`
           + ownershipSummary
       );
+      const failedRouters = routerResults.filter((router: any) => Array.isArray(router.errors) && router.errors.length > 0);
+      if (failedRouters.length > 0) {
+        const details = failedRouters
+          .map((router: any) => `${router.router || 'Unknown router'}: ${router.errors.join(' ')}`)
+          .join(' ');
+        setError(
+          `DHCP refresh completed with issues. ${details} Connection Test checks RouterOS system information only; DHCP access and static-lease/queue updates require additional RouterOS permissions.`
+        );
+      }
       await loadAll();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to sync DHCP leases from routers');

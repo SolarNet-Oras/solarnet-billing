@@ -584,7 +584,7 @@ class RouterController extends Controller
             );
         }
 
-        return response()->json($result);
+        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
     }
 
     /** Install or replace only the Solarnet payment-only firewall rules. */
@@ -807,11 +807,15 @@ class RouterController extends Controller
         $autoCreate = false;
 
         $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate);
+        $failed = !empty($result['errors']);
 
         return response()->json([
-            'success' => empty($result['errors']),
+            'success' => !$failed,
+            'message' => $failed
+                ? 'DHCP sync could not finish for ' . $router->name . '. Review the returned details before trying again.'
+                : 'DHCP leases synchronized from ' . $router->name . '.',
             'data' => $result,
-        ]);
+        ], $failed ? 422 : 200);
     }
 
     /**
