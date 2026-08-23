@@ -9,6 +9,9 @@ const ROUTER_THREAT_SCAN_TIMEOUT = 60_000;
 const ROUTER_BILLING_INSTALL_TIMEOUT = 180_000;
 const ROUTER_DNS_DISCOVERY_TIMEOUT = 120_000;
 const ROUTER_DNS_APPLY_TIMEOUT = 180_000;
+// A DHCP refresh can inspect every lease and enforce exact registered lease
+// bindings. Keep the browser wait bounded, but longer than the global 30s.
+const ROUTER_DHCP_SYNC_TIMEOUT = 180_000;
 
 export interface Router {
   id: string;
@@ -461,7 +464,11 @@ export const routerService = {
   },
 
   async sync(id: string): Promise<{ success: boolean; message: string; errors?: string[]; dhcp_sync?: { errors?: string[] } }> {
-    const response = await api.post<{ success: boolean; message: string; errors?: string[]; dhcp_sync?: { errors?: string[] } }>(`/routers/${id}/sync`);
+    const response = await api.post<{ success: boolean; message: string; errors?: string[]; dhcp_sync?: { errors?: string[] } }>(
+      `/routers/${id}/sync`,
+      undefined,
+      { timeout: ROUTER_DHCP_SYNC_TIMEOUT },
+    );
     return response.data;
   },
 
@@ -692,7 +699,7 @@ export const routerService = {
   async syncDhcp(id: string, autoCreateCustomers: boolean = true): Promise<{ success: boolean; message?: string; data: any }> {
     const response = await api.post<{ success: boolean; data: any }>(`/routers/${id}/sync-dhcp`, { 
       auto_create_customers: autoCreateCustomers 
-    });
+    }, { timeout: ROUTER_DHCP_SYNC_TIMEOUT });
     return response.data;
   },
 

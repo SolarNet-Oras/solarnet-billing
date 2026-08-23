@@ -2,6 +2,10 @@ import { api } from './api';
 import type { Router } from './routerService';
 import type { ServicePlan } from './servicePlanService';
 
+// An all-router DHCP refresh may inspect hundreds of leases through a VPN.
+// This applies only to the deliberate refresh action, not normal page calls.
+const DHCP_ALL_ROUTER_SYNC_TIMEOUT = 180_000;
+
 /**
  * A DHCP lease that has not yet been converted into a Customer.
  */
@@ -74,7 +78,11 @@ export interface QuickRegisterResponse {
 export const unregisteredLeaseService = {
   /** Sync leases from all active routers into the DB (no auto-create). */
   async syncAll(): Promise<{ total_routers: number; success: number; failed: number; routers: any[] }> {
-    const response = await api.post<{ success: boolean; data: any }>('/unregistered-leases/sync-all');
+    const response = await api.post<{ success: boolean; data: any }>(
+      '/unregistered-leases/sync-all',
+      undefined,
+      { timeout: DHCP_ALL_ROUTER_SYNC_TIMEOUT },
+    );
     return response.data.data;
   },
 

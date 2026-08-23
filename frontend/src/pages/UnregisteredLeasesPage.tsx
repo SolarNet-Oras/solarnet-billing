@@ -75,7 +75,12 @@ const UnregisteredLeasesPage: React.FC = () => {
       }
       await loadAll();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to sync DHCP leases from routers');
+      const timedOut = err?.code === 'ECONNABORTED' || /timeout/i.test(String(err?.message || ''));
+      setError(
+        timedOut
+          ? 'The DHCP refresh is still taking longer than three minutes. Do not click Refresh again; wait a minute, reload this page, and review the saved leases. The safe 3:10 AM automatic refresh will retry without browser timeout.'
+          : (err?.response?.data?.message || 'Failed to sync DHCP leases from routers')
+      );
     } finally {
       setSyncing(false);
     }
