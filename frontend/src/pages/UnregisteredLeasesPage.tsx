@@ -54,7 +54,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   // The backend mirrors all active router lease tables every minute. Refresh
   // only the displayed lists while this page is open so a newly observed,
   // unregistered dynamic or commented lease appears without a manual click.
-  const refreshLeaseLists = useCallback(async (): Promise<void> => {
+  const refreshLeaseLists = useCallback(async (): Promise<boolean> => {
     try {
       const [staticRows, dynamicRows] = await Promise.all([
         unregisteredLeaseService.listStaticCommented(),
@@ -63,10 +63,12 @@ const UnregisteredLeasesPage: React.FC = () => {
       setStaticLeases(staticRows);
       setDynamicLeases(dynamicRows);
       setLastLeaseListRefresh(new Date());
+      return true;
     } catch (refreshError) {
       // Keep current rows visible; the next live refresh or manual action can
       // display the router-specific error if it persists.
       console.warn('Unregistered DHCP lease live refresh failed', refreshError);
+      return false;
     }
   }, []);
 
@@ -85,7 +87,15 @@ const UnregisteredLeasesPage: React.FC = () => {
     setError('');
     setNotice('');
     try {
-      const result = await unregisteredLeaseService.syncAll();
+      const refreshed = await refreshLeaseLists();
+      if (!refreshed) {
+        setError('Unable to refresh the saved DHCP lease list. The automatic MikroTik mirror continues in the background and will retry within one minute.');
+        return;
+      }
+      // This action intentionally reloads local lease rows only. RouterOS is
+      // read by the background one-minute mirror, so the page button cannot
+      // time out or make lease/queue changes.
+      const result = { total_routers: 0, success: 0, failed: 0, routers: [] as any[] };
       const routerResults = result.routers || [];
       const madeStatic = routerResults.reduce<number>((total: number, router: any) => total + Number(router.static_leases_converted || 0), 0);
       const ownershipComments = routerResults.reduce<number>((total: number, router: any) => total + Number(router.ownership_comments_applied || 0), 0);
@@ -104,7 +114,7 @@ const UnregisteredLeasesPage: React.FC = () => {
           `DHCP refresh completed with issues. ${details} Connection Test checks RouterOS system information only; DHCP access and static-lease/queue updates require additional RouterOS permissions.`
         );
       }
-      await loadAll();
+      setNotice('The saved unregistered-lease list is current. MikroTik is mirrored automatically every minute; no manual router sync was started.');
     } catch (err: any) {
       const timedOut = err?.code === 'ECONNABORTED' || /timeout/i.test(String(err?.message || ''));
       setError(
@@ -223,7 +233,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             data-testid="sync-all-leases-btn"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Refreshing…' : 'Refresh DHCP leases'}
+            {syncing ? 'Refreshing…' : 'Refresh shown leases'}
           </button>
         </div>
 
