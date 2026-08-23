@@ -181,9 +181,10 @@ class DhcpSyncService
      */
     public function syncAllRouters(bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = true): array
     {
-        $routers = Router::where('is_active', true)
-                        ->where('connection_status', 'online')
-                        ->get();
+        // Do not depend on a stale connection-test badge. An active router
+        // gets one bounded lease-read attempt; a failed router is reported
+        // while every other active router can still refresh its new leases.
+        $routers = Router::where('is_active', true)->get();
 
         $results = [
             'total_routers' => $routers->count(),

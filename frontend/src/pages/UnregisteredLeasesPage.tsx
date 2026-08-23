@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
@@ -21,6 +21,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [notice, setNotice] = useState<string>('');
   const [modalLease, setModalLease] = useState<UnregisteredLease | null>(null);
   const [search, setSearch] = useState<string>('');
+  const [lastLeaseListRefresh, setLastLeaseListRefresh] = useState<Date | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -39,6 +40,7 @@ const UnregisteredLeasesPage: React.FC = () => {
       ]);
       setStaticLeases(s);
       setDynamicLeases(d);
+      setLastLeaseListRefresh(new Date());
       setRouters(r);
       setPlans(p.filter((pl) => pl.is_active));
       setCustomerLinkCandidates(customers);
@@ -48,6 +50,35 @@ const UnregisteredLeasesPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // The backend mirrors all active router lease tables every minute. Refresh
+  // only the displayed lists while this page is open so a newly observed,
+  // unregistered dynamic or commented lease appears without a manual click.
+  const refreshLeaseLists = useCallback(async (): Promise<void> => {
+    try {
+      const [staticRows, dynamicRows] = await Promise.all([
+        unregisteredLeaseService.listStaticCommented(),
+        unregisteredLeaseService.listDynamic(),
+      ]);
+      setStaticLeases(staticRows);
+      setDynamicLeases(dynamicRows);
+      setLastLeaseListRefresh(new Date());
+    } catch (refreshError) {
+      // Keep current rows visible; the next live refresh or manual action can
+      // display the router-specific error if it persists.
+      console.warn('Unregistered DHCP lease live refresh failed', refreshError);
+    }
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (!syncing && !registeringId && !modalLease) {
+        void refreshLeaseLists();
+      }
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, [modalLease, refreshLeaseLists, registeringId, syncing]);
 
   const handleSync = async (): Promise<void> => {
     setSyncing(true);
@@ -78,7 +109,7 @@ const UnregisteredLeasesPage: React.FC = () => {
       const timedOut = err?.code === 'ECONNABORTED' || /timeout/i.test(String(err?.message || ''));
       setError(
         timedOut
-          ? 'The DHCP refresh is still taking longer than three minutes. Do not click Refresh again; wait a minute, reload this page, and review the saved leases. The safe 3:10 AM automatic refresh will retry without browser timeout.'
+          ? 'The DHCP refresh is still taking longer than three minutes. Do not click Refresh again; wait a minute, reload this page, and review the saved leases. The safe automatic lease mirror retries every minute without browser timeout.'
           : (err?.response?.data?.message || 'Failed to sync DHCP leases from routers')
       );
     } finally {
@@ -178,8 +209,9 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  DHCP leases from MikroTik that are not yet linked to a customer.
+                  Live DHCP leases not yet linked to a customer. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
+                {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
               </div>
             </div>
           </div>

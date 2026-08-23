@@ -36,11 +36,11 @@ Schedule::command('automation:db-backup')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 03:10 — off-peak DHCP mirror. This is deliberately read-only: it stores
+// Every minute — live DHCP mirror. This is deliberately read-only: it stores
 // current lease state and exact customer matches locally but never changes a
 // MikroTik lease, queue, DHCP server, VLAN, firewall, or unknown client.
 Schedule::command('dhcp:sync --read-only')
-    ->dailyAt('03:10')
+    ->everyMinute()
     ->timezone($tz)
     ->withoutOverlapping()
     ->runInBackground();
