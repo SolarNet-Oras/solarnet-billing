@@ -260,7 +260,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search MAC, IP, hostname, comment, router, rate limit…"
+            placeholder="Search client, MAC address, or IP address…"
             className="w-full rounded-lg border border-input bg-background py-2.5 pl-10 pr-10 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary"
             data-testid="unregistered-lease-search-input"
           />
@@ -275,7 +275,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               <X className="w-4 h-4" />
             </button>
           )}
-          <p className="mt-1.5 text-xs text-muted-foreground">Searches static and dynamic DHCP leases from both MikroTik routers.</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Searches static and dynamic DHCP leases from both MikroTik routers by client comment, full or partial IP address, MAC, hostname, router, or rate limit.</p>
         </div>
 
         <div className="flex gap-1 border-b border-border">

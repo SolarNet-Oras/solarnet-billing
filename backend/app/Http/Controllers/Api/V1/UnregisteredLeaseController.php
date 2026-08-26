@@ -158,6 +158,12 @@ class UnregisteredLeaseController extends Controller
      */
     public function technicianRegister(Request $request): JsonResponse
     {
+        // Preserve the existing MAC-registration API for an in-flight or
+        // cached technician page. New pages send the explicit lookup type.
+        $request->merge([
+            'binding_lookup' => $request->input('binding_lookup', 'mac'),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'full_name' => 'required|string|max:255',
             'address' => 'required|string|max:1000',
@@ -165,7 +171,9 @@ class UnregisteredLeaseController extends Controller
             'email' => 'nullable|email|max:255',
             'installation_date' => 'required|date',
             'service_plan_id' => 'required|exists:service_plans,id',
-            'mac_address' => 'required|string|max:32',
+            'binding_lookup' => 'required|in:mac,ip',
+            'mac_address' => 'nullable|required_if:binding_lookup,mac|string|max:32',
+            'ip_address' => 'nullable|required_if:binding_lookup,ip|ip',
             'gps_coordinates' => 'required|array',
             'gps_coordinates.latitude' => 'required|numeric|between:-90,90',
             'gps_coordinates.longitude' => 'required|numeric|between:-180,180',
@@ -177,9 +185,56 @@ class UnregisteredLeaseController extends Controller
         }
 
         $data = $validator->validated();
-        $inputMac = $this->normalizeMacForMatch($data['mac_address']);
-        if (!$inputMac) {
-            return response()->json(['success' => false, 'message' => 'Enter a valid 12-character ONU/router MAC address.'], 422);
+        $bindingLookup = $data['binding_lookup'];
+        $resolvedLeaseByIp = null;
+
+        if ($bindingLookup === 'ip') {
+            // An IP address is safe only as a selector for a single *current*
+            // unregistered bound lease. IP ranges may overlap between routers,
+            // so an ambiguous IP never selects a customer or changes RouterOS.
+            $ipMatches = DhcpLease::with('router:id,name')
+                ->unmatched()
+                ->active()
+                ->presentOnRouter()
+                ->where('ip_address', $data['ip_address'])
+                ->whereNotNull('mac_address')
+                ->get();
+
+            if ($ipMatches->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No current unregistered bound DHCP lease uses this IP address. Refresh the lease mirror, or register with the device MAC address instead.',
+                ], 422);
+            }
+
+            if ($ipMatches->count() !== 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This IP address exists on more than one current unregistered lease. Use the full MAC address to avoid binding the wrong customer.',
+                    'matches' => $ipMatches->map(fn (DhcpLease $lease) => [
+                        'lease_id' => $lease->id,
+                        'mac_address' => $lease->mac_address,
+                        'ip_address' => $lease->ip_address,
+                        'hostname' => $lease->hostname,
+                        'comment' => $lease->comment,
+                        'router' => $lease->router?->name,
+                    ])->values(),
+                ], 422);
+            }
+
+            $resolvedLeaseByIp = $ipMatches->first();
+            $inputMac = $this->normalizeMacForMatch($resolvedLeaseByIp->mac_address);
+            if (!$inputMac) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The selected DHCP lease has an invalid MAC address. Use the full verified MAC address instead.',
+                ], 422);
+            }
+        } else {
+            $inputMac = $this->normalizeMacForMatch($data['mac_address'] ?? null);
+            if (!$inputMac) {
+                return response()->json(['success' => false, 'message' => 'Enter a valid 12-character ONU/router MAC address.'], 422);
+            }
         }
 
         $plan = ServicePlan::query()
@@ -211,24 +266,34 @@ class UnregisteredLeaseController extends Controller
             ], 422);
         }
 
-        $candidates = DhcpLease::with('router:id,name')
-            ->unmatched()
-            ->active()
-            ->presentOnRouter()
-            ->whereNotNull('mac_address')
-            ->get()
-            ->map(function (DhcpLease $lease) use ($inputMac) {
-                $leaseMac = $this->normalizeMacForMatch($lease->mac_address);
-                if (!$leaseMac) return null;
-                $comparison = $this->technicianMacMatchService->compare($inputMac, $leaseMac);
-                $lease->mac_match_score = $comparison['score'];
-                $lease->mac_match_type = $comparison['type'];
-                $lease->mac_corrected_from_input = $comparison['type'] === 'last_character_correction';
+        $candidates = $resolvedLeaseByIp
+            ? collect([$resolvedLeaseByIp])->map(function (DhcpLease $lease) {
+                // The IP lookup already proved this one live lease is unique.
+                // Mark it as an exact derived-MAC match; no fuzzy comparison
+                // and no automatic character correction are involved.
+                $lease->mac_match_score = 100.0;
+                $lease->mac_match_type = 'exact';
+                $lease->mac_corrected_from_input = false;
                 return $lease;
             })
-            ->filter(fn (?DhcpLease $lease) => $lease && $lease->mac_match_score >= 90)
-            ->sortByDesc('mac_match_score')
-            ->values();
+            : DhcpLease::with('router:id,name')
+                ->unmatched()
+                ->active()
+                ->presentOnRouter()
+                ->whereNotNull('mac_address')
+                ->get()
+                ->map(function (DhcpLease $lease) use ($inputMac) {
+                    $leaseMac = $this->normalizeMacForMatch($lease->mac_address);
+                    if (!$leaseMac) return null;
+                    $comparison = $this->technicianMacMatchService->compare($inputMac, $leaseMac);
+                    $lease->mac_match_score = $comparison['score'];
+                    $lease->mac_match_type = $comparison['type'];
+                    $lease->mac_corrected_from_input = $comparison['type'] === 'last_character_correction';
+                    return $lease;
+                })
+                ->filter(fn (?DhcpLease $lease) => $lease && $lease->mac_match_score >= 90)
+                ->sortByDesc('mac_match_score')
+                ->values();
 
         if ($candidates->isEmpty()) {
             try {
@@ -266,6 +331,7 @@ class UnregisteredLeaseController extends Controller
                 'success' => true,
                 'message' => 'Client registration saved. Waiting for an exact matching MAC in a current bound DHCP lease.',
                 'binding_status' => 'waiting_for_match',
+                'binding_lookup' => 'mac',
                 'mac_match' => [
                     'type' => 'waiting_for_match',
                     'score' => null,
@@ -311,6 +377,7 @@ class UnregisteredLeaseController extends Controller
 
         $response = $this->quickRegister($request, $lease->id);
         $response->setData(array_merge((array) $response->getData(true), [
+            'binding_lookup' => $bindingLookup,
             'mac_match' => [
                 'type' => $lease->mac_match_type,
                 'score' => (float) $lease->mac_match_score,
