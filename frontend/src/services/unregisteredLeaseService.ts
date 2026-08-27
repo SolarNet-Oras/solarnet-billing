@@ -7,7 +7,8 @@ import type { ServicePlan } from './servicePlanService';
 const DHCP_ALL_ROUTER_SYNC_TIMEOUT = 180_000;
 
 /**
- * A DHCP lease that has not yet been converted into a Customer.
+ * A DHCP lease shown in the DHCP review workspace. Dynamic rows may already
+ * be customer-owned; those rows include a read-only identity hint.
  */
 export interface UnregisteredLease {
   id: string;
@@ -24,6 +25,19 @@ export interface UnregisteredLease {
   last_seen_at: string;
   created_at: string;
   router?: Pick<Router, 'id' | 'name'>;
+  /** Read-only identity hint when this DHCP MAC already belongs to a customer profile. */
+  known_customer_identity?: {
+    status: 'known_customer' | 'ambiguous';
+    customer_count: number;
+    message: string;
+    customer?: {
+      id: string;
+      account_number: string;
+      full_name: string;
+      status: string;
+      same_router: boolean;
+    };
+  } | null;
   /** Server-computed plan match based on rate_limit. Only present on staticCommented(). */
   suggested_plan?: {
     id: string;

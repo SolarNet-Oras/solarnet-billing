@@ -4,7 +4,33 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
-import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X } from 'lucide-react';
+import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X, UserCheck, AlertTriangle } from 'lucide-react';
+
+const LeaseCustomerIdentity: React.FC<{ lease: UnregisteredLease }> = ({ lease }) => {
+  const identity = lease.known_customer_identity;
+  if (!identity) return null;
+
+  if (identity.status === 'ambiguous') {
+    return (
+      <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-900/35 dark:text-amber-200">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        MAC appears on {identity.customer_count} customer profiles — review required
+      </div>
+    );
+  }
+
+  const customer = identity.customer;
+  if (!customer) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+      <UserCheck className="h-3.5 w-3.5 shrink-0" />
+      <span className="font-semibold">Used by: {customer.full_name}</span>
+      <span className="font-mono text-[11px]">{customer.account_number}</span>
+      {!customer.same_router && <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-900 dark:bg-amber-900/35 dark:text-amber-200">different router</span>}
+    </div>
+  );
+};
 
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -199,6 +225,8 @@ const UnregisteredLeasesPage: React.FC = () => {
       lease.rate_limit,
       lease.status,
       lease.server,
+      lease.known_customer_identity?.customer?.full_name,
+      lease.known_customer_identity?.customer?.account_number,
       routerName(lease.router_id),
     ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch)));
   };
@@ -219,7 +247,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  Live DHCP leases not yet linked to a customer. Router lease state mirrors every minute; this page refreshes every 30 seconds.
+                  Live DHCP leases for review. Dynamic devices that already belong to a customer show their customer identity and cannot be registered again. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
                 {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
               </div>
@@ -373,6 +401,7 @@ const StaticLeasesTable: React.FC<{
               <tr key={lease.id} className="border-t border-border" data-testid={`static-lease-row-${lease.id}`}>
                 <td className="px-4 py-3">
                   <div className="font-medium text-foreground">{lease.comment || '(no comment)'}</div>
+                  <LeaseCustomerIdentity lease={lease} />
                   {lease.hostname && (
                     <div className="text-xs text-muted-foreground">host: {lease.hostname}</div>
                   )}
@@ -403,16 +432,24 @@ const StaticLeasesTable: React.FC<{
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onRegister(lease)}
-                    disabled={registeringId === lease.id}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
-                    data-testid={`register-lease-btn-${lease.id}`}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    {registeringId === lease.id ? 'Registering…' : 'Register'}
-                  </button>
+                  {lease.known_customer_identity ? (
+                    <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
+                      {lease.known_customer_identity.status === 'known_customer'
+                        ? 'Known customer device — no registration action'
+                        : 'Duplicate customer MAC — review required'}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onRegister(lease)}
+                      disabled={registeringId === lease.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
+                      data-testid={`register-lease-btn-${lease.id}`}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      {registeringId === lease.id ? 'Registering…' : 'Register'}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -452,7 +489,7 @@ const DynamicLeasesTable: React.FC<{
         <table className="w-full text-sm">
           <thead className="bg-secondary/50 text-muted-foreground uppercase text-xs tracking-wider sticky top-0 z-10">
             <tr>
-              <th className="px-4 py-3 text-left">Hostname</th>
+              <th className="px-4 py-3 text-left">Hostname / customer identity</th>
               <th className="px-4 py-3 text-left">MAC / IP</th>
               <th className="px-4 py-3 text-left">Type</th>
               <th className="px-4 py-3 text-left">Router</th>
@@ -465,6 +502,7 @@ const DynamicLeasesTable: React.FC<{
               <tr key={lease.id} className="border-t border-border" data-testid={`dynamic-lease-row-${lease.id}`}>
                 <td className="px-4 py-3 font-medium text-foreground">
                   {lease.hostname || <span className="text-muted-foreground">(no hostname)</span>}
+                  <LeaseCustomerIdentity lease={lease} />
                   {lease.comment && (
                     <div className="text-xs text-muted-foreground">note: {lease.comment}</div>
                   )}
@@ -494,34 +532,42 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex flex-wrap items-center gap-2 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => onQuickRegister(lease)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
-                      data-testid={`quick-register-dynamic-btn-${lease.id}`}
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      Link / register
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onManualRegister(lease)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
-                      data-testid={`manual-register-dynamic-btn-${lease.id}`}
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      Manual registration
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onClientMigration}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
-                      data-testid={`client-migration-dynamic-btn-${lease.id}`}
-                    >
-                      Client migration
-                    </button>
-                  </div>
+                  {lease.known_customer_identity ? (
+                    <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
+                      {lease.known_customer_identity.status === 'known_customer'
+                        ? 'Known customer device — no registration action'
+                        : 'Duplicate customer MAC — review required'}
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => onQuickRegister(lease)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition"
+                        data-testid={`quick-register-dynamic-btn-${lease.id}`}
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        Link / register
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onManualRegister(lease)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
+                        data-testid={`manual-register-dynamic-btn-${lease.id}`}
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        Manual registration
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onClientMigration}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-md hover:bg-primary/10 transition"
+                        data-testid={`client-migration-dynamic-btn-${lease.id}`}
+                      >
+                        Client migration
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

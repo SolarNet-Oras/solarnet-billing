@@ -75,7 +75,7 @@ class UnregisteredLeaseController extends Controller
      */
     public function staticCommented(Request $request): JsonResponse
     {
-        $leases = DhcpLease::with('router:id,name')
+        $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
             ->unmatched()
             ->active()
             ->presentOnRouter()
@@ -90,6 +90,7 @@ class UnregisteredLeaseController extends Controller
         $leases->each(function (DhcpLease $lease) use ($plans) {
             $lease->suggested_plan = $this->matchPlanByRateLimit($lease->rate_limit, $plans);
         });
+        $this->attachKnownCustomerIdentities($leases);
 
         return response()->json([
             'success' => true,
@@ -98,12 +99,13 @@ class UnregisteredLeaseController extends Controller
     }
 
     /**
-     * Dynamic OR uncommented leases -> require manual registration.
+     * Dynamic OR uncommented leases. Customer-owned dynamic leases remain
+     * visible with a read-only identity label so they are not mistaken for an
+     * anonymous device. Only unmatched rows remain eligible for registration.
      */
     public function dynamic(Request $request): JsonResponse
     {
-        $leases = DhcpLease::with('router:id,name')
-            ->unmatched()
+        $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
             ->active()
             ->presentOnRouter()
             ->where(function ($q) {
@@ -111,9 +113,13 @@ class UnregisteredLeaseController extends Controller
                   ->orWhereNull('comment')
                   ->orWhere('comment', '');
             })
-            // Filter out entries that are BOTH static AND commented (covered by other tab)
+            // Filter out entries that are BOTH static AND commented (covered
+            // by the quick-registration tab). A customer-owned dynamic lease
+            // is intentionally retained for operator identification.
             ->orderBy('last_seen_at', 'desc')
             ->get();
+
+        $this->attachKnownCustomerIdentities($leases);
 
         return response()->json([
             'success' => true,
@@ -700,6 +706,86 @@ class UnregisteredLeaseController extends Controller
         $name = trim((string) preg_replace('/\s+/', ' ', str_replace('|', '/', (string) $customer->full_name)));
 
         return 'SolarNet | ' . $accountNumber . ' | ' . substr($name ?: 'Unnamed customer', 0, 120);
+    }
+
+    /**
+     * Attach a read-only identity hint to displayed DHCP rows whose full
+     * MAC already appears on a customer profile. This does not link the lease,
+     * change customer/router data, or change MikroTik. It simply prevents
+     * staff from treating a known ONU/router as an anonymous device.
+     *
+     * A duplicate MAC is shown as an ambiguity instead of naming one customer.
+     * That preserves the existing requirement for explicit review before any
+     * DHCP lease can be bound or changed.
+     */
+    protected function attachKnownCustomerIdentities($leases): void
+    {
+        $macKeys = collect($leases)
+            ->map(fn (DhcpLease $lease) => $this->normalizedMacKey($lease->mac_address))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($macKeys->isEmpty()) {
+            return;
+        }
+
+        $customersByMac = Customer::query()
+            ->whereNotNull('mac_address')
+            ->whereIn(DB::raw("upper(replace(replace(mac_address, ':', ''), '-', ''))"), $macKeys->all())
+            ->orderBy('full_name')
+            ->get(['id', 'account_number', 'full_name', 'status', 'router_id', 'mac_address'])
+            ->groupBy(fn (Customer $customer) => $this->normalizedMacKey($customer->mac_address));
+
+        foreach ($leases as $lease) {
+            $macKey = $this->normalizedMacKey($lease->mac_address);
+            $linkedCustomer = $lease->relationLoaded('customer') ? $lease->customer : null;
+            if ($linkedCustomer && $this->normalizedMacKey($linkedCustomer->mac_address) === $macKey) {
+                $lease->setAttribute('known_customer_identity', $this->knownCustomerIdentityPayload($linkedCustomer, $lease));
+                continue;
+            }
+
+            $matches = $customersByMac->get($macKey, collect());
+            if ($matches->isEmpty()) {
+                $lease->setAttribute('known_customer_identity', null);
+                continue;
+            }
+
+            if ($matches->count() !== 1) {
+                $lease->setAttribute('known_customer_identity', [
+                    'status' => 'ambiguous',
+                    'customer_count' => $matches->count(),
+                    'message' => 'This MAC address appears on more than one customer profile. Review is required before binding.',
+                ]);
+                continue;
+            }
+
+            $customer = $matches->first();
+            $lease->setAttribute('known_customer_identity', $this->knownCustomerIdentityPayload($customer, $lease));
+        }
+    }
+
+    protected function knownCustomerIdentityPayload(Customer $customer, DhcpLease $lease): array
+    {
+        return [
+            'status' => 'known_customer',
+            'customer_count' => 1,
+            'customer' => [
+                'id' => $customer->id,
+                'account_number' => $customer->account_number,
+                'full_name' => $customer->full_name,
+                'status' => $customer->status,
+                'same_router' => $customer->router_id === $lease->router_id,
+            ],
+            'message' => 'MAC address is already used by this customer. This is an identity hint only; no binding was changed.',
+        ];
+    }
+
+    protected function normalizedMacKey(?string $macAddress): ?string
+    {
+        $normalized = $this->normalizeMacForMatch($macAddress);
+
+        return $normalized ? str_replace(':', '', $normalized) : null;
     }
 
     /**
