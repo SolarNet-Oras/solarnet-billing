@@ -66,6 +66,8 @@ export interface QuickRegisterPayload {
   address?: string;
   email?: string;
   monthly_fee?: number;
+  /** Required when deliberately moving a MAC already owned by Client A to Client B. */
+  confirm_mac_reassignment?: boolean;
 }
 
 export interface CustomerLinkCandidate {

@@ -55,6 +55,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
   const [modalLease, setModalLease] = useState<UnregisteredLease | null>(null);
+  const [modalMode, setModalMode] = useState<'register' | 'reassign'>('register');
   const [search, setSearch] = useState<string>('');
   const [lastLeaseListRefresh, setLastLeaseListRefresh] = useState<Date | null>(null);
 
@@ -164,7 +165,7 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const handleQuickRegister = async (
     lease: UnregisteredLease,
-    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number },
+    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean },
   ): Promise<void> => {
     setRegisteringId(lease.id);
     setError('');
@@ -175,6 +176,7 @@ const UnregisteredLeasesPage: React.FC = () => {
         full_name: overrides?.full_name ?? (lease.comment || undefined),
         service_plan_id: overrides?.service_plan_id ?? lease.suggested_plan?.id,
         monthly_fee: overrides?.monthly_fee ?? lease.suggested_plan?.price,
+        confirm_mac_reassignment: overrides?.confirm_mac_reassignment,
       });
 
       // Compose a status line that ALSO surfaces the MikroTik sync outcome —
@@ -196,6 +198,7 @@ const UnregisteredLeasesPage: React.FC = () => {
       setStaticLeases((prev) => prev.filter((l) => l.id !== lease.id));
       setDynamicLeases((prev) => prev.filter((l) => l.id !== lease.id));
       setModalLease(null);
+      setModalMode('register');
     } catch (err: any) {
       // Prefer the backend's structured error over a generic message.
       const payload = err?.response?.data;
@@ -218,6 +221,16 @@ const UnregisteredLeasesPage: React.FC = () => {
       hostname: lease.hostname ?? '',
     });
     navigate(`/customers/new?${params.toString()}`);
+  };
+
+  const openRegistrationModal = (lease: UnregisteredLease): void => {
+    setModalMode('register');
+    setModalLease(lease);
+  };
+
+  const openReassignmentModal = (lease: UnregisteredLease): void => {
+    setModalMode('reassign');
+    setModalLease(lease);
   };
 
   const routerName = (id: string): string =>
@@ -257,7 +270,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  Live DHCP leases for review. Dynamic devices that already belong to a customer show their customer identity and cannot be registered again. Router lease state mirrors every minute; this page refreshes every 30 seconds.
+                  Live DHCP leases for review. Customer-owned devices show their identity; an administrator can explicitly move a reused device to another client after confirmation. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
                 {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
               </div>
@@ -342,16 +355,18 @@ const UnregisteredLeasesPage: React.FC = () => {
           <StaticLeasesTable
             leases={filteredStaticLeases}
             routerName={routerName}
-            onRegister={(lease) => setModalLease(lease)}
+            onRegister={openRegistrationModal}
             onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
+            onReassign={openReassignmentModal}
             registeringId={registeringId}
           />
         ) : (
           <DynamicLeasesTable
             leases={filteredDynamicLeases}
             routerName={routerName}
-            onQuickRegister={(lease) => setModalLease(lease)}
+            onQuickRegister={openRegistrationModal}
             onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
+            onReassign={openReassignmentModal}
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
             registeringId={registeringId}
@@ -365,7 +380,8 @@ const UnregisteredLeasesPage: React.FC = () => {
             plans={plans}
             customers={customerLinkCandidates}
             busy={registeringId === modalLease.id}
-            onClose={() => setModalLease(null)}
+            mode={modalMode}
+            onClose={() => { setModalLease(null); setModalMode('register'); }}
             onSubmit={(payload) => handleQuickRegister(modalLease, payload)}
           />
         )}
@@ -382,8 +398,9 @@ const StaticLeasesTable: React.FC<{
   routerName: (id: string) => string;
   onRegister: (lease: UnregisteredLease) => void;
   onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
+  onReassign: (lease: UnregisteredLease) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onRegister, onPushKnownCustomer, registeringId }) => {
+}> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -446,22 +463,32 @@ const StaticLeasesTable: React.FC<{
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity?.status === 'known_customer'
-                    && lease.known_customer_identity.customer?.can_push_to_router ? (
-                    <button
-                      type="button"
-                      onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
-                      disabled={registeringId === lease.id}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      <UserCheck className="h-4 w-4" />
-                      {registeringId === lease.id ? 'Pushing…' : 'Register + Push'}
-                    </button>
+                  {lease.known_customer_identity?.status === 'known_customer' ? (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {lease.known_customer_identity.customer?.can_push_to_router && (
+                        <button
+                          type="button"
+                          onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
+                          disabled={registeringId === lease.id}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          {registeringId === lease.id ? 'Pushing…' : 'Push to current client'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onReassign(lease)}
+                        disabled={registeringId === lease.id}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        Reassign device
+                      </button>
+                    </div>
                   ) : lease.known_customer_identity ? (
                     <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
-                      {lease.known_customer_identity.status === 'known_customer'
-                        ? 'Known customer on a different router — review required'
-                        : 'Duplicate customer MAC — review required'}
+                      Duplicate customer MAC — review required
                     </span>
                   ) : (
                     <button
@@ -493,10 +520,11 @@ const DynamicLeasesTable: React.FC<{
   routerName: (id: string) => string;
   onQuickRegister: (lease: UnregisteredLease) => void;
   onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
+  onReassign: (lease: UnregisteredLease) => void;
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onManualRegister, onClientMigration, registeringId }) => {
+}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onReassign, onManualRegister, onClientMigration, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -559,22 +587,32 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity?.status === 'known_customer'
-                    && lease.known_customer_identity.customer?.can_push_to_router ? (
-                    <button
-                      type="button"
-                      onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
-                      disabled={registeringId === lease.id}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      <UserCheck className="h-4 w-4" />
-                      {registeringId === lease.id ? 'Pushing…' : 'Register + Push'}
-                    </button>
+                  {lease.known_customer_identity?.status === 'known_customer' ? (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {lease.known_customer_identity.customer?.can_push_to_router && (
+                        <button
+                          type="button"
+                          onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
+                          disabled={registeringId === lease.id}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          {registeringId === lease.id ? 'Pushing…' : 'Push to current client'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onReassign(lease)}
+                        disabled={registeringId === lease.id}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        Reassign device
+                      </button>
+                    </div>
                   ) : lease.known_customer_identity ? (
                     <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
-                      {lease.known_customer_identity.status === 'known_customer'
-                        ? 'Known customer on a different router — review required'
-                        : 'Duplicate customer MAC — review required'}
+                      Duplicate customer MAC — review required
                     </span>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2 justify-end">
@@ -642,17 +680,21 @@ const QuickRegisterModal: React.FC<{
   plans: ServicePlan[];
   customers: CustomerLinkCandidate[];
   busy: boolean;
+  mode: 'register' | 'reassign';
   onClose: () => void;
-  onSubmit: (payload: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number }) => void;
-}> = ({ lease, plans, customers, busy, onClose, onSubmit }) => {
+  onSubmit: (payload: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean }) => void;
+}> = ({ lease, plans, customers, busy, mode, onClose, onSubmit }) => {
   const [fullName, setFullName] = useState<string>(
     lease.comment || lease.hostname || `Client ${lease.mac_address.slice(-5)}`
   );
   const [planId, setPlanId] = useState<string>(lease.suggested_plan?.id ?? plans[0]?.id ?? '');
   const [existingCustomerId, setExistingCustomerId] = useState<string>('');
+  const [reassignmentConfirmed, setReassignmentConfirmed] = useState<boolean>(false);
   const selectedCustomer = customers.find((customer) => customer.id === existingCustomerId);
   const linkingExistingCustomer = Boolean(selectedCustomer);
   const chosenPlan = plans.find((p) => p.id === planId);
+  const currentCustomer = lease.known_customer_identity?.customer;
+  const isReassignment = mode === 'reassign' && Boolean(currentCustomer);
 
   return (
     <div
@@ -666,9 +708,11 @@ const QuickRegisterModal: React.FC<{
       >
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">Register client</h3>
+            <h3 className="text-lg font-semibold text-foreground">{isReassignment ? 'Reassign device to another client' : 'Register client'}</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Pick a plan — MikroTik will be updated with comment, made static, and rate-limited to the plan.
+              {isReassignment
+                ? 'Choose Client B and confirm the transfer. Client A keeps all billing history; only the reused device MAC and stale IP are removed from Client A.'
+                : 'Pick a plan — MikroTik will be updated with comment, made static, and rate-limited to the plan.'}
             </p>
           </div>
           <button
@@ -687,14 +731,26 @@ const QuickRegisterModal: React.FC<{
           <div>Hostname: {lease.hostname || '(none)'}</div>
         </div>
 
+        {isReassignment && currentCustomer && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+            <p className="font-semibold">Current device owner: {currentCustomer.full_name} · {currentCustomer.account_number}</p>
+            <p className="mt-1">Use this only after Client A has disconnected and this same ONU/router is now installed for Client B.</p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 font-medium">
+              <input type="checkbox" checked={reassignmentConfirmed} onChange={(event) => setReassignmentConfirmed(event.target.checked)} className="mt-0.5" />
+              <span>I confirm Client A no longer uses this device. Move this MAC and current DHCP lease to Client B.</span>
+            </label>
+          </div>
+        )}
+
         <div>
-          <label className="block text-sm font-medium mb-1.5">Link to an existing customer (optional)</label>
+          <label className="block text-sm font-medium mb-1.5">{isReassignment ? 'New customer (Client B) *' : 'Link to an existing customer (optional)'}</label>
           <select
             value={existingCustomerId}
             onChange={(event) => {
               const selectedId = event.target.value;
               const customer = customers.find((candidate) => candidate.id === selectedId);
               setExistingCustomerId(selectedId);
+              setReassignmentConfirmed(false);
               if (customer) {
                 setFullName(customer.full_name);
                 setPlanId(customer.service_plan_id ?? '');
@@ -703,15 +759,17 @@ const QuickRegisterModal: React.FC<{
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             data-testid="quick-register-existing-customer"
           >
-            <option value="">Create a new customer from this lease</option>
-            {customers.map((customer) => (
+            <option value="">{isReassignment ? 'Select Client B' : 'Create a new customer from this lease'}</option>
+            {customers.filter((customer) => !isReassignment || customer.id !== currentCustomer?.id).map((customer) => (
               <option key={customer.id} value={customer.id} disabled={!customer.service_plan_id}>
                 {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
               </option>
             ))}
           </select>
           <p className="text-xs text-muted-foreground mt-1">
-            Select a registered customer for an ONU/router replacement. Their billing profile, due date, plan, and balance stay unchanged.
+            {isReassignment
+              ? 'Only an existing registered client with an assigned plan can receive this device.'
+              : 'Select a registered customer for an ONU/router replacement. Their billing profile, due date, plan, and balance stay unchanged.'}
           </p>
           {selectedCustomer && (
             <div className="mt-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
@@ -767,20 +825,21 @@ const QuickRegisterModal: React.FC<{
           </button>
           <button
             type="button"
-            disabled={busy || (!linkingExistingCustomer && !fullName.trim())}
+            disabled={busy || (isReassignment ? (!linkingExistingCustomer || !reassignmentConfirmed) : (!linkingExistingCustomer && !fullName.trim()))}
             onClick={() =>
               onSubmit({
                 existing_customer_id: existingCustomerId || undefined,
                 full_name: linkingExistingCustomer ? undefined : fullName.trim(),
                 service_plan_id: linkingExistingCustomer ? undefined : (planId || undefined),
                 monthly_fee: linkingExistingCustomer ? undefined : chosenPlan?.price,
+                confirm_mac_reassignment: isReassignment ? reassignmentConfirmed : undefined,
               })
             }
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
             data-testid="quick-register-submit"
           >
             <UserPlus className="w-4 h-4" />
-            {busy ? 'Saving…' : linkingExistingCustomer ? 'Link + Push to MikroTik' : 'Register + Push to MikroTik'}
+            {busy ? 'Saving…' : isReassignment ? 'Reassign + Push to MikroTik' : linkingExistingCustomer ? 'Link + Push to MikroTik' : 'Register + Push to MikroTik'}
           </button>
         </div>
       </div>
