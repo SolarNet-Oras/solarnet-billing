@@ -476,6 +476,22 @@ const StaticLeasesTable: React.FC<{
                           {registeringId === lease.id ? 'Pushing…' : 'Push to current client'}
                         </button>
                       )}
+                      {!lease.known_customer_identity.customer?.can_push_to_router && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const customer = lease.known_customer_identity!.customer!;
+                            if (window.confirm(`Move ${customer.full_name} (${customer.account_number}) to this current ${routerName(lease.router_id)} DHCP lease? This keeps the customer account and billing unchanged, but updates its router and current IP.`)) {
+                              onPushKnownCustomer(lease, customer.id);
+                            }
+                          }}
+                          disabled={registeringId === lease.id}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          {registeringId === lease.id ? 'Reassigning…' : 'Reassign to current client'}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onReassign(lease)}
@@ -483,7 +499,7 @@ const StaticLeasesTable: React.FC<{
                         className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
                       >
                         <AlertTriangle className="h-4 w-4" />
-                        Reassign device
+                        Reassign to another client
                       </button>
                     </div>
                   ) : lease.known_customer_identity ? (
@@ -600,6 +616,22 @@ const DynamicLeasesTable: React.FC<{
                           {registeringId === lease.id ? 'Pushing…' : 'Push to current client'}
                         </button>
                       )}
+                      {!lease.known_customer_identity.customer?.can_push_to_router && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const customer = lease.known_customer_identity!.customer!;
+                            if (window.confirm(`Move ${customer.full_name} (${customer.account_number}) to this current ${routerName(lease.router_id)} DHCP lease? This keeps the customer account and billing unchanged, but updates its router and current IP.`)) {
+                              onPushKnownCustomer(lease, customer.id);
+                            }
+                          }}
+                          disabled={registeringId === lease.id}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          {registeringId === lease.id ? 'Reassigning…' : 'Reassign to current client'}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onReassign(lease)}
@@ -607,7 +639,7 @@ const DynamicLeasesTable: React.FC<{
                         className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
                       >
                         <AlertTriangle className="h-4 w-4" />
-                        Reassign device
+                        Reassign to another client
                       </button>
                     </div>
                   ) : lease.known_customer_identity ? (
