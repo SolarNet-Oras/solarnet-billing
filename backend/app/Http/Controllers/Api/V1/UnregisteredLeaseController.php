@@ -422,10 +422,6 @@ class UnregisteredLeaseController extends Controller
             return response()->json(['success' => false, 'message' => 'Lease not found'], 404);
         }
 
-        if ($lease->is_matched) {
-            return response()->json(['success' => false, 'message' => 'Lease is already registered'], 422);
-        }
-
         $validator = Validator::make($request->all(), [
             'existing_customer_id' => 'nullable|uuid|exists:customers,id',
             'full_name'       => 'nullable|string|max:255',
@@ -486,6 +482,36 @@ class UnregisteredLeaseController extends Controller
                     'message' => 'The selected customer has no service plan. Set their plan on the customer record before binding this DHCP lease.',
                 ], 422);
             }
+
+            // A button-driven retry for a customer-owned dynamic lease is
+            // allowed only for its exact, single customer MAC match. This lets
+            // staff finish the static/comment/queue push without creating a
+            // second account, while preserving the block for every other
+            // already-linked, duplicate, or ambiguous lease.
+            if ($lease->is_matched) {
+                $leaseMac = $this->normalizedMacKey($lease->mac_address);
+                $customerMac = $this->normalizedMacKey($existingCustomer->mac_address);
+                $macOwnerCount = $leaseMac
+                    ? Customer::query()
+                        ->whereNotNull('mac_address')
+                        ->whereIn(DB::raw("upper(replace(replace(mac_address, ':', ''), '-', ''))"), [$leaseMac])
+                        ->count()
+                    : 0;
+
+                if ($lease->customer_id !== $existingCustomer->id || ! $leaseMac || $leaseMac !== $customerMac || $macOwnerCount !== 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This DHCP lease is already linked. A static-lease retry is allowed only for one exact, non-duplicate customer MAC match.',
+                    ], 422);
+                }
+            }
+        }
+
+        if ($lease->is_matched && ! $existingCustomer) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lease is already linked to a customer. Select that same customer only to retry its static-lease push.',
+            ], 422);
         }
 
         // Retain the source comment in the new customer's notes for audit, but
@@ -791,6 +817,7 @@ class UnregisteredLeaseController extends Controller
             'full_name' => $customer->full_name,
             'status' => $customer->status,
             'same_router' => $customer->router_id === $lease->router_id,
+            'can_push_to_router' => ! $customer->router_id || $customer->router_id === $lease->router_id,
         ];
     }
 

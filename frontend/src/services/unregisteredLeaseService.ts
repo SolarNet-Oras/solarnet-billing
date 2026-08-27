@@ -36,6 +36,7 @@ export interface UnregisteredLease {
       full_name: string;
       status: string;
       same_router: boolean;
+      can_push_to_router: boolean;
     };
     customers?: Array<{
       id: string;
@@ -43,6 +44,7 @@ export interface UnregisteredLease {
       full_name: string;
       status: string;
       same_router: boolean;
+      can_push_to_router: boolean;
     }>;
   } | null;
   /** Server-computed plan match based on rate_limit. Only present on staticCommented(). */

@@ -194,6 +194,7 @@ const UnregisteredLeasesPage: React.FC = () => {
       }
       setNotice(parts.join(' · '));
       setStaticLeases((prev) => prev.filter((l) => l.id !== lease.id));
+      setDynamicLeases((prev) => prev.filter((l) => l.id !== lease.id));
       setModalLease(null);
     } catch (err: any) {
       // Prefer the backend's structured error over a generic message.
@@ -342,6 +343,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             leases={filteredStaticLeases}
             routerName={routerName}
             onRegister={(lease) => setModalLease(lease)}
+            onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
             registeringId={registeringId}
           />
         ) : (
@@ -349,8 +351,10 @@ const UnregisteredLeasesPage: React.FC = () => {
             leases={filteredDynamicLeases}
             routerName={routerName}
             onQuickRegister={(lease) => setModalLease(lease)}
+            onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
+            registeringId={registeringId}
           />
         )}
 
@@ -377,8 +381,9 @@ const StaticLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
   onRegister: (lease: UnregisteredLease) => void;
+  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onRegister, registeringId }) => {
+}> = ({ leases, routerName, onRegister, onPushKnownCustomer, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -441,10 +446,21 @@ const StaticLeasesTable: React.FC<{
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity ? (
+                  {lease.known_customer_identity?.status === 'known_customer'
+                    && lease.known_customer_identity.customer?.can_push_to_router ? (
+                    <button
+                      type="button"
+                      onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
+                      disabled={registeringId === lease.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <UserCheck className="h-4 w-4" />
+                      {registeringId === lease.id ? 'Pushing…' : 'Register + Push'}
+                    </button>
+                  ) : lease.known_customer_identity ? (
                     <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
                       {lease.known_customer_identity.status === 'known_customer'
-                        ? 'Known customer device — no registration action'
+                        ? 'Known customer on a different router — review required'
                         : 'Duplicate customer MAC — review required'}
                     </span>
                   ) : (
@@ -476,9 +492,11 @@ const DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
   onQuickRegister: (lease: UnregisteredLease) => void;
+  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
-}> = ({ leases, routerName, onQuickRegister, onManualRegister, onClientMigration }) => {
+  registeringId: string | null;
+}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onManualRegister, onClientMigration, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -541,10 +559,21 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity ? (
+                  {lease.known_customer_identity?.status === 'known_customer'
+                    && lease.known_customer_identity.customer?.can_push_to_router ? (
+                    <button
+                      type="button"
+                      onClick={() => onPushKnownCustomer(lease, lease.known_customer_identity!.customer!.id)}
+                      disabled={registeringId === lease.id}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <UserCheck className="h-4 w-4" />
+                      {registeringId === lease.id ? 'Pushing…' : 'Register + Push'}
+                    </button>
+                  ) : lease.known_customer_identity ? (
                     <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
                       {lease.known_customer_identity.status === 'known_customer'
-                        ? 'Known customer device — no registration action'
+                        ? 'Known customer on a different router — review required'
                         : 'Duplicate customer MAC — review required'}
                     </span>
                   ) : (
