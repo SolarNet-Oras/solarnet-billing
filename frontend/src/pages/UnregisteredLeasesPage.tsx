@@ -165,7 +165,7 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const handleQuickRegister = async (
     lease: UnregisteredLease,
-    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean },
+    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean; confirm_current_client_reassignment?: boolean },
   ): Promise<void> => {
     setRegisteringId(lease.id);
     setError('');
@@ -177,6 +177,7 @@ const UnregisteredLeasesPage: React.FC = () => {
         service_plan_id: overrides?.service_plan_id ?? lease.suggested_plan?.id,
         monthly_fee: overrides?.monthly_fee ?? lease.suggested_plan?.price,
         confirm_mac_reassignment: overrides?.confirm_mac_reassignment,
+        confirm_current_client_reassignment: overrides?.confirm_current_client_reassignment,
       });
 
       // Compose a status line that ALSO surfaces the MikroTik sync outcome —
@@ -356,7 +357,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             leases={filteredStaticLeases}
             routerName={routerName}
             onRegister={openRegistrationModal}
-            onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
+            onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
             onReassign={openReassignmentModal}
             registeringId={registeringId}
           />
@@ -365,7 +366,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             leases={filteredDynamicLeases}
             routerName={routerName}
             onQuickRegister={openRegistrationModal}
-            onPushKnownCustomer={(lease, customerId) => void handleQuickRegister(lease, { existing_customer_id: customerId })}
+            onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
             onReassign={openReassignmentModal}
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
@@ -397,7 +398,7 @@ const StaticLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
   onRegister: (lease: UnregisteredLease) => void;
-  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
+  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string, confirmation?: { confirm_current_client_reassignment?: boolean }) => void;
   onReassign: (lease: UnregisteredLease) => void;
   registeringId: string | null;
 }> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, registeringId }) => {
@@ -482,7 +483,7 @@ const StaticLeasesTable: React.FC<{
                           onClick={() => {
                             const customer = lease.known_customer_identity!.customer!;
                             if (window.confirm(`Move ${customer.full_name} (${customer.account_number}) to this current ${routerName(lease.router_id)} DHCP lease? This keeps the customer account and billing unchanged, but updates its router and current IP.`)) {
-                              onPushKnownCustomer(lease, customer.id);
+                              onPushKnownCustomer(lease, customer.id, { confirm_current_client_reassignment: true });
                             }
                           }}
                           disabled={registeringId === lease.id}
@@ -535,7 +536,7 @@ const DynamicLeasesTable: React.FC<{
   leases: UnregisteredLease[];
   routerName: (id: string) => string;
   onQuickRegister: (lease: UnregisteredLease) => void;
-  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string) => void;
+  onPushKnownCustomer: (lease: UnregisteredLease, customerId: string, confirmation?: { confirm_current_client_reassignment?: boolean }) => void;
   onReassign: (lease: UnregisteredLease) => void;
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
@@ -622,7 +623,7 @@ const DynamicLeasesTable: React.FC<{
                           onClick={() => {
                             const customer = lease.known_customer_identity!.customer!;
                             if (window.confirm(`Move ${customer.full_name} (${customer.account_number}) to this current ${routerName(lease.router_id)} DHCP lease? This keeps the customer account and billing unchanged, but updates its router and current IP.`)) {
-                              onPushKnownCustomer(lease, customer.id);
+                              onPushKnownCustomer(lease, customer.id, { confirm_current_client_reassignment: true });
                             }
                           }}
                           disabled={registeringId === lease.id}

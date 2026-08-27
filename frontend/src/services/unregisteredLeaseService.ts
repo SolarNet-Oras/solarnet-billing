@@ -68,6 +68,8 @@ export interface QuickRegisterPayload {
   monthly_fee?: number;
   /** Required when deliberately moving a MAC already owned by Client A to Client B. */
   confirm_mac_reassignment?: boolean;
+  /** Required when moving an exact known customer MAC to its current DHCP router. */
+  confirm_current_client_reassignment?: boolean;
 }
 
 export interface CustomerLinkCandidate {

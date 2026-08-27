@@ -440,6 +440,7 @@ class UnregisteredLeaseController extends Controller
             'migration_due_date' => 'nullable|date|after_or_equal:installation_date',
             'historical_migration' => 'nullable|boolean',
             'confirm_mac_reassignment' => 'nullable|boolean',
+            'confirm_current_client_reassignment' => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -465,6 +466,7 @@ class UnregisteredLeaseController extends Controller
         $existingCustomerId = $request->input('existing_customer_id');
         $existingCustomer = null;
         $reassignmentFromCustomer = null;
+        $currentClientRouterReassignment = false;
         if ($existingCustomerId) {
             $existingCustomer = Customer::query()
                 ->with('servicePlan')
@@ -521,16 +523,45 @@ class UnregisteredLeaseController extends Controller
                 }
 
                 $reassignmentFromCustomer = $macOwner;
-            } elseif ($lease->is_matched) {
-                // A button-driven retry for a customer-owned dynamic lease is
-                // allowed only for its exact, single customer MAC match. This
-                // lets staff finish the static/comment/rate-limit push without
-                // creating a second account.
+            } elseif ($macOwner || $lease->is_matched) {
+                // A button-driven push is valid only for one exact customer
+                // MAC. This protects a customer record from being silently
+                // moved to an unrelated DHCP device.
                 $customerMac = $this->normalizedMacKey($existingCustomer->mac_address);
-                if ($lease->customer_id !== $existingCustomer->id || ! $leaseMac || $leaseMac !== $customerMac || $macOwners->count() !== 1) {
+                if (! $leaseMac || $leaseMac !== $customerMac || $macOwners->count() !== 1) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'This DHCP lease is already linked. A static-lease retry is allowed only for one exact, non-duplicate customer MAC match.',
+                        'message' => 'This DHCP lease is already linked. A static-lease push is allowed only for one exact, non-duplicate customer MAC match.',
+                    ], 422);
+                }
+
+                // If the exact physical device now appears on a different
+                // router, require the dedicated current-client confirmation.
+                // This updates only its DHCP placement; billing, plan, due
+                // date, and account identity remain untouched.
+                $isDifferentRouter = $existingCustomer->router_id
+                    && $existingCustomer->router_id !== $lease->router_id;
+                if ($isDifferentRouter) {
+                    if (! $request->boolean('confirm_current_client_reassignment')) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "This exact device belongs to {$existingCustomer->full_name} ({$existingCustomer->account_number}) but is currently seen on another router. Confirm reassignment to push the static lease, SolarNet comment, and plan rate limit to this router.",
+                        ], 422);
+                    }
+                    $currentClientRouterReassignment = true;
+                }
+
+                if ($lease->customer_id && $lease->customer_id !== $existingCustomer->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The current DHCP lease is linked to a different customer than the exact MAC owner. Refresh the lease list and resolve that ownership mismatch before pushing it.',
+                    ], 422);
+                }
+
+                if ($lease->is_matched && $lease->customer_id !== $existingCustomer->id && ! $currentClientRouterReassignment) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This DHCP lease has an incomplete local customer link. Refresh the lease list, then use Reassign to current client only if this is the customer’s current router.',
                     ], 422);
                 }
             }
@@ -568,7 +599,7 @@ class UnregisteredLeaseController extends Controller
             : ($lease->rate_limit ?: null);
 
         try {
-            $registration = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment, $existingCustomerId, $reassignmentFromCustomer) {
+            $registration = DB::transaction(function () use ($request, $lease, $fullName, $planId, $monthlyFee, $originalComment, $existingCustomerId, $reassignmentFromCustomer, $currentClientRouterReassignment) {
                 if ($existingCustomerId) {
                     $lockedLease = DhcpLease::query()->with('router')->lockForUpdate()->findOrFail($lease->id);
                     if (! $lockedLease->is_current || $lockedLease->status !== 'bound' || ! $lockedLease->router || ! $lockedLease->mac_address) {
@@ -584,6 +615,23 @@ class UnregisteredLeaseController extends Controller
 
                     if (! $customer->servicePlan) {
                         throw new \RuntimeException('The selected customer has no service plan. Set their plan before binding this DHCP lease.');
+                    }
+
+                    if ($currentClientRouterReassignment) {
+                        $leaseMac = $this->normalizedMacKey($lockedLease->mac_address);
+                        $customerMac = $this->normalizedMacKey($customer->mac_address);
+                        $owners = Customer::query()
+                            ->lockForUpdate()
+                            ->whereNotNull('mac_address')
+                            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$leaseMac])
+                            ->get(['id']);
+
+                        if (! $leaseMac || $leaseMac !== $customerMac || $owners->count() !== 1 || $owners->first()?->id !== $customer->id) {
+                            throw new \RuntimeException('The exact MAC ownership changed before confirmation. Refresh the lease list before retrying.');
+                        }
+                        if ($lockedLease->customer_id && $lockedLease->customer_id !== $customer->id) {
+                            throw new \RuntimeException('The current DHCP lease was linked to another customer before confirmation. Refresh the lease list before retrying.');
+                        }
                     }
 
                     $previousCustomer = null;
@@ -651,10 +699,14 @@ class UnregisteredLeaseController extends Controller
                     $lockedLease->update([
                         'customer_id' => $customer->id,
                         'is_matched' => true,
-                        'match_source' => $previousCustomer ? 'explicit_mac_reassignment' : 'existing_customer_link',
+                        'match_source' => $previousCustomer
+                            ? 'explicit_mac_reassignment'
+                            : ($currentClientRouterReassignment ? 'current_customer_router_reassignment' : 'existing_customer_link'),
                         'match_note' => $previousCustomer
                             ? "Device reassigned from {$previousCustomer->account_number} to {$customer->account_number} after explicit administrator confirmation."
-                            : 'Exact current DHCP lease linked to an existing customer from Unregistered Clients.',
+                            : ($currentClientRouterReassignment
+                                ? 'Exact customer MAC moved to its current DHCP router after explicit administrator confirmation.'
+                                : 'Exact current DHCP lease linked to an existing customer from Unregistered Clients.'),
                     ]);
 
                     return [
@@ -662,6 +714,7 @@ class UnregisteredLeaseController extends Controller
                         'opening_invoice' => null,
                         'linked_existing' => true,
                         'reassigned_from' => $previousCustomer?->fresh(),
+                        'moved_to_current_router' => $currentClientRouterReassignment,
                     ];
                 }
 
@@ -707,12 +760,13 @@ class UnregisteredLeaseController extends Controller
                     $request->filled('migration_due_date') ? \Carbon\Carbon::parse($request->input('migration_due_date'))->startOfDay() : null,
                 );
 
-                return ['customer' => $customer, 'opening_invoice' => $openingInvoice, 'linked_existing' => false, 'reassigned_from' => null];
+                return ['customer' => $customer, 'opening_invoice' => $openingInvoice, 'linked_existing' => false, 'reassigned_from' => null, 'moved_to_current_router' => false];
             });
             $customer = $registration['customer'];
             $openingInvoice = $registration['opening_invoice'];
             $linkedExisting = $registration['linked_existing'];
             $reassignedFrom = $registration['reassigned_from'];
+            $movedToCurrentRouter = $registration['moved_to_current_router'];
         } catch (\Throwable $e) {
             Log::error('Failed to convert lease to customer', [
                 'lease_id' => $lease->id,
@@ -788,7 +842,9 @@ class UnregisteredLeaseController extends Controller
             'success'            => true,
             'message'            => $reassignedFrom
                 ? "Device reassigned from {$reassignedFrom->full_name} ({$reassignedFrom->account_number}) to the selected customer."
-                : ($linkedExisting ? 'Existing customer linked to DHCP lease' : 'Client registered from DHCP lease'),
+                : ($movedToCurrentRouter
+                    ? 'Customer moved to the current DHCP router and queued for the MikroTik static lease push.'
+                    : ($linkedExisting ? 'Existing customer linked to DHCP lease' : 'Client registered from DHCP lease')),
             'data'               => $customer->load(['servicePlan', 'router']),
             'portal_credentials' => $portalCreds,
             'mikrotik_sync'      => $mikrotikResult,
@@ -799,6 +855,7 @@ class UnregisteredLeaseController extends Controller
                 'mikrotik_comment_kept'  => false,
                 'linked_existing_customer' => $linkedExisting,
                 'mac_reassigned' => (bool) $reassignedFrom,
+                'current_router_reassigned' => $movedToCurrentRouter,
                 'previous_customer' => $reassignedFrom ? [
                     'account_number' => $reassignedFrom->account_number,
                     'full_name' => $reassignedFrom->full_name,
