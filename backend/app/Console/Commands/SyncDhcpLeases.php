@@ -11,7 +11,8 @@ class SyncDhcpLeases extends Command
                             {--router= : Specific router ID to sync}
                             {--auto-create : Explicitly create customers from unknown bound MAC addresses}
                             {--no-auto-create : Deprecated compatibility option; automatic customer creation is disabled by default}
-                            {--read-only : Mirror live DHCP leases locally without RouterOS lease or queue writes}';
+                            {--read-only : Mirror live DHCP leases locally without RouterOS lease or queue writes}
+                            {--enforce-static : Legacy one-shot: also write every exact registered lease to RouterOS}';
 
     protected $description = 'Sync DHCP leases from MikroTik routers';
 
@@ -21,7 +22,12 @@ class SyncDhcpLeases extends Command
 
         // Unknown network devices must never become customer accounts simply
         // because an unattended scheduled job ran.
-        $readOnly = (bool) $this->option('read-only');
+        // A full all-at-once static-lease run can make hundreds of serial API
+        // calls. Keep the command read-only by default; bounded maintenance is
+        // scheduled separately. The legacy write mode remains explicit for a
+        // planned maintenance window only.
+        $enforceStatic = (bool) $this->option('enforce-static') && ! $this->option('read-only');
+        $readOnly = ! $enforceStatic;
         $autoCreate = (bool) $this->option('auto-create')
             && !$this->option('no-auto-create')
             && !$readOnly;
@@ -30,6 +36,8 @@ class SyncDhcpLeases extends Command
 
         if ($readOnly) {
             $this->info('Read-only mode: active lease state will be mirrored locally; RouterOS leases and queues will not be changed.');
+        } else {
+            $this->warn('Legacy all-at-once static enforcement is enabled. Prefer dhcp:enforce-static for bounded safe batches.');
         }
 
         if ($routerId) {

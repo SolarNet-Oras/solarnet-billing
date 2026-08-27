@@ -47,7 +47,10 @@ class UnregisteredLeaseController extends Controller
     public function syncAll(Request $request): JsonResponse
     {
         $service = app(DhcpSyncService::class);
-        $result  = $service->syncAllRouters(false); // never auto-create; user reviews first
+        // This endpoint backs an interactive list refresh. It must mirror
+        // RouterOS state only; static-lease and queue writes are handled in a
+        // bounded scheduled batch after an exact match has been verified.
+        $result  = $service->syncAllRouters(false, false); // never auto-create or write RouterOS
 
         $failures = collect($result['routers'])
             ->filter(fn (array $routerResult) => !empty($routerResult['errors']))

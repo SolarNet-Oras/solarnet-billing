@@ -45,6 +45,16 @@ Schedule::command('dhcp:sync --read-only')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Every two minutes — apply only a tiny, exact-match static-lease batch after
+// the read-only mirror has established current DHCP state. This deliberately
+// avoids a long dashboard request or an all-at-once RouterOS write run.
+$dhcpStaticBatchSize = min(10, max(1, (int) env('DHCP_STATIC_ENFORCEMENT_BATCH_SIZE', 2)));
+Schedule::command('dhcp:enforce-static --limit=' . $dhcpStaticBatchSize)
+    ->everyTwoMinutes()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // 08:00 — daily web-push reminders for unpaid invoices. Initial invoice
 // emails are sent once when an invoice is created, not by this reminder job.
 Schedule::command('automation:invoice-reminders')

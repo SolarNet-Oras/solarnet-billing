@@ -69,7 +69,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
     try {
       const response = await routerService.syncDhcp(id, true);
       const result = response.data;
-      alert(`DHCP Sync Complete!\nFetched: ${result.leases_fetched}\nMatched: ${result.customers_matched}\nIPs Updated: ${result.ips_updated}\nMade static: ${result.static_leases_converted || 0}\nOwnership comments applied: ${result.ownership_comments_applied || 0}\nRegistered static leases verified: ${result.registered_static_leases_verified || 0}`);
+      alert(`DHCP Mirror Complete!\nFetched: ${result.leases_fetched}\nMatched: ${result.customers_matched}\nIPs Updated: ${result.ips_updated}\n\nThis action is read-only for MikroTik. Exact registered leases that need static/comment/queue maintenance are handled in small background batches, so this screen does not time out.`);
       onSync(id);
     } catch (error: any) {
       console.error('DHCP sync failed:', error);
@@ -79,7 +79,7 @@ export function RouterList({ routers, onEdit, onDelete, onTestConnection, onSync
         : (error?.response?.data?.message || error?.message || 'No error detail was returned.');
       alert(
         `DHCP sync needs attention.\n\n${explanation}\n\n` +
-        'Connection Test only checks RouterOS system information. DHCP sync also needs access to DHCP leases; exact registered matches additionally need permission to make a lease static and update its queue.'
+        'Connection Test only checks RouterOS system information. This DHCP action is read-only and needs lease-read permission; exact static-lease and queue maintenance runs separately in safe background batches.'
       );
     } finally {
       setDhcpSyncingId(null);

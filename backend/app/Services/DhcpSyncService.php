@@ -27,7 +27,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = true): array
+    public function syncRouterLeases(Router $router, bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = false): array
     {
         $result = [
             'router' => $router->name,
@@ -79,7 +79,7 @@ class DhcpSyncService
                 // waiting/expired lease must never update a customer's IP or
                 // appear as a live connection.
                 $customer = strtolower((string) ($leaseData['status'] ?? '')) === 'bound'
-                    ? $this->matchLeaseToCustomer($lease)
+                    ? $this->matchLeaseToCustomer($lease, ! $enforceRegisteredLeaseStatic)
                     : null;
                 
                 if ($customer) {
@@ -92,19 +92,26 @@ class DhcpSyncService
                     
                     // Update customer IP if changed
                     if ($customer->ip_address !== $lease->ip_address) {
-                        $customer->update(['ip_address' => $lease->ip_address]);
+                        $this->updateCustomerFromLease(
+                            $customer,
+                            ['ip_address' => $lease->ip_address],
+                            ! $enforceRegisteredLeaseStatic,
+                        );
                         $customer = $customer->fresh(['servicePlan', 'router']);
                         $result['ips_updated']++;
-                        
-                        // Trigger queue sync (observer will handle this)
-                        $result['queues_synced']++;
+
+                        if ($enforceRegisteredLeaseStatic) {
+                            // In explicit legacy write mode, the observer can
+                            // still request a queue refresh as before.
+                            $result['queues_synced']++;
+                        }
                     }
 
                     // The scheduled off-peak refresh uses read-only mode: it
                     // mirrors active DHCP state locally, but never changes a
                     // RouterOS lease, queue, comment, pool, VLAN, firewall,
-                    // or an unknown customer. A manual administrator sync
-                    // keeps the existing exact-MAC static-lease enforcement.
+                    // or an unknown customer. Exact static-lease enforcement
+                    // is deliberately performed by the bounded batch command.
                     if (!$enforceRegisteredLeaseStatic) {
                         $result['router_writes_skipped']++;
                     } else {
@@ -179,7 +186,7 @@ class DhcpSyncService
      * @param bool $autoCreateCustomers
      * @return array
      */
-    public function syncAllRouters(bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = true): array
+    public function syncAllRouters(bool $autoCreateCustomers = false, bool $enforceRegisteredLeaseStatic = false): array
     {
         // Do not depend on a stale connection-test badge. An active router
         // gets one bounded lease-read attempt; a failed router is reported
@@ -206,6 +213,144 @@ class DhcpSyncService
         }
 
         return $results;
+    }
+
+    /**
+     * Apply the limited RouterOS maintenance work separately from a lease
+     * mirror. This prevents an interactive dashboard request from serially
+     * making every registered lease static and then synchronizing every queue.
+     *
+     * Only exact, current, bound, locally matched customer leases can enter
+     * this path. Unregistered leases, pending applications, fuzzy matches,
+     * stale rows, cross-router identities, and incomplete customer records
+     * remain untouched.
+     *
+     * @return array{total_routers:int,success:int,failed:int,routers:array<int,array<string,mixed>>}
+     */
+    public function enforceRegisteredLeaseStaticBatches(int $perRouterLimit = 2, ?Router $onlyRouter = null, bool $dryRun = false): array
+    {
+        $perRouterLimit = min(10, max(1, $perRouterLimit));
+        $routers = $onlyRouter
+            ? collect([$onlyRouter])
+            : Router::query()->where('is_active', true)->get();
+
+        $results = [
+            'total_routers' => $routers->count(),
+            'success' => 0,
+            'failed' => 0,
+            'routers' => [],
+        ];
+
+        foreach ($routers as $router) {
+            $result = $this->enforceRegisteredLeaseStaticBatch($router, $perRouterLimit, $dryRun);
+            $results['routers'][] = $result;
+            if ($result['errors'] === []) {
+                $results['success']++;
+            } else {
+                $results['failed']++;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Make at most a few already-proven customer leases static on one router.
+     * The small batch protects RouterOS API responsiveness and lets the next
+     * scheduled pass continue where this one stopped.
+     *
+     * @return array<string,mixed>
+     */
+    public function enforceRegisteredLeaseStaticBatch(Router $router, int $limit = 2, bool $dryRun = false): array
+    {
+        $limit = min(10, max(1, $limit));
+        $result = [
+            'router' => $router->name,
+            'limit' => $limit,
+            'dry_run' => $dryRun,
+            'eligible' => 0,
+            'attempted' => 0,
+            'made_static' => 0,
+            'comments_applied' => 0,
+            'queues_synced' => 0,
+            'skipped' => 0,
+            'errors' => [],
+        ];
+
+        if (! $router->is_active || $router->connection_status !== 'online') {
+            $result['skipped'] = 1;
+            $result['errors'][] = 'Router is not currently marked online; static-lease maintenance was skipped.';
+            return $result;
+        }
+
+        // This query is local-only. It deliberately does not read or write a
+        // MikroTik lease until an individual candidate has passed the exact
+        // safety checks below.
+        $candidates = DhcpLease::query()
+            ->with(['router', 'customer.servicePlan', 'customer.router'])
+            ->where('router_id', $router->id)
+            ->where('is_current', true)
+            ->where('status', 'bound')
+            ->where('is_matched', true)
+            ->whereNotNull('customer_id')
+            ->where('match_source', 'mac_address')
+            ->orderBy('last_seen_at')
+            ->get()
+            ->filter(fn (DhcpLease $lease) => $lease->customer && $this->needsRegisteredLeaseStaticEnforcement($lease->customer, $lease))
+            ->take($limit)
+            ->values();
+
+        $result['eligible'] = $candidates->count();
+
+        foreach ($candidates as $lease) {
+            // Re-read immediately before the write. The one-minute mirror can
+            // change a lease's state between the local candidate query and
+            // this maintenance pass.
+            $currentLease = DhcpLease::query()
+                ->with(['router', 'customer.servicePlan', 'customer.router'])
+                ->find($lease->id);
+
+            if (! $currentLease || ! $currentLease->customer || ! $this->needsRegisteredLeaseStaticEnforcement($currentLease->customer, $currentLease)) {
+                $result['skipped']++;
+                continue;
+            }
+
+            if ($dryRun) {
+                $result['attempted']++;
+                continue;
+            }
+
+            $result['attempted']++;
+            $wasDynamic = (bool) $currentLease->is_dynamic;
+            $staticLease = $this->ensureRegisteredLeaseIsStatic($currentLease->customer, $currentLease);
+
+            if (! $staticLease['attempted']) {
+                $result['skipped']++;
+                continue;
+            }
+
+            if (! $staticLease['lease_static']) {
+                $result['errors'][] = ($currentLease->customer->account_number ?: $currentLease->customer->id) . ': ' . ($staticLease['message'] ?? 'static lease maintenance failed');
+                continue;
+            }
+
+            if ($wasDynamic) {
+                $result['made_static']++;
+            }
+            if ($staticLease['ownership_comment_applied']) {
+                $result['comments_applied']++;
+            }
+            if (($staticLease['queue_sync']['success'] ?? false) === true) {
+                $result['queues_synced']++;
+            }
+            if (! $staticLease['success']) {
+                $result['errors'][] = ($currentLease->customer->account_number ?: $currentLease->customer->id) . ': ' . ($staticLease['message'] ?? 'queue synchronization failed');
+            }
+        }
+
+        Log::info('Bounded registered DHCP static-lease maintenance completed', $result);
+
+        return $result;
     }
 
     /**
@@ -271,7 +416,7 @@ class DhcpSyncService
      * dynamic DHCP lease static; it never changes pools, VLANs, NAT, firewall,
      * routing, or unregistered leases.
      */
-    protected function matchLeaseToCustomer(DhcpLease $lease): ?Customer
+    protected function matchLeaseToCustomer(DhcpLease $lease, bool $deferRouterSideEffects = false): ?Customer
     {
         if (!$lease->mac_address) {
             return null;
@@ -325,7 +470,7 @@ class DhcpSyncService
                 $customerUpdates['notes'] = trim((string) $customer->notes) . " Exact DHCP MAC match received on {$routerName}; hardware binding activated.";
             }
             if ($customerUpdates !== []) {
-                $customer->update($customerUpdates);
+                $this->updateCustomerFromLease($customer, $customerUpdates, $deferRouterSideEffects);
             }
             // Update lease with customer match
             $lease->update([
@@ -387,7 +532,7 @@ class DhcpSyncService
             $customerUpdates['mac_address'] = $leaseMac;
         }
         if ($customerUpdates !== []) {
-            $customer->update($customerUpdates);
+            $this->updateCustomerFromLease($customer, $customerUpdates, $deferRouterSideEffects);
         }
 
         $lease->update([
@@ -398,6 +543,64 @@ class DhcpSyncService
         ]);
 
         return $customer;
+    }
+
+    /**
+     * Save data learned from a DHCP read. In read-only mirror mode, prevent
+     * the customer observer from dispatching an immediate RouterOS queue job;
+     * mark the queue pending instead so the bounded maintenance command owns
+     * the only subsequent RouterOS write.
+     */
+    protected function updateCustomerFromLease(Customer $customer, array $updates, bool $deferRouterSideEffects): void
+    {
+        if (! $deferRouterSideEffects) {
+            $customer->update($updates);
+            return;
+        }
+
+        $updates['queue_synced'] = false;
+        $updates['queue_sync_status'] = 'pending_dhcp_maintenance';
+
+        Customer::withoutEvents(function () use ($customer, $updates): void {
+            $customer->update($updates);
+        });
+    }
+
+    /**
+     * Decide whether a lease still needs bounded RouterOS maintenance. This is
+     * intentionally stricter than a normal local match: the customer and
+     * lease must belong to the same router, use the same full MAC, and have a
+     * complete active service-plan record. It is local-only and never writes.
+     */
+    protected function needsRegisteredLeaseStaticEnforcement(Customer $customer, DhcpLease $lease): bool
+    {
+        if ($customer->status === 'pending' || ! $customer->servicePlan || ! $lease->router_id || $customer->router_id !== $lease->router_id) {
+            return false;
+        }
+
+        if (! $lease->is_current || $lease->status !== 'bound' || ! $lease->is_matched || $lease->match_source !== 'mac_address') {
+            return false;
+        }
+
+        $leaseMac = $this->normalizeMacAddress((string) $lease->mac_address);
+        $customerMac = $this->normalizeMacAddress((string) $customer->mac_address);
+        if ($leaseMac === '' || $customerMac === '' || $leaseMac !== $customerMac) {
+            return false;
+        }
+
+        $expectedComment = $this->customerLeaseComment($customer);
+        $expectedRate = $customer->servicePlan->download_speed . 'M/' . $customer->servicePlan->upload_speed . 'M';
+
+        return (bool) $lease->is_dynamic
+            || trim((string) $lease->comment) !== $expectedComment
+            || $this->normalizeRateLimit($lease->rate_limit) !== $this->normalizeRateLimit($expectedRate)
+            || ! (bool) $customer->queue_synced;
+    }
+
+    /** Normalizes harmless casing and spaces without guessing a RouterOS rate. */
+    protected function normalizeRateLimit(?string $rateLimit): string
+    {
+        return strtoupper((string) preg_replace('/\s+/', '', trim((string) $rateLimit)));
     }
 
     /**

@@ -561,13 +561,12 @@ class RouterController extends Controller
             ], 404);
         }
 
-        // Keep the existing router inventory/queue snapshot, then use the
-        // verified DHCP sync path as well. The latter is what safely binds
-        // registered customers and converts only their current dynamic leases
-        // to static leases with the selected service-plan rate limit.
+        // Keep the existing router inventory/queue snapshot, then mirror DHCP
+        // state locally. RouterOS writes are deferred to a small scheduled
+        // maintenance batch so this dashboard request cannot time out.
         $result = $this->mikrotikService->syncRouter($router);
         if (($result['synced_items']['system'] ?? false) === true) {
-            $dhcpResult = app(\App\Services\DhcpSyncService::class)->syncRouterLeases($router, false);
+            $dhcpResult = app(\App\Services\DhcpSyncService::class)->syncRouterLeases($router, false, false);
             $result['dhcp_sync'] = $dhcpResult;
             $result['synced_items']['dhcp_leases'] = $dhcpResult['leases_stored'];
             $result['errors'] = array_values(array_unique(array_merge(
@@ -576,11 +575,9 @@ class RouterController extends Controller
             )));
             $result['success'] = empty($result['errors']);
             $result['message'] = sprintf(
-                '%s Registered DHCP leases matched: %d; dynamic leases made static: %d; already static or safely skipped: %d.',
+                '%s Registered DHCP leases mirrored: %d; bounded RouterOS maintenance continues in the background.',
                 $result['message'],
                 $dhcpResult['customers_matched'],
-                $dhcpResult['static_leases_converted'],
-                $dhcpResult['static_lease_skipped'],
             );
         }
 
@@ -806,14 +803,16 @@ class RouterController extends Controller
         // Leases land on the Unregistered page; admin must click "Register".
         $autoCreate = false;
 
-        $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate);
+        // Browser-triggered refresh is read-only. Exact static-lease and queue
+        // work is performed by the bounded background maintenance command.
+        $result = $dhcpSyncService->syncRouterLeases($router, $autoCreate, false);
         $failed = !empty($result['errors']);
 
         return response()->json([
             'success' => !$failed,
             'message' => $failed
                 ? 'DHCP sync could not finish for ' . $router->name . '. Review the returned details before trying again.'
-                : 'DHCP leases synchronized from ' . $router->name . '.',
+                : 'DHCP leases synchronized from ' . $router->name . '. RouterOS maintenance continues in the background.',
             'data' => $result,
         ], $failed ? 422 : 200);
     }
