@@ -739,24 +739,32 @@ class UnregisteredLeaseController extends Controller
 
         foreach ($leases as $lease) {
             $macKey = $this->normalizedMacKey($lease->mac_address);
+            $matches = $customersByMac->get($macKey, collect());
+
+            // A duplicate MAC must always disclose every affected customer for
+            // review, even if this particular DHCP row still has an older
+            // customer_id link.
+            if ($matches->count() > 1) {
+                $lease->setAttribute('known_customer_identity', [
+                    'status' => 'ambiguous',
+                    'customer_count' => $matches->count(),
+                    'customers' => $matches
+                        ->map(fn (Customer $customer) => $this->customerIdentityDetails($customer, $lease))
+                        ->values()
+                        ->all(),
+                    'message' => 'This MAC address appears on more than one customer profile. Review is required before binding.',
+                ]);
+                continue;
+            }
+
             $linkedCustomer = $lease->relationLoaded('customer') ? $lease->customer : null;
             if ($linkedCustomer && $this->normalizedMacKey($linkedCustomer->mac_address) === $macKey) {
                 $lease->setAttribute('known_customer_identity', $this->knownCustomerIdentityPayload($linkedCustomer, $lease));
                 continue;
             }
 
-            $matches = $customersByMac->get($macKey, collect());
             if ($matches->isEmpty()) {
                 $lease->setAttribute('known_customer_identity', null);
-                continue;
-            }
-
-            if ($matches->count() !== 1) {
-                $lease->setAttribute('known_customer_identity', [
-                    'status' => 'ambiguous',
-                    'customer_count' => $matches->count(),
-                    'message' => 'This MAC address appears on more than one customer profile. Review is required before binding.',
-                ]);
                 continue;
             }
 
@@ -770,14 +778,19 @@ class UnregisteredLeaseController extends Controller
         return [
             'status' => 'known_customer',
             'customer_count' => 1,
-            'customer' => [
-                'id' => $customer->id,
-                'account_number' => $customer->account_number,
-                'full_name' => $customer->full_name,
-                'status' => $customer->status,
-                'same_router' => $customer->router_id === $lease->router_id,
-            ],
+            'customer' => $this->customerIdentityDetails($customer, $lease),
             'message' => 'MAC address is already used by this customer. This is an identity hint only; no binding was changed.',
+        ];
+    }
+
+    protected function customerIdentityDetails(Customer $customer, DhcpLease $lease): array
+    {
+        return [
+            'id' => $customer->id,
+            'account_number' => $customer->account_number,
+            'full_name' => $customer->full_name,
+            'status' => $customer->status,
+            'same_router' => $customer->router_id === $lease->router_id,
         ];
     }
 

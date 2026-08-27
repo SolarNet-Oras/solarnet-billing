@@ -12,9 +12,18 @@ const LeaseCustomerIdentity: React.FC<{ lease: UnregisteredLease }> = ({ lease }
 
   if (identity.status === 'ambiguous') {
     return (
-      <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-900/35 dark:text-amber-200">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        MAC appears on {identity.customer_count} customer profiles — review required
+      <div className="mt-1.5 rounded-md bg-amber-100 px-2 py-1.5 text-xs text-amber-900 dark:bg-amber-900/35 dark:text-amber-200">
+        <div className="flex items-center gap-1 font-semibold">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Used by {identity.customer_count} customer profiles — review required
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+          {(identity.customers ?? []).map((customer) => (
+            <span key={customer.id} className="font-medium">
+              {customer.full_name} <span className="font-mono text-[11px]">({customer.account_number})</span>
+            </span>
+          ))}
+        </div>
       </div>
     );
   }
