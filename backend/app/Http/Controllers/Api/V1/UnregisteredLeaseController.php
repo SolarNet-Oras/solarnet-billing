@@ -464,6 +464,16 @@ class UnregisteredLeaseController extends Controller
         }
 
         $existingCustomerId = $request->input('existing_customer_id');
+        $inferredExistingCustomerLink = false;
+        // Older browser bundles can reach this endpoint without sending the
+        // selected existing_customer_id. A lease that is already locally
+        // linked may safely retry its MikroTik static/comment/rate push only
+        // through that exact linked customer; the full MAC verification below
+        // remains mandatory and prevents an accidental reassignment.
+        if (! $existingCustomerId && $lease->is_matched && $lease->customer_id) {
+            $existingCustomerId = $lease->customer_id;
+            $inferredExistingCustomerLink = true;
+        }
         $existingCustomer = null;
         $reassignmentFromCustomer = null;
         $currentClientRouterReassignment = false;
@@ -854,6 +864,7 @@ class UnregisteredLeaseController extends Controller
                 'mikrotik_comment'       => $lease->router && $lease->mac_address ? $this->customerLeaseComment($customer) : null,
                 'mikrotik_comment_kept'  => false,
                 'linked_existing_customer' => $linkedExisting,
+                'existing_customer_link_inferred' => $inferredExistingCustomerLink,
                 'mac_reassigned' => (bool) $reassignedFrom,
                 'current_router_reassigned' => $movedToCurrentRouter,
                 'previous_customer' => $reassignedFrom ? [
