@@ -83,6 +83,22 @@ class DhcpLeaseStaticOwnershipTest extends TestCase
         $this->assertFalse($this->invoke('needsRegisteredLeaseStaticEnforcement', $customer, $lease));
     }
 
+    public function test_bounded_maintenance_accepts_a_proven_pending_ip_binding(): void
+    {
+        $customer = $this->customerForMaintenance();
+        $lease = new DhcpLease([
+            'router_id' => 'router-1',
+            'mac_address' => '88:65:9F:97:D0:41',
+            'is_current' => true,
+            'is_matched' => true,
+            'is_dynamic' => true,
+            'status' => 'bound',
+            'match_source' => 'technician_pending_ip',
+        ]);
+
+        $this->assertTrue($this->invoke('needsRegisteredLeaseStaticEnforcement', $customer, $lease));
+    }
+
     private function customerForMaintenance(): Customer
     {
         $customer = new Customer([

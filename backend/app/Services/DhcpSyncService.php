@@ -293,7 +293,7 @@ class DhcpSyncService
             ->where('status', 'bound')
             ->where('is_matched', true)
             ->whereNotNull('customer_id')
-            ->where('match_source', 'mac_address')
+            ->whereIn('match_source', ['mac_address', 'technician_pending_ip'])
             ->orderBy('last_seen_at')
             ->get()
             ->filter(fn (DhcpLease $lease) => $lease->customer && $this->needsRegisteredLeaseStaticEnforcement($lease->customer, $lease))
@@ -485,6 +485,79 @@ class DhcpSyncService
             return $customer;
         }
 
+        // A technician may record an installation IP before the ONU/router
+        // appears in DHCP. An IP is less durable than a MAC, so it is accepted
+        // only for one pending IP registration, one current bound local lease,
+        // and no existing registered owner of the lease MAC. This branch is
+        // local matching only; RouterOS writes remain governed by the outer
+        // bounded static-lease maintenance flow.
+        $waitingIpCustomers = Customer::query()
+            ->where('status', 'pending')
+            ->where('mac_binding_status', 'waiting_for_ip_match')
+            ->whereNull('mac_address')
+            ->where('ip_address', $lease->ip_address)
+            ->get();
+
+        if ($waitingIpCustomers->count() > 1) {
+            $this->markLeaseUnmatched(
+                $lease,
+                'More than one waiting technician registration uses this IP address. Staff must resolve the duplicate before any DHCP binding can be changed.',
+            );
+            return null;
+        }
+
+        $waitingIpCustomer = $waitingIpCustomers->first();
+        if ($waitingIpCustomer) {
+            $leaseMac = $this->normalizeMacAddress($lease->mac_address);
+            $registeredMacOwnerExists = Customer::query()
+                ->whereNotNull('mac_address')
+                ->whereRaw(
+                    "upper(replace(replace(mac_address, ':', ''), '-', '')) = ?",
+                    [str_replace(':', '', $leaseMac)],
+                )
+                ->exists();
+            if ($registeredMacOwnerExists) {
+                $this->markLeaseUnmatched(
+                    $lease,
+                    'This IP matches a waiting registration, but the lease MAC already belongs to another customer. No automatic reassignment was made.',
+                );
+                return null;
+            }
+
+            $currentIpLeases = DhcpLease::query()
+                ->where('ip_address', $lease->ip_address)
+                ->where('is_current', true)
+                ->where('status', 'bound')
+                ->whereNotNull('mac_address')
+                ->get(['id']);
+            if ($currentIpLeases->count() !== 1 || $currentIpLeases->first()?->id !== $lease->id) {
+                $this->markLeaseUnmatched(
+                    $lease,
+                    'This IP address appears on more than one current bound DHCP lease. The technician must verify the full MAC address before binding.',
+                );
+                return null;
+            }
+
+            $routerName = $lease->router?->name ?? 'the router';
+            $this->updateCustomerFromLease($waitingIpCustomer, [
+                'router_id' => $lease->router_id,
+                'mac_address' => $leaseMac,
+                'ip_address' => $lease->ip_address,
+                'status' => 'active',
+                'mac_binding_status' => 'matched',
+                'notes' => trim((string) $waitingIpCustomer->notes) . " Exact DHCP IP match received on {$routerName}; MAC binding activated.",
+            ], $deferRouterSideEffects);
+
+            $lease->update([
+                'customer_id' => $waitingIpCustomer->id,
+                'is_matched' => true,
+                'match_source' => 'technician_pending_ip',
+                'match_note' => 'One waiting technician IP registration matched one current bound DHCP lease; customer MAC binding activated.',
+            ]);
+
+            return $waitingIpCustomer;
+        }
+
         $accountNumbers = $this->accountNumbersFromLeaseComment($lease->comment);
         if ($accountNumbers === []) {
             $this->markLeaseUnmatched($lease, 'No exact registered MAC or account number was found.');
@@ -578,7 +651,7 @@ class DhcpSyncService
             return false;
         }
 
-        if (! $lease->is_current || $lease->status !== 'bound' || ! $lease->is_matched || $lease->match_source !== 'mac_address') {
+        if (! $lease->is_current || $lease->status !== 'bound' || ! $lease->is_matched || ! in_array($lease->match_source, ['mac_address', 'technician_pending_ip'], true)) {
             return false;
         }
 

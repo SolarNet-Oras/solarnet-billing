@@ -106,7 +106,8 @@ type PendingRegistration = {
   address?: string;
   contact_number?: string;
   email?: string | null;
-  mac_address: string;
+  mac_address: string | null;
+  ip_address: string | null;
   installation_date: string;
   mac_binding_status: 'waiting_for_match' | string;
   service_plan?: { name: string; download_speed: number; upload_speed: number; price: number } | null;
@@ -253,10 +254,12 @@ export default function TechnicianDashboardPage() {
       setRegistrationMatch(null);
       setNotice(correction?.applied
         ? `Client registered. SolarNet corrected the final MAC character and used the current MikroTik MAC: ${correction.mikrotik_mac}.`
-        : response.data?.binding_lookup === 'ip'
-        ? `Client registered using the current DHCP IP ${registrationForm.ip_address}; SolarNet bound the exact MikroTik MAC from that one live lease.`
+        : response.data?.binding_status === 'waiting_for_ip_match'
+        ? `Registration saved with IP ${registrationForm.ip_address}. It will activate automatically after DHCP sync finds one unique current lease using that IP.`
         : response.data?.binding_status === 'waiting_for_match'
         ? 'Registration saved. Waiting for the exact MAC to appear in a current bound DHCP lease; it will bind automatically after the next sync.'
+        : response.data?.binding_lookup === 'ip'
+        ? `Client registered using the current DHCP IP ${registrationForm.ip_address}; SolarNet bound the exact MikroTik MAC from that one live lease.`
         : 'Client registered and matched to the current MikroTik DHCP lease.');
     } catch (requestError: any) {
       const body = requestError.response?.data;

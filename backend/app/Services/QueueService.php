@@ -33,10 +33,10 @@ class QueueService
         // MAC before that device has received a DHCP lease.  Until an exact
         // current lease appears, keep the existing customer queue untouched:
         // a manually typed IP must never become a RouterOS queue target.
-        if ($customer->mac_binding_status === 'waiting_for_match') {
+        if (in_array($customer->mac_binding_status, ['waiting_for_match', 'waiting_for_ip_match'], true)) {
             return [
                 'success' => true,
-                'message' => 'Skipped queue sync — replacement MAC is waiting for an exact current DHCP lease.',
+                'message' => 'Skipped queue sync — technician registration is waiting for one exact current DHCP lease.',
                 'skipped' => true,
             ];
         }

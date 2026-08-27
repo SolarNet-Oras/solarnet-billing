@@ -163,7 +163,8 @@ class UnregisteredLeaseController extends Controller
      * differs only in the final MAC character is automatically corrected to
      * the MikroTik MAC. Other 90%+ fuzzy matches still require explicit
      * confirmation. If no current lease exists, the registration is saved as
-     * pending and DHCP sync will bind it later on an exact MAC match.
+     * pending and DHCP sync will bind it later on an exact MAC or a unique
+     * technician-entered IP match.
      */
     public function technicianRegister(Request $request): JsonResponse
     {
@@ -196,6 +197,7 @@ class UnregisteredLeaseController extends Controller
         $data = $validator->validated();
         $bindingLookup = $data['binding_lookup'];
         $resolvedLeaseByIp = null;
+        $waitingForIpMatch = false;
 
         if ($bindingLookup === 'ip') {
             // An IP address is safe only as a selector for a single *current*
@@ -210,13 +212,36 @@ class UnregisteredLeaseController extends Controller
                 ->get();
 
             if ($ipMatches->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No current unregistered bound DHCP lease uses this IP address. Refresh the lease mirror, or register with the device MAC address instead.',
-                ], 422);
-            }
+                // Store a technician-supplied IP as a pending network identity
+                // when the ONU/router is not yet visible in DHCP. No RouterOS
+                // object is changed until a later sync proves one unique,
+                // current bound lease owns the same IP address.
+                $knownIpCustomers = Customer::query()
+                    ->where('ip_address', $data['ip_address'])
+                    ->get(['id', 'account_number', 'full_name', 'status', 'mac_binding_status']);
 
-            if ($ipMatches->count() !== 1) {
+                $existingWaitingIpRegistration = $knownIpCustomers
+                    ->first(fn (Customer $customer) => $customer->status === 'pending' && $customer->mac_binding_status === 'waiting_for_ip_match');
+                if ($existingWaitingIpRegistration) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "A waiting technician registration already uses IP {$data['ip_address']} for {$existingWaitingIpRegistration->full_name} ({$existingWaitingIpRegistration->account_number}). It will bind automatically when one current DHCP lease appears.",
+                        'binding_status' => 'waiting_for_ip_match',
+                        'data' => $existingWaitingIpRegistration->load('servicePlan'),
+                    ], 409);
+                }
+
+                if ($knownIpCustomers->isNotEmpty()) {
+                    $owner = $knownIpCustomers->first();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "IP {$data['ip_address']} is already recorded for {$owner->full_name} ({$owner->account_number}). Use the verified MAC address or resolve the existing customer IP before registering another account.",
+                    ], 422);
+                }
+
+                $waitingForIpMatch = true;
+                $inputMac = null;
+            } elseif ($ipMatches->count() !== 1) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This IP address exists on more than one current unregistered lease. Use the full MAC address to avoid binding the wrong customer.',
@@ -229,15 +254,15 @@ class UnregisteredLeaseController extends Controller
                         'router' => $lease->router?->name,
                     ])->values(),
                 ], 422);
-            }
-
-            $resolvedLeaseByIp = $ipMatches->first();
-            $inputMac = $this->normalizeMacForMatch($resolvedLeaseByIp->mac_address);
-            if (!$inputMac) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'The selected DHCP lease has an invalid MAC address. Use the full verified MAC address instead.',
-                ], 422);
+            } else {
+                $resolvedLeaseByIp = $ipMatches->first();
+                $inputMac = $this->normalizeMacForMatch($resolvedLeaseByIp->mac_address);
+                if (!$inputMac) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected DHCP lease has an invalid MAC address. Use the full verified MAC address instead.',
+                    ], 422);
+                }
             }
         } else {
             $inputMac = $this->normalizeMacForMatch($data['mac_address'] ?? null);
@@ -255,10 +280,11 @@ class UnregisteredLeaseController extends Controller
             return response()->json(['success' => false, 'message' => 'Select an active customer service plan. Company Owned is not available for field registration.'], 422);
         }
 
-        $macHex = str_replace(':', '', $inputMac);
-        $existingCustomer = Customer::query()
-            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macHex])
-            ->first();
+        $existingCustomer = $inputMac
+            ? Customer::query()
+                ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [str_replace(':', '', $inputMac)])
+                ->first()
+            : null;
         if ($existingCustomer) {
             if ($existingCustomer->status === 'pending' && $existingCustomer->mac_binding_status === 'waiting_for_match') {
                 return response()->json([
@@ -285,7 +311,7 @@ class UnregisteredLeaseController extends Controller
                 $lease->mac_corrected_from_input = false;
                 return $lease;
             })
-            : DhcpLease::with('router:id,name')
+            : ($inputMac ? DhcpLease::with('router:id,name')
                 ->unmatched()
                 ->active()
                 ->presentOnRouter()
@@ -302,11 +328,11 @@ class UnregisteredLeaseController extends Controller
                 })
                 ->filter(fn (?DhcpLease $lease) => $lease && $lease->mac_match_score >= 90)
                 ->sortByDesc('mac_match_score')
-                ->values();
+                ->values() : collect());
 
         if ($candidates->isEmpty()) {
             try {
-                $customer = DB::transaction(function () use ($data, $inputMac, $plan): Customer {
+                $customer = DB::transaction(function () use ($data, $inputMac, $plan, $bindingLookup, $waitingForIpMatch): Customer {
                     return Customer::create([
                         'account_number' => $this->generateAccountNumber(),
                         'full_name' => $data['full_name'],
@@ -317,7 +343,8 @@ class UnregisteredLeaseController extends Controller
                         'service_plan_id' => $plan->id,
                         'monthly_fee' => $plan->price,
                         'mac_address' => $inputMac,
-                        'mac_binding_status' => 'waiting_for_match',
+                        'ip_address' => $bindingLookup === 'ip' ? $data['ip_address'] : null,
+                        'mac_binding_status' => $waitingForIpMatch ? 'waiting_for_ip_match' : 'waiting_for_match',
                         'gps_coordinates' => $data['gps_coordinates'] ?? null,
                         'location_status' => !empty($data['gps_coordinates']) ? 'confirmed' : 'not_captured',
                         'location_source' => !empty($data['gps_coordinates']) ? 'technician_registration' : null,
@@ -325,7 +352,9 @@ class UnregisteredLeaseController extends Controller
                         'location_captured_at' => !empty($data['gps_coordinates']) ? now() : null,
                         'location_confirmed_at' => !empty($data['gps_coordinates']) ? now() : null,
                         'status' => 'pending',
-                        'notes' => 'Technician registration saved before the ONU appeared in DHCP. Waiting for an exact current bound lease MAC match; no RouterOS changes were made.',
+                        'notes' => $waitingForIpMatch
+                            ? 'Technician registration saved before the device appeared in DHCP. Waiting for one exact current bound DHCP IP match; no RouterOS changes were made.'
+                            : 'Technician registration saved before the ONU appeared in DHCP. Waiting for an exact current bound lease MAC match; no RouterOS changes were made.',
                     ]);
                 });
             } catch (\Throwable $e) {
@@ -338,14 +367,16 @@ class UnregisteredLeaseController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Client registration saved. Waiting for an exact matching MAC in a current bound DHCP lease.',
-                'binding_status' => 'waiting_for_match',
-                'binding_lookup' => 'mac',
-                'mac_match' => [
+                'message' => $waitingForIpMatch
+                    ? "Client registration saved. Waiting for one exact current DHCP lease using IP {$data['ip_address']}."
+                    : 'Client registration saved. Waiting for an exact matching MAC in a current bound DHCP lease.',
+                'binding_status' => $waitingForIpMatch ? 'waiting_for_ip_match' : 'waiting_for_match',
+                'binding_lookup' => $bindingLookup,
+                'mac_match' => $inputMac ? [
                     'type' => 'waiting_for_match',
                     'score' => null,
                     'entered_mac' => $inputMac,
-                ],
+                ] : null,
                 'data' => $customer->load('servicePlan'),
             ], 201);
         }

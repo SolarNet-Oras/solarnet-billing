@@ -64,12 +64,12 @@ class DashboardController extends Controller
 
         $pendingRegistrations = Customer::query()
             ->where('status', 'pending')
-            ->where('mac_binding_status', 'waiting_for_match')
+            ->whereIn('mac_binding_status', ['waiting_for_match', 'waiting_for_ip_match'])
             ->with('servicePlan:id,name,download_speed,upload_speed,price')
             ->latest('created_at')
             ->get([
                 'id', 'account_number', 'full_name', 'address', 'contact_number',
-                'email', 'mac_address', 'installation_date', 'service_plan_id',
+                'email', 'mac_address', 'ip_address', 'installation_date', 'service_plan_id',
                 'mac_binding_status', 'created_at',
             ]);
 
