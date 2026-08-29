@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\FacebookMessengerService;
+use App\Models\User;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -31,5 +32,21 @@ class FacebookMessengerServiceTest extends TestCase
         $this->assertTrue($method->invoke(app(FacebookMessengerService::class), 'huwag na po'));
         $this->assertFalse($method->invoke(app(FacebookMessengerService::class), 'Please tell me about your plan'));
         $this->assertFalse($method->invoke(app(FacebookMessengerService::class), 'I will stop by later'));
+    }
+
+    public function test_page_connection_requests_messaging_and_manual_post_permissions(): void
+    {
+        config()->set('services.facebook.app_id', 'test-app');
+        config()->set('services.facebook.app_secret', 'test-secret');
+        config()->set('services.facebook.oauth_redirect_uri', 'https://billing.solarnetportal.com/api/v1/integrations/facebook/callback');
+
+        $user = new User();
+        $user->id = 'facebook-test-user';
+        $url = app(FacebookMessengerService::class)->authorizationUrl($user);
+
+        $this->assertNotNull($url);
+        $this->assertStringContainsString('pages_messaging', $url);
+        $this->assertStringContainsString('pages_read_engagement', $url);
+        $this->assertStringContainsString('pages_manage_posts', $url);
     }
 }

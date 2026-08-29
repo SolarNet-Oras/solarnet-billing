@@ -18,6 +18,12 @@ Subscribe the Page to the `messages` and `messaging_postbacks` webhook fields.
 Use a Page administrator account when connecting the Page in SolarNet. Meta may
 require App Review before people outside the app's roles can message it.
 
+The SolarNet connection requests `pages_read_engagement` and
+`pages_manage_posts` as well as Messenger access. This is used only by the
+Administrator-approved **AI Post Studio**;
+there is no automatic Page posting. Meta may require the matching permission
+and app review before publishing becomes available outside development mode.
+
 ## 2. Add only server-side settings
 
 Add the following values to `/var/www/solarnet-billing/deploy/.env` on the VPS.

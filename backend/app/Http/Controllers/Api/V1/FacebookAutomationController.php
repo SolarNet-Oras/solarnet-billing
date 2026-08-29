@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FacebookMarketingCampaign;
 use App\Models\FacebookMessengerConversation;
 use App\Models\FacebookPageConnection;
+use App\Models\FacebookPagePostDraft;
 use App\Models\Setting;
 use App\Services\FacebookMessengerService;
 use Illuminate\Http\JsonResponse;
@@ -188,6 +189,62 @@ class FacebookAutomationController extends Controller
     {
         $campaigns = FacebookMarketingCampaign::query()->latest()->limit(30)->get();
         return response()->json(['success' => true, 'data' => $campaigns->map(fn (FacebookMarketingCampaign $campaign) => $campaign->toAutomationArray())->values()]);
+    }
+
+    public function posts(): JsonResponse
+    {
+        $posts = FacebookPagePostDraft::query()->latest()->limit(30)->get();
+        return response()->json(['success' => true, 'data' => $posts->map(fn (FacebookPagePostDraft $post) => $post->toAutomationArray())->values()]);
+    }
+
+    public function generatePost(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'topic' => 'required|string|min:3|max:160',
+            'details' => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'A clear post topic is required.', 'errors' => $validator->errors()], 422);
+        }
+
+        $result = $this->facebook->aiMarketingPostDraft($request->input('topic'), $request->input('details'));
+        return response()->json($result, $result['success'] ? 200 : 503);
+    }
+
+    public function createPost(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'connection_id' => 'required|exists:facebook_page_connections,id',
+            'topic' => 'required|string|min:3|max:160',
+            'message_text' => 'required|string|min:3|max:5000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Choose a Page, topic, and post text before saving.', 'errors' => $validator->errors()], 422);
+        }
+
+        $connection = FacebookPageConnection::query()->whereKey($request->input('connection_id'))->where('is_active', true)->first();
+        if (! $connection) {
+            return response()->json(['success' => false, 'message' => 'Choose an active connected Facebook Page.'], 422);
+        }
+
+        $post = FacebookPagePostDraft::create([
+            'facebook_page_connection_id' => $connection->id,
+            'topic' => trim($request->input('topic')),
+            'message_text' => trim($request->input('message_text')),
+            'created_by' => $request->user()->id,
+        ]);
+
+        return response()->json(['success' => true, 'data' => $post->toAutomationArray()], 201);
+    }
+
+    public function publishPost(Request $request, FacebookPagePostDraft $post): JsonResponse
+    {
+        if (! $request->boolean('confirm_publish')) {
+            return response()->json(['success' => false, 'message' => 'Confirm publication before this Facebook Page post is sent.'], 422);
+        }
+
+        $result = $this->facebook->publishPost($post, $request->user());
+        return response()->json($result, $result['success'] ? 200 : 422);
     }
 
     public function createCampaign(Request $request): JsonResponse

@@ -270,6 +270,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('campaigns', [FacebookAutomationController::class, 'campaigns']);
                 Route::post('campaigns', [FacebookAutomationController::class, 'createCampaign']);
                 Route::post('campaigns/{campaign}/send', [FacebookAutomationController::class, 'sendCampaign']);
+                Route::get('posts', [FacebookAutomationController::class, 'posts']);
+                Route::post('posts/generate', [FacebookAutomationController::class, 'generatePost']);
+                Route::post('posts', [FacebookAutomationController::class, 'createPost']);
+                Route::post('posts/{post}/publish', [FacebookAutomationController::class, 'publishPost']);
             });
         });
 

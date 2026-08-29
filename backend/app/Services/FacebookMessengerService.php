@@ -8,6 +8,7 @@ use App\Models\FacebookMarketingCampaign;
 use App\Models\FacebookMessengerConversation;
 use App\Models\FacebookMessengerMessage;
 use App\Models\FacebookPageConnection;
+use App\Models\FacebookPagePostDraft;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Ai\OpenAiClient;
@@ -81,7 +82,7 @@ class FacebookMessengerService
                 'state' => $state,
                 // Page-only permissions. Meta app review may be required before
                 // these work outside of the app's own administrator accounts.
-                'scope' => 'pages_show_list,pages_messaging,pages_manage_metadata',
+                'scope' => 'pages_show_list,pages_read_engagement,pages_messaging,pages_manage_metadata,pages_manage_posts',
                 'response_type' => 'code',
             ], '', '&', PHP_QUERY_RFC3986);
     }
@@ -458,6 +459,85 @@ class FacebookMessengerService
         $campaign->forceFill(['status' => 'sent', 'completed_at' => now()])->save();
     }
 
+    /** @return array{success:bool, message_text?:string, message?:string} */
+    public function aiMarketingPostDraft(string $topic, ?string $details = null): array
+    {
+        if (! $this->ai->isConfigured()) {
+            return ['success' => false, 'message' => 'OpenAI is not configured on the server.'];
+        }
+
+        $topic = Str::limit(trim($topic), 160, '');
+        $details = Str::limit(trim((string) $details), 1000, '');
+        if ($topic === '') {
+            return ['success' => false, 'message' => 'A post topic is required.'];
+        }
+
+        try {
+            $result = $this->ai->chatCompletion([
+                ['role' => 'system', 'content' => $this->aiMarketingPostPrompt()],
+                ['role' => 'user', 'content' => "Create one Facebook Page post. Topic: {$topic}\nAdditional staff notes: {$details}"],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Facebook Page AI post draft failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'AI could not prepare a post draft right now.'];
+        }
+
+        $message = trim((string) ($result['content'] ?? ''));
+        if ($message === '') {
+            return ['success' => false, 'message' => 'AI returned an empty post draft.'];
+        }
+
+        return ['success' => true, 'message_text' => Str::limit($message, 5000, '')];
+    }
+
+    /** @return array{success:bool, post?:FacebookPagePostDraft, message?:string} */
+    public function publishPost(FacebookPagePostDraft $post, User $approvedBy): array
+    {
+        if ($post->status !== 'draft') {
+            return ['success' => false, 'message' => 'Only an unpublished draft can be approved and posted.'];
+        }
+
+        $post->loadMissing('connection');
+        if (! $post->connection || ! $post->connection->is_active) {
+            return ['success' => false, 'message' => 'The selected Facebook Page connection is inactive.'];
+        }
+
+        $post->forceFill([
+            'status' => 'publishing',
+            'approved_by' => $approvedBy->id,
+            'approved_at' => now(),
+            'last_error' => null,
+        ])->save();
+
+        try {
+            $response = Http::asForm()->acceptJson()->timeout(20)->post(
+                $this->graphUrl('/' . $post->connection->page_id . '/feed'),
+                ['access_token' => $post->connection->page_access_token, 'message' => $post->message_text],
+            );
+        } catch (\Throwable $e) {
+            Log::error('Facebook Page post request failed', ['post_id' => $post->id, 'error' => $e->getMessage()]);
+            $post->forceFill(['status' => 'failed', 'last_error' => 'Facebook could not be reached while publishing this post.'])->save();
+            return ['success' => false, 'message' => 'Facebook could not be reached while publishing the post.'];
+        }
+
+        $facebookPostId = trim((string) $response->json('id'));
+        if (! $response->successful() || $facebookPostId === '') {
+            $reason = trim((string) ($response->json('error.message') ?: 'Facebook rejected the Page post.'));
+            Log::warning('Facebook Page post was rejected', ['post_id' => $post->id, 'http_status' => $response->status(), 'reason' => $reason]);
+            $post->forceFill(['status' => 'failed', 'last_error' => Str::limit($reason, 1000, '')])->save();
+            return ['success' => false, 'message' => 'Facebook rejected the Page post. Confirm pages_manage_posts access and Page permissions.'];
+        }
+
+        $post->forceFill([
+            'status' => 'published',
+            'facebook_post_id' => $facebookPostId,
+            'published_at' => now(),
+            'last_error' => null,
+        ])->save();
+
+        return ['success' => true, 'post' => $post->fresh()];
+    }
+
     /** @return \Illuminate\Database\Eloquent\Builder<FacebookMessengerConversation> */
     protected function eligibleMarketingConversations(FacebookPageConnection $connection)
     {
@@ -528,6 +608,21 @@ You are the customer-support assistant for {$company} answering Facebook Page Me
 - Do not promise restoration times, offer discounts, or make an unsolicited sale. If the customer asks about plans, offer to have staff assist and ask only one relevant question.
 - Never ask a customer to open fiber equipment, expose a connector, reset an ONU/router, or alter network settings.
 - Keep the answer under 700 characters and do not use markdown headings.
+PROMPT;
+    }
+
+    protected function aiMarketingPostPrompt(): string
+    {
+        $company = (string) Setting::get('company.name', 'SolarNet');
+
+        return <<<PROMPT
+You are writing one public Facebook Page post for {$company}, a local internet service provider.
+- Write a concise, friendly Filipino/English or Taglish post suitable for public customers.
+- State only information supplied by staff. Do not invent prices, coverage, promotions, speeds, deadlines, guarantees, or technical claims.
+- Do not mention or infer any customer's account, payment, address, network, or personal data.
+- Include a simple invitation to message the Page or contact official SolarNet support.
+- Use short paragraphs and at most three relevant hashtags. Do not include a heading such as "Draft".
+- Keep it below 1,200 characters.
 PROMPT;
     }
 }
