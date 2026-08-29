@@ -197,6 +197,12 @@ class FacebookAutomationController extends Controller
         return response()->json(['success' => true, 'data' => $posts->map(fn (FacebookPagePostDraft $post) => $post->toAutomationArray())->values()]);
     }
 
+    public function postSuggestions(): JsonResponse
+    {
+        $result = $this->facebook->marketingPostSuggestions();
+        return response()->json($result, $result['success'] ? 200 : 503);
+    }
+
     public function generatePost(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [

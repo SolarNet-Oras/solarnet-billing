@@ -496,6 +496,74 @@ class FacebookMessengerService
     }
 
     /**
+     * Study only previously public Page-post copy. This is content rotation,
+     * not a claim of conversion learning: Meta reach/engagement insights are
+     * unavailable until the Page grants the corresponding reviewed access.
+     *
+     * @return array{success:bool,learned_from:int,learning_note:string,suggestions:array<int,array<string,string>>,message?:string}
+     */
+    public function marketingPostSuggestions(): array
+    {
+        if (! $this->ai->isConfigured()) {
+            return ['success' => false, 'learned_from' => 0, 'learning_note' => '', 'suggestions' => [], 'message' => 'OpenAI is not configured on the server.'];
+        }
+
+        $history = FacebookPagePostDraft::query()
+            ->where('status', 'published')
+            ->latest('published_at')
+            ->limit(12)
+            ->get(['topic', 'message_text', 'published_at']);
+        $historyText = $history->map(fn (FacebookPagePostDraft $post): string =>
+            '- ' . Str::limit($post->topic, 120, '') . ': ' . Str::limit(preg_replace('/\s+/', ' ', $post->message_text), 260, '')
+        )->implode("\n");
+        if ($historyText === '') {
+            $historyText = '- No published Page-post history yet.';
+        }
+
+        $prompt = <<<'PROMPT'
+Return valid JSON only with a top-level "suggestions" array containing exactly 3 objects. Each object must contain: "objective", "topic", "angle", "call_to_action", and "why".
+Create three distinct organic Facebook content ideas for a local internet provider: one for qualified installation inquiries, one for follower/reach growth through useful education, and one trust/community or advertising-ready concept.
+Use prior public posts only to avoid repetitive topics and wording. Never claim those posts performed well because no engagement or conversion metrics are available. Never invent coverage, prices, promotions, speeds, dates, availability, guarantees, testimonials, or customer facts. Keep each field concise. Every idea remains an unpublished administrator-reviewed draft; do not suggest automatic posting or automatic ad spending.
+PROMPT;
+
+        try {
+            $result = $this->ai->chatCompletion([
+                ['role' => 'system', 'content' => $prompt],
+                ['role' => 'user', 'content' => "Previously published SolarNet Page posts:\n{$historyText}"],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Facebook marketing suggestions failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'learned_from' => $history->count(), 'learning_note' => '', 'suggestions' => [], 'message' => 'AI could not prepare marketing suggestions right now.'];
+        }
+
+        $content = trim((string) ($result['content'] ?? ''));
+        $content = preg_replace('/^```(?:json)?\s*|\s*```$/i', '', $content) ?? $content;
+        $decoded = json_decode($content, true);
+        $rows = is_array($decoded['suggestions'] ?? null) ? array_slice($decoded['suggestions'], 0, 3) : [];
+        $suggestions = collect($rows)->map(function ($row): ?array {
+            if (! is_array($row)) return null;
+            $suggestion = [];
+            foreach (['objective', 'topic', 'angle', 'call_to_action', 'why'] as $field) {
+                $suggestion[$field] = Str::limit(trim((string) ($row[$field] ?? '')), $field === 'topic' ? 160 : 500, '');
+            }
+            return $suggestion['topic'] === '' || $suggestion['angle'] === '' ? null : $suggestion;
+        })->filter()->values()->all();
+
+        if (count($suggestions) !== 3) {
+            return ['success' => false, 'learned_from' => $history->count(), 'learning_note' => '', 'suggestions' => [], 'message' => 'AI returned incomplete marketing suggestions. Please try again.'];
+        }
+
+        return [
+            'success' => true,
+            'learned_from' => $history->count(),
+            'learning_note' => $history->isEmpty()
+                ? 'Starter ideas only; no published post history is available yet.'
+                : 'Ideas were rotated against recent published copy. Engagement and conversion performance are not inferred.',
+            'suggestions' => $suggestions,
+        ];
+    }
+
+    /**
      * Keep an uploaded image private until a post draft claims it. The token is
      * tied to its administrator and expires quickly, so a browser cannot attach
      * an arbitrary server file to a Facebook Page post.

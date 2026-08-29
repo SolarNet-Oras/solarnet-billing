@@ -17,6 +17,14 @@ type PostDraft = {
   published_at: string | null;
 };
 
+type MarketingSuggestion = {
+  objective: string;
+  topic: string;
+  angle: string;
+  call_to_action: string;
+  why: string;
+};
+
 const formatDate = (value: string | null): string => value ? new Date(value).toLocaleString('en-PH') : 'Not yet';
 
 export function FacebookPostStudio({ connections }: { connections: PageConnection[] }): React.JSX.Element {
@@ -34,6 +42,8 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [publishedHistoryOpen, setPublishedHistoryOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<MarketingSuggestion[]>([]);
+  const [suggestionNote, setSuggestionNote] = useState('');
   const previewRef = useRef('');
   const postImageUrlsRef = useRef<Record<string, string>>({});
 
@@ -97,6 +107,25 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
     } catch (requestError: any) {
       setError(requestError.response?.data?.message || 'AI could not prepare a post draft.');
     } finally { setBusy(''); }
+  };
+
+  const suggestMarketing = async (): Promise<void> => {
+    setBusy('suggest'); setError(''); setNotice('');
+    try {
+      const response = await api.get('/facebook-automation/posts/suggestions');
+      setSuggestions((response.data.suggestions || []) as MarketingSuggestion[]);
+      const learnedFrom = Number(response.data.learned_from || 0);
+      setSuggestionNote(`${response.data.learning_note || 'Suggestions are based on recent published copy.'} Reviewed ${learnedFrom} published post${learnedFrom === 1 ? '' : 's'}.`);
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'AI could not prepare marketing suggestions.');
+    } finally { setBusy(''); }
+  };
+
+  const useSuggestion = (suggestion: MarketingSuggestion): void => {
+    setTopic(suggestion.topic);
+    setDetails(`Marketing objective: ${suggestion.objective}\nApproved angle: ${suggestion.angle}\nCall to action: ${suggestion.call_to_action}`);
+    setMessageText('');
+    setNotice('Marketing idea selected. Generate the post copy, then verify every fact before saving.');
   };
 
   const stageUploadedImage = async (file: File): Promise<void> => {
@@ -215,6 +244,12 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
 
     {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</p>}
     {notice && <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
+
+    <div className="mt-4 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-sky-50 p-3 dark:border-violet-900/60 dark:from-violet-950/20 dark:to-sky-950/20 sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex gap-2"><Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" /><div><h3 className="font-semibold text-foreground">AI marketing suggestions</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Studies recent published wording to avoid repetitive posts and proposes ideas for installation inquiries, follower reach, and trust. It does not see Meta engagement/conversion results, publish automatically, or spend on ads.</p></div></div><button type="button" onClick={() => void suggestMarketing()} disabled={busy !== ''} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />{busy === 'suggest' ? 'Studying posts...' : suggestions.length ? 'Refresh ideas' : 'Suggest campaigns'}</button></div>
+      {suggestionNote && <p className="mt-3 rounded-lg border border-violet-200/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground dark:border-violet-900/50">{suggestionNote}</p>}
+      {!!suggestions.length && <div className="mt-3 grid gap-3 lg:grid-cols-3">{suggestions.map((suggestion, index) => <article key={`${suggestion.topic}-${index}`} className="flex flex-col rounded-xl border border-border bg-card p-3"><span className="w-fit rounded-full bg-violet-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-800 dark:bg-violet-950/60 dark:text-violet-200">{suggestion.objective}</span><h4 className="mt-2 text-sm font-semibold text-foreground">{suggestion.topic}</h4><p className="mt-2 text-xs leading-5 text-muted-foreground">{suggestion.angle}</p><p className="mt-2 text-xs text-foreground"><span className="font-semibold">CTA:</span> {suggestion.call_to_action}</p><p className="mt-2 text-[11px] leading-4 text-muted-foreground">Why: {suggestion.why}</p><button type="button" onClick={() => useSuggestion(suggestion)} disabled={busy !== ''} className="mt-3 rounded-lg border border-violet-200 px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-60 dark:border-violet-900/60 dark:text-violet-200 dark:hover:bg-violet-950/30">Use this idea</button></article>)}</div>}
+    </div>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <div className="space-y-3 rounded-xl border border-border bg-background p-3 sm:p-4">

@@ -271,6 +271,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('campaigns', [FacebookAutomationController::class, 'createCampaign']);
                 Route::post('campaigns/{campaign}/send', [FacebookAutomationController::class, 'sendCampaign']);
                 Route::get('posts', [FacebookAutomationController::class, 'posts']);
+                Route::get('posts/suggestions', [FacebookAutomationController::class, 'postSuggestions'])->middleware('throttle:6,1');
                 Route::post('posts/generate', [FacebookAutomationController::class, 'generatePost']);
                 Route::post('posts', [FacebookAutomationController::class, 'createPost']);
                 Route::post('posts/image-upload', [FacebookAutomationController::class, 'uploadPostImage']);
