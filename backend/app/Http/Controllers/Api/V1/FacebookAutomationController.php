@@ -247,6 +247,58 @@ class FacebookAutomationController extends Controller
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
+    /**
+     * Failed publications are retained as a record of Facebook's response.  A
+     * retry deliberately creates a new unpublished draft, rather than silently
+     * sending the old content after an administrator repairs Page access.
+     */
+    public function retryPost(Request $request, FacebookPagePostDraft $post): JsonResponse
+    {
+        if ($post->status !== 'failed') {
+            return response()->json(['success' => false, 'message' => 'Only a failed Facebook post can be prepared for reposting.'], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'connection_id' => 'required|exists:facebook_page_connections,id',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Choose the active Facebook Page before preparing a repost.', 'errors' => $validator->errors()], 422);
+        }
+
+        $connection = FacebookPageConnection::query()
+            ->whereKey($request->input('connection_id'))
+            ->where('is_active', true)
+            ->first();
+        if (! $connection) {
+            return response()->json(['success' => false, 'message' => 'Choose an active connected Facebook Page.'], 422);
+        }
+
+        $repost = FacebookPagePostDraft::create([
+            'facebook_page_connection_id' => $connection->id,
+            'topic' => $post->topic,
+            'message_text' => $post->message_text,
+            'created_by' => $request->user()->id,
+            'status' => 'draft',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'A new repost draft was created. Review it and explicitly approve publication when ready.',
+            'data' => $repost->toAutomationArray(),
+        ], 201);
+    }
+
+    public function destroyPost(FacebookPagePostDraft $post): JsonResponse
+    {
+        if (! in_array($post->status, ['draft', 'failed'], true)) {
+            return response()->json(['success' => false, 'message' => 'Only unpublished Facebook drafts or failed attempts can be deleted.'], 422);
+        }
+
+        $post->delete();
+
+        return response()->json(['success' => true, 'message' => 'Unpublished Facebook post record deleted.']);
+    }
+
     public function createCampaign(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [

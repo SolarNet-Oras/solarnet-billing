@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, CircleAlert, Megaphone, RefreshCw, Send, Sparkles } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Megaphone, RefreshCw, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react';
 import api from '@/services/api';
 
 type PageConnection = { id: string; page_name: string; is_active: boolean };
@@ -78,6 +78,35 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
     } finally { setBusy(''); }
   };
 
+  const retry = async (post: PostDraft): Promise<void> => {
+    const selectedPage = activeConnections.find((connection) => connection.id === connectionId);
+    if (!selectedPage) {
+      setError('Choose the active Facebook Page before preparing this repost.');
+      return;
+    }
+    if (!window.confirm(`Create a new draft for reposting to ${selectedPage.page_name}?\n\nIt will not publish until you review and explicitly approve it.`)) return;
+    setBusy(`retry:${post.id}`); setError(''); setNotice('');
+    try {
+      await api.post(`/facebook-automation/posts/${post.id}/retry`, { connection_id: selectedPage.id });
+      setNotice('Repost draft created. Review it below, then use Approve & publish now when ready.');
+      await load();
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Could not prepare this post for reposting.');
+    } finally { setBusy(''); }
+  };
+
+  const remove = async (post: PostDraft): Promise<void> => {
+    if (!window.confirm(`Delete this unpublished ${post.status} Facebook post record? This cannot be undone.`)) return;
+    setBusy(`delete:${post.id}`); setError(''); setNotice('');
+    try {
+      await api.delete(`/facebook-automation/posts/${post.id}`);
+      setNotice('Unpublished post record deleted.');
+      await load();
+    } catch (requestError: any) {
+      setError(requestError.response?.data?.message || 'Could not delete this Facebook post record.');
+    } finally { setBusy(''); }
+  };
+
   const activeConnections = connections.filter((connection) => connection.is_active);
 
   return <section className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -100,6 +129,6 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
       <div className="rounded-xl border border-border bg-background p-3 sm:p-4"><div className="flex items-center justify-between gap-2"><label className="text-sm font-medium text-foreground">Post text</label><span className="text-xs text-muted-foreground">{messageText.length}/5000</span></div><textarea value={messageText} onChange={(event) => setMessageText(event.target.value)} maxLength={5000} rows={11} placeholder="Generate an AI draft or write the approved public post here." className="mt-2 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground" /><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="max-w-md text-xs leading-5 text-muted-foreground">Review factual accuracy, price, locations, and tone. Do not include client, payment, or account information.</p><button type="button" onClick={() => void saveDraft()} disabled={busy !== '' || !connectionId || topic.trim().length < 3 || messageText.trim().length < 3} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">{busy === 'save' ? 'Saving...' : 'Save post draft'}</button></div></div>
     </div>
 
-    <div className="mt-5 border-t border-border pt-4"><div className="flex items-center justify-between gap-2"><div><h3 className="font-semibold text-foreground">Post history</h3><p className="mt-1 text-xs text-muted-foreground">Drafts can only be sent by an explicit Administrator action.</p></div><span className="rounded-full bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">{posts.length}</span></div><div className="mt-3 space-y-3">{posts.map((post) => <article key={post.id} className="rounded-xl border border-border bg-background p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-foreground">{post.topic}</p><p className="mt-1 text-xs text-muted-foreground">Created {formatDate(post.created_at)}{post.published_at ? ` - published ${formatDate(post.published_at)}` : ''}</p></div><span className={`w-fit rounded-full px-2 py-1 text-[11px] font-bold ${post.status === 'published' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : post.status === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : post.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{post.status.toUpperCase()}</span></div><p className="mt-3 whitespace-pre-wrap break-words text-sm text-muted-foreground">{post.message_text}</p>{post.last_error && <p className="mt-2 text-xs text-red-700 dark:text-red-300">{post.last_error}</p>}{post.status === 'draft' && <button type="button" onClick={() => void publish(post)} disabled={busy !== ''} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-60"><Send className="h-3.5 w-3.5" />{busy === `publish:${post.id}` ? 'Publishing...' : 'Approve & publish now'}</button>}{post.status === 'published' && <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />Published to the linked Facebook Page</p>}</article>)}{!posts.length && <div className="rounded-xl border border-dashed border-border p-5 text-center"><CircleAlert className="mx-auto h-5 w-5 text-muted-foreground" /><p className="mt-2 text-sm text-muted-foreground">No Facebook Page post drafts yet.</p></div>}</div></div>
+    <div className="mt-5 border-t border-border pt-4"><div className="flex items-center justify-between gap-2"><div><h3 className="font-semibold text-foreground">Post history</h3><p className="mt-1 text-xs text-muted-foreground">Drafts can only be sent by an explicit Administrator action. Failed posts can be deleted or copied into a new draft for review.</p></div><span className="rounded-full bg-muted px-2.5 py-1 text-xs font-bold text-muted-foreground">{posts.length}</span></div><div className="mt-3 space-y-3">{posts.map((post) => <article key={post.id} className="rounded-xl border border-border bg-background p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-foreground">{post.topic}</p><p className="mt-1 text-xs text-muted-foreground">Created {formatDate(post.created_at)}{post.published_at ? ` - published ${formatDate(post.published_at)}` : ''}</p></div><span className={`w-fit rounded-full px-2 py-1 text-[11px] font-bold ${post.status === 'published' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : post.status === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : post.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{post.status.toUpperCase()}</span></div><p className="mt-3 whitespace-pre-wrap break-words text-sm text-muted-foreground">{post.message_text}</p>{post.last_error && <p className="mt-2 text-xs text-red-700 dark:text-red-300">{post.last_error}</p>}<div className="mt-3 flex flex-wrap items-center gap-2">{post.status === 'draft' && <button type="button" onClick={() => void publish(post)} disabled={busy !== ''} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-60"><Send className="h-3.5 w-3.5" />{busy === `publish:${post.id}` ? 'Publishing...' : 'Approve & publish now'}</button>}{post.status === 'failed' && <button type="button" onClick={() => void retry(post)} disabled={busy !== '' || !connectionId} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-60"><RotateCcw className="h-3.5 w-3.5" />{busy === `retry:${post.id}` ? 'Preparing...' : 'Repost as draft'}</button>}{(post.status === 'draft' || post.status === 'failed') && <button type="button" onClick={() => void remove(post)} disabled={busy !== ''} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/30"><Trash2 className="h-3.5 w-3.5" />{busy === `delete:${post.id}` ? 'Deleting...' : 'Delete'}</button>}{post.status === 'published' && <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />Published to the linked Facebook Page</p>}</div></article>)}{!posts.length && <div className="rounded-xl border border-dashed border-border p-5 text-center"><CircleAlert className="mx-auto h-5 w-5 text-muted-foreground" /><p className="mt-2 text-sm text-muted-foreground">No Facebook Page post drafts yet.</p></div>}</div></div>
   </section>;
 }
