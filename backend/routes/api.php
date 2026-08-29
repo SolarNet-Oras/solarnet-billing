@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\FinancialMonitoringController;
+use App\Http\Controllers\Api\V1\FacebookAutomationController;
 use App\Http\Controllers\Api\V1\OperationsMapController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
@@ -49,6 +50,12 @@ Route::prefix('v1')->group(function () {
             'laravel_version' => app()->version(),
         ]);
     });
+
+    // Meta calls these endpoints directly. Signature validation is mandatory
+    // for events; staff OAuth remains bound to a short-lived server-side state.
+    Route::get('integrations/facebook/webhook', [FacebookAutomationController::class, 'verifyWebhook']);
+    Route::post('integrations/facebook/webhook', [FacebookAutomationController::class, 'receiveWebhook']);
+    Route::get('integrations/facebook/callback', [FacebookAutomationController::class, 'oauthCallback']);
 
     // Authentication routes (public)
     Route::prefix('auth')->group(function () {
@@ -242,6 +249,28 @@ Route::prefix('v1')->group(function () {
             Route::get('conversations',                      [AiController::class, 'listConversations']);
             Route::get('conversations/{id}/messages',        [AiController::class, 'messages']);
             Route::delete('conversations/{id}',              [AiController::class, 'destroyConversation']);
+        });
+
+        // Facebook Page Messenger inbox. Office staff can review and reply;
+        // connection setup, auto-replies, and opt-in marketing stay admin-only.
+        Route::prefix('facebook-automation')->middleware('role:super_admin|admin|office_admin')->group(function () {
+            Route::get('status', [FacebookAutomationController::class, 'status']);
+            Route::get('conversations', [FacebookAutomationController::class, 'conversations']);
+            Route::get('conversations/{conversation}/messages', [FacebookAutomationController::class, 'messages']);
+            Route::post('conversations/{conversation}/reply', [FacebookAutomationController::class, 'reply']);
+            Route::post('conversations/{conversation}/ai-draft', [FacebookAutomationController::class, 'aiDraft']);
+            Route::patch('conversations/{conversation}', [FacebookAutomationController::class, 'updateConversation'])->middleware('role:super_admin|admin');
+
+            Route::middleware('role:super_admin|admin')->group(function () {
+                Route::get('connect-url', [FacebookAutomationController::class, 'connectUrl']);
+                Route::get('page-candidates', [FacebookAutomationController::class, 'pageCandidates']);
+                Route::post('connect-page', [FacebookAutomationController::class, 'connectPage']);
+                Route::delete('connections/{connection}', [FacebookAutomationController::class, 'deactivateConnection']);
+                Route::put('settings', [FacebookAutomationController::class, 'updateAutomationSettings']);
+                Route::get('campaigns', [FacebookAutomationController::class, 'campaigns']);
+                Route::post('campaigns', [FacebookAutomationController::class, 'createCampaign']);
+                Route::post('campaigns/{campaign}/send', [FacebookAutomationController::class, 'sendCampaign']);
+            });
         });
 
         // General settings (super_admin or view-settings/edit-settings permissions)

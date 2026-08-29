@@ -70,4 +70,15 @@ return [
         'currency_symbol' => env('WEB_PUSH_CURRENCY_SYMBOL', '₱'),
     ],
 
+    // Facebook Page + Messenger automation. Credentials are server-only;
+    // the page token is encrypted in the database after an administrator
+    // completes the Meta Page OAuth flow.
+    'facebook' => [
+        'app_id' => env('FACEBOOK_APP_ID'),
+        'app_secret' => env('FACEBOOK_APP_SECRET'),
+        'graph_version' => env('FACEBOOK_GRAPH_API_VERSION', 'v23.0'),
+        'webhook_verify_token' => env('FACEBOOK_WEBHOOK_VERIFY_TOKEN'),
+        'oauth_redirect_uri' => env('FACEBOOK_OAUTH_REDIRECT_URI', rtrim(env('APP_URL', 'http://localhost'), '/') . '/api/v1/integrations/facebook/callback'),
+    ],
+
 ];

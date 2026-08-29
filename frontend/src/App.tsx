@@ -33,6 +33,7 @@ import RadiusIpOePage from '@/pages/RadiusIpOePage';
 import FinancialMonitoringPage from '@/pages/FinancialMonitoringPage';
 import OperationsMapPage from '@/pages/OperationsMapPage';
 import CyberSecurityPage from '@/pages/CyberSecurityPage';
+import FacebookAutomationPage from '@/pages/FacebookAutomationPage';
 
 // ============================================================================
 // Main App Component
@@ -151,6 +152,10 @@ const App: React.FC = (): JSX.Element => {
               <Route
                 path="/cybersecurity"
                 element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'noc']}><CyberSecurityPage /></ProtectedRoute>}
+              />
+              <Route
+                path="/facebook-automation"
+                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin']}><FacebookAutomationPage /></ProtectedRoute>}
               />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />
