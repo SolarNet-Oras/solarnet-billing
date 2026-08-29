@@ -9,6 +9,7 @@ use App\Services\Automation\AutomationRunner;
 use App\Services\BillingSmsReminderService;
 use App\Services\CustomerWebPushNotificationService;
 use App\Services\FinalGracePeriodWarningService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -66,7 +67,11 @@ class SendInvoiceReminders extends Command
             }
             $customersWithUnpaidInvoices[$customer->id] = $customer;
 
-            $diffDays = $today->diffInDays($invoice->due_date->copy()->startOfDay(), false);
+            // Invoice dates are stored as calendar dates. Rebuild the due date
+            // in Manila before calculating its difference; otherwise a UTC
+            // cast produces values such as 7.333 days and skips the strict
+            // one-time seven-day SMS condition below.
+            $diffDays = $this->daysUntilDue($invoice, $today);
             $pushType = $this->pushTypeFor($diffDays, $graceDays);
             if ($pushType === null) {
                 continue;
@@ -194,6 +199,20 @@ class SendInvoiceReminders extends Command
         if ($daysOverdue === 1) return CustomerWebPushNotificationService::BILLING_OVERDUE;
 
         return CustomerWebPushNotificationService::BILLING_DAILY_REMINDER;
+    }
+
+    /** Return the signed difference between two Manila calendar dates. */
+    protected function daysUntilDue(Invoice $invoice, Carbon $today): int
+    {
+        $dueDate = Carbon::parse(
+            $invoice->due_date->toDateString(),
+            BillingSmsReminderService::TIMEZONE,
+        )->startOfDay();
+
+        return (int) $today->copy()
+            ->setTimezone(BillingSmsReminderService::TIMEZONE)
+            ->startOfDay()
+            ->diffInDays($dueDate, false);
     }
 
 }
