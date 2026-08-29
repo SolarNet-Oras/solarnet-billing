@@ -159,11 +159,13 @@ class BillingSmsReminderService
         $firstName = trim((string) preg_split('/\s+/', trim($customer->full_name))[0]);
         $firstName = $firstName !== '' ? $firstName : 'Customer';
 
-        return 'SOLARNET: Hi ' . $firstName
-            . ', your bill of PHP ' . number_format($outstanding, 2)
-            . ' is due ' . $dueDate->copy()->setTimezone(self::TIMEZONE)->format('M j, Y')
-            . '. Pay by GCash: log in using your registered email at ' . $portalUrl
-            . '. Need help or no email access? Message SolarNet on Facebook or contact customer support. Thank you. Auto-generated SMS.';
+        return 'SOLARNET: Hi ' . $firstName . ",\n\n"
+            . 'Your bill of PHP ' . number_format($outstanding, 2)
+            . ' is due ' . $dueDate->copy()->setTimezone(self::TIMEZONE)->format('M j, Y') . ".\n\n"
+            . "Pay by GCash:\n"
+            . "Log in using your registered email:\n" . $portalUrl . "\n\n"
+            . "Need help or no email access? Message SolarNet on Facebook or contact customer support.\n\n"
+            . "Thank you.\nAuto-generated SMS.";
     }
 
     public function portalUrl(): ?string
