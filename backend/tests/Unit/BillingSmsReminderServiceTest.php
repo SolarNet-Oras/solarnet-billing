@@ -31,7 +31,7 @@ class BillingSmsReminderServiceTest extends TestCase
         );
 
         $this->assertSame(
-            'SOLARNET: Hi Juan, your bill of PHP 1,500.00 is due Sep 15, 2026. Pay: https://solarnetportal.com/customer/billing',
+            'SOLARNET: Hi Juan, your bill of PHP 1,500.00 is due Sep 15, 2026. Pay by GCash: log in using your registered email at https://solarnetportal.com/customer/billing. Need help or no email access? Message SolarNet on Facebook or contact customer support. Thank you. Auto-generated SMS.',
             $message,
         );
     }

@@ -162,7 +162,8 @@ class BillingSmsReminderService
         return 'SOLARNET: Hi ' . $firstName
             . ', your bill of PHP ' . number_format($outstanding, 2)
             . ' is due ' . $dueDate->copy()->setTimezone(self::TIMEZONE)->format('M j, Y')
-            . '. Pay: ' . $portalUrl;
+            . '. Pay by GCash: log in using your registered email at ' . $portalUrl
+            . '. Need help or no email access? Message SolarNet on Facebook or contact customer support. Thank you. Auto-generated SMS.';
     }
 
     public function portalUrl(): ?string
