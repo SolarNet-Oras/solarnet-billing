@@ -112,7 +112,7 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
   const suggestMarketing = async (): Promise<void> => {
     setBusy('suggest'); setError(''); setNotice('');
     try {
-      const response = await api.get('/facebook-automation/posts/suggestions');
+      const response = await api.get('/facebook-automation/marketing-suggestions');
       setSuggestions((response.data.suggestions || []) as MarketingSuggestion[]);
       const learnedFrom = Number(response.data.learned_from || 0);
       setSuggestionNote(`${response.data.learning_note || 'Suggestions are based on recent published copy.'} Reviewed ${learnedFrom} published post${learnedFrom === 1 ? '' : 's'}.`);
