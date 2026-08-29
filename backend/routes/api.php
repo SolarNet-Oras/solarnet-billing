@@ -273,6 +273,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('posts', [FacebookAutomationController::class, 'posts']);
                 Route::post('posts/generate', [FacebookAutomationController::class, 'generatePost']);
                 Route::post('posts', [FacebookAutomationController::class, 'createPost']);
+                Route::post('posts/image-upload', [FacebookAutomationController::class, 'uploadPostImage']);
+                Route::post('posts/image-generate', [FacebookAutomationController::class, 'generatePostImage'])->middleware('throttle:2,1');
+                Route::get('posts/{post}/image', [FacebookAutomationController::class, 'postImage']);
                 Route::post('posts/{post}/retry', [FacebookAutomationController::class, 'retryPost']);
                 Route::post('posts/{post}/publish', [FacebookAutomationController::class, 'publishPost']);
                 Route::delete('posts/{post}', [FacebookAutomationController::class, 'destroyPost']);

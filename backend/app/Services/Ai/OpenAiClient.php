@@ -167,6 +167,79 @@ class OpenAiClient
         ];
     }
 
+    /**
+     * Generate one reviewable marketing image. The caller stores the returned
+     * bytes privately and does not expose the OpenAI response URL or API key.
+     *
+     * @return array{bytes:string,mime:string}
+     */
+    public function generateImage(string $prompt): array
+    {
+        if (! $this->isConfigured()) {
+            throw new OpenAiProviderException(
+                'OPENAI_NOT_CONFIGURED',
+                'AI image generation is not configured on the server.',
+            );
+        }
+
+        try {
+            $response = $this->http->post('images/generations', [
+                'json' => [
+                    'model' => (string) config('openai.image_model', 'gpt-image-2'),
+                    'prompt' => $prompt,
+                    'size' => (string) config('openai.image_size', '1024x1024'),
+                    'quality' => (string) config('openai.image_quality', 'low'),
+                ],
+            ]);
+        } catch (ConnectException $e) {
+            Log::warning('OpenAI image generation connection failed', ['error' => $e->getMessage()]);
+            throw new OpenAiProviderException('OPENAI_IMAGE_TIMEOUT', 'AI image generation could not be reached. Please try again shortly.', 503, $e);
+        } catch (RequestException $e) {
+            $body = $e->hasResponse() ? (string) $e->getResponse()->getBody() : $e->getMessage();
+            $status = $e->hasResponse() ? $e->getResponse()->getStatusCode() : 0;
+            $providerError = json_decode($body, true)['error'] ?? [];
+            $providerCode = (string) ($providerError['code'] ?? '');
+            $providerType = (string) ($providerError['type'] ?? '');
+
+            Log::warning('OpenAI image generation failed', [
+                'http_status' => $status,
+                'provider_code' => $providerCode,
+                'provider_type' => $providerType,
+                'model' => (string) config('openai.image_model', 'gpt-image-2'),
+            ]);
+
+            if ($status === 429) {
+                $quota = $providerCode === 'insufficient_quota' || $providerType === 'insufficient_quota';
+                throw new OpenAiProviderException(
+                    $quota ? 'OPENAI_IMAGE_BILLING_ERROR' : 'OPENAI_IMAGE_RATE_LIMIT',
+                    $quota ? 'AI image generation is unavailable because this OpenAI project has no available image-generation credits.' : 'AI image generation is temporarily rate-limited. Please try again shortly.',
+                    $quota ? 503 : 429,
+                    $e,
+                );
+            }
+
+            if ($status === 401) {
+                throw new OpenAiProviderException('OPENAI_IMAGE_AUTH_ERROR', 'OpenAI rejected the server credentials for image generation.', 503, $e);
+            }
+
+            if ($status === 403 || ($status === 404 && $providerCode === 'model_not_found')) {
+                throw new OpenAiProviderException('OPENAI_IMAGE_MODEL_ACCESS_ERROR', 'This OpenAI project does not have access to the configured image model. Check OPENAI_IMAGE_MODEL and project permissions.', 503, $e);
+            }
+
+            throw new OpenAiProviderException('OPENAI_IMAGE_REQUEST_ERROR', 'AI image generation could not complete. Check the server image-model configuration.', 503, $e);
+        }
+
+        $body = json_decode((string) $response->getBody(), true);
+        $encoded = (string) ($body['data'][0]['b64_json'] ?? '');
+        $bytes = $encoded === '' ? false : base64_decode($encoded, true);
+        if ($bytes === false || $bytes === '') {
+            Log::warning('OpenAI image generation returned no image bytes', ['model' => (string) config('openai.image_model', 'gpt-image-2')]);
+            throw new OpenAiProviderException('OPENAI_IMAGE_EMPTY', 'AI image generation returned no usable image. Please try again.', 503);
+        }
+
+        return ['bytes' => $bytes, 'mime' => 'image/png'];
+    }
+
     /** @param array<string, mixed> $providerError */
     protected function isModelAccessError(array $providerError): bool
     {

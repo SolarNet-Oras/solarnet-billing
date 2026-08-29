@@ -217,6 +217,7 @@ class FacebookAutomationController extends Controller
             'connection_id' => 'required|exists:facebook_page_connections,id',
             'topic' => 'required|string|min:3|max:160',
             'message_text' => 'required|string|min:3|max:5000',
+            'image_token' => 'nullable|string|min:32|max:100',
         ]);
         if ($validator->fails()) {
             return response()->json(['success' => false, 'message' => 'Choose a Page, topic, and post text before saving.', 'errors' => $validator->errors()], 422);
@@ -234,7 +235,57 @@ class FacebookAutomationController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
-        return response()->json(['success' => true, 'data' => $post->toAutomationArray()], 201);
+        if ($request->filled('image_token')) {
+            $image = $this->facebook->claimStagedPostImage($request->user(), (string) $request->input('image_token'), $post);
+            if ($image === null) {
+                $post->delete();
+                return response()->json(['success' => false, 'message' => 'The selected image expired or is no longer available. Upload or generate it again.'], 422);
+            }
+            $post->forceFill($image)->save();
+        }
+
+        return response()->json(['success' => true, 'data' => $post->fresh()->toAutomationArray()], 201);
+    }
+
+    public function uploadPostImage(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'image' => 'required|image|mimes:jpg,jpeg,png|max:10240',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'Upload a PNG or JPEG image no larger than 10 MB.', 'errors' => $validator->errors()], 422);
+        }
+
+        $result = $this->facebook->stagePostImageUpload($request->user(), $request->file('image'));
+        return response()->json($result, $result['success'] ? 201 : 422);
+    }
+
+    public function generatePostImage(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'topic' => 'required|string|min:3|max:160',
+            'details' => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => 'A clear post topic is required before generating an image.', 'errors' => $validator->errors()], 422);
+        }
+
+        $result = $this->facebook->generateMarketingPostImage($request->user(), $request->input('topic'), $request->input('details'));
+        return response()->json($result, $result['success'] ? 200 : 503);
+    }
+
+    public function postImage(FacebookPagePostDraft $post)
+    {
+        $image = $this->facebook->postImageFile($post);
+        if ($image === null) {
+            return response()->json(['success' => false, 'message' => 'No attached post image was found.'], 404);
+        }
+
+        return response()->file($image['path'], [
+            'Content-Type' => $image['mime'],
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function publishPost(Request $request, FacebookPagePostDraft $post): JsonResponse
@@ -281,6 +332,11 @@ class FacebookAutomationController extends Controller
             'status' => 'draft',
         ]);
 
+        if (! $this->facebook->copyPostImage($post, $repost)) {
+            $repost->delete();
+            return response()->json(['success' => false, 'message' => 'The failed post image is no longer available. Create a new draft and attach a replacement image.'], 422);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'A new repost draft was created. Review it and explicitly approve publication when ready.',
@@ -294,6 +350,7 @@ class FacebookAutomationController extends Controller
             return response()->json(['success' => false, 'message' => 'Only unpublished Facebook drafts or failed attempts can be deleted.'], 422);
         }
 
+        $this->facebook->deletePostImage($post);
         $post->delete();
 
         return response()->json(['success' => true, 'message' => 'Unpublished Facebook post record deleted.']);

@@ -15,7 +15,9 @@ use App\Services\Ai\OpenAiClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Http\UploadedFile;
 
 /**
  * Page-only Meta Graph API integration.
@@ -28,6 +30,9 @@ use Illuminate\Support\Str;
  */
 class FacebookMessengerService
 {
+    private const POST_IMAGE_STAGING_DIRECTORY = 'facebook-page-post-images/staging';
+    private const POST_IMAGE_DIRECTORY = 'facebook-page-post-images/posts';
+
     public function __construct(protected OpenAiClient $ai)
     {
     }
@@ -490,6 +495,145 @@ class FacebookMessengerService
         return ['success' => true, 'message_text' => Str::limit($message, 5000, '')];
     }
 
+    /**
+     * Keep an uploaded image private until a post draft claims it. The token is
+     * tied to its administrator and expires quickly, so a browser cannot attach
+     * an arbitrary server file to a Facebook Page post.
+     *
+     * @return array{success:bool, image_token?:string, message?:string}
+     */
+    public function stagePostImageUpload(User $user, UploadedFile $image): array
+    {
+        $this->pruneExpiredStagedPostImages();
+
+        $mime = (string) $image->getMimeType();
+        $extension = $this->postImageExtension($mime);
+        if ($extension === null) {
+            return ['success' => false, 'message' => 'Upload a PNG or JPEG image.'];
+        }
+
+        $token = Str::random(64);
+        $path = self::POST_IMAGE_STAGING_DIRECTORY . '/' . $token . '.' . $extension;
+        if (! Storage::disk('local')->put($path, (string) file_get_contents($image->getRealPath()))) {
+            return ['success' => false, 'message' => 'The selected image could not be stored securely.'];
+        }
+
+        $this->rememberStagedPostImage($token, $user, $path, $mime);
+
+        return ['success' => true, 'image_token' => $token];
+    }
+
+    /**
+     * @return array{success:bool, image_token?:string, preview_data_url?:string, message?:string}
+     */
+    public function generateMarketingPostImage(User $user, string $topic, ?string $details = null): array
+    {
+        if (! $this->ai->isConfigured()) {
+            return ['success' => false, 'message' => 'OpenAI is not configured on the server.'];
+        }
+
+        $topic = Str::limit(trim($topic), 160, '');
+        $details = Str::limit(trim((string) $details), 1000, '');
+        if ($topic === '') {
+            return ['success' => false, 'message' => 'A post topic is required before generating an image.'];
+        }
+
+        try {
+            $image = $this->ai->generateImage($this->aiMarketingPostImagePrompt($topic, $details));
+        } catch (\Throwable $e) {
+            Log::warning('Facebook Page AI image draft failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'message' => $e->getMessage() ?: 'AI could not prepare a marketing image right now.'];
+        }
+
+        if (strlen($image['bytes']) > 10 * 1024 * 1024) {
+            return ['success' => false, 'message' => 'AI returned an image that is too large to attach to a Facebook post.'];
+        }
+
+        $this->pruneExpiredStagedPostImages();
+        $token = Str::random(64);
+        $path = self::POST_IMAGE_STAGING_DIRECTORY . '/' . $token . '.png';
+        if (! Storage::disk('local')->put($path, $image['bytes'])) {
+            return ['success' => false, 'message' => 'The generated image could not be stored securely.'];
+        }
+
+        $this->rememberStagedPostImage($token, $user, $path, 'image/png');
+
+        return [
+            'success' => true,
+            'image_token' => $token,
+            // This temporary preview is returned only to the authenticated
+            // administrator who initiated generation. The stored source stays
+            // on Laravel's private disk.
+            'preview_data_url' => 'data:image/png;base64,' . base64_encode($image['bytes']),
+        ];
+    }
+
+    /** @return array{image_path:string,image_mime:string}|null */
+    public function claimStagedPostImage(User $user, string $token, FacebookPagePostDraft $post): ?array
+    {
+        $staged = Cache::pull($this->stagedPostImageKey($token));
+        if (! is_array($staged) || ! hash_equals((string) ($staged['user_id'] ?? ''), (string) $user->id)) {
+            return null;
+        }
+
+        $path = (string) ($staged['path'] ?? '');
+        $mime = (string) ($staged['mime'] ?? '');
+        $extension = $this->postImageExtension($mime);
+        if (! $this->isManagedPostImagePath($path) || $extension === null || ! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        $newPath = self::POST_IMAGE_DIRECTORY . '/' . $post->id . '.' . $extension;
+        if (! Storage::disk('local')->move($path, $newPath)) {
+            return null;
+        }
+
+        return ['image_path' => $newPath, 'image_mime' => $mime];
+    }
+
+    public function copyPostImage(FacebookPagePostDraft $from, FacebookPagePostDraft $to): bool
+    {
+        if (blank($from->image_path)) {
+            return true;
+        }
+
+        $path = (string) $from->image_path;
+        $extension = $this->postImageExtension((string) $from->image_mime);
+        if (! $this->isManagedPostImagePath($path) || $extension === null || ! Storage::disk('local')->exists($path)) {
+            return false;
+        }
+
+        $copyPath = self::POST_IMAGE_DIRECTORY . '/' . $to->id . '.' . $extension;
+        if (! Storage::disk('local')->copy($path, $copyPath)) {
+            return false;
+        }
+
+        $to->forceFill(['image_path' => $copyPath, 'image_mime' => $from->image_mime])->save();
+        return true;
+    }
+
+    /** @return array{path:string,mime:string}|null */
+    public function postImageFile(FacebookPagePostDraft $post): ?array
+    {
+        $path = (string) $post->image_path;
+        if (! $this->isManagedPostImagePath($path) || ! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        return [
+            'path' => Storage::disk('local')->path($path),
+            'mime' => (string) ($post->image_mime ?: Storage::disk('local')->mimeType($path) ?: 'image/jpeg'),
+        ];
+    }
+
+    public function deletePostImage(FacebookPagePostDraft $post): void
+    {
+        $path = (string) $post->image_path;
+        if ($this->isManagedPostImagePath($path)) {
+            Storage::disk('local')->delete($path);
+        }
+    }
+
     /** @return array{success:bool, post?:FacebookPagePostDraft, message?:string} */
     public function publishPost(FacebookPagePostDraft $post, User $approvedBy): array
     {
@@ -509,18 +653,40 @@ class FacebookMessengerService
             'last_error' => null,
         ])->save();
 
+        $attachedImage = $this->postImageFile($post);
+        if (filled($post->image_path) && $attachedImage === null) {
+            $post->forceFill(['status' => 'failed', 'last_error' => 'The attached image is no longer available. Upload or generate a new image before reposting.'])->save();
+            return ['success' => false, 'message' => 'The attached image is no longer available.'];
+        }
+
         try {
-            $response = Http::asForm()->acceptJson()->timeout(20)->post(
-                $this->graphUrl('/' . $post->connection->page_id . '/feed'),
-                ['access_token' => $post->connection->page_access_token, 'message' => $post->message_text],
-            );
+            if ($attachedImage !== null) {
+                $stream = fopen($attachedImage['path'], 'rb');
+                try {
+                    $response = Http::acceptJson()->timeout(45)
+                        ->attach('source', $stream, basename($attachedImage['path']), ['Content-Type' => $attachedImage['mime']])
+                        ->post(
+                            $this->graphUrl('/' . $post->connection->page_id . '/photos'),
+                            ['access_token' => $post->connection->page_access_token, 'caption' => $post->message_text],
+                        );
+                } finally {
+                    if (is_resource($stream)) {
+                        fclose($stream);
+                    }
+                }
+            } else {
+                $response = Http::asForm()->acceptJson()->timeout(20)->post(
+                    $this->graphUrl('/' . $post->connection->page_id . '/feed'),
+                    ['access_token' => $post->connection->page_access_token, 'message' => $post->message_text],
+                );
+            }
         } catch (\Throwable $e) {
             Log::error('Facebook Page post request failed', ['post_id' => $post->id, 'error' => $e->getMessage()]);
             $post->forceFill(['status' => 'failed', 'last_error' => 'Facebook could not be reached while publishing this post.'])->save();
             return ['success' => false, 'message' => 'Facebook could not be reached while publishing the post.'];
         }
 
-        $facebookPostId = trim((string) $response->json('id'));
+        $facebookPostId = trim((string) ($response->json('post_id') ?: $response->json('id')));
         if (! $response->successful() || $facebookPostId === '') {
             $reason = trim((string) ($response->json('error.message') ?: 'Facebook rejected the Page post.'));
             Log::warning('Facebook Page post was rejected', ['post_id' => $post->id, 'http_status' => $response->status(), 'reason' => $reason]);
@@ -624,5 +790,61 @@ You are writing one public Facebook Page post for {$company}, a local internet s
 - Use short paragraphs and at most three relevant hashtags. Do not include a heading such as "Draft".
 - Keep it below 1,200 characters.
 PROMPT;
+    }
+
+    protected function aiMarketingPostImagePrompt(string $topic, string $details): string
+    {
+        $company = (string) Setting::get('company.name', 'SolarNet');
+
+        return <<<PROMPT
+Use case: ads-marketing
+Asset type: a single square Facebook Page image for {$company}, a local internet service provider.
+Primary request: Create a clean, modern, trustworthy broadband-internet visual supporting this staff-approved topic: {$topic}
+Staff-approved facts: {$details}
+Style/medium: polished contemporary commercial illustration or photography, suitable for a professional local internet provider.
+Composition/framing: square social-media composition with generous negative space; no in-image writing is required.
+Constraints: Do not include people who could be mistaken for a real customer, customer homes, bills, account data, payment claims, addresses, network credentials, QR codes, prices, speeds, guarantees, dates, third-party logos, or copyrighted characters. Do not create a SolarNet logo. Do not add text, letters, numbers, watermark, or UI screenshots inside the image. The administrator will review the image before publication.
+PROMPT;
+    }
+
+    protected function rememberStagedPostImage(string $token, User $user, string $path, string $mime): void
+    {
+        Cache::put($this->stagedPostImageKey($token), [
+            'user_id' => (string) $user->id,
+            'path' => $path,
+            'mime' => $mime,
+        ], now()->addHour());
+    }
+
+    protected function stagedPostImageKey(string $token): string
+    {
+        return 'facebook_automation.post_image_staging.' . hash('sha256', $token);
+    }
+
+    protected function postImageExtension(string $mime): ?string
+    {
+        return match (strtolower($mime)) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            default => null,
+        };
+    }
+
+    protected function isManagedPostImagePath(string $path): bool
+    {
+        return str_starts_with($path, self::POST_IMAGE_DIRECTORY . '/')
+            || str_starts_with($path, self::POST_IMAGE_STAGING_DIRECTORY . '/');
+    }
+
+    /** Remove abandoned staging files when the next image action is performed. */
+    protected function pruneExpiredStagedPostImages(): void
+    {
+        $disk = Storage::disk('local');
+        $cutoff = now()->subHours(2)->getTimestamp();
+        foreach ($disk->files(self::POST_IMAGE_STAGING_DIRECTORY) as $path) {
+            if ($disk->lastModified($path) < $cutoff) {
+                $disk->delete($path);
+            }
+        }
     }
 }

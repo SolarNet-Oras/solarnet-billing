@@ -24,6 +24,19 @@ Administrator-approved **AI Post Studio**;
 there is no automatic Page posting. Meta may require the matching permission
 and app review before publishing becomes available outside development mode.
 
+AI Post Studio can also attach one PNG/JPEG image to a post or create one
+reviewable AI image. The image is stored on SolarNet's private server disk and
+is shown only to authenticated administrators until they explicitly publish
+the draft. Image generation is an administrator action and uses the existing
+server-side OpenAI API project. The default model is `gpt-image-2`; override it
+only if your OpenAI project requires a different permitted image model:
+
+```dotenv
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_QUALITY=low
+OPENAI_IMAGE_SIZE=1024x1024
+```
+
 ## 2. Add only server-side settings
 
 Add the following values to `/var/www/solarnet-billing/deploy/.env` on the VPS.

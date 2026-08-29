@@ -14,7 +14,7 @@ class FacebookPagePostDraft extends Model
     protected $fillable = [
         'facebook_page_connection_id', 'topic', 'message_text', 'status',
         'facebook_post_id', 'created_by', 'approved_by', 'approved_at',
-        'published_at', 'last_error',
+        'published_at', 'last_error', 'image_path', 'image_mime',
     ];
 
     protected function casts(): array
@@ -51,6 +51,7 @@ class FacebookPagePostDraft extends Model
             'message_text' => $this->message_text,
             'status' => $this->status,
             'facebook_post_id' => $this->facebook_post_id,
+            'has_image' => filled($this->image_path),
             'last_error' => $this->last_error,
             'created_at' => $this->created_at?->toIso8601String(),
             'approved_at' => $this->approved_at?->toIso8601String(),
