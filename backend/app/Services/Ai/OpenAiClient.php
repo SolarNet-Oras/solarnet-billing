@@ -85,9 +85,10 @@ class OpenAiClient
 
         $model = $selectedModel ?: $this->model;
 
-        // GPT-5.6 Luna uses the Responses transport here and GPT-5.4 Pro is
-        // Responses-only. Their tool calls keep the same guarded SolarNet
-        // workflow as the legacy Chat Completions transport.
+        // The selected reasoning / agent models use the Responses transport
+        // for SolarNet's guarded tool loop. GPT-5.4 Pro is Responses-only;
+        // Luna and Codex also support this transport and are more reliable
+        // here than the legacy Chat Completions tool-message sequence.
         if ($this->usesResponsesApi($model)) {
             return $this->responsesCompletion($messages, $tools, $model, $previousResponseId, $functionCallOutputs);
         }
@@ -123,7 +124,7 @@ class OpenAiClient
 
     protected function usesResponsesApi(string $model): bool
     {
-        return in_array($model, ['gpt-5.6-luna', 'gpt-5.4-pro'], true);
+        return in_array($model, ['gpt-5.6-luna', 'gpt-5.4-pro', 'gpt-5.3-codex'], true);
     }
 
     /** @return array<string, mixed> */

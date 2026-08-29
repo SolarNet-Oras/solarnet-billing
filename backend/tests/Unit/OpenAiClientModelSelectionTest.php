@@ -25,7 +25,7 @@ class OpenAiClientModelSelectionTest extends TestCase
         $this->assertFalse($client->canSelectChatModel('arbitrary-model-name'));
     }
 
-    public function test_luna_and_pro_use_the_responses_transport(): void
+    public function test_agent_models_use_the_responses_transport(): void
     {
         $client = app(OpenAiClient::class);
         $method = new \ReflectionMethod($client, 'usesResponsesApi');
@@ -33,7 +33,7 @@ class OpenAiClientModelSelectionTest extends TestCase
 
         $this->assertTrue($method->invoke($client, 'gpt-5.6-luna'));
         $this->assertTrue($method->invoke($client, 'gpt-5.4-pro'));
+        $this->assertTrue($method->invoke($client, 'gpt-5.3-codex'));
         $this->assertFalse($method->invoke($client, 'gpt-5.4-mini'));
-        $this->assertFalse($method->invoke($client, 'gpt-5.3-codex'));
     }
 }
