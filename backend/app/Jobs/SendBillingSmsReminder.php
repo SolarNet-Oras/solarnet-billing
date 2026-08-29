@@ -16,8 +16,10 @@ class SendBillingSmsReminder implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 3;
-    public array $backoff = [60, 300];
+    // First attempt plus one automatic retry. A provider response is recorded
+    // as sent only by BillingSmsReminderService after PhilSMS accepts it.
+    public int $tries = 2;
+    public array $backoff = [60];
     public int $timeout = 30;
 
     public function __construct(public string $notificationId)
@@ -26,8 +28,9 @@ class SendBillingSmsReminder implements ShouldQueue
 
     public function handle(BillingSmsReminderService $reminders): void
     {
-        if ($reminders->deliver($this->notificationId) === 'retry') {
-            throw new RuntimeException('Temporary PhilSMS failure; retrying the reserved 7-day billing SMS.');
+        $result = $reminders->deliver($this->notificationId);
+        if (in_array($result, ['retry', 'failed'], true)) {
+            throw new RuntimeException('PhilSMS did not accept the billing SMS; retrying once.');
         }
     }
 

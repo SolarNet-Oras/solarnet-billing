@@ -31,6 +31,11 @@ class Invoice extends Model
         'notes',
         'sent_at',
         'paid_at',
+        'initial_email_status',
+        'initial_email_attempt_count',
+        'initial_email_last_attempt_at',
+        'initial_email_sent_at',
+        'initial_email_failure_reason',
     ];
 
     protected $casts = [
@@ -47,6 +52,9 @@ class Invoice extends Model
         'balance' => 'float',
         'sent_at' => 'datetime',
         'paid_at' => 'datetime',
+        'initial_email_attempt_count' => 'integer',
+        'initial_email_last_attempt_at' => 'datetime',
+        'initial_email_sent_at' => 'datetime',
     ];
 
     public function customer(): BelongsTo
@@ -62,6 +70,11 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function billingSmsNotifications(): HasMany
+    {
+        return $this->hasMany(BillingSmsNotification::class);
     }
 
     public function isOverdue(): bool

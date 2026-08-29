@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendInitialInvoiceEmail;
 use App\Models\Customer;
 use App\Models\CustomerCredit;
 use App\Models\Invoice;
@@ -303,14 +304,16 @@ class InvoiceService
         ]);
 
         if ($invoice->allowsAutomaticBillingNotifications()) {
-            $freshInvoice = $invoice->fresh(['customer', 'items', 'payments']);
-            $result = $this->sendInitialInvoiceEmail($freshInvoice);
+            $invoice->update([
+                'initial_email_status' => 'queued',
+                'initial_email_failure_reason' => null,
+            ]);
+            SendInitialInvoiceEmail::dispatch($invoice->id)->afterCommit();
 
-            Log::info('Initial invoice email dispatch result', [
-                'invoice_id' => $freshInvoice->id,
-                'invoice_number' => $freshInvoice->invoice_number,
-                'customer_id' => $freshInvoice->customer_id,
-                'result' => $result,
+            Log::info('Initial invoice email queued', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $invoice->customer_id,
             ]);
         } else {
             Log::info('Initial invoice email skipped by policy', [
@@ -326,13 +329,17 @@ class InvoiceService
      * SMTP delivery is deliberately best-effort: a mail issue must never roll
      * back invoice creation, billing dates, payment credits, or MikroTik sync.
      *
-     * @return 'sent'|'skipped_no_email'|'skipped_no_balance'|'failed'
+     * @return 'sent'|'skipped_already_sent'|'skipped_in_progress'|'skipped_attempt_limit'|'skipped_no_email'|'skipped_no_balance'|'failed'
      */
     public function sendInitialInvoiceEmail(Invoice $invoice): string
     {
         $invoice->loadMissing(['customer', 'items', 'payments']);
         $customer = $invoice->customer;
+        if ($invoice->exists && $invoice->initial_email_sent_at !== null) {
+            return 'skipped_already_sent';
+        }
         if (!$customer || blank($customer->email)) {
+            $this->recordInitialEmailState($invoice, 'skipped_no_email', 'Customer does not have an email address.');
             Log::info('Initial invoice email skipped: no recipient email', [
                 'invoice_id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
@@ -342,6 +349,7 @@ class InvoiceService
             return 'skipped_no_email';
         }
         if ((float) $invoice->balance <= 0) {
+            $this->recordInitialEmailState($invoice, 'skipped_no_balance', 'Invoice has no outstanding balance.');
             Log::info('Initial invoice email skipped: zero balance', [
                 'invoice_id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
@@ -352,16 +360,49 @@ class InvoiceService
             return 'skipped_no_balance';
         }
 
-        $subject = "Your SolarNet invoice {$invoice->invoice_number}";
-        $html = app(SolarNetEmailRenderer::class)->initialInvoice($invoice);
+        if ($invoice->exists) {
+            $claimed = Invoice::query()
+                ->whereKey($invoice->id)
+                ->whereNull('initial_email_sent_at')
+                ->where('initial_email_attempt_count', '<', 2)
+                ->where(function ($query) {
+                    $query->where('initial_email_status', '!=', 'sending')
+                        ->orWhereNull('initial_email_status')
+                        ->orWhere('initial_email_last_attempt_at', '<=', now()->subMinutes(10));
+                })
+                ->update([
+                    'initial_email_status' => 'sending',
+                    'initial_email_attempt_count' => DB::raw('initial_email_attempt_count + 1'),
+                    'initial_email_last_attempt_at' => now(),
+                    'initial_email_failure_reason' => null,
+                ]);
+
+            if ($claimed !== 1) {
+                $invoice->refresh();
+                if ($invoice->initial_email_sent_at !== null) {
+                    return 'skipped_already_sent';
+                }
+
+                return (int) $invoice->initial_email_attempt_count >= 2
+                    ? 'skipped_attempt_limit'
+                    : 'skipped_in_progress';
+            }
+
+            $invoice->refresh()->loadMissing(['customer', 'items', 'payments']);
+            $customer = $invoice->customer;
+        }
 
         try {
+            $subject = "Your SolarNet invoice {$invoice->invoice_number}";
+            $html = app(SolarNetEmailRenderer::class)->initialInvoice($invoice);
             $pdf = $this->generatePdf($invoice)->output();
             Mail::html($html, function (Message $message) use ($customer, $subject, $pdf, $invoice) {
                 $message->to($customer->email, $customer->full_name)
                     ->subject($subject)
                     ->attachData($pdf, "invoice-{$invoice->invoice_number}.pdf", ['mime' => 'application/pdf']);
             });
+
+            $this->recordInitialEmailState($invoice, 'sent', null, true);
 
             Log::info('Initial invoice email sent', [
                 'invoice_id' => $invoice->id,
@@ -371,6 +412,7 @@ class InvoiceService
 
             return 'sent';
         } catch (\Throwable $e) {
+            $this->recordInitialEmailState($invoice, 'failed', $e->getMessage());
             Log::warning('Initial invoice email failed', [
                 'invoice_id' => $invoice->id,
                 'invoice_number' => $invoice->invoice_number,
@@ -380,6 +422,24 @@ class InvoiceService
 
             return 'failed';
         }
+    }
+
+    private function recordInitialEmailState(Invoice $invoice, string $status, ?string $reason = null, bool $sent = false): void
+    {
+        if (!$invoice->exists) {
+            return;
+        }
+
+        $values = [
+            'initial_email_status' => $status,
+            'initial_email_failure_reason' => $reason ? substr($reason, 0, 500) : null,
+        ];
+        if ($sent) {
+            $values['initial_email_sent_at'] = now();
+        }
+
+        Invoice::query()->whereKey($invoice->id)->update($values);
+        $invoice->forceFill($values);
     }
 
     /**

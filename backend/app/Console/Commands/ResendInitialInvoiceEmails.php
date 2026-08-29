@@ -82,11 +82,19 @@ class ResendInitialInvoiceEmails extends Command
             : self::SUCCESS;
     }
 
-    /** @return 'ready'|'not_found'|'skipped_no_email'|'skipped_no_balance' */
+    /** @return 'ready'|'not_found'|'skipped_already_sent'|'skipped_attempt_limit'|'skipped_no_email'|'skipped_no_balance' */
     public function eligibilityResult(?Invoice $invoice): string
     {
         if (!$invoice) {
             return 'not_found';
+        }
+
+        if ($invoice->initial_email_sent_at !== null) {
+            return 'skipped_already_sent';
+        }
+
+        if ((int) $invoice->initial_email_attempt_count >= 2) {
+            return 'skipped_attempt_limit';
         }
 
         if (!$invoice->customer || trim((string) $invoice->customer->email) === '') {

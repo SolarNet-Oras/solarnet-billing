@@ -63,6 +63,15 @@ Schedule::command('automation:invoice-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Every 10 minutes — recover only audited email/SMS records that were queued
+// or failed and still have their single retry available. Null legacy audit
+// records are intentionally excluded to prevent a historical bulk send.
+Schedule::command('automation:recover-billing-deliveries')
+    ->everyTenMinutes()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Every 5 minutes — reconcile billing and network suspension state.
 Schedule::command('automation:auto-suspend')
     ->everyFiveMinutes()
