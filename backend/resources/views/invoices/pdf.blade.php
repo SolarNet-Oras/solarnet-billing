@@ -188,7 +188,17 @@
                     <div class="company-info">
                         @if($company['address']){{ $company['address'] }}<br>@endif
                         @if($company['phone'] || $company['email'])Phone: {{ $company['phone'] ?: '—' }} | Email: {{ $company['email'] ?: '—' }}<br>@endif
-                        @if($company['website'] || $company['tax_id'])@if($company['website'])Website: {{ $company['website'] }}@endif @if($company['website'] && $company['tax_id']) | @endif @if($company['tax_id'])Tax ID: {{ $company['tax_id'] }}@endif@endif
+                        @if($company['website'] || $company['tax_id'])
+                            @if($company['website'])
+                                Website: {{ $company['website'] }}
+                            @endif
+                            @if($company['website'] && $company['tax_id'])
+                                |
+                            @endif
+                            @if($company['tax_id'])
+                                Tax ID: {{ $company['tax_id'] }}
+                            @endif
+                        @endif
                     </div>
                 </td>
                 <td style="width: 40%; text-align: right; vertical-align: top;">
