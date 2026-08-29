@@ -44,8 +44,10 @@ export interface AiPersistedMessage {
 
 const AI_ERROR_MESSAGES: Record<string, string> = {
   OPENAI_AUTH_ERROR: 'AI Assistant credentials were rejected. An administrator must update the server-side API key.',
-  OPENAI_MODEL_ACCESS_ERROR: 'The API key is valid, but its OpenAI project does not have access to the configured model. Enable that model or change the server model setting.',
-  OPENAI_MODEL_ERROR: 'The configured OpenAI model is unavailable. An administrator must check OPENAI_MODEL on the server.',
+  OPENAI_MODEL_ACCESS_ERROR: 'The API key is valid, but its OpenAI project does not have access to the selected model. Choose another approved model or update the project model access.',
+  OPENAI_MODEL_ERROR: 'The selected OpenAI model is unavailable. Choose another approved model or check the server configuration.',
+  OPENAI_MODEL_NOT_ALLOWED: 'That AI model is not approved for this SolarNet assistant.',
+  OPENAI_MODEL_SELECTION_FORBIDDEN: 'Only Super Administrators and Administrators can select an AI model.',
   OPENAI_BILLING_ERROR: 'AI Assistant is unavailable because this OpenAI API project has no available billing or credits.',
   OPENAI_RATE_LIMIT: 'OpenAI is temporarily rate-limiting this project. Please wait a minute and try again.',
   OPENAI_PERMISSION_ERROR: 'The OpenAI project denied this request. An administrator must check project permissions and model access.',
@@ -60,10 +62,10 @@ export const getAiErrorMessage = (error: any): string => {
 };
 
 export const aiService = {
-  async chat(message: string, conversationId?: string | null): Promise<AiChatResponse> {
+  async chat(message: string, conversationId?: string | null, model?: string | null): Promise<AiChatResponse> {
     const res = await api.post<{ success: boolean; data: AiChatResponse; message?: string }>(
       '/ai/chat',
-      { message, conversation_id: conversationId || undefined }
+      { message, conversation_id: conversationId || undefined, model: model || undefined }
     );
     return res.data.data;
   },

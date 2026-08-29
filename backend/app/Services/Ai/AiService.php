@@ -28,6 +28,11 @@ class AiService
         return $this->client->isConfigured();
     }
 
+    public function canSelectChatModel(string $model): bool
+    {
+        return $this->client->canSelectChatModel($model);
+    }
+
     /**
      * @return array{
      *   conversation_id: string,
@@ -37,7 +42,7 @@ class AiService
      *   usage: array
      * }
      */
-    public function handleUserMessage(User $user, ?string $conversationId, string $userText): array
+    public function handleUserMessage(User $user, ?string $conversationId, string $userText, ?string $selectedModel = null): array
     {
         // 1. Load or create conversation
         $conversation = $conversationId
@@ -80,7 +85,7 @@ class AiService
         $finalAssistantContent = null;
 
         for ($i = 0; $i < $maxIters; $i++) {
-            $resp = $this->client->chatCompletion($messages, $toolSchemas);
+            $resp = $this->client->chatCompletion($messages, $toolSchemas, $selectedModel);
             $totalPromptTokens     += (int) ($resp['usage']['prompt_tokens']     ?? 0);
             $totalCompletionTokens += (int) ($resp['usage']['completion_tokens'] ?? 0);
 
@@ -161,7 +166,7 @@ class AiService
             'conversation_id' => $conversation->id,
             'assistant'       => $finalAssistantContent,
             'tool_calls'      => $collectedToolCalls,
-            'model'           => $this->client->model(),
+            'model'           => $selectedModel ?: $this->client->model(),
             'language'        => $language,
             'usage'           => [
                 'prompt_tokens'     => $totalPromptTokens,

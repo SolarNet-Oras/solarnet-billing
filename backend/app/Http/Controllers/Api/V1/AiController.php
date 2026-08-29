@@ -18,13 +18,14 @@ class AiController extends Controller
 
     /**
      * POST /api/v1/ai/chat
-     * Body: { message: string, conversation_id?: string }
+     * Body: { message: string, conversation_id?: string, model?: string }
      */
     public function chat(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'message'         => 'required|string|min:1|max:8000',
             'conversation_id' => 'nullable|uuid',
+            'model'           => 'nullable|string|max:100',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -50,11 +51,29 @@ class AiController extends Controller
             ], 503);
         }
 
+        $selectedModel = $request->filled('model') ? trim((string) $request->input('model')) : null;
+        if ($selectedModel !== null && !$request->user()->hasAnyRole(['super_admin', 'admin'])) {
+            return response()->json([
+                'success' => false,
+                'code' => 'OPENAI_MODEL_SELECTION_FORBIDDEN',
+                'message' => 'Only Super Administrators and Administrators may select an AI model.',
+            ], 403);
+        }
+
+        if ($selectedModel !== null && !$this->ai->canSelectChatModel($selectedModel)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'OPENAI_MODEL_NOT_ALLOWED',
+                'message' => 'The selected AI model is not allowed by SolarNet server policy.',
+            ], 422);
+        }
+
         try {
             $result = $this->ai->handleUserMessage(
                 $request->user(),
                 $request->input('conversation_id'),
-                $request->input('message')
+                $request->input('message'),
+                $selectedModel,
             );
         } catch (OpenAiProviderException $e) {
             return response()->json([

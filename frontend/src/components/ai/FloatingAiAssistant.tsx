@@ -32,6 +32,16 @@ const SUPER_ADMIN_SUGGESTIONS: string[] = [
   'Refactor the Sidebar nav items into a config array — show the diff.',
 ];
 
+const ADMIN_CHAT_MODELS = [
+  'gpt-5.4-mini',
+  'gpt-5.4',
+  'gpt-5.4-pro',
+  'gpt-5.6-luna',
+  'gpt-5.3-codex',
+] as const;
+
+const ADMIN_CHAT_MODEL_STORAGE_KEY = 'solarnet-ai-admin-chat-model';
+
 /**
  * Copyable code block for markdown fenced blocks.
  */
@@ -109,8 +119,22 @@ const FloatingAiAssistant: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [languageName, setLanguageName] = useState<string>('English / Filipino');
+  const [selectedModel, setSelectedModel] = useState<string>(ADMIN_CHAT_MODELS[0]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const roleNames = [(user as any)?.role, ...(((user as any)?.roles || []).map((role: any) => typeof role === 'string' ? role : role?.name))].filter(Boolean);
+  const canSelectModel = roleNames.some((role: string) => ['super_admin', 'admin'].includes(role));
+  const isSuperAdmin = roleNames.includes('super_admin');
+  const isFinanceRole = roleNames.some((role: string) => ['super_admin', 'admin', 'cashier', 'accounting'].includes(role));
+
+  useEffect(() => {
+    if (!canSelectModel) return;
+
+    const saved = window.localStorage.getItem(ADMIN_CHAT_MODEL_STORAGE_KEY);
+    if (saved && ADMIN_CHAT_MODELS.includes(saved as (typeof ADMIN_CHAT_MODELS)[number])) {
+      setSelectedModel(saved);
+    }
+  }, [canSelectModel]);
 
   useEffect(() => {
     if (open && isAuthenticated) {
@@ -155,7 +179,7 @@ const FloatingAiAssistant: React.FC = () => {
     setMessages((prev) => [...prev, { role: 'user', content: trimmed, ts: now }]);
     setSending(true);
     try {
-      const res = await aiService.chat(trimmed, conversationId);
+      const res = await aiService.chat(trimmed, conversationId, canSelectModel ? selectedModel : undefined);
       setConversationId(res.conversation_id);
       if (res.language?.language_name) setLanguageName(res.language.language_name);
       setMessages((prev) => [...prev, {
@@ -219,9 +243,6 @@ const FloatingAiAssistant: React.FC = () => {
 
   if (!isAuthenticated) return null;
 
-  const roleNames = [(user as any)?.role, ...(((user as any)?.roles || []).map((role: any) => typeof role === 'string' ? role : role?.name))].filter(Boolean);
-  const isSuperAdmin = roleNames.includes('super_admin');
-  const isFinanceRole = roleNames.some((role: string) => ['super_admin', 'admin', 'cashier', 'accounting'].includes(role));
   const suggestions = [...SUGGESTIONS, ...(isFinanceRole ? FINANCE_SUGGESTIONS : []), ...(isSuperAdmin ? SUPER_ADMIN_SUGGESTIONS : [])];
 
   return (
@@ -402,6 +423,25 @@ const FloatingAiAssistant: React.FC = () => {
 
           {/* Input */}
           <div className="border-t border-border p-3 bg-card">
+            {canSelectModel && (
+              <label className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">AI model</span>
+                <select
+                  value={selectedModel}
+                  onChange={(event) => {
+                    const nextModel = event.target.value;
+                    setSelectedModel(nextModel);
+                    window.localStorage.setItem(ADMIN_CHAT_MODEL_STORAGE_KEY, nextModel);
+                  }}
+                  disabled={sending}
+                  className="min-w-0 max-w-[220px] rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                  data-testid="ai-model-selector"
+                  aria-label="AI model"
+                >
+                  {ADMIN_CHAT_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </label>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 ref={inputRef}
@@ -426,7 +466,7 @@ const FloatingAiAssistant: React.FC = () => {
               </button>
             </div>
             <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
-              Enter to send · Shift+Enter for newline · Powered by GPT-5.4 Mini
+              Enter to send · Shift+Enter for newline · Powered by {canSelectModel ? selectedModel : 'the SolarNet default model'}
             </div>
           </div>
         </div>

@@ -15,6 +15,19 @@ return [
      */
     'model' => env('OPENAI_MODEL', 'gpt-5.4-mini'),
 
+    /**
+     * Models that an Administrator or Super Administrator may select for an
+     * individual staff-assistant reply. This is a server-side allow-list;
+     * other roles always use the default OPENAI_MODEL above.
+     */
+    'admin_chat_models' => [
+        'gpt-5.4-mini',
+        'gpt-5.4',
+        'gpt-5.4-pro',
+        'gpt-5.6-luna',
+        'gpt-5.3-codex',
+    ],
+
     // Kept separate from the text model. Image generation is an explicit
     // administrator action in Facebook Post Studio and may incur API usage.
     'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),

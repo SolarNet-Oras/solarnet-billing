@@ -44,10 +44,24 @@ class OpenAiClient
         return $this->model;
     }
 
+    /** @return array<int, string> */
+    public function administratorChatModels(): array
+    {
+        return array_values(array_unique(array_filter(
+            config('openai.admin_chat_models', []),
+            fn ($model) => is_string($model) && trim($model) !== '',
+        )));
+    }
+
+    public function canSelectChatModel(string $model): bool
+    {
+        return in_array($model, $this->administratorChatModels(), true);
+    }
+
     /**
      * @return array{content: ?string, tool_calls: array<int, array{id: string, name: string, arguments: array, arguments_raw: string}>, usage: array{prompt_tokens: ?int, completion_tokens: ?int}, raw: array}
      */
-    public function chatCompletion(array $messages, array $tools = []): array
+    public function chatCompletion(array $messages, array $tools = [], ?string $selectedModel = null): array
     {
         if (!$this->isConfigured()) {
             throw new OpenAiProviderException(
@@ -56,7 +70,16 @@ class OpenAiClient
             );
         }
 
-        $payload = ['model' => $this->model, 'messages' => $messages];
+        if ($selectedModel !== null && !$this->canSelectChatModel($selectedModel)) {
+            throw new OpenAiProviderException(
+                'OPENAI_MODEL_NOT_ALLOWED',
+                'The selected AI model is not allowed by SolarNet server policy.',
+                422,
+            );
+        }
+
+        $model = $selectedModel ?: $this->model;
+        $payload = ['model' => $model, 'messages' => $messages];
         if (!empty($tools)) {
             $payload['tools'] = $tools;
             $payload['tool_choice'] = 'auto';
@@ -65,7 +88,7 @@ class OpenAiClient
         try {
             $response = $this->http->post('chat/completions', ['json' => $payload]);
         } catch (ConnectException $e) {
-            Log::warning('OpenAI connection failed', ['model' => $this->model, 'error' => $e->getMessage()]);
+            Log::warning('OpenAI connection failed', ['model' => $model, 'error' => $e->getMessage()]);
             throw new OpenAiProviderException(
                 'OPENAI_TIMEOUT',
                 'AI Assistant could not reach OpenAI. Please try again shortly.',
@@ -83,7 +106,7 @@ class OpenAiClient
                 'http_status' => $status,
                 'provider_code' => $providerCode,
                 'provider_type' => $providerType,
-                'model' => $this->model,
+                'model' => $model,
             ]);
 
             if ($status === 429) {
@@ -110,7 +133,7 @@ class OpenAiClient
             if ($status === 403 && $this->isModelAccessError($providerError)) {
                 throw new OpenAiProviderException(
                     'OPENAI_MODEL_ACCESS_ERROR',
-                    'The OpenAI API key is valid, but this OpenAI project does not have access to the configured model. Enable access to that model in the project or change OPENAI_MODEL on the server.',
+                    'The OpenAI API key is valid, but this OpenAI project does not have access to the selected model. Choose an available model or update the project model access.',
                     503,
                     $e,
                 );
@@ -128,7 +151,7 @@ class OpenAiClient
             if ($status === 404 && $providerCode === 'model_not_found') {
                 throw new OpenAiProviderException(
                     'OPENAI_MODEL_ERROR',
-                    'The configured OpenAI model is unavailable to this API project. Check OPENAI_MODEL on the server.',
+                    'The selected OpenAI model is unavailable to this API project. Choose another model or check the server model configuration.',
                     503,
                     $e,
                 );
