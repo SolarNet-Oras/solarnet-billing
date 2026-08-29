@@ -303,7 +303,22 @@ class InvoiceService
         ]);
 
         if ($invoice->allowsAutomaticBillingNotifications()) {
-            $this->sendInitialInvoiceEmail($invoice->fresh(['customer', 'items', 'payments']));
+            $freshInvoice = $invoice->fresh(['customer', 'items', 'payments']);
+            $result = $this->sendInitialInvoiceEmail($freshInvoice);
+
+            Log::info('Initial invoice email dispatch result', [
+                'invoice_id' => $freshInvoice->id,
+                'invoice_number' => $freshInvoice->invoice_number,
+                'customer_id' => $freshInvoice->customer_id,
+                'result' => $result,
+            ]);
+        } else {
+            Log::info('Initial invoice email skipped by policy', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $invoice->customer_id,
+                'generation_source' => $invoice->generation_source,
+            ]);
         }
     }
 
@@ -318,9 +333,22 @@ class InvoiceService
         $invoice->loadMissing(['customer', 'items', 'payments']);
         $customer = $invoice->customer;
         if (!$customer || blank($customer->email)) {
+            Log::info('Initial invoice email skipped: no recipient email', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $invoice->customer_id,
+            ]);
+
             return 'skipped_no_email';
         }
         if ((float) $invoice->balance <= 0) {
+            Log::info('Initial invoice email skipped: zero balance', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'customer_id' => $customer->id,
+                'balance' => (float) $invoice->balance,
+            ]);
+
             return 'skipped_no_balance';
         }
 
