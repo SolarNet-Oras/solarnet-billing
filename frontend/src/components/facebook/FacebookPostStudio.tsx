@@ -156,11 +156,17 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
     if (!window.confirm('Generate one AI marketing image from this topic? This uses the server OpenAI image-generation budget and will not publish anything automatically.')) return;
     setBusy('generate-image'); setError(''); setNotice('');
     try {
-      const response = await api.post('/facebook-automation/posts/image-generate', { topic: topic.trim(), details: details.trim() || undefined });
+      const response = await api.post(
+        '/facebook-automation/posts/image-generate',
+        { topic: topic.trim(), details: details.trim() || undefined },
+        { timeout: 150000 },
+      );
       setSelectedImage(response.data.image_token, response.data.preview_data_url, 'AI-generated marketing image');
       setNotice('AI image generated privately. Review it before saving the post draft.');
     } catch (requestError: any) {
-      setError(requestError.response?.data?.message || 'AI could not prepare a marketing image.');
+      setError(requestError.code === 'ECONNABORTED'
+        ? 'AI image generation exceeded 150 seconds. No post was published; please try again.'
+        : requestError.response?.data?.message || 'AI could not prepare a marketing image. Check the backend image-generation log.');
     } finally { setBusy(''); }
   };
 

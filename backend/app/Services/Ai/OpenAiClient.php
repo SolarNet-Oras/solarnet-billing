@@ -365,6 +365,7 @@ class OpenAiClient
 
         try {
             $response = $this->http->post('images/generations', [
+                'timeout' => min(240, max(30, (int) config('openai.image_timeout', 120))),
                 'json' => [
                     'model' => (string) config('openai.image_model', 'gpt-image-2'),
                     'prompt' => $prompt,

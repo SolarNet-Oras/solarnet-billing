@@ -33,6 +33,9 @@ return [
     'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
     'image_quality' => env('OPENAI_IMAGE_QUALITY', 'low'),
     'image_size' => env('OPENAI_IMAGE_SIZE', '1024x1024'),
+    // Image rendering is intentionally allowed more time than chat. This is
+    // used only by the explicit Administrator action in Post Studio.
+    'image_timeout' => (int) env('OPENAI_IMAGE_TIMEOUT', 120),
 
     /**
      * REST base URL.

@@ -33,6 +33,7 @@ only if your OpenAI project requires a different permitted image model:
 
 ```dotenv
 OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_TIMEOUT=120
 OPENAI_IMAGE_QUALITY=low
 OPENAI_IMAGE_SIZE=1024x1024
 ```
