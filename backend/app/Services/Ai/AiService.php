@@ -83,9 +83,19 @@ class AiService
         $totalPromptTokens = 0;
         $totalCompletionTokens = 0;
         $finalAssistantContent = null;
+        $previousResponseId = null;
+        $functionCallOutputs = [];
 
         for ($i = 0; $i < $maxIters; $i++) {
-            $resp = $this->client->chatCompletion($messages, $toolSchemas, $selectedModel);
+            $resp = $this->client->chatCompletion(
+                $messages,
+                $toolSchemas,
+                $selectedModel,
+                $previousResponseId,
+                $functionCallOutputs,
+            );
+            $previousResponseId = $resp['response_id'] ?? null;
+            $functionCallOutputs = [];
             $totalPromptTokens     += (int) ($resp['usage']['prompt_tokens']     ?? 0);
             $totalCompletionTokens += (int) ($resp['usage']['completion_tokens'] ?? 0);
 
@@ -146,7 +156,13 @@ class AiService
                 $messages[] = [
                     'role'         => 'tool',
                     'tool_call_id' => $tc['id'],
+                    'tool_name'    => $tc['name'],
                     'content'      => $resultJson,
+                ];
+                $functionCallOutputs[] = [
+                    'type' => 'function_call_output',
+                    'call_id' => $tc['id'],
+                    'output' => $resultJson,
                 ];
             }
         }
