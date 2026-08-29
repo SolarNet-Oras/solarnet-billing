@@ -90,6 +90,9 @@ export interface CustomerLinkCandidate {
   } | null;
 }
 
+/** Server-backed groups used by the Unregistered Clients workspace. */
+export type UnregisteredLeaseVariant = 'all' | 'static_commented' | 'dynamic';
+
 export interface QuickRegisterResponse {
   success: boolean;
   message: string;
@@ -127,6 +130,27 @@ export const unregisteredLeaseService = {
       '/unregistered-leases/dynamic'
     );
     return response.data.data;
+  },
+
+  /**
+   * Unified, explicit variant loader. The backend still owns which lease
+   * belongs in each group; "all" combines both safe read-only endpoints.
+   */
+  async listByVariant(variant: UnregisteredLeaseVariant): Promise<UnregisteredLease[]> {
+    if (variant === 'static_commented') return this.listStaticCommented();
+    if (variant === 'dynamic') return this.listDynamic();
+
+    const [staticRows, dynamicRows] = await Promise.all([
+      this.listStaticCommented(),
+      this.listDynamic(),
+    ]);
+    const seen = new Set<string>();
+
+    return [...staticRows, ...dynamicRows].filter((lease) => {
+      if (seen.has(lease.id)) return false;
+      seen.add(lease.id);
+      return true;
+    });
   },
 
   /** Existing customer accounts that may receive an unregistered DHCP lease. */

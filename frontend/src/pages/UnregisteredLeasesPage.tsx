@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease } from '@/services/unregisteredLeaseService';
+import { unregisteredLeaseService, type CustomerLinkCandidate, type UnregisteredLease, type UnregisteredLeaseVariant } from '@/services/unregisteredLeaseService';
 import { routerService, type Router } from '@/services/routerService';
 import { servicePlanService, type ServicePlan } from '@/services/servicePlanService';
 import { Wifi, RefreshCw, UserPlus, Router as RouterIcon, Tag, Gauge, MapPin, Search, X, UserCheck, AlertTriangle } from 'lucide-react';
@@ -43,7 +43,9 @@ const LeaseCustomerIdentity: React.FC<{ lease: UnregisteredLease }> = ({ lease }
 
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'static' | 'dynamic'>('static');
+  // Show every backend-returned lease by default. This prevents valid rows
+  // from appearing absent simply because an old tab selection hid their group.
+  const [variant, setVariant] = useState<UnregisteredLeaseVariant>('all');
   const [staticLeases, setStaticLeases] = useState<UnregisteredLease[]>([]);
   const [dynamicLeases, setDynamicLeases] = useState<UnregisteredLease[]>([]);
   const [routers, setRouters] = useState<Router[]>([]);
@@ -257,6 +259,7 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const filteredStaticLeases = filterLeases(staticLeases);
   const filteredDynamicLeases = filterLeases(dynamicLeases);
+  const allFilteredLeaseCount = filteredStaticLeases.length + filteredDynamicLeases.length;
 
   return (
     <DashboardLayout>
@@ -333,16 +336,24 @@ const UnregisteredLeasesPage: React.FC = () => {
         <div className="flex gap-1 border-b border-border">
           <button
             type="button"
-            onClick={() => setTab('static')}
-            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${tab === 'static' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setVariant('all')}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${variant === 'all' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            data-testid="tab-all"
+          >
+            All leases <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs">{allFilteredLeaseCount}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVariant('static_commented')}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${variant === 'static_commented' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
             data-testid="tab-static"
           >
             Static + Comment <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs">{filteredStaticLeases.length}</span>
           </button>
           <button
             type="button"
-            onClick={() => setTab('dynamic')}
-            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${tab === 'dynamic' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setVariant('dynamic')}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-medium transition ${variant === 'dynamic' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
             data-testid="tab-dynamic"
           >
             Dynamic / Manual <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full bg-secondary px-1.5 py-0.5 text-xs text-muted-foreground">{filteredDynamicLeases.length}</span>
@@ -352,7 +363,28 @@ const UnregisteredLeasesPage: React.FC = () => {
         {/* Body */}
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">Loading leases…</div>
-        ) : tab === 'static' ? (
+        ) : variant === 'all' ? (
+          <div className="space-y-6" data-testid="all-leases-container">
+            <StaticLeasesTable
+              leases={filteredStaticLeases}
+              routerName={routerName}
+              onRegister={openRegistrationModal}
+              onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
+              onReassign={openReassignmentModal}
+              registeringId={registeringId}
+            />
+            <DynamicLeasesTable
+              leases={filteredDynamicLeases}
+              routerName={routerName}
+              onQuickRegister={openRegistrationModal}
+              onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
+              onReassign={openReassignmentModal}
+              onManualRegister={handleManualAdd}
+              onClientMigration={() => navigate('/super-admin/client-migrations')}
+              registeringId={registeringId}
+            />
+          </div>
+        ) : variant === 'static_commented' ? (
           <StaticLeasesTable
             leases={filteredStaticLeases}
             routerName={routerName}
