@@ -119,6 +119,10 @@ export const radiusIpOeService = {
     await api.post('/radius/nas-clients', input);
   },
 
+  async updateNasClient(id: string, input: { nas_address: string; source_verified: boolean }): Promise<void> {
+    await api.put(`/radius/nas-clients/${id}`, input);
+  },
+
   async syncNasClient(id: string): Promise<void> {
     await api.post(`/radius/nas-clients/${id}/sync`);
   },

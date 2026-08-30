@@ -227,13 +227,31 @@ class RadiusIpOeController extends Controller
             'shared_secret' => ['nullable', 'string', 'min:16', 'max:255'],
             'enabled' => ['sometimes', 'boolean'],
             'test_mode' => ['sometimes', 'boolean'],
+            'source_verified' => ['sometimes', 'accepted'],
         ]);
+        $addressChanged = array_key_exists('nas_address', $validated)
+            && $validated['nas_address'] !== $nas->nas_address;
+        if ($addressChanged && !($validated['source_verified'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Confirm the exact RADIUS packet source before changing the NAS address.',
+            ], 422);
+        }
         if (!filled($validated['shared_secret'] ?? null)) unset($validated['shared_secret']);
         if (array_key_exists('test_mode', $validated) && !$validated['test_mode']) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only an isolated test NAS can be approved in this release. Production RouterOS RADIUS rollout is intentionally blocked.',
             ], 422);
+        }
+        unset($validated['source_verified']);
+        if ($addressChanged) {
+            $validated['last_synced_at'] = null;
+            $validated['last_error'] = null;
+            $validated['metadata'] = array_merge($nas->metadata ?? [], [
+                'source_verified_at' => now()->toIso8601String(),
+                'source_verified_by' => $request->user()?->id,
+            ]);
         }
         $nas->fill($validated)->save();
         return response()->json(['success' => true, 'message' => 'NAS client updated locally. FreeRADIUS is unchanged until Sync NAS is selected.', 'data' => $nas->fresh('router:id,name')]);
