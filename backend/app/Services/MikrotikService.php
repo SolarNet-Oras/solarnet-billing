@@ -930,15 +930,25 @@ class MikrotikService
     /** One coherent private bridge DHCP server/pool/network can be preserved regardless of administrator naming. */
     private static function isFactoryDhcpBaseline(array $servers, array $pools, array $networks, array $bridges): bool
     {
-        if (count($servers) !== 1 || count($pools) !== 1 || count($networks) !== 1 || count($bridges) !== 1) return false;
-        $server = $servers[0]; $pool = $pools[0]; $network = $networks[0];
-        if (($server['disabled'] ?? 'false') === 'true') return false;
-        if (($server['interface'] ?? '') !== ($bridges[0]['name'] ?? '')) return false;
-        if (($server['address-pool'] ?? '') !== ($pool['name'] ?? '') || blank($pool['ranges'] ?? null)) return false;
-        $gateway = (string) ($network['gateway'] ?? '');
-        return filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            && filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false
-            && preg_match('/^\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2}$/', (string) ($network['address'] ?? '')) === 1;
+        $enabledServers = array_values(array_filter($servers, fn (array $server) => ($server['disabled'] ?? 'false') !== 'true'));
+        if (count($enabledServers) !== 1) return false;
+        $server = $enabledServers[0];
+        $interfaceName = (string) ($server['interface'] ?? '');
+        $poolName = (string) ($server['address-pool'] ?? '');
+        if ($interfaceName === '' || $poolName === '' || $poolName === 'static-only') return false;
+
+        $bridge = array_values(array_filter($bridges, fn (array $candidate) => ($candidate['name'] ?? '') === $interfaceName))[0] ?? null;
+        $pool = array_values(array_filter($pools, fn (array $candidate) => ($candidate['name'] ?? '') === $poolName))[0] ?? null;
+        if (!is_array($bridge) || !is_array($pool) || blank($pool['ranges'] ?? null)) return false;
+
+        $validNetworks = array_values(array_filter($networks, function (array $network): bool {
+            $gateway = (string) ($network['gateway'] ?? '');
+            return filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+                && filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false
+                && preg_match('/^\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2}$/', (string) ($network['address'] ?? '')) === 1;
+        }));
+
+        return count($validNetworks) === 1;
     }
 
     private function containsSolarNetMarker(array $rows): bool

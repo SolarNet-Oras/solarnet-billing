@@ -59,6 +59,12 @@ class RouterProvisioningBaselineRuleTest extends TestCase
         $this->assertTrue($method->invoke(null, $servers, $pools, $networks, $bridges));
         $servers[0]['address-pool'] = 'wrong-pool';
         $this->assertFalse($method->invoke(null, $servers, $pools, $networks, $bridges));
+
+        $servers[0]['address-pool'] = 'production-pool';
+        $pools[] = ['name' => 'unused-pool', 'ranges' => '10.10.10.2-10.10.10.20'];
+        $this->assertTrue($method->invoke(null, $servers, $pools, $networks, $bridges));
+        $servers[] = ['name' => 'second-active', 'interface' => 'bridge', 'address-pool' => 'unused-pool', 'disabled' => 'false'];
+        $this->assertFalse($method->invoke(null, $servers, $pools, $networks, $bridges));
     }
 
     public function test_management_allow_is_accepted_only_on_a_real_vpn_interface(): void
