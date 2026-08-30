@@ -18,6 +18,13 @@ class RouterQosModeAnalyzer
         )));
         $clientInterfaces = array_values(array_unique(array_filter($inspection['client_interfaces'] ?? [])));
         $wanCandidates = array_values(array_filter(array_map(fn (array $wan) => $wan['interface'] ?? null, $inspection['wan_candidates'] ?? [])));
+        $verifiedTopology = $inspection['verified_provisioning_topology'] ?? null;
+        if (is_array($verifiedTopology) && !empty($verifiedTopology['wan_interface'])) {
+            $wanCandidates = [(string) $verifiedTopology['wan_interface']];
+        }
+        if (is_array($verifiedTopology) && !empty($verifiedTopology['customer_interface'])) {
+            $clientInterfaces = [(string) $verifiedTopology['customer_interface']];
+        }
         $queues = $inspection['existing_queues'] ?? [];
         $capabilities = $inspection['queue_capabilities'] ?? [];
         $fqCodel = array_values($capabilities['fq_codel'] ?? []);
@@ -28,7 +35,8 @@ class RouterQosModeAnalyzer
         if (($queues['solarnet_qos_trees'] ?? 0) > 0) $fullReasons[] = 'SolarNet-owned QoS trees already exist; the system will not stack another global policy.';
         if (($inspection['mangle_rule_count'] ?? 0) > 0) $fullReasons[] = 'Existing mangle rules prevent SolarNet from proving that global packet flow will not conflict.';
         if (count($clientInterfaces) !== 1) $fullReasons[] = 'Required global client parent cannot be safely determined because multiple client-facing DHCP/VLAN interfaces were detected.';
-        if (($inspection['multi_wan_detected'] ?? false) === true || count($wanCandidates) !== 1) $fullReasons[] = 'Required global WAN parent cannot be safely determined from the active routing configuration.';
+        $verifiedWan = is_array($verifiedTopology) && !empty($verifiedTopology['wan_interface']);
+        if ((!$verifiedWan && ($inspection['multi_wan_detected'] ?? false) === true) || count($wanCandidates) !== 1) $fullReasons[] = 'Required global WAN parent cannot be safely determined from the active routing configuration or a verified provisioning audit.';
         if ($clientInterfaces !== [] && array_diff($clientInterfaces, $interfaces) !== []) $fullReasons[] = 'A detected client interface is not a confirmed running RouterOS interface.';
         if ($wanCandidates !== [] && array_diff($wanCandidates, $interfaces) !== []) $fullReasons[] = 'The detected WAN route does not resolve to a confirmed running RouterOS interface.';
         if ($fqCodel === []) $fullReasons[] = 'FQ-CoDel is not available on this RouterOS device.';

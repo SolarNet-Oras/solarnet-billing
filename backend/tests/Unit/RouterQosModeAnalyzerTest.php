@@ -39,6 +39,22 @@ class RouterQosModeAnalyzerTest extends TestCase
         $this->assertStringContainsString('maintenance window', implode(' ', $fqCodelAnalysis['safe']['suggestions']));
     }
 
+    public function test_verified_provisioning_wan_resolves_route_auto_detection_ambiguity(): void
+    {
+        $analysis = (new RouterQosModeAnalyzer())->analyze($this->inspection([
+            'client_interfaces' => ['unrelated-vlan', 'another-vlan'],
+            'wan_candidates' => [],
+            'multi_wan_detected' => true,
+            'verified_provisioning_topology' => [
+                'wan_interface' => 'ether1-wan',
+                'customer_interface' => 'vlan1030',
+            ],
+        ]));
+
+        $this->assertStringNotContainsString('WAN parent', implode(' ', $analysis['full']['reasons']));
+        $this->assertStringNotContainsString('multiple client-facing', implode(' ', $analysis['full']['reasons']));
+    }
+
     private function inspection(array $overrides = []): array
     {
         return array_replace_recursive([

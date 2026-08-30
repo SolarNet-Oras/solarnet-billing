@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Router;
+use App\Models\RouterProvisioningAudit;
 use App\Models\RouterQosDeployment;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
@@ -21,6 +22,7 @@ class RouterQosService
     {
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
+        $inspection['data'] = $this->withVerifiedProvisioningTopology($router, $inspection['data']);
 
         $active = RouterQosDeployment::query()->where('router_id', $router->id)->where('status', 'active')->latest('applied_at')->first();
         return [
@@ -31,6 +33,32 @@ class RouterQosService
                 'active_deployment' => $active,
             ],
         ];
+    }
+
+    /** Use only a successfully verified provisioning plan as explicit topology evidence. */
+    private function withVerifiedProvisioningTopology(Router $router, array $inspection): array
+    {
+        $audit = RouterProvisioningAudit::query()
+            ->where('router_id', $router->id)
+            ->where('status', 'verified_pending_ipoe_client_test')
+            ->whereNotNull('verified_at')
+            ->latest('verified_at')
+            ->first();
+        $plan = $audit?->plan;
+        if (!is_array($plan)) return $inspection;
+
+        $wan = (string) ($plan['wan_interface'] ?? '');
+        $customerInterface = (string) ($plan['resource_names']['customer_vlan'] ?? '');
+        if ($wan === '' || $customerInterface === '') return $inspection;
+
+        $inspection['verified_provisioning_topology'] = [
+            'audit_id' => $audit->id,
+            'wan_interface' => $wan,
+            'customer_interface' => $customerInterface,
+            'customer_parent_interface' => $plan['customer_parent_interface'] ?? null,
+            'verified_at' => $audit->verified_at?->toIso8601String(),
+        ];
+        return $inspection;
     }
 
     public function configurations(Router $router): array
@@ -113,6 +141,7 @@ class RouterQosService
     {
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
+        $inspection['data'] = $this->withVerifiedProvisioningTopology($router, $inspection['data']);
 
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
         if (!$analysis['full']['available']) {
@@ -149,6 +178,7 @@ class RouterQosService
     {
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
+        $inspection['data'] = $this->withVerifiedProvisioningTopology($router, $inspection['data']);
 
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
         if (!$analysis['safe']['available']) {
@@ -226,6 +256,7 @@ class RouterQosService
 
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
+        $inspection['data'] = $this->withVerifiedProvisioningTopology($router, $inspection['data']);
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
         if (!$analysis['safe']['available']) {
             return [
@@ -362,6 +393,7 @@ class RouterQosService
         // change after preview cannot be silently ignored.
         $inspection = $this->mikrotikService->qosInspection($router);
         if (!$inspection['success']) return $inspection;
+        $inspection['data'] = $this->withVerifiedProvisioningTopology($router, $inspection['data']);
         $analysis = $this->modeAnalyzer->analyze($inspection['data']);
         if (!$analysis['full']['available']) return ['success' => false, 'message' => 'Full QoS is no longer applicable. No router change was made. ' . implode(' ', $analysis['full']['reasons'])];
         $plan = $this->planner->plan($inspection['data'], $deployment->configuration ?? []);

@@ -12,6 +12,9 @@ const ROUTER_DNS_APPLY_TIMEOUT = 180_000;
 // A DHCP refresh can inspect every lease and enforce exact registered lease
 // bindings. Keep the browser wait bounded, but longer than the global 30s.
 const ROUTER_DHCP_SYNC_TIMEOUT = 180_000;
+// QoS metrics aggregate several RouterOS print/counter reads. VPN-connected
+// routers can exceed the generic API timeout even after inspection succeeded.
+const ROUTER_QOS_METRICS_TIMEOUT = 60_000;
 
 export interface Router {
   id: string;
@@ -630,7 +633,10 @@ export const routerService = {
   },
 
   async qosMetrics(id: string): Promise<RouterQosMetrics> {
-    const response = await api.get<{ success: boolean; data: RouterQosMetrics }>(`/routers/${id}/qos/metrics`);
+    const response = await api.get<{ success: boolean; data: RouterQosMetrics }>(
+      `/routers/${id}/qos/metrics`,
+      { timeout: ROUTER_QOS_METRICS_TIMEOUT },
+    );
     return response.data.data;
   },
 
