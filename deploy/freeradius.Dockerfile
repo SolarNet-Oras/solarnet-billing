@@ -5,7 +5,7 @@ RUN apt-get update \
       ca-certificates freeradius freeradius-postgresql freeradius-utils \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/freeradius/3.0/sites-enabled/default /etc/freeradius/3.0/sites-enabled/inner-tunnel \
- && rm -f /etc/freeradius/3.0/mods-enabled/sql
+ && rm -f /etc/freeradius/3.0/mods-enabled/sql /etc/freeradius/3.0/mods-enabled/eap
 
 # The files define a DHCP/IPoE-only server. There is no HotSpot, PPP, EAP,
 # shell, REST, exec, or public listener configuration in this image.
