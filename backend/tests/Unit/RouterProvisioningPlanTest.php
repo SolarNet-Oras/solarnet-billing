@@ -41,7 +41,18 @@ class RouterProvisioningPlanTest extends TestCase
         $plan = $this->plan($this->cleanDiscovery(), $input);
 
         $this->assertFalse($plan['success']);
-        $this->assertStringContainsString('different confirmed running customer parent interface', $plan['message']);
+        $this->assertStringContainsString('different enabled physical Ethernet interface', $plan['message']);
+    }
+
+    public function test_disconnected_enabled_ethernet_can_be_selected_as_customer_parent(): void
+    {
+        $discovery = $this->cleanDiscovery();
+        $discovery['running_interfaces'] = ['ether1-wan'];
+
+        $plan = $this->plan($discovery, $this->input());
+
+        $this->assertTrue($plan['success']);
+        $this->assertSame('ether2-trunk', $plan['data']['customer_parent_interface']);
     }
 
     public function test_plan_preserves_preexisting_verified_billing_access(): void
@@ -68,6 +79,7 @@ class RouterProvisioningPlanTest extends TestCase
         return [
             'clean' => true,
             'running_interfaces' => ['ether1-wan', 'ether2-trunk'],
+            'customer_parent_candidates' => ['ether1-wan', 'ether2-trunk'],
             'counts' => ['firewall_nat' => 0],
             'fq_codel_available' => true,
             'fasttrack_enabled' => false,

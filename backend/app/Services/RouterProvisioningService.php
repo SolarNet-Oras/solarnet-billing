@@ -159,7 +159,8 @@ class RouterProvisioningService
         $wan = (string) ($input['wan_interface'] ?? '');
         $parent = (string) ($input['customer_parent_interface'] ?? '');
         if (!in_array($wan, $running, true)) return ['success' => false, 'message' => 'Select a confirmed running WAN interface. SolarNet will not guess that ether1 is WAN.'];
-        if (!in_array($parent, $running, true) || $parent === $wan) return ['success' => false, 'message' => 'Select a different confirmed running customer parent interface. SolarNet will not add or move bridge ports automatically.'];
+        $parentCandidates = array_values($discovery['customer_parent_candidates'] ?? $running);
+        if (!in_array($parent, $parentCandidates, true) || $parent === $wan) return ['success' => false, 'message' => 'Select a different enabled physical Ethernet interface for the customer VLAN parent. SolarNet will not use the WAN, VPN, bridge, or loopback interface.'];
 
         $customerVlan = (int) ($input['customer_vlan_id'] ?? 0);
         if ($customerVlan < 2 || $customerVlan > 4094) return ['success' => false, 'message' => 'Customer VLAN ID must be between 2 and 4094.'];

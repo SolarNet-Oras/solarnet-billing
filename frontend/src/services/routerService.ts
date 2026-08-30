@@ -109,6 +109,7 @@ export interface RouterProvisioningDiscovery {
   total_storage: number;
   interfaces: Array<{ name: string; type: string | null; running: boolean; disabled: boolean }>;
   running_interfaces: string[];
+  customer_parent_candidates: string[];
   bridges: string[];
   existing_addresses: string[];
   wan_candidates: Array<{ gateway: string | null; interface: string | null; distance: string | null }>;

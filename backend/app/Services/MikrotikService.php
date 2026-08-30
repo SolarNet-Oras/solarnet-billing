@@ -669,6 +669,13 @@ class MikrotikService
                 fn (array $item) => (($item['running'] ?? 'false') === 'true' && ($item['disabled'] ?? 'false') !== 'true') ? ($item['name'] ?? null) : null,
                 $interfaces,
             )));
+            $customerParentCandidates = array_values(array_filter(array_map(
+                fn (array $item) => strtolower((string) ($item['type'] ?? '')) === 'ether'
+                    && ($item['disabled'] ?? 'false') !== 'true'
+                    ? ($item['name'] ?? null)
+                    : null,
+                $interfaces,
+            )));
             $defaultRoutes = array_values(array_filter($routes, fn (array $route) => in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true) && ($route['disabled'] ?? 'false') !== 'true'));
             $wanCandidates = [];
             foreach ($defaultRoutes as $route) {
@@ -767,6 +774,7 @@ class MikrotikService
                     'total_storage' => (int) ($resource['total-hdd-space'] ?? 0),
                     'interfaces' => array_map(fn (array $item) => ['name' => $item['name'] ?? null, 'type' => $item['type'] ?? null, 'running' => ($item['running'] ?? 'false') === 'true', 'disabled' => ($item['disabled'] ?? 'false') === 'true'], $interfaces),
                     'running_interfaces' => $runningInterfaces,
+                    'customer_parent_candidates' => $customerParentCandidates,
                     'bridges' => array_values(array_filter(array_map(fn (array $item) => $item['name'] ?? null, $bridges))),
                     'existing_addresses' => array_values(array_filter(array_map(fn (array $item) => $item['address'] ?? null, $addresses))),
                     'wan_candidates' => $wanCandidates,

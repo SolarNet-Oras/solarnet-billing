@@ -55,7 +55,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
       setAudit(result.audit);
       setMessage(result.message);
       const autoWan = result.discovery.wan_candidates.length === 1 ? result.discovery.wan_candidates[0]?.interface || '' : '';
-      const alternate = result.discovery.running_interfaces.find((name) => name !== autoWan) || '';
+      const alternate = (result.discovery.customer_parent_candidates ?? []).find((name) => name !== autoWan) || '';
       setForm((current) => ({ ...current, wan_interface: autoWan, customer_parent_interface: alternate }));
       if (result.discovery.clean) setStep('config');
     } catch (error: any) {
@@ -170,7 +170,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
                 <div className="mb-4 flex items-center gap-2"><Wifi className="h-5 w-5 text-cyan-600" /><div><h3 className="font-semibold text-foreground">Administrator-selected IPoE network plan</h3><p className="text-sm text-muted-foreground">SolarNet will not guess WAN or change bridge-port membership.</p></div></div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="text-sm font-medium text-foreground">Confirmed WAN interface<select className={fieldClass} value={form.wan_interface} onChange={(event) => setForm({ ...form, wan_interface: event.target.value })}><option value="">Select WAN interface</option>{discovery.running_interfaces.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-                  <label className="text-sm font-medium text-foreground">Customer VLAN parent interface<select className={fieldClass} value={form.customer_parent_interface} onChange={(event) => setForm({ ...form, customer_parent_interface: event.target.value })}><option value="">Select customer parent</option>{discovery.running_interfaces.filter((name) => name !== form.wan_interface).map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
+                  <label className="text-sm font-medium text-foreground">Customer VLAN parent interface<select className={fieldClass} value={form.customer_parent_interface} onChange={(event) => setForm({ ...form, customer_parent_interface: event.target.value })}><option value="">Select customer parent</option>{(discovery.customer_parent_candidates ?? []).filter((name) => name !== form.wan_interface).map((name) => <option key={name} value={name}>{name}</option>)}</select><span className="mt-1 block text-xs font-normal text-muted-foreground">SolarNet automatically selects the first enabled physical Ethernet port that is not the WAN. A disconnected new-router port is allowed.</span></label>
                   <label className="text-sm font-medium text-foreground">Customer VLAN ID<input className={fieldClass} type="number" min="2" max="4094" value={form.customer_vlan_id} onChange={(event) => setForm({ ...form, customer_vlan_id: event.target.value })} /></label>
                   <label className="text-sm font-medium text-foreground">Customer gateway CIDR<input className={fieldClass} value={form.customer_gateway_cidr} onChange={(event) => setForm({ ...form, customer_gateway_cidr: event.target.value })} placeholder="10.100.0.1/24" /></label>
                   <label className="text-sm font-medium text-foreground">DHCP pool range<input className={fieldClass} value={form.customer_dhcp_pool} onChange={(event) => setForm({ ...form, customer_dhcp_pool: event.target.value })} placeholder="10.100.0.10-10.100.0.254" /></label>
