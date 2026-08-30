@@ -275,7 +275,8 @@ class RouterProvisioningService
             ':log info "[SOLARNET] Starting approved clean IPoE provisioning"',
             "/interface vlan\n:if ([:len [find where name={$q($n['customer_vlan'])}]] = 0) do={ add name={$q($n['customer_vlan'])} interface={$q($plan['customer_parent_interface'])} vlan-id={$plan['customer_vlan_id']} comment={$comment('customer VLAN')} }",
             "/ip address\n:if ([:len [find where comment={$comment('customer gateway')}]] = 0) do={ add address={$q($plan['customer_gateway_cidr'])} interface={$q($n['customer_vlan'])} comment={$comment('customer gateway')} }",
-            "/ip pool\n:if ([:len [find where name={$q($n['customer_pool'])}]] = 0) do={ add name={$q($n['customer_pool'])} ranges={$q($plan['customer_dhcp_pool'])} comment={$comment('customer pool')} }",
+            // RouterOS 7.12 /ip pool does not expose a comment property.
+            "/ip pool\n:if ([:len [find where name={$q($n['customer_pool'])}]] = 0) do={ add name={$q($n['customer_pool'])} ranges={$q($plan['customer_dhcp_pool'])} }",
             "/ip dhcp-server\n:if ([:len [find where name={$q($n['customer_dhcp'])}]] = 0) do={ add name={$q($n['customer_dhcp'])} interface={$q($n['customer_vlan'])} address-pool={$q($n['customer_pool'])} lease-time=30m disabled=no comment={$comment('customer DHCP')} }",
             "/ip dhcp-server network\n:if ([:len [find where comment={$comment('customer DHCP network')}]] = 0) do={ add address={$q($plan['customer_network_cidr'])} gateway={$q(explode('/', $plan['customer_gateway_cidr'])[0])} dns-server={$q(implode(',', $plan['dns_servers']))} comment={$comment('customer DHCP network')} }",
         ];
@@ -285,10 +286,12 @@ class RouterProvisioningService
             $portal = $plan['captive_portal'];
             $script[] = "/interface vlan\n:if ([:len [find where name={$q($n['portal_vlan'])}]] = 0) do={ add name={$q($n['portal_vlan'])} interface={$q($plan['customer_parent_interface'])} vlan-id={$portal['vlan_id']} comment={$comment('portal VLAN')} }";
             $script[] = "/ip address\n:if ([:len [find where comment={$comment('portal gateway')}]] = 0) do={ add address={$q($portal['gateway_cidr'])} interface={$q($n['portal_vlan'])} comment={$comment('portal gateway')} }";
-            $script[] = "/ip pool\n:if ([:len [find where name={$q($n['portal_pool'])}]] = 0) do={ add name={$q($n['portal_pool'])} ranges={$q($portal['dhcp_pool'])} comment={$comment('portal pool')} }";
+            $script[] = "/ip pool\n:if ([:len [find where name={$q($n['portal_pool'])}]] = 0) do={ add name={$q($n['portal_pool'])} ranges={$q($portal['dhcp_pool'])} }";
             $script[] = "/ip dhcp-server\n:if ([:len [find where name={$q($n['portal_dhcp'])}]] = 0) do={ add name={$q($n['portal_dhcp'])} interface={$q($n['portal_vlan'])} address-pool={$q($n['portal_pool'])} lease-time=30m disabled=no comment={$comment('portal DHCP')} }";
             $script[] = "/ip dhcp-server network\n:if ([:len [find where comment={$comment('portal DHCP network')}]] = 0) do={ add address={$q($portal['network_cidr'])} gateway={$q(explode('/', $portal['gateway_cidr'])[0])} dns-server={$q(implode(',', $plan['dns_servers']))} comment={$comment('portal DHCP network')} }";
-            $script[] = "/ip hotspot profile\n:if ([:len [find where name={$q($n['portal_profile'])}]] = 0) do={ add name={$q($n['portal_profile'])} hotspot-address={$q(explode('/', $portal['gateway_cidr'])[0])} login-by=http-pap comment={$comment('portal profile')} }";
+            // HotSpot profile properties vary by RouterOS build; ownership is
+            // safely identified by the unique generated profile name.
+            $script[] = "/ip hotspot profile\n:if ([:len [find where name={$q($n['portal_profile'])}]] = 0) do={ add name={$q($n['portal_profile'])} hotspot-address={$q(explode('/', $portal['gateway_cidr'])[0])} login-by=http-pap }";
             $script[] = "/ip hotspot\n:if ([:len [find where name={$q($n['portal_hotspot'])}]] = 0) do={ add name={$q($n['portal_hotspot'])} interface={$q($n['portal_vlan'])} profile={$q($n['portal_profile'])} disabled=no comment={$comment('isolated captive portal')} }";
         }
         $script[] = ':put "[SOLARNET] IPoE base provisioning script completed"';

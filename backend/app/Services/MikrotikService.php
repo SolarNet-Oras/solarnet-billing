@@ -2756,6 +2756,7 @@ class MikrotikService
                 (new Query('/system/script/add'))
                     ->equal('name', $name)
                     ->equal('source', $source)
+                    ->equal('policy', 'read,write,policy,test')
                     ->equal('comment', 'Solarnet one-time console command')
             )->read();
 

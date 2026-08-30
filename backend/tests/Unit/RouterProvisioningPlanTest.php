@@ -66,6 +66,25 @@ class RouterProvisioningPlanTest extends TestCase
         $this->assertTrue($plan['data']['preserve_existing_billing_access']);
     }
 
+    public function test_routeros_712_script_avoids_unsupported_pool_and_hotspot_profile_comments(): void
+    {
+        $service = new RouterProvisioningService($this->createMock(MikrotikService::class));
+        $method = new ReflectionMethod($service, 'applyScript');
+        $plan = $this->plan($this->cleanDiscovery(), array_merge($this->input(), [
+            'enable_captive_portal' => true,
+            'portal_vlan_id' => 200,
+            'portal_gateway_cidr' => '10.200.0.1/24',
+            'portal_dhcp_pool' => '10.200.0.10-10.200.0.254',
+        ]));
+
+        $this->assertTrue($plan['success']);
+        $script = $method->invoke($service, $plan['data']);
+        $this->assertStringNotContainsString('customer pool"', $script);
+        $this->assertStringNotContainsString('portal pool"', $script);
+        $this->assertStringNotContainsString('portal profile"', $script);
+        $this->assertStringContainsString('name="solarnet-customer-pool-100" ranges="10.100.0.10-10.100.0.254"', $script);
+    }
+
     private function plan(array $discovery, array $input): array
     {
         $service = new RouterProvisioningService($this->createMock(MikrotikService::class));
