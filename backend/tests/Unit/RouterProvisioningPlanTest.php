@@ -44,6 +44,17 @@ class RouterProvisioningPlanTest extends TestCase
         $this->assertStringContainsString('different confirmed running customer parent interface', $plan['message']);
     }
 
+    public function test_plan_preserves_preexisting_verified_billing_access(): void
+    {
+        $discovery = $this->cleanDiscovery();
+        $discovery['baseline_connectivity'] = ['billing_rules_preserved' => true];
+
+        $plan = $this->plan($discovery, $this->input());
+
+        $this->assertTrue($plan['success']);
+        $this->assertTrue($plan['data']['preserve_existing_billing_access']);
+    }
+
     private function plan(array $discovery, array $input): array
     {
         $service = new RouterProvisioningService($this->createMock(MikrotikService::class));

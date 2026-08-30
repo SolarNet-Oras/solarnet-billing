@@ -95,12 +95,22 @@ class RouterProvisioningService
         }
         $audit->update(['backup_filename' => $backup['backup_file']]);
 
+        if (($plan['preserve_existing_billing_access'] ?? false) === true) {
+            $billingStatus = $this->mikrotikService->billingAccessRulesStatus($router);
+            if (!($billingStatus['success'] ?? false) || !($billingStatus['installed'] ?? false)) {
+                $audit->update(['status' => 'failed', 'failure_reason' => 'The preserved SolarNet billing baseline could not be verified before provisioning.']);
+                return ['success' => false, 'message' => 'Provisioning stopped because the existing SolarNet billing rules are incomplete or unverifiable. No RouterOS configuration was changed.'];
+            }
+        }
+
         $apply = $this->mikrotikService->runOneTimeScript($router, $this->applyScript($plan), $user->email);
         if (!$apply['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $apply['message']);
 
-        $paymentUrl = CustomerPortalUrl::paymentReminder((string) Setting::get('network.payment_reminder_url', ''));
-        $billing = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
-        if (!$billing['success']) return $this->rollbackAfterFailure($router, $audit, $plan, 'Billing access infrastructure could not be installed: ' . $billing['message']);
+        if (($plan['preserve_existing_billing_access'] ?? false) !== true) {
+            $paymentUrl = CustomerPortalUrl::paymentReminder((string) Setting::get('network.payment_reminder_url', ''));
+            $billing = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
+            if (!$billing['success']) return $this->rollbackAfterFailure($router, $audit, $plan, 'Billing access infrastructure could not be installed: ' . $billing['message']);
+        }
 
         $verification = $this->mikrotikService->verifyCleanProvisioning($router, $plan);
         if (!$verification['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $verification['message'] ?? 'Provisioning verification failed.', $verification['data'] ?? null);
@@ -122,7 +132,9 @@ class RouterProvisioningService
     private function rollbackAfterFailure(Router $router, RouterProvisioningAudit $audit, array $plan, string $reason, ?array $verification = null): array
     {
         $rollback = $this->mikrotikService->runOneTimeScript($router, $this->rollbackScript($plan), 'SolarNet provisioning rollback');
-        $this->mikrotikService->removeBillingAccessRules($router);
+        if (($plan['preserve_existing_billing_access'] ?? false) !== true) {
+            $this->mikrotikService->removeBillingAccessRules($router);
+        }
         $audit->update([
             'status' => $rollback['success'] ? 'rolled_back' : 'failed',
             'failure_reason' => $reason . ' Rollback: ' . ($rollback['message'] ?? 'not attempted'),
@@ -188,11 +200,14 @@ class RouterProvisioningService
         ];
 
         $createNat = ((int) ($discovery['counts']['firewall_nat'] ?? 0)) === 0;
+        $preserveBillingAccess = (bool) ($discovery['baseline_connectivity']['billing_rules_preserved'] ?? false);
         $qosMode = ($discovery['fq_codel_available'] ?? false) ? 'safe_compatible' : 'disabled_missing_fq_codel';
         $actions = [
             "Create isolated IPoE customer VLAN {$customerVlan} on {$parent}.",
             "Create DHCP pool, DHCP server, and DHCP network for {$gateway}.",
-            'Install SolarNet billing suspension/payment-only firewall infrastructure; no customer address is added.',
+            $preserveBillingAccess
+                ? 'Preserve and verify the complete existing SolarNet billing suspension/payment-only firewall infrastructure.'
+                : 'Install SolarNet billing suspension/payment-only firewall infrastructure; no customer address is added.',
             'Preserve existing API account, FastTrack, firewall, mangle, routing, bridge, WireGuard, and customer records.',
             'Do not create PPPoE, PPP profiles, PPP secrets, customer queues, customer static leases, or customer records.',
             $createNat ? "Create one SolarNet-owned masquerade NAT rule for {$wan}." : 'Preserve the compatible existing default NAT policy.',
@@ -212,6 +227,7 @@ class RouterProvisioningService
             'customer_dhcp_pool' => $pool,
             'dns_servers' => $dns,
             'create_nat' => $createNat,
+            'preserve_existing_billing_access' => $preserveBillingAccess,
             'qos_mode' => $qosMode,
             'fasttrack' => ($discovery['fasttrack_enabled'] ?? false) ? 'PRESERVED / Full QoS disabled' : 'PRESERVED / Safe QoS ready',
             'captive_portal' => $portal,

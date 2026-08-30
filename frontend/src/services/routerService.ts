@@ -121,6 +121,8 @@ export interface RouterProvisioningDiscovery {
     masquerade_nat_rules: number;
     api_input_rules: number;
     api_service_ports: string[];
+    factory_dhcp_preserved: boolean;
+    billing_rules_preserved: boolean;
     warnings: string[];
   };
   existing_solarnet_detected: boolean;
@@ -161,6 +163,7 @@ export interface RouterProvisioningPlan {
   customer_dhcp_pool: string;
   dns_servers: string[];
   create_nat: boolean;
+  preserve_existing_billing_access: boolean;
   qos_mode: 'safe_compatible' | 'disabled_missing_fq_codel';
   fasttrack: string;
   captive_portal: { enabled: boolean; vlan_id?: number; gateway_cidr?: string; network_cidr?: string; dhcp_pool?: string };

@@ -43,6 +43,40 @@ class RouterProvisioningBaselineRuleTest extends TestCase
         ], ['8728']));
     }
 
+    public function test_factory_default_bridge_dhcp_is_preserved_but_custom_dhcp_is_not(): void
+    {
+        $method = new ReflectionMethod(MikrotikService::class, 'isFactoryDhcpBaseline');
+        $servers = [['name' => 'defconf', 'interface' => 'bridge', 'address-pool' => 'default-dhcp', 'disabled' => 'false']];
+        $pools = [['name' => 'default-dhcp', 'ranges' => '192.168.88.10-192.168.88.254']];
+        $networks = [['address' => '192.168.88.0/24', 'gateway' => '192.168.88.1', 'comment' => 'defconf']];
+        $bridges = [['name' => 'bridge']];
+
+        $this->assertTrue($method->invoke(null, $servers, $pools, $networks, $bridges));
+        $servers[0]['name'] = 'production-customer-dhcp';
+        $networks[0]['comment'] = '';
+        $pools[0]['name'] = 'production-pool';
+        $servers[0]['address-pool'] = 'production-pool';
+        $this->assertFalse($method->invoke(null, $servers, $pools, $networks, $bridges));
+    }
+
+    public function test_only_an_exact_solarnet_billing_rule_is_accepted(): void
+    {
+        $method = new ReflectionMethod(MikrotikService::class, 'isBaselineBillingFirewallRule');
+        $rule = [
+            'chain' => 'forward',
+            'action' => 'accept',
+            'src-address-list' => 'suspended_customers',
+            'protocol' => 'udp',
+            'dst-port' => '53',
+            'comment' => 'Solarnet Billing: suspended allow DNS UDP',
+            'disabled' => 'false',
+        ];
+
+        $this->assertTrue($method->invoke(null, $rule));
+        $rule['dst-port'] = '1-65535';
+        $this->assertFalse($method->invoke(null, $rule));
+    }
+
     private function baselineNat(array $rule): bool
     {
         $method = new ReflectionMethod(MikrotikService::class, 'isBaselineMasqueradeNat');

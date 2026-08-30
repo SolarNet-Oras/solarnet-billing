@@ -692,7 +692,8 @@ class MikrotikService
             ))));
             $baselineMasqueradeNat = array_values(array_filter($nat, fn (array $rule) => self::isBaselineMasqueradeNat($rule)));
             $baselineApiRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineApiFirewallRule($rule, $apiPorts)));
-            $unacceptedFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineApiFirewallRule($rule, $apiPorts)));
+            $baselineBillingRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineBillingFirewallRule($rule)));
+            $unacceptedFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineApiFirewallRule($rule, $apiPorts) && !self::isBaselineBillingFirewallRule($rule)));
             $unacceptedNat = array_values(array_filter($nat, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineMasqueradeNat($rule)));
             $customRoutes = array_values(array_filter($routes, fn (array $route) => ($route['dynamic'] ?? 'false') !== 'true' && !in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true)));
             $customPppProfiles = array_values(array_filter($pppProfiles, fn (array $profile) => !in_array(strtolower((string) ($profile['name'] ?? '')), ['default', 'default-encryption'], true)));
@@ -703,6 +704,9 @@ class MikrotikService
             // The minimal API input rule may be labelled SolarNet. It is
             // connectivity baseline, not an existing customer/billing setup.
             $hasSolarNet = $this->containsSolarNetMarker(array_merge($unacceptedFirewall, $unacceptedNat, $mangle, $simpleQueues, $queueTrees, $hotspots, $scripts, $schedulers));
+            $factoryDhcpBaseline = self::isFactoryDhcpBaseline($dhcpServers, $dhcpPools, $dhcpNetworks, $bridges);
+            $billingBaselineComplete = count($baselineBillingRules) === 5
+                && count(array_unique(array_map(fn (array $rule) => (string) ($rule['comment'] ?? ''), $baselineBillingRules))) === 5;
             $pppoeDetected = count($pppoeServers) + count($pppoeClients) + count($pppSecrets) > 0;
             $baselineWarnings = [];
             foreach ($baselineApiRules as $rule) {
@@ -717,14 +721,15 @@ class MikrotikService
             if ($pppoeDetected) $blockers[] = 'PPPoE DETECTED. SolarNet provisioning uses IPoE only and will not migrate, disable, or delete PPPoE automatically.';
             if ($hotspots !== [] || $customHotspotProfiles !== []) $blockers[] = 'Existing HotSpot configuration was detected.';
             if ($vlans !== []) $blockers[] = 'Existing VLAN interfaces were detected.';
-            if ($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) $blockers[] = 'Existing DHCP server, pool, or network configuration was detected.';
+            if (($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) && !$factoryDhcpBaseline) $blockers[] = 'Existing DHCP is not the single verified RouterOS factory-default bridge baseline.';
             if ($simpleQueues !== [] || $queueTrees !== []) $blockers[] = 'Existing Simple Queue or Queue Tree configuration was detected.';
             if ($mangle !== []) $blockers[] = 'Existing firewall mangle rules were detected.';
             if ($unacceptedFirewall !== [] || $unacceptedNat !== []) $blockers[] = 'Existing non-baseline firewall or NAT rules were detected. Only standard srcnat masquerade and a TCP input allow rule for the enabled RouterOS API port are accepted.';
             if ($customRoutes !== [] || $routingRules !== [] || count($routingTables) > 1) $blockers[] = 'Existing production routing, policy routing, or additional routing tables were detected.';
             if ($wireguard !== []) $blockers[] = 'Existing WireGuard configuration was detected. SolarNet will not alter or build on an existing VPN router automatically.';
             if ($scripts !== [] || $schedulers !== []) $blockers[] = 'Existing RouterOS scripts or schedulers were detected.';
-            if ($hasSolarNet) $blockers[] = 'Existing SolarNet configuration was detected.';
+            if ($baselineBillingRules !== [] && !$billingBaselineComplete) $blockers[] = 'An incomplete SolarNet billing firewall baseline was detected.';
+            if ($hasSolarNet) $blockers[] = 'Unknown or non-baseline SolarNet configuration was detected.';
             if (count($bridges) > 1) $blockers[] = 'More than one bridge was detected; automatic customer topology selection would be unsafe.';
 
             return [
@@ -747,7 +752,7 @@ class MikrotikService
                     'wan_auto_detected' => count($wanCandidates) === 1 && !empty($wanCandidates[0]['interface']),
                     'counts' => [
                         'vlans' => count($vlans), 'ip_addresses' => count($addresses), 'dhcp_servers' => count($dhcpServers), 'dhcp_clients' => count($dhcpClients), 'dhcp_pools' => count($dhcpPools),
-                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'baseline_masquerade_nat_rules' => count($baselineMasqueradeNat), 'baseline_api_input_rules' => count($baselineApiRules), 'unaccepted_firewall_rules' => count($unacceptedFirewall), 'unaccepted_nat_rules' => count($unacceptedNat), 'mangle' => count($mangle),
+                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'baseline_masquerade_nat_rules' => count($baselineMasqueradeNat), 'baseline_api_input_rules' => count($baselineApiRules), 'baseline_billing_rules' => count($baselineBillingRules), 'unaccepted_firewall_rules' => count($unacceptedFirewall), 'unaccepted_nat_rules' => count($unacceptedNat), 'mangle' => count($mangle),
                         'simple_queues' => count($simpleQueues), 'queue_trees' => count($queueTrees), 'queue_types' => count($queueTypes),
                         'hotspots' => count($hotspots), 'custom_hotspot_profiles' => count($customHotspotProfiles), 'pppoe_servers' => count($pppoeServers), 'pppoe_clients' => count($pppoeClients),
                         'ppp_secrets' => count($pppSecrets), 'custom_ppp_profiles' => count($customPppProfiles), 'wireguard' => count($wireguard),
@@ -760,6 +765,8 @@ class MikrotikService
                         'masquerade_nat_rules' => count($baselineMasqueradeNat),
                         'api_input_rules' => count($baselineApiRules),
                         'api_service_ports' => $apiPorts,
+                        'factory_dhcp_preserved' => $factoryDhcpBaseline,
+                        'billing_rules_preserved' => $billingBaselineComplete,
                         'warnings' => $baselineWarnings,
                     ],
                     'existing_solarnet_detected' => $hasSolarNet,
@@ -853,6 +860,46 @@ class MikrotikService
         if (($rule['chain'] ?? '') !== 'input' || ($rule['action'] ?? '') !== 'accept' || strtolower((string) ($rule['protocol'] ?? '')) !== 'tcp') return false;
 
         return in_array((string) ($rule['dst-port'] ?? ''), $apiPorts, true);
+    }
+
+    /** Accept only the five exact address-list based rules owned by SolarNet Billing. */
+    private static function isBaselineBillingFirewallRule(array $rule): bool
+    {
+        if (($rule['disabled'] ?? 'false') === 'true' || ($rule['chain'] ?? '') !== 'forward') return false;
+        $comment = (string) ($rule['comment'] ?? '');
+        $definitions = [
+            self::BILLING_RULE_PREFIX . ' allow temporary payment checkout' => ['accept', self::PAYMENT_SESSION_ADDRESS_LIST, '', ''],
+            self::BILLING_RULE_PREFIX . ' block internet' => ['drop', self::SUSPENDED_ADDRESS_LIST, '', ''],
+            self::BILLING_RULE_PREFIX . ' allow DNS TCP' => ['accept', self::SUSPENDED_ADDRESS_LIST, 'tcp', '53'],
+            self::BILLING_RULE_PREFIX . ' allow DNS UDP' => ['accept', self::SUSPENDED_ADDRESS_LIST, 'udp', '53'],
+            self::BILLING_RULE_PREFIX . ' allow payment portal' => ['accept', self::SUSPENDED_ADDRESS_LIST, 'tcp', '80,443'],
+        ];
+        if (!isset($definitions[$comment])) return false;
+        [$action, $sourceList, $protocol, $port] = $definitions[$comment];
+        if (($rule['action'] ?? '') !== $action || ($rule['src-address-list'] ?? '') !== $sourceList) return false;
+        if ((string) ($rule['protocol'] ?? '') !== $protocol || (string) ($rule['dst-port'] ?? '') !== $port) return false;
+        if ($comment === self::BILLING_RULE_PREFIX . ' allow payment portal' && ($rule['dst-address-list'] ?? '') !== self::PAYMENT_PORTAL_ADDRESS_LIST) return false;
+        return true;
+    }
+
+    /** RouterOS hEX factory defaults: one enabled bridge DHCP server/pool/network. */
+    private static function isFactoryDhcpBaseline(array $servers, array $pools, array $networks, array $bridges): bool
+    {
+        if (count($servers) !== 1 || count($pools) !== 1 || count($networks) !== 1 || count($bridges) !== 1) return false;
+        $server = $servers[0]; $pool = $pools[0]; $network = $networks[0];
+        if (($server['disabled'] ?? 'false') === 'true') return false;
+        if (($server['interface'] ?? '') !== ($bridges[0]['name'] ?? '')) return false;
+        if (($server['address-pool'] ?? '') !== ($pool['name'] ?? '') || blank($pool['ranges'] ?? null)) return false;
+        $marker = strtolower(implode(' ', [
+            (string) ($server['name'] ?? ''), (string) ($server['comment'] ?? ''),
+            (string) ($pool['name'] ?? ''), (string) ($pool['comment'] ?? ''),
+            (string) ($network['comment'] ?? ''),
+        ]));
+        if (!str_contains($marker, 'defconf') && !str_contains($marker, 'default')) return false;
+        $gateway = (string) ($network['gateway'] ?? '');
+        return filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+            && filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false
+            && preg_match('/^\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2}$/', (string) ($network['address'] ?? '')) === 1;
     }
 
     private function containsSolarNetMarker(array $rows): bool
