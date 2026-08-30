@@ -120,6 +120,7 @@ export interface RouterProvisioningDiscovery {
   baseline_connectivity: {
     masquerade_nat_rules: number;
     api_input_rules: number;
+    vpn_management_rules?: number;
     api_service_ports: string[];
     factory_dhcp_preserved: boolean;
     billing_rules_preserved: boolean;

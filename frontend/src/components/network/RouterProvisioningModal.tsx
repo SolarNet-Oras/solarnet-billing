@@ -149,7 +149,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
             <div className="space-y-5">
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
                 <div className="mb-2 flex items-center gap-2 font-semibold"><AlertTriangle className="h-5 w-5" />NEW / CLEAN ROUTERS ONLY</div>
-                <p>SolarNet first reads the router. One verified RouterOS factory-default bridge DHCP baseline and the complete five-rule SolarNet billing baseline are accepted and preserved. It still stops with <strong>ROUTER IS NOT CLEAN</strong> for custom or incomplete DHCP, VLAN, HotSpot, PPPoE, queues, unknown firewall/routing, scripts, unrecognized SolarNet configuration, or an unreadable required area.</p>
+                <p>SolarNet first reads the router. One coherent private bridge DHCP baseline, verified VPN-only management access, and the complete five-rule SolarNet billing baseline are accepted and preserved. It still stops with <strong>ROUTER IS NOT CLEAN</strong> for conflicting DHCP, VLAN, HotSpot, PPPoE, queues, unknown firewall/routing, scripts, unrecognized SolarNet configuration, or an unreadable required area.</p>
               </div>
               <div className="grid gap-3 text-sm md:grid-cols-2">
                 <div className="rounded-lg border border-border p-4"><strong className="text-foreground">Included after approval</strong><p className="mt-1 text-muted-foreground">Selected IPoE customer VLAN, DHCP scope, optional isolated portal VLAN, payment-only billing infrastructure, verified backup and audit trail.</p></div>

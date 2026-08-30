@@ -43,7 +43,7 @@ class RouterProvisioningBaselineRuleTest extends TestCase
         ], ['8728']));
     }
 
-    public function test_factory_default_bridge_dhcp_is_preserved_but_custom_dhcp_is_not(): void
+    public function test_single_coherent_private_bridge_dhcp_is_preserved_without_relying_on_names(): void
     {
         $method = new ReflectionMethod(MikrotikService::class, 'isFactoryDhcpBaseline');
         $servers = [['name' => 'defconf', 'interface' => 'bridge', 'address-pool' => 'default-dhcp', 'disabled' => 'false']];
@@ -56,7 +56,18 @@ class RouterProvisioningBaselineRuleTest extends TestCase
         $networks[0]['comment'] = '';
         $pools[0]['name'] = 'production-pool';
         $servers[0]['address-pool'] = 'production-pool';
+        $this->assertTrue($method->invoke(null, $servers, $pools, $networks, $bridges));
+        $servers[0]['address-pool'] = 'wrong-pool';
         $this->assertFalse($method->invoke(null, $servers, $pools, $networks, $bridges));
+    }
+
+    public function test_management_allow_is_accepted_only_on_a_real_vpn_interface(): void
+    {
+        $method = new ReflectionMethod(MikrotikService::class, 'isBaselineVpnManagementRule');
+        $rule = ['chain' => 'input', 'action' => 'accept', 'in-interface' => 'RemoteVPN', 'comment' => 'Allow Remote Winbox', 'disabled' => 'false'];
+
+        $this->assertTrue($method->invoke(null, $rule, [['name' => 'RemoteVPN', 'type' => 'sstp-out', 'disabled' => 'false']]));
+        $this->assertFalse($method->invoke(null, $rule, [['name' => 'RemoteVPN', 'type' => 'ether', 'disabled' => 'false']]));
     }
 
     public function test_only_an_exact_solarnet_billing_rule_is_accepted(): void

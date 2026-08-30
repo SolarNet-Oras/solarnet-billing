@@ -692,8 +692,9 @@ class MikrotikService
             ))));
             $baselineMasqueradeNat = array_values(array_filter($nat, fn (array $rule) => self::isBaselineMasqueradeNat($rule)));
             $baselineApiRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineApiFirewallRule($rule, $apiPorts)));
+            $baselineVpnManagementRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineVpnManagementRule($rule, $interfaces)));
             $baselineBillingRules = array_values(array_filter($filters, fn (array $rule) => self::isBaselineBillingFirewallRule($rule)));
-            $unacceptedFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineApiFirewallRule($rule, $apiPorts) && !self::isBaselineBillingFirewallRule($rule)));
+            $unacceptedFirewall = array_values(array_filter($filters, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineApiFirewallRule($rule, $apiPorts) && !self::isBaselineVpnManagementRule($rule, $interfaces) && !self::isBaselineBillingFirewallRule($rule)));
             $unacceptedNat = array_values(array_filter($nat, fn (array $rule) => !$isDefaultRule($rule) && !self::isBaselineMasqueradeNat($rule)));
             $customRoutes = array_values(array_filter($routes, fn (array $route) => ($route['dynamic'] ?? 'false') !== 'true' && !in_array((string) ($route['dst-address'] ?? ''), ['0.0.0.0/0', '::/0'], true)));
             $customPppProfiles = array_values(array_filter($pppProfiles, fn (array $profile) => !in_array(strtolower((string) ($profile['name'] ?? '')), ['default', 'default-encryption'], true)));
@@ -715,13 +716,30 @@ class MikrotikService
                     break;
                 }
             }
+            foreach ($baselineVpnManagementRules as $rule) {
+                $baselineWarnings[] = sprintf(
+                    'The preserved management rule accepts router input from the %s tunnel. SolarNet will not widen, replace, or remove this administrator-owned rule.',
+                    (string) ($rule['in-interface'] ?? 'VPN')
+                );
+            }
+            foreach ($services as $service) {
+                if (in_array(strtolower((string) ($service['name'] ?? '')), ['api', 'api-ssl'], true)
+                    && ($service['disabled'] ?? 'false') !== 'true'
+                    && in_array((string) ($service['address'] ?? ''), ['', '0.0.0.0/0'], true)) {
+                    $baselineWarnings[] = sprintf(
+                        'RouterOS %s service port %s has no service-level source restriction. Keep WAN input blocked and reach it only through the management VPN.',
+                        (string) ($service['name'] ?? 'API'),
+                        (string) ($service['port'] ?? '?')
+                    );
+                }
+            }
 
             $blockers = [];
             if ($errors !== []) $blockers[] = 'Router discovery is incomplete. SolarNet will not provision a router when a required RouterOS area cannot be read.';
             if ($pppoeDetected) $blockers[] = 'PPPoE DETECTED. SolarNet provisioning uses IPoE only and will not migrate, disable, or delete PPPoE automatically.';
             if ($hotspots !== [] || $customHotspotProfiles !== []) $blockers[] = 'Existing HotSpot configuration was detected.';
             if ($vlans !== []) $blockers[] = 'Existing VLAN interfaces were detected.';
-            if (($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) && !$factoryDhcpBaseline) $blockers[] = 'Existing DHCP is not the single verified RouterOS factory-default bridge baseline.';
+            if (($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) && !$factoryDhcpBaseline) $blockers[] = 'Existing DHCP is not one coherent private single-bridge server, pool, and network baseline.';
             if ($simpleQueues !== [] || $queueTrees !== []) $blockers[] = 'Existing Simple Queue or Queue Tree configuration was detected.';
             if ($mangle !== []) $blockers[] = 'Existing firewall mangle rules were detected.';
             if ($unacceptedFirewall !== [] || $unacceptedNat !== []) $blockers[] = 'Existing non-baseline firewall or NAT rules were detected. Only standard srcnat masquerade and a TCP input allow rule for the enabled RouterOS API port are accepted.';
@@ -752,7 +770,7 @@ class MikrotikService
                     'wan_auto_detected' => count($wanCandidates) === 1 && !empty($wanCandidates[0]['interface']),
                     'counts' => [
                         'vlans' => count($vlans), 'ip_addresses' => count($addresses), 'dhcp_servers' => count($dhcpServers), 'dhcp_clients' => count($dhcpClients), 'dhcp_pools' => count($dhcpPools),
-                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'baseline_masquerade_nat_rules' => count($baselineMasqueradeNat), 'baseline_api_input_rules' => count($baselineApiRules), 'baseline_billing_rules' => count($baselineBillingRules), 'unaccepted_firewall_rules' => count($unacceptedFirewall), 'unaccepted_nat_rules' => count($unacceptedNat), 'mangle' => count($mangle),
+                        'routes' => count($routes), 'firewall_filters' => count($filters), 'firewall_nat' => count($nat), 'baseline_masquerade_nat_rules' => count($baselineMasqueradeNat), 'baseline_api_input_rules' => count($baselineApiRules), 'baseline_vpn_management_rules' => count($baselineVpnManagementRules), 'baseline_billing_rules' => count($baselineBillingRules), 'unaccepted_firewall_rules' => count($unacceptedFirewall), 'unaccepted_nat_rules' => count($unacceptedNat), 'mangle' => count($mangle),
                         'simple_queues' => count($simpleQueues), 'queue_trees' => count($queueTrees), 'queue_types' => count($queueTypes),
                         'hotspots' => count($hotspots), 'custom_hotspot_profiles' => count($customHotspotProfiles), 'pppoe_servers' => count($pppoeServers), 'pppoe_clients' => count($pppoeClients),
                         'ppp_secrets' => count($pppSecrets), 'custom_ppp_profiles' => count($customPppProfiles), 'wireguard' => count($wireguard),
@@ -764,6 +782,7 @@ class MikrotikService
                     'baseline_connectivity' => [
                         'masquerade_nat_rules' => count($baselineMasqueradeNat),
                         'api_input_rules' => count($baselineApiRules),
+                        'vpn_management_rules' => count($baselineVpnManagementRules),
                         'api_service_ports' => $apiPorts,
                         'factory_dhcp_preserved' => $factoryDhcpBaseline,
                         'billing_rules_preserved' => $billingBaselineComplete,
@@ -862,6 +881,32 @@ class MikrotikService
         return in_array((string) ($rule['dst-port'] ?? ''), $apiPorts, true);
     }
 
+    /** Preserve an administrator input allow only when it is bound to a real point-to-point VPN interface. */
+    private static function isBaselineVpnManagementRule(array $rule, array $interfaces): bool
+    {
+        if (($rule['disabled'] ?? 'false') === 'true') return false;
+        if (($rule['chain'] ?? '') !== 'input' || ($rule['action'] ?? '') !== 'accept') return false;
+        $interfaceName = (string) ($rule['in-interface'] ?? '');
+        if ($interfaceName === '' || !empty($rule['in-interface-list'])) return false;
+
+        $interface = null;
+        foreach ($interfaces as $candidate) {
+            if (($candidate['name'] ?? '') === $interfaceName) {
+                $interface = $candidate;
+                break;
+            }
+        }
+        if (!is_array($interface) || ($interface['disabled'] ?? 'false') === 'true') return false;
+        $type = strtolower((string) ($interface['type'] ?? ''));
+        if (!in_array($type, ['sstp-in', 'sstp-out', 'ovpn-in', 'ovpn-out', 'l2tp-in', 'l2tp-out', 'pptp-in', 'pptp-out', 'ipip-tunnel', 'gre-tunnel'], true)) return false;
+
+        foreach (['out-interface', 'out-interface-list', 'src-address', 'dst-address', 'src-address-list', 'dst-address-list', 'src-port', 'dst-port', 'jump-target', 'to-addresses', 'to-ports'] as $field) {
+            if (!empty($rule[$field])) return false;
+        }
+
+        return true;
+    }
+
     /** Accept only the five exact address-list based rules owned by SolarNet Billing. */
     private static function isBaselineBillingFirewallRule(array $rule): bool
     {
@@ -882,7 +927,7 @@ class MikrotikService
         return true;
     }
 
-    /** RouterOS hEX factory defaults: one enabled bridge DHCP server/pool/network. */
+    /** One coherent private bridge DHCP server/pool/network can be preserved regardless of administrator naming. */
     private static function isFactoryDhcpBaseline(array $servers, array $pools, array $networks, array $bridges): bool
     {
         if (count($servers) !== 1 || count($pools) !== 1 || count($networks) !== 1 || count($bridges) !== 1) return false;
@@ -890,12 +935,6 @@ class MikrotikService
         if (($server['disabled'] ?? 'false') === 'true') return false;
         if (($server['interface'] ?? '') !== ($bridges[0]['name'] ?? '')) return false;
         if (($server['address-pool'] ?? '') !== ($pool['name'] ?? '') || blank($pool['ranges'] ?? null)) return false;
-        $marker = strtolower(implode(' ', [
-            (string) ($server['name'] ?? ''), (string) ($server['comment'] ?? ''),
-            (string) ($pool['name'] ?? ''), (string) ($pool['comment'] ?? ''),
-            (string) ($network['comment'] ?? ''),
-        ]));
-        if (!str_contains($marker, 'defconf') && !str_contains($marker, 'default')) return false;
         $gateway = (string) ($network['gateway'] ?? '');
         return filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
             && filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) === false
