@@ -8,6 +8,7 @@ set -eu
 : "${RADIUS_LOCAL_TEST_SECRET:?RADIUS_LOCAL_TEST_SECRET is required}"
 
 # Validate configuration before opening either UDP listener. `-C` does not run
-# in debug mode, so packet data and database credentials are not logged.
-freeradius -C >/dev/null
+# in debug mode, so packet data and database credentials are not logged. Keep
+# validation errors on Docker stderr so a restart loop remains diagnosable.
+freeradius -C
 exec freeradius -f
