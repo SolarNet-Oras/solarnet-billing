@@ -860,6 +860,88 @@ class MikrotikService
         }
     }
 
+    /** Apply each owned provisioning resource directly so RouterOS API errors cannot be hidden inside a script. */
+    public function applyCleanProvisioningPlan(Router $router, array $plan): array
+    {
+        $created = [];
+        try {
+            $client = new Client($this->makeConfig($router));
+            $names = $plan['resource_names'];
+            $ensure = function (string $menu, string $matchField, string $matchValue, array $attributes, string $resourceKey) use ($client, &$created): void {
+                $existing = $client->query((new Query($menu . '/print'))->where($matchField, $matchValue))->read();
+                if ($existing !== []) return;
+                $query = new Query($menu . '/add');
+                foreach ($attributes as $field => $value) $query->equal($field, (string) $value);
+                $client->query($query)->read();
+                // Record immediately after RouterOS accepts the add command so
+                // rollback still owns it if the following verification read
+                // times out or fails.
+                $created[] = $resourceKey;
+                $verified = $client->query((new Query($menu . '/print'))->where($matchField, $matchValue))->read();
+                if ($verified === []) throw new \RuntimeException("RouterOS did not create {$resourceKey}.");
+            };
+
+            $ensure('/interface/vlan', 'name', $names['customer_vlan'], ['name' => $names['customer_vlan'], 'interface' => $plan['customer_parent_interface'], 'vlan-id' => $plan['customer_vlan_id'], 'comment' => self::provisioningComment('customer VLAN')], 'customer_vlan');
+            $ensure('/ip/address', 'comment', self::provisioningComment('customer gateway'), ['address' => $plan['customer_gateway_cidr'], 'interface' => $names['customer_vlan'], 'comment' => self::provisioningComment('customer gateway')], 'customer_gateway');
+            $ensure('/ip/pool', 'name', $names['customer_pool'], ['name' => $names['customer_pool'], 'ranges' => $plan['customer_dhcp_pool']], 'customer_pool');
+            $ensure('/ip/dhcp-server', 'name', $names['customer_dhcp'], ['name' => $names['customer_dhcp'], 'interface' => $names['customer_vlan'], 'address-pool' => $names['customer_pool'], 'lease-time' => '30m', 'disabled' => 'no', 'comment' => self::provisioningComment('customer DHCP')], 'customer_dhcp');
+            $ensure('/ip/dhcp-server/network', 'comment', self::provisioningComment('customer DHCP network'), ['address' => $plan['customer_network_cidr'], 'gateway' => explode('/', $plan['customer_gateway_cidr'])[0], 'dns-server' => implode(',', $plan['dns_servers']), 'comment' => self::provisioningComment('customer DHCP network')], 'customer_network');
+            if (($plan['create_nat'] ?? false) === true) {
+                $ensure('/ip/firewall/nat', 'comment', self::provisioningComment('customer NAT'), ['chain' => 'srcnat', 'out-interface' => $plan['wan_interface'], 'action' => 'masquerade', 'comment' => self::provisioningComment('customer NAT')], 'customer_nat');
+            }
+
+            if (($plan['captive_portal']['enabled'] ?? false) === true) {
+                $portal = $plan['captive_portal'];
+                $ensure('/interface/vlan', 'name', $names['portal_vlan'], ['name' => $names['portal_vlan'], 'interface' => $plan['customer_parent_interface'], 'vlan-id' => $portal['vlan_id'], 'comment' => self::provisioningComment('portal VLAN')], 'portal_vlan');
+                $ensure('/ip/address', 'comment', self::provisioningComment('portal gateway'), ['address' => $portal['gateway_cidr'], 'interface' => $names['portal_vlan'], 'comment' => self::provisioningComment('portal gateway')], 'portal_gateway');
+                $ensure('/ip/pool', 'name', $names['portal_pool'], ['name' => $names['portal_pool'], 'ranges' => $portal['dhcp_pool']], 'portal_pool');
+                $ensure('/ip/dhcp-server', 'name', $names['portal_dhcp'], ['name' => $names['portal_dhcp'], 'interface' => $names['portal_vlan'], 'address-pool' => $names['portal_pool'], 'lease-time' => '30m', 'disabled' => 'no', 'comment' => self::provisioningComment('portal DHCP')], 'portal_dhcp');
+                $ensure('/ip/dhcp-server/network', 'comment', self::provisioningComment('portal DHCP network'), ['address' => $portal['network_cidr'], 'gateway' => explode('/', $portal['gateway_cidr'])[0], 'dns-server' => implode(',', $plan['dns_servers']), 'comment' => self::provisioningComment('portal DHCP network')], 'portal_network');
+                $ensure('/ip/hotspot/profile', 'name', $names['portal_profile'], ['name' => $names['portal_profile'], 'hotspot-address' => explode('/', $portal['gateway_cidr'])[0], 'login-by' => 'http-pap'], 'portal_profile');
+                $ensure('/ip/hotspot', 'name', $names['portal_hotspot'], ['name' => $names['portal_hotspot'], 'interface' => $names['portal_vlan'], 'profile' => $names['portal_profile'], 'disabled' => 'no', 'comment' => self::provisioningComment('isolated captive portal')], 'portal_hotspot');
+            }
+
+            return ['success' => true, 'message' => 'Every SolarNet provisioning resource was created and individually verified.', 'data' => ['created' => $created]];
+        } catch (Throwable $e) {
+            Log::warning('Direct MikroTik provisioning failed', ['router_id' => $router->id, 'created' => $created, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'RouterOS rejected a provisioning operation: ' . $e->getMessage(), 'data' => ['created' => $created]];
+        }
+    }
+
+    /** Remove only resources confirmed as created by the current direct apply attempt. */
+    public function removeCleanProvisioningResources(Router $router, array $plan, array $created): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $names = $plan['resource_names'];
+            $definitions = [
+                'portal_hotspot' => ['/ip/hotspot', 'name', $names['portal_hotspot'] ?? ''],
+                'portal_profile' => ['/ip/hotspot/profile', 'name', $names['portal_profile'] ?? ''],
+                'portal_dhcp' => ['/ip/dhcp-server', 'name', $names['portal_dhcp'] ?? ''],
+                'portal_network' => ['/ip/dhcp-server/network', 'comment', self::provisioningComment('portal DHCP network')],
+                'portal_pool' => ['/ip/pool', 'name', $names['portal_pool'] ?? ''],
+                'portal_gateway' => ['/ip/address', 'comment', self::provisioningComment('portal gateway')],
+                'portal_vlan' => ['/interface/vlan', 'name', $names['portal_vlan'] ?? ''],
+                'customer_dhcp' => ['/ip/dhcp-server', 'name', $names['customer_dhcp'] ?? ''],
+                'customer_network' => ['/ip/dhcp-server/network', 'comment', self::provisioningComment('customer DHCP network')],
+                'customer_pool' => ['/ip/pool', 'name', $names['customer_pool'] ?? ''],
+                'customer_gateway' => ['/ip/address', 'comment', self::provisioningComment('customer gateway')],
+                'customer_vlan' => ['/interface/vlan', 'name', $names['customer_vlan'] ?? ''],
+                'customer_nat' => ['/ip/firewall/nat', 'comment', self::provisioningComment('customer NAT')],
+            ];
+            foreach (array_reverse($created) as $key) {
+                if (!isset($definitions[$key])) continue;
+                [$menu, $field, $value] = $definitions[$key];
+                if ($value === '') continue;
+                $rows = $client->query((new Query($menu . '/print'))->where($field, $value))->read();
+                foreach ($rows as $row) if (!empty($row['.id'])) $client->query((new Query($menu . '/remove'))->equal('.id', $row['.id']))->read();
+            }
+            return ['success' => true, 'message' => 'Only resources created by this provisioning attempt were removed.'];
+        } catch (Throwable $e) {
+            return ['success' => false, 'message' => 'Direct rollback failed: ' . $e->getMessage()];
+        }
+    }
+
     private static function provisioningComment(string $resource): string
     {
         return 'SolarNet Provisioning: ' . $resource;

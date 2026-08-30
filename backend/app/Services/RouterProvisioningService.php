@@ -132,17 +132,18 @@ class RouterProvisioningService
             }
         }
 
-        $apply = $this->mikrotikService->runOneTimeScript($router, $this->applyScript($plan), $user->email);
-        if (!$apply['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $apply['message']);
+        $apply = $this->mikrotikService->applyCleanProvisioningPlan($router, $plan);
+        $createdResources = $apply['data']['created'] ?? [];
+        if (!$apply['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $apply['message'], null, $createdResources);
 
         if (($plan['preserve_existing_billing_access'] ?? false) !== true) {
             $paymentUrl = CustomerPortalUrl::paymentReminder((string) Setting::get('network.payment_reminder_url', ''));
             $billing = $this->mikrotikService->installBillingAccessRules($router, $paymentUrl);
-            if (!$billing['success']) return $this->rollbackAfterFailure($router, $audit, $plan, 'Billing access infrastructure could not be installed: ' . $billing['message']);
+            if (!$billing['success']) return $this->rollbackAfterFailure($router, $audit, $plan, 'Billing access infrastructure could not be installed: ' . $billing['message'], null, $createdResources);
         }
 
         $verification = $this->mikrotikService->verifyCleanProvisioning($router, $plan);
-        if (!$verification['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $verification['message'] ?? 'Provisioning verification failed.', $verification['data'] ?? null);
+        if (!$verification['success']) return $this->rollbackAfterFailure($router, $audit, $plan, $verification['message'] ?? 'Provisioning verification failed.', $verification['data'] ?? null, $createdResources);
 
         $audit->update([
             'status' => 'verified_pending_ipoe_client_test',
@@ -158,9 +159,9 @@ class RouterProvisioningService
         ];
     }
 
-    private function rollbackAfterFailure(Router $router, RouterProvisioningAudit $audit, array $plan, string $reason, ?array $verification = null): array
+    private function rollbackAfterFailure(Router $router, RouterProvisioningAudit $audit, array $plan, string $reason, ?array $verification = null, array $createdResources = []): array
     {
-        $rollback = $this->mikrotikService->runOneTimeScript($router, $this->rollbackScript($plan), 'SolarNet provisioning rollback');
+        $rollback = $this->mikrotikService->removeCleanProvisioningResources($router, $plan, $createdResources);
         if (($plan['preserve_existing_billing_access'] ?? false) !== true) {
             $this->mikrotikService->removeBillingAccessRules($router);
         }
