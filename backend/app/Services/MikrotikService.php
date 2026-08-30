@@ -739,7 +739,10 @@ class MikrotikService
             if ($pppoeDetected) $blockers[] = 'PPPoE DETECTED. SolarNet provisioning uses IPoE only and will not migrate, disable, or delete PPPoE automatically.';
             if ($hotspots !== [] || $customHotspotProfiles !== []) $blockers[] = 'Existing HotSpot configuration was detected.';
             if ($vlans !== []) $blockers[] = 'Existing VLAN interfaces were detected.';
-            if (($dhcpServers !== [] || $dhcpPools !== [] || $dhcpNetworks !== []) && !$factoryDhcpBaseline) $blockers[] = 'Existing DHCP is not one coherent private single-bridge server, pool, and network baseline.';
+            // Pools and network rows are inert without an enabled DHCP server.
+            // Preserve those dormant administrator records instead of deleting
+            // or treating them as a running customer network.
+            if (self::hasBlockingDhcpConfiguration($dhcpServers, $factoryDhcpBaseline)) $blockers[] = 'Existing enabled DHCP is not one coherent private single-bridge server, pool, and network baseline.';
             if ($simpleQueues !== [] || $queueTrees !== []) $blockers[] = 'Existing Simple Queue or Queue Tree configuration was detected.';
             if ($mangle !== []) $blockers[] = 'Existing firewall mangle rules were detected.';
             if ($unacceptedFirewall !== [] || $unacceptedNat !== []) $blockers[] = 'Existing non-baseline firewall or NAT rules were detected. Only standard srcnat masquerade and a TCP input allow rule for the enabled RouterOS API port are accepted.';
@@ -949,6 +952,13 @@ class MikrotikService
         }));
 
         return count($validNetworks) === 1;
+    }
+
+    /** Dormant pools/networks do not serve clients and are safe to preserve unchanged. */
+    private static function hasBlockingDhcpConfiguration(array $servers, bool $coherentBaseline): bool
+    {
+        $enabledServers = array_filter($servers, fn (array $server) => ($server['disabled'] ?? 'false') !== 'true');
+        return $enabledServers !== [] && !$coherentBaseline;
     }
 
     private function containsSolarNetMarker(array $rows): bool

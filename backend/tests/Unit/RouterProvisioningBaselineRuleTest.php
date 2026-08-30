@@ -76,6 +76,16 @@ class RouterProvisioningBaselineRuleTest extends TestCase
         $this->assertFalse($method->invoke(null, $rule, [['name' => 'RemoteVPN', 'type' => 'ether', 'disabled' => 'false']]));
     }
 
+    public function test_dormant_dhcp_records_do_not_block_a_new_router(): void
+    {
+        $method = new ReflectionMethod(MikrotikService::class, 'hasBlockingDhcpConfiguration');
+
+        $this->assertFalse($method->invoke(null, [], false));
+        $this->assertFalse($method->invoke(null, [['name' => 'old', 'disabled' => 'true']], false));
+        $this->assertTrue($method->invoke(null, [['name' => 'active', 'disabled' => 'false']], false));
+        $this->assertFalse($method->invoke(null, [['name' => 'active', 'disabled' => 'false']], true));
+    }
+
     public function test_only_an_exact_solarnet_billing_rule_is_accepted(): void
     {
         $method = new ReflectionMethod(MikrotikService::class, 'isBaselineBillingFirewallRule');
