@@ -72,21 +72,50 @@ class RouterProvisioningService
 
     public function apply(Router $router, RouterProvisioningAudit $audit, User $user): array
     {
-        if ($audit->router_id !== $router->id || $audit->status !== 'previewed' || !is_array($audit->plan)) {
+        if ($audit->router_id !== $router->id || !is_array($audit->plan)) {
             return ['success' => false, 'message' => 'Only a current, clean-router provisioning preview can be approved and applied.'];
         }
+        if ($audit->status === 'verified_pending_ipoe_client_test') {
+            return ['success' => true, 'message' => 'This provisioning plan was already applied and verified. Continue with the one-client IPoE acceptance test.', 'data' => ['audit' => $audit, 'verification' => $audit->verification ?? []]];
+        }
+
+        // Atomically claim this exact preview before any RouterOS call. This
+        // prevents a double-click, retry, or second browser from applying the
+        // same plan twice.
+        $claimed = RouterProvisioningAudit::query()
+            ->whereKey($audit->id)
+            ->where('router_id', $router->id)
+            ->where('status', 'previewed')
+            ->update([
+                'status' => 'applying',
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'applied_by' => $user->id,
+                'applied_at' => now(),
+            ]);
+        if ($claimed !== 1) {
+            $audit->refresh();
+            $message = $audit->status === 'applying'
+                ? 'This provisioning plan is already being applied. Wait for the current request to finish; do not click Apply again.'
+                : 'This provisioning preview is no longer current. Run discovery and generate a fresh plan.';
+            return ['success' => false, 'message' => $message, 'data' => ['audit' => $audit]];
+        }
+        $audit->refresh();
 
         // Re-discovery prevents a plan from being applied after another
         // administrator has changed the router since it was previewed.
         $fresh = $this->mikrotikService->cleanProvisioningDiscovery($router);
-        if (!$fresh['success']) return $fresh;
+        if (!$fresh['success']) {
+            $audit->update(['status' => 'failed', 'failure_reason' => $fresh['message'] ?? 'Final RouterOS discovery failed.']);
+            return $fresh;
+        }
         if (!($fresh['data']['clean'] ?? false)) {
             $audit->update(['status' => 'refused_not_clean', 'discovery' => $fresh['data'], 'failure_reason' => 'Router changed after preview and is no longer clean.']);
             return ['success' => false, 'message' => 'ROUTER IS NOT CLEAN on the final inspection. No RouterOS configuration was changed.', 'data' => ['discovery' => $fresh['data']]];
         }
 
         $plan = $audit->plan;
-        $audit->update(['status' => 'applying', 'approved_by' => $user->id, 'approved_at' => now(), 'applied_by' => $user->id, 'applied_at' => now(), 'discovery' => $fresh['data']]);
+        $audit->update(['discovery' => $fresh['data']]);
 
         $backup = $this->mikrotikService->createQosBackup($router, 'solarnet-provisioning-' . now()->format('YmdHis') . '-' . substr((string) Str::uuid(), 0, 8));
         if (!$backup['success']) {

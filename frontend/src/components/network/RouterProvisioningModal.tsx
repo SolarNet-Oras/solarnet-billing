@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Loader2, Network, ShieldAlert, Wifi, X } from 'lucide-react';
 import {
   type Router,
@@ -26,6 +26,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
   const [audit, setAudit] = useState<RouterProvisioningAudit | null>(null);
   const [plan, setPlan] = useState<RouterProvisioningPlan | null>(null);
   const [confirmation, setConfirmation] = useState('');
+  const applyRequestInFlight = useRef(false);
   const [form, setForm] = useState({
     wan_interface: '',
     customer_parent_interface: '',
@@ -99,7 +100,8 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
   };
 
   const apply = async () => {
-    if (!audit || confirmation !== CONFIRMATION) return;
+    if (!audit || confirmation !== CONFIRMATION || applyRequestInFlight.current) return;
+    applyRequestInFlight.current = true;
     setBusy('apply');
     setMessage(null);
     try {
@@ -110,6 +112,7 @@ export function RouterProvisioningModal({ isOpen, router, onClose }: RouterProvi
     } catch (error: any) {
       setMessage(errorMessage(error, 'Provisioning was not completed. Check the audit result before retrying.'));
     } finally {
+      applyRequestInFlight.current = false;
       setBusy(null);
     }
   };
