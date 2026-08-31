@@ -32,7 +32,7 @@
         }
         window.addEventListener('beforeinstallprompt', (event) => {
           event.preventDefault();
-          window.__solarnetAdminInstallPrompt = event;
+          window.__solarnetInstallPrompt = event;
           window.dispatchEvent(new CustomEvent('solarnet:install-prompt-ready'));
         });
       })();

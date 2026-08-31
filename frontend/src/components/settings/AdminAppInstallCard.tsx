@@ -6,12 +6,10 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-declare global {
-  interface Window { __solarnetAdminInstallPrompt?: BeforeInstallPromptEvent; }
-}
+declare global { interface Window { __solarnetInstallPrompt?: BeforeInstallPromptEvent; } }
 
 export function StaffAppInstallCard(): React.JSX.Element {
-  const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(() => window.__solarnetAdminInstallPrompt || null);
+  const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(() => window.__solarnetInstallPrompt || null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
   const [help, setHelp] = useState(false);
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -27,7 +25,7 @@ export function StaffAppInstallCard(): React.JSX.Element {
       event.preventDefault();
       setPrompt(event as BeforeInstallPromptEvent);
     };
-    const onCapturedPrompt = (): void => setPrompt(window.__solarnetAdminInstallPrompt || null);
+    const onCapturedPrompt = (): void => setPrompt(window.__solarnetInstallPrompt || null);
     const onInstalled = (): void => setInstalled(true);
     window.addEventListener('beforeinstallprompt', onPrompt);
     window.addEventListener('solarnet:install-prompt-ready', onCapturedPrompt);
@@ -45,7 +43,7 @@ export function StaffAppInstallCard(): React.JSX.Element {
     await prompt.prompt();
     const result = await prompt.userChoice;
     if (result.outcome === 'accepted') setInstalled(true);
-    window.__solarnetAdminInstallPrompt = undefined;
+    window.__solarnetInstallPrompt = undefined;
     setPrompt(null);
   };
 
