@@ -103,6 +103,12 @@ class FacebookAutomationController extends Controller
         return response()->json(['success' => true, 'message' => 'Facebook Page connection was disabled. No new messages will be sent.']);
     }
 
+    public function subscribeConnection(FacebookPageConnection $connection): JsonResponse
+    {
+        $result = $this->facebook->subscribePageToMessengerWebhook($connection);
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
     public function conversations(Request $request): JsonResponse
     {
         $connectionId = trim((string) $request->query('connection_id'));

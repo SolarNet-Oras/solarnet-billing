@@ -269,6 +269,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('page-candidates', [FacebookAutomationController::class, 'pageCandidates']);
                 Route::post('connect-page', [FacebookAutomationController::class, 'connectPage']);
                 Route::delete('connections/{connection}', [FacebookAutomationController::class, 'deactivateConnection']);
+                Route::post('connections/{connection}/subscribe-webhook', [FacebookAutomationController::class, 'subscribeConnection']);
                 Route::put('settings', [FacebookAutomationController::class, 'updateAutomationSettings']);
                 Route::get('campaigns', [FacebookAutomationController::class, 'campaigns']);
                 Route::post('campaigns', [FacebookAutomationController::class, 'createCampaign']);

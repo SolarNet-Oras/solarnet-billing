@@ -222,7 +222,41 @@ class FacebookMessengerService
             ],
         );
 
+        $subscription = $this->subscribePageToMessengerWebhook($connection);
+        if (! $subscription['success']) {
+            return ['success' => false, 'message' => $subscription['message']];
+        }
+
         return ['success' => true, 'connection' => $connection];
+    }
+
+    /** Subscribe the connected Page itself; verifying the callback alone is not enough. */
+    public function subscribePageToMessengerWebhook(FacebookPageConnection $connection): array
+    {
+        if (! $connection->is_active || blank($connection->page_access_token)) {
+            return ['success' => false, 'message' => 'The Facebook Page connection is inactive or has no Page access token.'];
+        }
+
+        try {
+            $response = Http::asForm()->timeout(15)->post($this->graphUrl('/'.$connection->page_id.'/subscribed_apps'), [
+                'access_token' => $connection->page_access_token,
+                'subscribed_fields' => 'messages,messaging_postbacks',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Facebook Page webhook subscription failed', ['connection_id' => $connection->id, 'error' => $e->getMessage()]);
+            $connection->forceFill(['last_error' => 'Meta could not be reached while subscribing the Page webhook.'])->save();
+            return ['success' => false, 'message' => 'Meta could not be reached while subscribing the Page webhook.'];
+        }
+
+        if (! $response->successful() || $response->json('success') !== true) {
+            $reason = trim((string) ($response->json('error.message') ?: 'Meta rejected the Page webhook subscription.'));
+            $connection->forceFill(['last_error' => Str::limit($reason, 1000, '')])->save();
+            Log::warning('Facebook Page webhook subscription rejected', ['connection_id' => $connection->id, 'http_status' => $response->status(), 'reason' => $reason]);
+            return ['success' => false, 'message' => 'Meta rejected the Page webhook subscription. Confirm pages_manage_metadata and pages_messaging access, then reconnect the Page.'];
+        }
+
+        $connection->forceFill(['last_error' => null])->save();
+        return ['success' => true];
     }
 
     public function verifyWebhook(string $mode, string $verifyToken): bool
