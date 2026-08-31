@@ -15,6 +15,7 @@ interface CustomerFormData {
   contact_number: string;
   email?: string;
   installation_date: string;
+  billing_cycle_day: string;
   service_plan_id?: string;
   router_id?: string;
   monthly_fee: string;
@@ -68,6 +69,7 @@ const CreateCustomerPage: React.FC = () => {
     address: '',
     contact_number: '',
     installation_date: new Date().toISOString().split('T')[0],
+    billing_cycle_day: String(new Date().getDate()),
     monthly_fee: '0',
     status: 'pending',
     mac_address: searchParams.get('mac') || '',
@@ -178,7 +180,7 @@ const CreateCustomerPage: React.FC = () => {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-foreground">Add New Customer</h1>
-          <p className="text-muted-foreground mt-1">Create a new ISP subscriber account</p>
+          <p className="text-muted-foreground mt-1">Register the client profile first; MAC and IP may be added later when the device appears in MikroTik.</p>
         </div>
 
         {/* Error Alert */}
@@ -379,7 +381,15 @@ const CreateCustomerPage: React.FC = () => {
                   className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   data-testid="input-installation-date"
                 />
-                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">{monthlyDueDateLabel(Number(formData.installation_date.slice(-2)))}</p>
+                <p className="mt-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary" aria-live="polite">Installation reference: {formData.installation_date}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Monthly Due Date *</label>
+                <select name="billing_cycle_day" value={formData.billing_cycle_day} onChange={handleChange} required className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary" data-testid="select-billing-cycle-day">
+                  {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{monthlyDueDateLabel(day)}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">Stored separately from the installation date and used for the recurring billing cycle.</p>
               </div>
 
               <div>
@@ -398,7 +408,7 @@ const CreateCustomerPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Service Plan</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Promo / Service Plan</label>
                 <select
                   name="service_plan_id"
                   value={formData.service_plan_id || ''}
@@ -461,6 +471,7 @@ const CreateCustomerPage: React.FC = () => {
           {/* Network Information */}
           <div>
             <h2 className="text-xl font-semibold text-foreground mb-4">Network Information</h2>
+            <p className="mb-4 rounded-md bg-primary/5 px-3 py-2 text-sm text-muted-foreground">Optional during initial registration. Leave MAC and IP blank until the customer device appears in an unregistered MikroTik lease.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">MAC Address</label>

@@ -20,6 +20,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class CustomerController extends Controller
 {
@@ -174,6 +175,19 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        $canonicalName = $this->canonicalCustomerName($validated['full_name']);
+        $duplicate = Customer::query()
+            ->select(['id', 'account_number', 'full_name'])
+            ->get()
+            ->first(fn (Customer $customer) => $this->canonicalCustomerName($customer->full_name) === $canonicalName);
+        if ($duplicate) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Customer name already exists: {$duplicate->full_name} ({$duplicate->account_number}). Registration was not created.",
+                'errors' => ['full_name' => ['A customer with the same normalized name already exists.']],
+                'existing_customer' => $duplicate,
+            ], 422);
+        }
         $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
         $validated['installation_date'] = $installationDate->toDateString();
         // New clients start with their installation anniversary by default,
@@ -288,6 +302,15 @@ class CustomerController extends Controller
             'mikrotik_sync' => $mikrotikSync,
             'billing_invoice' => $billingInvoice,
         ], 201);
+    }
+
+    private function canonicalCustomerName(string $name): string
+    {
+        return (string) Str::of($name)
+            ->ascii()
+            ->lower()
+            ->replaceMatches('/[^a-z0-9]+/', ' ')
+            ->squish();
     }
 
     /**
