@@ -240,6 +240,7 @@ class CustomerWebPushNotificationService
                         'contentEncoding' => $stored->content_encoding,
                     ]);
                     $payload = json_encode([
+                        'type' => $type,
                         'title' => $title,
                         'body' => $body,
                         'url' => $this->routeForNotification($route, $log),

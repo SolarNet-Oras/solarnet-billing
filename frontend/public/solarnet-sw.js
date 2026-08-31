@@ -45,6 +45,7 @@ self.addEventListener('push', (event) => {
     body: 'Open your SolarNet account to review this update.',
     url: '/customer/dashboard',
     tag: 'solarnet-account-alert',
+    type: 'ACCOUNT_ALERT',
   };
 
   try {
@@ -53,15 +54,28 @@ self.addEventListener('push', (event) => {
     // A malformed push must still show a safe, generic account notice.
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title, {
+  const isSuspension = payload.type === 'SERVICE_SUSPENDED' || payload.type === 'SUSPENSION_WARNING';
+  const isRestored = payload.type === 'SERVICE_RESTORED';
+  const notification = self.registration.showNotification(payload.title, {
     body: payload.body,
     icon: typeof payload.icon === 'string' && payload.icon.startsWith('/') ? payload.icon : '/solarnet-mark.svg',
-    badge: typeof payload.icon === 'string' && payload.icon.startsWith('/') ? payload.icon : '/solarnet-mark.svg',
+    badge: '/solarnet-company-logo-192.png',
     tag: payload.tag,
     renotify: true,
-    data: { url: payload.url },
-    actions: [{ action: 'open-account', title: 'Open account' }],
-  }));
+    requireInteraction: isSuspension,
+    vibrate: isSuspension ? [250, 120, 250] : [150],
+    data: { url: payload.url, type: payload.type },
+    actions: [{ action: 'open-account', title: isSuspension ? 'Review and pay' : 'Open account' }],
+  });
+
+  const badgeNavigator = self.navigator;
+  const badge = isSuspension && typeof badgeNavigator.setAppBadge === 'function'
+    ? badgeNavigator.setAppBadge(1)
+    : isRestored && typeof badgeNavigator.clearAppBadge === 'function'
+      ? badgeNavigator.clearAppBadge()
+      : Promise.resolve();
+
+  event.waitUntil(Promise.all([notification, badge]));
 });
 
 self.addEventListener('notificationclick', (event) => {
