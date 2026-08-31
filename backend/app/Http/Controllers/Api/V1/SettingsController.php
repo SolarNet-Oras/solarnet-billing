@@ -204,7 +204,7 @@ class SettingsController extends Controller
             'display' => 'standalone',
             'background_color' => '#f8fafc',
             'theme_color' => '#0f172a',
-            'icons' => [$this->applicationIcon()],
+            'icons' => $this->applicationIcons(),
         ])->header('Content-Type', 'application/manifest+json')
           ->header('Cache-Control', 'no-store, max-age=0');
     }
@@ -224,7 +224,7 @@ class SettingsController extends Controller
             'display' => 'standalone',
             'background_color' => '#020817',
             'theme_color' => '#0f172a',
-            'icons' => [$this->applicationIcon()],
+            'icons' => $this->applicationIcons(),
         ])->header('Content-Type', 'application/manifest+json')
           ->header('Cache-Control', 'no-store, max-age=0');
     }
@@ -238,25 +238,13 @@ class SettingsController extends Controller
         return str_starts_with($path, '/storage/company-branding/') ? $path : $configured;
     }
 
-    /** Return honest icon metadata so Windows/Android do not reject the logo. */
-    private function applicationIcon(): array
+    /** Exact company-logo assets required by Chromium PWA installation. */
+    private function applicationIcons(): array
     {
-        $url = $this->publicLogoUrl();
-        $storagePath = $this->storagePathFromUrl($url);
-        if ($url !== '' && $storagePath && Storage::disk('public')->exists($storagePath)) {
-            $absolutePath = Storage::disk('public')->path($storagePath);
-            $dimensions = @getimagesize($absolutePath);
-            if ($dimensions) {
-                return [
-                    'src' => $url,
-                    'sizes' => $dimensions[0].'x'.$dimensions[1],
-                    'type' => $dimensions['mime'] ?? 'image/png',
-                    'purpose' => 'any',
-                ];
-            }
-        }
-
-        return ['src' => '/solarnet-mark.svg', 'sizes' => 'any', 'type' => 'image/svg+xml', 'purpose' => 'any maskable'];
+        return [
+            ['src' => '/solarnet-company-logo-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/solarnet-company-logo-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+        ];
     }
 
     private function storagePathFromUrl(string $url): ?string

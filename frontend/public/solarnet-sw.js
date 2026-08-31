@@ -4,6 +4,8 @@ const APP_SHELL = [
   '/login',
   '/customer/login',
   '/solarnet-mark.svg',
+  '/solarnet-company-logo-192.png',
+  '/solarnet-company-logo-512.png',
 ];
 
 self.addEventListener('install', (event) => {
