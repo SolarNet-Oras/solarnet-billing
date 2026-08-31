@@ -20,6 +20,8 @@ const applyBranding = (branding: CompanyBranding): void => {
     if (branding.logo_url) icon.removeAttribute('type');
     else icon.type = 'image/svg+xml';
   }
+  const appleTouchIcon = document.querySelector<HTMLLinkElement>('#company-apple-touch-icon');
+  if (appleTouchIcon) appleTouchIcon.href = branding.logo_url || DEFAULT_APP_ICON;
   document.title = branding.name || 'SolarNet';
   window.dispatchEvent(new CustomEvent<CompanyBranding>('solarnet:branding-changed', { detail: branding }));
 };

@@ -182,7 +182,7 @@ class SettingsController extends Controller
     {
         return response()->json(['data' => [
             'name' => Setting::get('company.name', 'Solarnet Internet'),
-            'logo_url' => Setting::get('company.logo_url', ''),
+            'logo_url' => $this->publicLogoUrl(),
             'email' => Setting::get('company.email', ''),
             'facebook_url' => Setting::get('company.facebook_url', 'https://www.facebook.com/SolarnetConnectionInstallationandServices'),
         ]]);
@@ -195,8 +195,6 @@ class SettingsController extends Controller
      */
     public function publicManifest(): JsonResponse
     {
-        $logoUrl = trim((string) Setting::get('company.logo_url', ''));
-
         return response()->json([
             'name' => Setting::get('company.name', 'Solarnet Internet') . ' Customer App',
             'short_name' => Setting::get('company.name', 'SolarNet'),
@@ -206,11 +204,7 @@ class SettingsController extends Controller
             'display' => 'standalone',
             'background_color' => '#f8fafc',
             'theme_color' => '#0f172a',
-            'icons' => [[
-                'src' => $logoUrl !== '' ? $logoUrl : '/solarnet-mark.svg',
-                'sizes' => 'any',
-                'purpose' => 'any maskable',
-            ]],
+            'icons' => [$this->applicationIcon()],
         ])->header('Content-Type', 'application/manifest+json')
           ->header('Cache-Control', 'no-store, max-age=0');
     }
@@ -218,8 +212,6 @@ class SettingsController extends Controller
     /** Manifest used only by the staff billing domain and admin install card. */
     public function publicAdminManifest(): JsonResponse
     {
-        $logoUrl = trim((string) Setting::get('company.logo_url', ''));
-
         return response()->json([
             // Keep the original stable ID so already-installed Super Admin
             // copies upgrade into the Staff app instead of duplicating it.
@@ -232,13 +224,39 @@ class SettingsController extends Controller
             'display' => 'standalone',
             'background_color' => '#020817',
             'theme_color' => '#0f172a',
-            'icons' => [[
-                'src' => $logoUrl !== '' ? $logoUrl : '/solarnet-mark.svg',
-                'sizes' => 'any',
-                'purpose' => 'any maskable',
-            ]],
+            'icons' => [$this->applicationIcon()],
         ])->header('Content-Type', 'application/manifest+json')
           ->header('Cache-Control', 'no-store, max-age=0');
+    }
+
+    /** Keep uploaded branding on the domain currently serving the app. */
+    private function publicLogoUrl(): string
+    {
+        $configured = trim((string) Setting::get('company.logo_url', ''));
+        $path = parse_url($configured, PHP_URL_PATH) ?: '';
+
+        return str_starts_with($path, '/storage/company-branding/') ? $path : $configured;
+    }
+
+    /** Return honest icon metadata so Windows/Android do not reject the logo. */
+    private function applicationIcon(): array
+    {
+        $url = $this->publicLogoUrl();
+        $storagePath = $this->storagePathFromUrl($url);
+        if ($url !== '' && $storagePath && Storage::disk('public')->exists($storagePath)) {
+            $absolutePath = Storage::disk('public')->path($storagePath);
+            $dimensions = @getimagesize($absolutePath);
+            if ($dimensions) {
+                return [
+                    'src' => $url,
+                    'sizes' => $dimensions[0].'x'.$dimensions[1],
+                    'type' => $dimensions['mime'] ?? 'image/png',
+                    'purpose' => 'any',
+                ];
+            }
+        }
+
+        return ['src' => '/solarnet-mark.svg', 'sizes' => 'any', 'type' => 'image/svg+xml', 'purpose' => 'any maskable'];
     }
 
     private function storagePathFromUrl(string $url): ?string
