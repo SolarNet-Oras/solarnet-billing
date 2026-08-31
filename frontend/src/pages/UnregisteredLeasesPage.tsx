@@ -762,6 +762,16 @@ const QuickRegisterModal: React.FC<{
   const currentCustomer = lease.known_customer_identity?.customer;
   const isDuplicateResolution = mode === 'reassign' && lease.known_customer_identity?.status === 'ambiguous';
   const isReassignment = mode === 'reassign' && (Boolean(currentCustomer) || isDuplicateResolution);
+  const duplicateOwnerIds = new Set(lease.known_customer_identity?.customers?.map((owner) => owner.id) ?? []);
+  const duplicateOwnerCandidates = customers.filter((customer) => duplicateOwnerIds.has(customer.id));
+  const otherCustomerCandidates = customers.filter((customer) => !duplicateOwnerIds.has(customer.id));
+
+  const customerOption = (customer: CustomerLinkCandidate, disabled = false): React.JSX.Element => (
+    <option key={customer.id} value={customer.id} disabled={disabled || !customer.service_plan_id}>
+      {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
+      {disabled ? ' · current owner' : ''}
+    </option>
+  );
 
   return (
     <div
@@ -832,15 +842,29 @@ const QuickRegisterModal: React.FC<{
             data-testid="quick-register-existing-customer"
           >
             <option value="">{isDuplicateResolution ? 'Select the real user' : isReassignment ? 'Select Client B' : 'Create a new customer from this lease'}</option>
-            {customers.filter((customer) => !isReassignment || customer.id !== currentCustomer?.id).map((customer) => (
-              <option key={customer.id} value={customer.id} disabled={!customer.service_plan_id}>
-                {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
-              </option>
-            ))}
+            {isDuplicateResolution ? (
+              <>
+                <optgroup label="Currently using this duplicate MAC">
+                  {duplicateOwnerCandidates.map((customer) => customerOption(customer))}
+                </optgroup>
+                <optgroup label="All other registered customers">
+                  {otherCustomerCandidates.map((customer) => customerOption(customer))}
+                </optgroup>
+              </>
+            ) : isReassignment && currentCustomer ? (
+              <>
+                <optgroup label="Current owner (cannot be Client B)">
+                  {customers.filter((customer) => customer.id === currentCustomer.id).map((customer) => customerOption(customer, true))}
+                </optgroup>
+                <optgroup label="All other registered customers">
+                  {customers.filter((customer) => customer.id !== currentCustomer.id).map((customer) => customerOption(customer))}
+                </optgroup>
+              </>
+            ) : customers.map((customer) => customerOption(customer))}
           </select>
           <p className="text-xs text-muted-foreground mt-1">
             {isReassignment
-              ? 'Only an existing registered client with an assigned plan can receive this device.'
+              ? `Showing all ${customers.length} registered customers. Customers without an assigned plan remain visible but cannot receive the device until a plan is set.`
               : 'Select a registered customer for an ONU/router replacement. Their billing profile, due date, plan, and balance stay unchanged.'}
           </p>
           {selectedCustomer && (
