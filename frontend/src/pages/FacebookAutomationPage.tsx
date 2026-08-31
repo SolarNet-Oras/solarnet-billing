@@ -24,6 +24,9 @@ type Status = {
   redirect_url: string;
   graph_version: string;
   auto_reply_enabled: boolean;
+  auto_reply_ready: boolean;
+  auto_reply_blockers: string[];
+  last_auto_reply: { delivery_status: string; delivery_error: string | null; created_at: string | null } | null;
   marketing_enabled: boolean;
   connections: Connection[];
 };
@@ -125,6 +128,14 @@ export default function FacebookAutomationPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void load();
+      if (selectedConversation) void loadMessages(selectedConversation);
+    }, 15000);
+    return () => window.clearInterval(interval);
+  }, [load, loadMessages, selectedConversation]);
 
   useEffect(() => {
     const setupToken = searchParams.get('facebook_setup');
@@ -251,6 +262,8 @@ export default function FacebookAutomationPage(): React.JSX.Element {
       {notice && <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">{notice}</p>}
 
       {isAdmin && <FacebookPostStudio connections={connected} />}
+
+      {isAdmin && status && <section className={`rounded-2xl border p-4 ${status.auto_reply_ready ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30' : 'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30'}`}><div className="flex gap-2"><ShieldCheck className={`mt-0.5 h-5 w-5 ${status.auto_reply_ready ? 'text-emerald-600' : 'text-amber-600'}`} /><div><h2 className="font-semibold text-foreground">Automatic Messenger reply: {status.auto_reply_ready ? 'Ready' : 'Needs attention'}</h2>{status.auto_reply_blockers.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">{status.auto_reply_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}{status.last_auto_reply && <p className="mt-2 text-xs text-muted-foreground">Last attempt: {displayDate(status.last_auto_reply.created_at)} · {status.last_auto_reply.delivery_status}{status.last_auto_reply.delivery_error ? ` · ${status.last_auto_reply.delivery_error}` : ''}</p>}<p className="mt-2 text-xs text-muted-foreground">The production queue worker must be running. Only new inbound messages trigger automatic replies.</p></div></div></section>}
 
       {pageCandidates.length > 0 && <section className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-900/60 dark:bg-sky-950/20"><div className="flex gap-2"><Link2 className="mt-0.5 h-5 w-5 text-sky-700 dark:text-sky-300" /><div><h2 className="font-semibold text-foreground">Choose the Facebook Page to connect</h2><p className="mt-1 text-sm text-muted-foreground">Only the selected Page is connected. Personal Facebook messages are never accessed.</p></div></div><div className="mt-4 flex flex-wrap gap-2">{pageCandidates.map((page) => <button key={page.id} type="button" disabled={busy !== ''} onClick={() => void choosePage(page.id)} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">{busy === `page:${page.id}` ? 'Connecting…' : `Connect ${page.name}`}</button>)}</div></section>}
 

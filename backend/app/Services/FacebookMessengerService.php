@@ -44,6 +44,17 @@ class FacebookMessengerService
             ->with('connectedBy:id,name')
             ->latest()
             ->get();
+        $activeConnections = $connections->where('is_active', true);
+        $autoReplyEnabled = (bool) Setting::get('facebook_automation.auto_reply_enabled', false);
+        $blockers = [];
+        if (! $autoReplyEnabled) $blockers[] = 'Automatic replies are disabled. Enable the AI reply control and save it.';
+        if (! $this->webhookReady()) $blockers[] = 'Facebook webhook verification is not configured on the server.';
+        if (! $this->ai->isConfigured()) $blockers[] = 'OpenAI is not configured on the server.';
+        if ($activeConnections->isEmpty()) $blockers[] = 'No active Facebook Page connection exists.';
+        if ($activeConnections->isNotEmpty() && $activeConnections->every(fn (FacebookPageConnection $connection) => $connection->last_webhook_at === null)) {
+            $blockers[] = 'Meta has not delivered a signed Messenger webhook to this Page yet.';
+        }
+        $latestAutoReply = FacebookMessengerMessage::query()->where('source', 'ai_auto')->latest('created_at')->first();
 
         return [
             'oauth_ready' => $this->oauthReady(),
@@ -52,7 +63,14 @@ class FacebookMessengerService
             'webhook_url' => rtrim((string) config('app.url'), '/') . '/api/v1/integrations/facebook/webhook',
             'redirect_url' => (string) config('services.facebook.oauth_redirect_uri'),
             'graph_version' => (string) config('services.facebook.graph_version'),
-            'auto_reply_enabled' => (bool) Setting::get('facebook_automation.auto_reply_enabled', false),
+            'auto_reply_enabled' => $autoReplyEnabled,
+            'auto_reply_ready' => $blockers === [],
+            'auto_reply_blockers' => $blockers,
+            'last_auto_reply' => $latestAutoReply ? [
+                'delivery_status' => $latestAutoReply->delivery_status,
+                'delivery_error' => $latestAutoReply->delivery_error,
+                'created_at' => $latestAutoReply->created_at?->toIso8601String(),
+            ] : null,
             'marketing_enabled' => (bool) Setting::get('facebook_automation.marketing_enabled', false),
             'connections' => $connections->map(fn (FacebookPageConnection $connection) => $connection->toAutomationArray())->values(),
         ];
@@ -391,6 +409,20 @@ class FacebookMessengerService
 
         $draft = $this->aiDraft($conversation);
         if (! $draft['success']) {
+            FacebookMessengerMessage::create([
+                'facebook_messenger_conversation_id' => $conversation->id,
+                'reply_to_message_id' => $inbound->id,
+                'direction' => 'outbound',
+                'source' => 'ai_auto',
+                'message_text' => null,
+                'delivery_status' => 'failed',
+                'delivery_error' => $draft['message'] ?? 'AI could not prepare an automatic reply.',
+            ]);
+            Log::warning('Facebook Messenger automatic reply was not prepared', [
+                'conversation_id' => $conversation->id,
+                'inbound_message_id' => $inbound->id,
+                'reason' => $draft['message'] ?? 'unknown',
+            ]);
             return;
         }
 
