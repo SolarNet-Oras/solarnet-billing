@@ -18,29 +18,35 @@ class CustomerLocationCaptureService
      * The source IP binds the three browser requests to one short-lived flow.
      * It is not compared with a private DHCP address: HTTPS sees the public
      * NAT address while RouterOS stores the subscriber's private lease. The
-     * authenticated customer, router, current matched lease and stored ONU
-     * reference must still all agree; ambiguity always fails closed.
+     * The authenticated customer and, when present, exactly one current
+     * matched lease must agree. The saved ONU reference is preferred, then an
+     * exact lease MAC. A migrated customer with no device record is bound to
+     * the signed account ID. Multiple device candidates always fail closed.
      */
     public function createRequest(Customer $customer, string $sourceIp): array
     {
-        if (blank($customer->onu_information) || !$customer->router_id) {
-            return ['eligible' => false, 'reason' => 'SolarNet could not safely identify your service connection. Please contact support.'];
-        }
-
-        $leases = DhcpLease::query()
+        $leaseQuery = DhcpLease::query()
             ->where('customer_id', $customer->id)
-            ->where('router_id', $customer->router_id)
             ->where('is_matched', true)
             ->where('is_current', true)
-            ->where('status', 'bound')
-            ->get();
+            ->where('status', 'bound');
+        if ($customer->router_id) $leaseQuery->where('router_id', $customer->router_id);
 
-        if ($leases->count() !== 1) {
-            return ['eligible' => false, 'reason' => 'SolarNet could not safely identify your service connection. Please contact support.'];
+        $leases = $leaseQuery->get();
+        $registeredMac = $this->normalizeMac($customer->mac_address);
+        if ($registeredMac !== null) {
+            $exactMac = $leases->filter(fn (DhcpLease $lease) => $this->normalizeMac($lease->mac_address) === $registeredMac)->values();
+            if ($exactMac->count() === 1) $leases = $exactMac;
         }
 
+        if ($leases->count() > 1) {
+            return ['eligible' => false, 'reason' => 'More than one current device is linked to this customer. SolarNet support must review the device binding before location can be saved.'];
+        }
+
+        $lease = $leases->first();
+        $onuReference = $this->identityReference($customer, $lease);
         $token = Str::random(64);
-        $request = DB::transaction(function () use ($customer, $sourceIp, $leases, $token) {
+        $request = DB::transaction(function () use ($customer, $sourceIp, $lease, $onuReference, $token) {
             CustomerLocationCaptureRequest::query()
                 ->where('customer_id', $customer->id)
                 ->whereIn('status', ['pending', 'captured'])
@@ -48,9 +54,9 @@ class CustomerLocationCaptureService
 
             $capture = CustomerLocationCaptureRequest::create([
                 'customer_id' => $customer->id,
-                'router_id' => $customer->router_id,
-                'dhcp_lease_id' => $leases->first()->id,
-                'onu_reference' => trim((string) $customer->onu_information),
+                'router_id' => $lease?->router_id ?? $customer->router_id,
+                'dhcp_lease_id' => $lease?->id,
+                'onu_reference' => $onuReference,
                 'token_hash' => hash('sha256', $token),
                 'source_ip' => $sourceIp,
                 'status' => 'pending',
@@ -115,9 +121,28 @@ class CustomerLocationCaptureService
         $query = CustomerLocationCaptureRequest::query()->where('customer_id', $customer->id)->where('token_hash', hash('sha256', $token))->whereIn('status', ['pending', 'captured'])->where('source_ip', $sourceIp)->where('expired_at', '>', now());
         if ($lock) $query->lockForUpdate();
         $capture = $query->first();
-        if (!$capture || $capture->router_id !== $customer->router_id || $capture->onu_reference !== trim((string) $customer->onu_information)) return null;
-        $lease = DhcpLease::query()->whereKey($capture->dhcp_lease_id)->where('customer_id', $customer->id)->where('router_id', $customer->router_id)->where('is_matched', true)->where('is_current', true)->where('status', 'bound')->first();
-        return $lease ? $capture : null;
+        if (!$capture) return null;
+        if ($capture->dhcp_lease_id) {
+            $lease = DhcpLease::query()->whereKey($capture->dhcp_lease_id)->where('customer_id', $customer->id)->where('router_id', $capture->router_id)->where('is_matched', true)->where('is_current', true)->where('status', 'bound')->first();
+            if (!$lease || $capture->onu_reference !== $this->identityReference($customer, $lease)) return null;
+        } elseif ($capture->onu_reference !== $this->identityReference($customer, null)) {
+            return null;
+        }
+        return $capture;
+    }
+
+    private function identityReference(Customer $customer, ?DhcpLease $lease): string
+    {
+        $onu = trim((string) $customer->onu_information);
+        if ($onu !== '') return 'ONU:'.$onu;
+        if ($lease) return 'MAC:'.($this->normalizeMac($lease->mac_address) ?? strtoupper((string) $lease->mac_address));
+        return 'ACCOUNT:'.$customer->id;
+    }
+
+    private function normalizeMac(?string $value): ?string
+    {
+        $hex = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', (string) $value) ?? '');
+        return strlen($hex) === 12 ? implode(':', str_split($hex, 2)) : null;
     }
 
     private function event(Customer $customer, CustomerLocationCaptureRequest $capture, string $action, ?float $latitude = null, ?float $longitude = null, ?float $accuracy = null): void
