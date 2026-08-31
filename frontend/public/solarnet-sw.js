@@ -1,6 +1,7 @@
-const CACHE_NAME = 'solarnet-customer-shell-v4';
+const CACHE_NAME = 'solarnet-application-shell-v5';
 const APP_SHELL = [
   '/',
+  '/login',
   '/customer/login',
   '/solarnet-mark.svg',
 ];
@@ -29,7 +30,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match('/customer/login'))),
+    fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match(url.pathname.startsWith('/customer/') ? '/customer/login' : '/login'))),
   );
 });
 

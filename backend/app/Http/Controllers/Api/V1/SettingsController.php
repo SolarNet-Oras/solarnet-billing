@@ -215,6 +215,30 @@ class SettingsController extends Controller
           ->header('Cache-Control', 'no-store, max-age=0');
     }
 
+    /** Manifest used only by the staff billing domain and admin install card. */
+    public function publicAdminManifest(): JsonResponse
+    {
+        $logoUrl = trim((string) Setting::get('company.logo_url', ''));
+
+        return response()->json([
+            'id' => '/admin-app',
+            'name' => Setting::get('company.name', 'Solarnet Internet').' Admin',
+            'short_name' => 'SolarNet Admin',
+            'description' => 'Secure staff access to SolarNet billing and network operations.',
+            'start_url' => '/login?source=installed-admin-app',
+            'scope' => '/',
+            'display' => 'standalone',
+            'background_color' => '#020817',
+            'theme_color' => '#0f172a',
+            'icons' => [[
+                'src' => $logoUrl !== '' ? $logoUrl : '/solarnet-mark.svg',
+                'sizes' => 'any',
+                'purpose' => 'any maskable',
+            ]],
+        ])->header('Content-Type', 'application/manifest+json')
+          ->header('Cache-Control', 'no-store, max-age=0');
+    }
+
     private function storagePathFromUrl(string $url): ?string
     {
         $path = parse_url($url, PHP_URL_PATH) ?: '';

@@ -52,6 +52,9 @@ Route::prefix('v1')->group(function () {
             'laravel_version' => app()->version(),
         ]);
     });
+    // Public only because browsers fetch manifests without an API token.
+    // It contains branding and a staff login start URL, never staff data.
+    Route::get('/admin-app/manifest.webmanifest', [SettingsController::class, 'publicAdminManifest']);
 
     // Meta calls these endpoints directly. Signature validation is mandatory
     // for events; staff OAuth remains bound to a short-lived server-side state.

@@ -4,6 +4,7 @@ import { settingsService, type SettingItem } from '@/services/settingsService';
 import customerPortalService from '@/services/customerPortalService';
 import { AutomationPanel } from '@/components/automation/AutomationPanel';
 import { HistoricalCleanupPanel } from '@/components/settings/HistoricalCleanupPanel';
+import { AdminAppInstallCard } from '@/components/settings/AdminAppInstallCard';
 import { useAuth } from '@/hooks/useAuth';
 import { Settings as SettingsIcon, Save, CheckCircle2, ImagePlus, Trash2, Loader2 } from 'lucide-react';
 
@@ -68,6 +69,7 @@ const SettingsPage: React.FC = () => {
 
   const currentValue = (it: SettingItem) => (Object.prototype.hasOwnProperty.call(dirty, it.key) ? dirty[it.key] : it.value);
   const hasChanges = Object.keys(dirty).length > 0;
+  const isSuperAdmin = user?.role === 'super_admin' || user?.roles?.some((role) => typeof role === 'string' ? role === 'super_admin' : role.name === 'super_admin');
 
   return (
     <DashboardLayout>
@@ -117,8 +119,9 @@ const SettingsPage: React.FC = () => {
           ))
         )}
 
+        {!loading && isSuperAdmin && <AdminAppInstallCard />}
         {!loading && <AutomationPanel />}
-        {!loading && (user?.role === 'super_admin' || user?.roles?.some((role) => typeof role === 'string' ? role === 'super_admin' : role.name === 'super_admin')) && <HistoricalCleanupPanel />}
+        {!loading && isSuperAdmin && <HistoricalCleanupPanel />}
 
         <div className="sticky bottom-4 flex justify-end">
           <button
