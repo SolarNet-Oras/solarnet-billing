@@ -79,6 +79,12 @@ export interface CustomerUpdateImportApplyResponse {
   };
 }
 
+export interface CustomerRegistrationImportPreview {
+  status: 'success'; message: string; preview_token: string; expires_in_minutes: number; source_label: string;
+  summary: { total: number; ready: number; existing: number; duplicate_in_file: number; invalid: number };
+  rows: Array<{ row: number; status: 'ready' | 'existing' | 'duplicate_in_file' | 'invalid'; reason: string; client_name: string; address: string; installation_date: string | null; due_day: number | null; promo: string; service_plan_name: string | null; monthly_fee: number | null }>;
+}
+
 export const customerService = {
   /** Get all customers with optional filters */
   getCustomers: async (params?: {
@@ -155,6 +161,17 @@ export const customerService = {
     const response = await api.post<CustomerUpdateImportApplyResponse>('/customers/update-import/apply', {
       preview_token: previewToken,
     });
+    return response.data;
+  },
+
+  previewCustomerRegistrationImport: async (file: File): Promise<CustomerRegistrationImportPreview> => {
+    const form = new FormData(); form.append('file', file);
+    const response = await api.post<CustomerRegistrationImportPreview>('/customers/registration-import/preview', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 90000 });
+    return response.data;
+  },
+
+  applyCustomerRegistrationImport: async (previewToken: string): Promise<{ status: string; message: string; data: { created: number; skipped: string[] } }> => {
+    const response = await api.post('/customers/registration-import/apply', { preview_token: previewToken });
     return response.data;
   },
 };

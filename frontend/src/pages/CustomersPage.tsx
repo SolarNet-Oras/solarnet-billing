@@ -7,6 +7,7 @@ import type { Customer } from '@/types/api';
 import { logger } from '@/lib/logger';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
 import { Download, FileUp, Link2, MapPin } from 'lucide-react';
+import { CustomerRegistrationImportModal } from '@/components/customers/CustomerRegistrationImportModal';
 
 const CustomersPage: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -17,6 +18,7 @@ const CustomersPage: React.FC = () => {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
   const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
   const [customerUpdateImportOpen, setCustomerUpdateImportOpen] = useState<boolean>(false);
+  const [customerRegistrationImportOpen, setCustomerRegistrationImportOpen] = useState<boolean>(false);
   const [customerUpdateImportSource, setCustomerUpdateImportSource] = useState<'file' | 'google_sheet'>('file');
   const [customerUpdateImportFile, setCustomerUpdateImportFile] = useState<File | null>(null);
   const [customerUpdateImportSheetUrl, setCustomerUpdateImportSheetUrl] = useState<string>('');
@@ -361,6 +363,15 @@ const CustomersPage: React.FC = () => {
             <p className="text-muted-foreground mt-1">Manage your ISP subscribers</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setCustomerRegistrationImportOpen(true); setError(''); }}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-primary/40 text-primary bg-primary/5 rounded-md hover:bg-primary/10 transition-colors"
+              data-testid="customer-registration-import-btn"
+            >
+              <FileUp className="h-4 w-4" />
+              Import New Clients
+            </button>
             <button
               type="button"
               onClick={handleDownloadPdf}
@@ -798,6 +809,11 @@ const CustomersPage: React.FC = () => {
           </div>
         </div>
       )}
+      <CustomerRegistrationImportModal
+        open={customerRegistrationImportOpen}
+        onClose={() => setCustomerRegistrationImportOpen(false)}
+        onApplied={(message) => { setNotice(message); setCustomerRegistrationImportOpen(false); void fetchCustomers(); }}
+      />
 
       {/* Existing-client migration/setup modal */}
       {clientSetupOpen && (
