@@ -35,6 +35,7 @@ import OperationsMapPage from '@/pages/OperationsMapPage';
 import CyberSecurityPage from '@/pages/CyberSecurityPage';
 import FacebookAutomationPage from '@/pages/FacebookAutomationPage';
 import WireguardPage from '@/pages/WireguardPage';
+import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
 
 // ============================================================================
 // Main App Component
@@ -162,6 +163,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />
               <Route path="/radius-ipoe" element={<ProtectedRoute allowedRoles={['super_admin', 'admin']}><RadiusIpOePage /></ProtectedRoute>} />
               <Route path="/wireguard" element={<ProtectedRoute allowedRoles={['super_admin']}><WireguardPage /></ProtectedRoute>} />
+              <Route path="/install-staff-app" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><StaffAppInstallPage /></ProtectedRoute>} />
               <Route
                 path="/tickets"
                 element={

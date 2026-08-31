@@ -27,7 +27,7 @@
         const isStaffDomain = window.location.hostname.startsWith('billing.');
         if (isStaffDomain) {
           document.getElementById('application-manifest')?.setAttribute('href', '/api/v1/admin-app/manifest.webmanifest');
-          document.title = 'SolarNet Admin';
+          document.title = 'SolarNet Staff';
         }
         window.addEventListener('beforeinstallprompt', (event) => {
           event.preventDefault();

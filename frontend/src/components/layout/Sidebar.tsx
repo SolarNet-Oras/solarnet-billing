@@ -23,6 +23,7 @@ import {
   Upload,
   Wifi,
   Waypoints,
+  Download,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -62,6 +63,7 @@ const navItems: NavItem[] = [
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Users', path: '/users', icon: Users, roles: ['super_admin'] },
   { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },
+  { name: 'Install Staff App', path: '/install-staff-app', icon: Download, roles: ['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
 ];
 
@@ -112,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard' || item.path === '/operations-map').map((item) => {
+          {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard' || item.path === '/operations-map' || item.path === '/install-staff-app').map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);

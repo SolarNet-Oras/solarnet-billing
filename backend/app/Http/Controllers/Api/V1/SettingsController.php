@@ -221,9 +221,11 @@ class SettingsController extends Controller
         $logoUrl = trim((string) Setting::get('company.logo_url', ''));
 
         return response()->json([
+            // Keep the original stable ID so already-installed Super Admin
+            // copies upgrade into the Staff app instead of duplicating it.
             'id' => '/admin-app',
-            'name' => Setting::get('company.name', 'Solarnet Internet').' Admin',
-            'short_name' => 'SolarNet Admin',
+            'name' => Setting::get('company.name', 'Solarnet Internet').' Staff',
+            'short_name' => 'SolarNet Staff',
             'description' => 'Secure staff access to SolarNet billing and network operations.',
             'start_url' => '/login?source=installed-admin-app',
             'scope' => '/',
