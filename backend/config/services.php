@@ -2,6 +2,9 @@
 
 return [
     'location_capture' => [
+        // GPS accuracy is an uncertainty radius, not router distance. The
+        // service enforces a minimum acceptable threshold of 50 meters even
+        // if an older production environment contains a stricter value.
         'max_accuracy_meters' => env('LOCATION_CAPTURE_MAX_ACCURACY_METERS', 50),
     ],
 

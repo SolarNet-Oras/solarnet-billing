@@ -82,8 +82,12 @@ class CustomerLocationCaptureService
         $capture = $this->validRequest($customer, $token, $sourceIp);
         if (!$capture) return ['success' => false, 'message' => 'This location request is invalid, expired, or cannot be safely associated with your service.'];
 
-        $threshold = (float) config('services.location_capture.max_accuracy_meters', 50);
-        if ($accuracy > $threshold) return ['success' => false, 'message' => "Your current location accuracy is approximately {$accuracy} meters. Please move closer to your Internet installation location and try again.", 'status' => 422];
+        // Browser accuracy is an uncertainty radius reported by GPS; it is not
+        // the phone's distance from the ONU/router. Normal phones commonly
+        // report 10-30 m even beside the installed equipment, so never enforce
+        // a production override stricter than the safe 50 m acceptance floor.
+        $threshold = max(50.0, (float) config('services.location_capture.max_accuracy_meters', 50));
+        if ($accuracy > $threshold) return ['success' => false, 'message' => "Your phone reported location accuracy of approximately ".round($accuracy, 1)." meters. Turn on Precise Location/High Accuracy and try near a window or open area. Your distance from the router does not affect GPS accuracy.", 'status' => 422];
 
         $capture->forceFill([
             'accepted_at' => $capture->accepted_at ?? now(),
