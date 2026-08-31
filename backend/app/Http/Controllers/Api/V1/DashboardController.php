@@ -98,14 +98,23 @@ class DashboardController extends Controller
         $prevMonthE  = $prevMonth->copy()->endOfMonth();
 
         // ---- Subscribers ----
-        $totalSubs    = Customer::count();
-        $activeSubs   = Customer::where('status', 'active')->count();
-        $suspended    = Customer::where('status', 'suspended')->count();
-        $expiredSubs  = Customer::where('status', 'expired')->count();
+        $subscriberTotals = Customer::query()->selectRaw(
+            'COUNT(*) AS total_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS suspended_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS expired_count,
+             SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS current_month_count,
+             SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) AS previous_month_count',
+            ['active', 'suspended', 'expired', $monthStart, $prevMonthS, $prevMonthE]
+        )->first();
+        $totalSubs = (int) ($subscriberTotals->total_count ?? 0);
+        $activeSubs = (int) ($subscriberTotals->active_count ?? 0);
+        $suspended = (int) ($subscriberTotals->suspended_count ?? 0);
+        $expiredSubs = (int) ($subscriberTotals->expired_count ?? 0);
 
         // Growth vs previous month
-        $subsThisMonth = Customer::where('created_at', '>=', $monthStart)->count();
-        $subsLastMonth = Customer::whereBetween('created_at', [$prevMonthS, $prevMonthE])->count();
+        $subsThisMonth = (int) ($subscriberTotals->current_month_count ?? 0);
+        $subsLastMonth = (int) ($subscriberTotals->previous_month_count ?? 0);
         $subsChangePct = $this->percentChange($subsLastMonth, $subsThisMonth);
 
         // ---- Revenue (from Payments) ----
@@ -115,32 +124,52 @@ class DashboardController extends Controller
         $revChangePct   = $this->percentChange($prevMonthRev, $monthRevenue);
 
         // ---- Invoices ----
-        $pendingPayments = Invoice::whereIn('status', ['sent', 'partial'])->where('balance', '>', 0)->count();
-        $overdueInvoices = Invoice::where('due_date', '<', $today)->where('balance', '>', 0)
-                                  ->whereIn('status', ['sent', 'partial', 'overdue'])->count();
-        $paidInvoices    = Invoice::where('status', 'paid')->count();
-        $partialInvoices = Invoice::where('status', 'partial')->count();
-        $unpaidInvoices  = Invoice::whereIn('status', ['sent', 'overdue'])
-            ->where('balance', '>', 0)
-            ->count();
-        $totalBilled     = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])->sum('total');
-        $totalPaid       = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])->sum('paid_amount');
-        $partialPaid     = (float) Invoice::where('status', 'partial')->sum('paid_amount');
-        $collectible     = (float) Invoice::whereNotIn('status', ['draft', 'cancelled'])
-            ->where('balance', '>', 0)
-            ->sum('balance');
+        $invoiceTotals = Invoice::query()->selectRaw(
+            'SUM(CASE WHEN status IN (?, ?) AND balance > 0 THEN 1 ELSE 0 END) AS pending_count,
+             SUM(CASE WHEN due_date < ? AND balance > 0 AND status IN (?, ?, ?) THEN 1 ELSE 0 END) AS overdue_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS paid_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS partial_count,
+             SUM(CASE WHEN status IN (?, ?) AND balance > 0 THEN 1 ELSE 0 END) AS unpaid_count,
+             SUM(CASE WHEN status NOT IN (?, ?) THEN total ELSE 0 END) AS billed_total,
+             SUM(CASE WHEN status NOT IN (?, ?) THEN paid_amount ELSE 0 END) AS paid_total,
+             SUM(CASE WHEN status = ? THEN paid_amount ELSE 0 END) AS partial_paid_total,
+             SUM(CASE WHEN status NOT IN (?, ?) AND balance > 0 THEN balance ELSE 0 END) AS collectible_total',
+            ['sent', 'partial', $today, 'sent', 'partial', 'overdue', 'paid', 'partial', 'sent', 'overdue', 'draft', 'cancelled', 'draft', 'cancelled', 'partial', 'draft', 'cancelled']
+        )->first();
+        $pendingPayments = (int) ($invoiceTotals->pending_count ?? 0);
+        $overdueInvoices = (int) ($invoiceTotals->overdue_count ?? 0);
+        $paidInvoices = (int) ($invoiceTotals->paid_count ?? 0);
+        $partialInvoices = (int) ($invoiceTotals->partial_count ?? 0);
+        $unpaidInvoices = (int) ($invoiceTotals->unpaid_count ?? 0);
+        $totalBilled = (float) ($invoiceTotals->billed_total ?? 0);
+        $totalPaid = (float) ($invoiceTotals->paid_total ?? 0);
+        $partialPaid = (float) ($invoiceTotals->partial_paid_total ?? 0);
+        $collectible = (float) ($invoiceTotals->collectible_total ?? 0);
         $collectionRate  = $totalBilled > 0 ? round(($totalPaid / $totalBilled) * 100, 1) : 0.0;
 
         // ---- Tickets ----
-        $openTickets    = Ticket::where('status', 'open')->count();
-        $pendingTickets = Ticket::where('status', 'pending')->count();
-        $resolvedToday  = Ticket::whereDate('resolved_at', $today)->count();
+        $ticketTotals = Ticket::query()->selectRaw(
+            'SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS open_count,
+             SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending_count,
+             SUM(CASE WHEN DATE(resolved_at) = ? THEN 1 ELSE 0 END) AS resolved_today_count',
+            ['open', 'pending', $today->toDateString()]
+        )->first();
+        $openTickets = (int) ($ticketTotals->open_count ?? 0);
+        $pendingTickets = (int) ($ticketTotals->pending_count ?? 0);
+        $resolvedToday = (int) ($ticketTotals->resolved_today_count ?? 0);
 
         // ---- Routers ----
-        $routerOnline  = Router::where('connection_status', 'online')->count();
-        $routerOffline = Router::where('connection_status', 'offline')->count();
-        $routerError   = Router::where('connection_status', 'error')->count();
-        $routerTotal   = Router::count();
+        $routerTotals = Router::query()->selectRaw(
+            'COUNT(*) AS total_count,
+             SUM(CASE WHEN connection_status = ? THEN 1 ELSE 0 END) AS online_count,
+             SUM(CASE WHEN connection_status = ? THEN 1 ELSE 0 END) AS offline_count,
+             SUM(CASE WHEN connection_status = ? THEN 1 ELSE 0 END) AS error_count',
+            ['online', 'offline', 'error']
+        )->first();
+        $routerOnline = (int) ($routerTotals->online_count ?? 0);
+        $routerOffline = (int) ($routerTotals->offline_count ?? 0);
+        $routerError = (int) ($routerTotals->error_count ?? 0);
+        $routerTotal = (int) ($routerTotals->total_count ?? 0);
 
         // ---- Users / connectivity ----
         $usersOnline = User::whereNotNull('last_login_at')
@@ -206,9 +235,11 @@ class DashboardController extends Controller
                 'automation_activity' => AutomationLog::orderByDesc('created_at')
                     ->limit(6)
                     ->get(['id', 'job', 'status', 'summary', 'finished_at']),
-                // Every registered customer remains visible. Only a customer
-                // with a current bound DHCP lease can have live queue traffic.
-                'client_monitor' => $this->registeredCustomerMonitor(),
+                // Live DHCP/queue monitoring is intentionally loaded through
+                // /dashboard/client-monitor. Keeping it out of this financial
+                // response prevents slow RouterOS-related work from delaying
+                // the billing overview cards.
+                'client_monitor' => [],
             ],
             'timestamp' => now()->toIso8601String(),
         ]);

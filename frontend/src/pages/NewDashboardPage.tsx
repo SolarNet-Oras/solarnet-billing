@@ -246,7 +246,6 @@ const NewDashboardPageContent: React.FC = () => {
     try {
       const response = await api.get<{ data: DashboardMetrics }>('/dashboard/metrics');
       setMetrics(response.data.data);
-      setClientMonitor(response.data.data.client_monitor ?? []);
     } catch (error) {
       logger.error('Failed to fetch dashboard metrics', error);
     } finally {
