@@ -58,8 +58,8 @@ class InvoiceController extends Controller
             $query->unpaid();
         }
 
-        $invoices = $query->latest('issue_date')
-                         ->paginate($request->get('per_page', 15));
+        $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
+        $invoices = $query->latest('issue_date')->paginate($perPage);
 
         return response()->json($invoices);
     }

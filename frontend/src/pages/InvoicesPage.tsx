@@ -47,7 +47,9 @@ const InvoicesPage: React.FC = () => {
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(100);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalInvoices, setTotalInvoices] = useState(0);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
 
   // Form states
@@ -87,12 +89,12 @@ const InvoicesPage: React.FC = () => {
   useEffect(() => {
     fetchInvoices();
     fetchCustomers();
-  }, [currentPage, statusFilter]);
+  }, [currentPage, statusFilter, perPage]);
 
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const params: any = { page: currentPage, per_page: 10 };
+      const params: any = { page: currentPage, per_page: perPage };
       
       if (statusFilter !== 'all') {
         if (statusFilter === 'unpaid') {
@@ -106,8 +108,9 @@ const InvoicesPage: React.FC = () => {
 
       const response = await invoiceService.getInvoices(params);
       setInvoices(response.data);
-      const raw = response as unknown as { meta?: { last_page?: number }; last_page?: number };
+      const raw = response as unknown as { meta?: { last_page?: number; total?: number }; last_page?: number; total?: number };
       setTotalPages(raw.meta?.last_page ?? raw.last_page ?? 1);
+      setTotalInvoices(raw.meta?.total ?? raw.total ?? response.data.length);
     } catch (error) {
       console.error('Error fetching invoices:', error);
     } finally {
@@ -293,7 +296,7 @@ const InvoicesPage: React.FC = () => {
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
             className="bg-white px-4 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="all">All Status</option>
@@ -304,6 +307,18 @@ const InvoicesPage: React.FC = () => {
             <option value="overdue">Overdue</option>
             <option value="unpaid">Unpaid</option>
           </select>
+
+          <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">
+            Rows
+            <select
+              value={perPage}
+              onChange={(event) => { setPerPage(Number(event.target.value)); setCurrentPage(1); }}
+              className="bg-white px-3 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              aria-label="Invoices per page"
+            >
+              {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
         </div>
 
         <button
@@ -461,8 +476,12 @@ const InvoicesPage: React.FC = () => {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-6 flex justify-center gap-2">
+      <div className="mt-6 flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <span className="text-sm text-gray-600">
+          Showing {invoices.length === 0 ? 0 : ((currentPage - 1) * perPage) + 1}–{Math.min(currentPage * perPage, totalInvoices)} of {totalInvoices} invoices
+        </span>
+        {totalPages > 1 && (
+        <div className="flex justify-center gap-2">
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage === 1}
@@ -481,7 +500,8 @@ const InvoicesPage: React.FC = () => {
             Next
           </button>
         </div>
-      )}
+        )}
+      </div>
 
       {/* Create Invoice Modal */}
       {showCreateModal && (
