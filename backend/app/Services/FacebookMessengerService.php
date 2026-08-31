@@ -51,8 +51,8 @@ class FacebookMessengerService
         if (! $this->webhookReady()) $blockers[] = 'Facebook webhook verification is not configured on the server.';
         if (! $this->ai->isConfigured()) $blockers[] = 'OpenAI is not configured on the server.';
         if ($activeConnections->isEmpty()) $blockers[] = 'No active Facebook Page connection exists.';
-        if ($activeConnections->isNotEmpty() && $activeConnections->every(fn (FacebookPageConnection $connection) => $connection->last_webhook_at === null)) {
-            $blockers[] = 'Meta has not delivered a signed Messenger webhook to this Page yet.';
+        if ($activeConnections->isNotEmpty() && $activeConnections->every(fn (FacebookPageConnection $connection) => $connection->webhook_subscribed_at === null)) {
+            $blockers[] = 'The connected Page has not been subscribed to Messenger webhook events.';
         }
         $latestAutoReply = FacebookMessengerMessage::query()->where('source', 'ai_auto')->latest('created_at')->first();
 
@@ -255,7 +255,7 @@ class FacebookMessengerService
             return ['success' => false, 'message' => 'Meta rejected the Page webhook subscription. Confirm pages_manage_metadata and pages_messaging access, then reconnect the Page.'];
         }
 
-        $connection->forceFill(['last_error' => null])->save();
+        $connection->forceFill(['webhook_subscribed_at' => now(), 'last_error' => null])->save();
         return ['success' => true];
     }
 

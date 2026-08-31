@@ -14,7 +14,7 @@ class FacebookPageConnection extends Model
 
     protected $fillable = [
         'page_id', 'page_name', 'page_access_token', 'token_expires_at',
-        'is_active', 'last_webhook_at', 'last_error', 'connected_by',
+        'is_active', 'webhook_subscribed_at', 'last_webhook_at', 'last_error', 'connected_by',
     ];
 
     protected $hidden = ['page_access_token'];
@@ -25,6 +25,7 @@ class FacebookPageConnection extends Model
             'page_access_token' => 'encrypted',
             'token_expires_at' => 'datetime',
             'is_active' => 'boolean',
+            'webhook_subscribed_at' => 'datetime',
             'last_webhook_at' => 'datetime',
         ];
     }
@@ -52,6 +53,7 @@ class FacebookPageConnection extends Model
             'page_id' => $this->page_id,
             'page_name' => $this->page_name,
             'is_active' => (bool) $this->is_active,
+            'webhook_subscribed_at' => $this->webhook_subscribed_at?->toIso8601String(),
             'last_webhook_at' => $this->last_webhook_at?->toIso8601String(),
             'last_error' => $this->last_error,
             'connected_by' => $this->relationLoaded('connectedBy') && $this->connectedBy ? [
