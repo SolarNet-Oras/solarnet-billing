@@ -28,4 +28,14 @@ class CustomerRegistrationImportServiceTest extends TestCase
         $this->assertNull($service->dueDayFromCell('32'));
         $this->assertNull($service->dateFromCell('not a date'));
     }
+
+    #[Test]
+    public function mac_is_optional_but_a_supplied_mac_is_normalized(): void
+    {
+        $service = app(CustomerRegistrationImportService::class);
+
+        $this->assertNull($service->normalizeMac(''));
+        $this->assertSame('88:65:9F:9A:4D:BB', $service->normalizeMac('88659f9a4dbb'));
+        $this->assertNull($service->normalizeMac('88:65:9F:9A:4D'));
+    }
 }

@@ -17,8 +17,11 @@ class CustomerRegistrationImportController extends Controller
 
     public function preview(Request $request, CustomerRegistrationImportService $service): JsonResponse
     {
-        $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240']);
-        try { $preview = $service->previewUploadedFile($request->file('file')); }
+        $validated = $request->validate(['file' => 'nullable|file|mimes:xlsx,xls,csv,txt|max:10240', 'google_sheet_url' => 'nullable|string|max:2000']);
+        $file = $request->file('file');
+        $sheetUrl = trim((string) ($validated['google_sheet_url'] ?? ''));
+        if ((! $file && $sheetUrl === '') || ($file && $sheetUrl !== '')) return response()->json(['status' => 'error', 'message' => 'Choose exactly one source: an Excel/CSV file or a shared Google Sheet URL.'], 422);
+        try { $preview = $file ? $service->previewUploadedFile($file) : $service->previewGoogleSheet($sheetUrl); }
         catch (InvalidArgumentException $e) { return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422); }
         $token = (string) Str::uuid();
         Cache::put(self::PREFIX.$token, ['user_id' => (string) $request->user()->getAuthIdentifier(), 'rows' => $preview['rows']], now()->addMinutes(30));
