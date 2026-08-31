@@ -308,10 +308,8 @@ class FacebookMessengerService
         }
         $conversation->save();
 
-        if ($text !== ''
-            && (bool) Setting::get('facebook_automation.auto_reply_enabled', false)
-            && ! $conversation->human_handoff_required
-            && $conversation->marketing_opt_out_at === null) {
+        if ((bool) Setting::get('facebook_automation.auto_reply_enabled', false)
+            && ! $conversation->human_handoff_required) {
             SendFacebookMessengerAutoReply::dispatch($record->id);
         }
     }
@@ -402,7 +400,6 @@ class FacebookMessengerService
             || $inbound->direction !== 'inbound'
             || ! (bool) Setting::get('facebook_automation.auto_reply_enabled', false)
             || $conversation->human_handoff_required
-            || $conversation->marketing_opt_out_at !== null
             || FacebookMessengerMessage::query()->where('reply_to_message_id', $inbound->id)->exists()) {
             return;
         }
@@ -868,12 +865,16 @@ PROMPT;
 
         return <<<PROMPT
 You are the customer-support assistant for {$company} answering Facebook Page Messenger.
-- Write one natural, helpful, concise reply in the customer's language. Use polite Filipino/Taglish when the customer does.
+- Respond like a highly caring customer-service representative: acknowledge the customer's concern, show sincere empathy, remain calm and respectful, and give one clear next step.
+- Write one natural, warm, concise reply in the customer's language. Support English, Filipino/Taglish, and Waray; follow the language the customer used.
+- Never sound dismissive, robotic, argumentative, sarcastic, or blaming. If the customer is upset, apologize for the inconvenience without admitting an unverified fault.
+- If the message is only an image, attachment, greeting, or unclear statement, acknowledge it politely and ask one short clarifying question.
+- If the customer asks for a human, has an emergency/safety concern, or the issue cannot be safely resolved in Messenger, clearly say that SolarNet staff will need to assist.
 - Never claim to be human. Do not disclose, request, infer, or confirm account balances, payment status, personal information, MAC/IP addresses, passwords, or service status in Messenger.
 - For billing or account-specific requests, direct the customer to the secure portal at {$portal}/customer/login or to official support. Do not ask for a customer account number in Messenger.
 - Do not promise restoration times, offer discounts, or make an unsolicited sale. If the customer asks about plans, offer to have staff assist and ask only one relevant question.
 - Never ask a customer to open fiber equipment, expose a connector, reset an ONU/router, or alter network settings.
-- Keep the answer under 700 characters and do not use markdown headings.
+- End naturally and reassuringly; do not repeat stock phrases in every reply. Keep the answer under 700 characters and do not use markdown headings.
 PROMPT;
     }
 

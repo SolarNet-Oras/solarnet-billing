@@ -49,4 +49,15 @@ class FacebookMessengerServiceTest extends TestCase
         $this->assertStringContainsString('pages_read_engagement', $url);
         $this->assertStringContainsString('pages_manage_posts', $url);
     }
+
+    public function test_auto_reply_prompt_requires_empathy_and_multilingual_customer_service(): void
+    {
+        $method = new ReflectionMethod(FacebookMessengerService::class, 'aiReplyPrompt');
+        $prompt = $method->invoke(app(FacebookMessengerService::class));
+
+        $this->assertStringContainsString('sincere empathy', $prompt);
+        $this->assertStringContainsString('Filipino/Taglish', $prompt);
+        $this->assertStringContainsString('Waray', $prompt);
+        $this->assertStringContainsString('one short clarifying question', $prompt);
+    }
 }
