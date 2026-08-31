@@ -17,6 +17,7 @@ import type { Customer } from '../types/api';
 import { formatPHP } from '../lib/currency';
 import CustomerAppInstallCard from '../components/customer/CustomerAppInstallCard';
 import CustomerTroubleshootingCard from '../components/customer/CustomerTroubleshootingCard';
+import { clearSuspensionBadge, showSuspensionBadge } from '../lib/customerAppBadge';
 
 const CustomerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -41,6 +42,20 @@ const CustomerDashboardPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const recheckAccount = (): void => {
+      if (document.visibilityState === 'visible') void fetchDashboardData(true);
+    };
+    const recheckAfterConnection = (): void => { void fetchDashboardData(true); };
+
+    document.addEventListener('visibilitychange', recheckAccount);
+    window.addEventListener('online', recheckAfterConnection);
+    return () => {
+      document.removeEventListener('visibilitychange', recheckAccount);
+      window.removeEventListener('online', recheckAfterConnection);
+    };
+  }, []);
+
+  useEffect(() => {
     const notificationId = new URLSearchParams(window.location.search).get('notification');
     if (!notificationId || !/^[0-9a-f-]{36}$/i.test(notificationId)) return;
 
@@ -52,7 +67,7 @@ const CustomerDashboardPage: React.FC = () => {
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (background = false) => {
     try {
       const data = await customerPortalService.getDashboard();
       if (data.customer?.portal_password_change_required) {
@@ -60,13 +75,16 @@ const CustomerDashboardPage: React.FC = () => {
         return;
       }
       if (data.status === 'payment_required' && data.payment_required) {
+        showSuspensionBadge();
         navigate(`/payment-required/${data.payment_required.customer_id}`);
         return;
       }
+      clearSuspensionBadge();
       setCustomer(data.customer);
       setStats(data.stats);
     } catch (error) {
       console.error('Error fetching dashboard:', error);
+      if (background) return;
       // If unauthorized, redirect to login
       try {
         const raw = localStorage.getItem('customer_data');

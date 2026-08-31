@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, CreditCard, Headphones, WifiOff } from 'lucide-react';
+import { AlertTriangle, BellRing, CreditCard, Headphones, WifiOff } from 'lucide-react';
 import customerPortalService from '@/services/customerPortalService';
 import { formatPHP } from '@/lib/currency';
 import CustomerAppInstallCard from '@/components/customer/CustomerAppInstallCard';
+import { showSuspensionBadge } from '@/lib/customerAppBadge';
 
 type ReminderData = {
   customer_id: string;
@@ -78,6 +79,7 @@ const PaymentRequiredPage: React.FC = () => {
       try {
         const response = await customerPortalService.getPaymentReminder(customerId);
         setReminder(response.data);
+        showSuspensionBadge();
       } catch (error) {
         console.error('Failed to load payment reminder', error);
       } finally {
@@ -93,9 +95,15 @@ const PaymentRequiredPage: React.FC = () => {
       <div className="mx-auto flex min-h-screen max-w-5xl items-center px-6 py-12">
         <div className="grid w-full gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-amber-200">
-              <WifiOff className="h-4 w-4" />
-              Internet temporarily suspended
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-amber-200">
+                <WifiOff className="h-4 w-4" />
+                Internet temporarily suspended
+              </div>
+              <div className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-400/30 bg-rose-400/10 text-rose-200" aria-label="Suspension notification active" title="Suspension notification active">
+                <BellRing className="h-5 w-5" />
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">1</span>
+              </div>
             </div>
             <div>
               <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">
