@@ -28,7 +28,7 @@ export function CustomerRegistrationImportModal({ open, onClose, onApplied }: { 
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3" role="dialog" aria-modal="true">
     <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-      <div className="border-b border-border px-5 py-4"><h2 className="text-xl font-semibold text-foreground">Register multiple customers from spreadsheet</h2><p className="mt-1 text-sm text-muted-foreground">Installation Date | Name | Promo | Due Date | Address | MAC Address | Phone Number | Gmail | Status</p></div>
+      <div className="border-b border-border px-5 py-4"><h2 className="text-xl font-semibold text-foreground">Register multiple customers from spreadsheet</h2><p className="mt-1 text-sm text-muted-foreground">Installation Date | Name | Promo | Due Date | Address | MAC Address | Phone Number | Gmail | Status</p><p className="mt-1 text-xs font-medium text-primary">All imported Installation Dates become August 1, 2026. Due Date must contain only a day number from 1 to 31.</p></div>
       <div className="flex-1 overflow-auto p-5">
         {error && <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
         {!preview ? <div className="rounded-lg border border-dashed border-border p-6">

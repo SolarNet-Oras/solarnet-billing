@@ -16,6 +16,8 @@ use Throwable;
 
 class CustomerRegistrationImportService
 {
+    private const IMPORT_INSTALLATION_DATE = '2026-08-01';
+
     private const HEADERS = [
         'installation_date' => ['installation date', 'installed date'],
         'name' => ['client name', 'customer name', 'full name', 'name'],
@@ -91,8 +93,11 @@ class CustomerRegistrationImportService
             $summary['total']++;
             $name = trim((string) $record['name']);
             $normalized = $this->normalizeName($name);
-            $installationDate = $this->dateFromCell($record['installation_date']);
-            $dueDay = $this->dueDayFromCell($record['due_date']);
+            // This controlled historical onboarding batch uses one agreed
+            // installation date. The sheet column remains present as a clear
+            // audit/reference field, but cannot silently change the batch date.
+            $installationDate = self::IMPORT_INSTALLATION_DATE;
+            $dueDay = $this->strictDueDayFromCell($record['due_date']);
             $address = trim((string) $record['address']);
             $promo = trim((string) $record['promo']);
             $plan = $this->resolvePlan($promo, $plans);
@@ -104,11 +109,11 @@ class CustomerRegistrationImportService
             $status = 'ready';
             $reason = $mac ? 'New customer profile and supplied MAC are ready to register.' : 'New customer profile is ready; MAC can be linked later.';
 
-            if ($normalized === '' || $address === '' || ! $installationDate || ! $dueDay || ! $plan) {
+            if ($normalized === '' || $address === '' || ! $dueDay || ! $plan) {
                 $status = 'invalid';
                 $reason = ! $plan && $promo !== ''
                     ? 'Promo does not uniquely match an active service plan. Use the exact plan name or its Mbps.'
-                    : 'Installation Date, Name, Promo, Due Date, and Address are required and must be valid.';
+                    : 'Name, Promo, Address, and a Due Date day from 1 through 31 are required. Installation Date is fixed to August 1, 2026.';
             } elseif ($macInput !== '' && ! $mac) {
                 $status = 'invalid';
                 $reason = 'MAC Address is optional, but when supplied it must contain exactly 12 hexadecimal characters.';
@@ -224,6 +229,15 @@ class CustomerRegistrationImportService
         if (preg_match('/^\d{1,2}$/', $text) && (int) $text >= 1 && (int) $text <= 31) return (int) $text;
         $date = $this->dateFromCell($value);
         return $date ? (int) Carbon::parse($date)->day : null;
+    }
+
+    public function strictDueDayFromCell(mixed $value): ?int
+    {
+        $text = trim((string) $value);
+        if (preg_match('/^\d{1,2}$/', $text) !== 1) return null;
+
+        $day = (int) $text;
+        return $day >= 1 && $day <= 31 ? $day : null;
     }
 
     private function resolvePlan(string $promo, $plans): ?ServicePlan

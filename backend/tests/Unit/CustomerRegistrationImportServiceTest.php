@@ -27,6 +27,10 @@ class CustomerRegistrationImportServiceTest extends TestCase
         $this->assertSame(5, $service->dueDayFromCell('9/5/2026'));
         $this->assertNull($service->dueDayFromCell('32'));
         $this->assertNull($service->dateFromCell('not a date'));
+        $this->assertSame(1, $service->strictDueDayFromCell('1'));
+        $this->assertSame(31, $service->strictDueDayFromCell('31'));
+        $this->assertNull($service->strictDueDayFromCell('08/15/2026'));
+        $this->assertNull($service->strictDueDayFromCell('32'));
     }
 
     #[Test]
