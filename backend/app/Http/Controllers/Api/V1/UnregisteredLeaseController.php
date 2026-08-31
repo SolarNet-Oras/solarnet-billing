@@ -138,7 +138,6 @@ class UnregisteredLeaseController extends Controller
 
         $customers = Customer::query()
             ->with('servicePlan:id,name,price,download_speed,upload_speed')
-            ->where('status', '!=', 'pending')
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($nested) use ($search) {
                     $nested->where('full_name', 'ilike', "%{$search}%")

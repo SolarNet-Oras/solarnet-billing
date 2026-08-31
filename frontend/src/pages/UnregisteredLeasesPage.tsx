@@ -755,6 +755,7 @@ const QuickRegisterModal: React.FC<{
   );
   const [planId, setPlanId] = useState<string>(lease.suggested_plan?.id ?? plans[0]?.id ?? '');
   const [existingCustomerId, setExistingCustomerId] = useState<string>('');
+  const [customerSearch, setCustomerSearch] = useState<string>('');
   const [reassignmentConfirmed, setReassignmentConfirmed] = useState<boolean>(false);
   const selectedCustomer = customers.find((customer) => customer.id === existingCustomerId);
   const linkingExistingCustomer = Boolean(selectedCustomer);
@@ -762,13 +763,19 @@ const QuickRegisterModal: React.FC<{
   const currentCustomer = lease.known_customer_identity?.customer;
   const isDuplicateResolution = mode === 'reassign' && lease.known_customer_identity?.status === 'ambiguous';
   const isReassignment = mode === 'reassign' && (Boolean(currentCustomer) || isDuplicateResolution);
+  const normalizedCustomerSearch = customerSearch.trim().toLowerCase();
+  const visibleCustomers = normalizedCustomerSearch
+    ? customers.filter((customer) => [customer.full_name, customer.account_number, customer.address]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedCustomerSearch)))
+    : customers;
   const duplicateOwnerIds = new Set(lease.known_customer_identity?.customers?.map((owner) => owner.id) ?? []);
-  const duplicateOwnerCandidates = customers.filter((customer) => duplicateOwnerIds.has(customer.id));
-  const otherCustomerCandidates = customers.filter((customer) => !duplicateOwnerIds.has(customer.id));
+  const duplicateOwnerCandidates = visibleCustomers.filter((customer) => duplicateOwnerIds.has(customer.id));
+  const otherCustomerCandidates = visibleCustomers.filter((customer) => !duplicateOwnerIds.has(customer.id));
 
   const customerOption = (customer: CustomerLinkCandidate, disabled = false): React.JSX.Element => (
-    <option key={customer.id} value={customer.id} disabled={disabled || !customer.service_plan_id}>
+    <option key={customer.id} value={customer.id} disabled={disabled || !customer.service_plan_id || customer.status === 'pending'}>
       {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
+      {customer.status === 'pending' ? ' · pending approval' : ''}
       {disabled ? ' · current owner' : ''}
     </option>
   );
@@ -826,6 +833,13 @@ const QuickRegisterModal: React.FC<{
 
         <div>
           <label className="block text-sm font-medium mb-1.5">{isDuplicateResolution ? 'Final real MAC owner *' : isReassignment ? 'New customer (Client B) *' : 'Link to an existing customer (optional)'}</label>
+          <input
+            type="search"
+            value={customerSearch}
+            onChange={(event) => setCustomerSearch(event.target.value)}
+            placeholder="Search every customer by name, account, or address"
+            className="mb-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          />
           <select
             value={existingCustomerId}
             onChange={(event) => {
@@ -860,12 +874,12 @@ const QuickRegisterModal: React.FC<{
                   {customers.filter((customer) => customer.id !== currentCustomer.id).map((customer) => customerOption(customer))}
                 </optgroup>
               </>
-            ) : customers.map((customer) => customerOption(customer))}
+            ) : visibleCustomers.map((customer) => customerOption(customer))}
           </select>
           <p className="text-xs text-muted-foreground mt-1">
             {isReassignment
-              ? `Showing all ${customers.length} registered customers. Customers without an assigned plan remain visible but cannot receive the device until a plan is set.`
-              : 'Select a registered customer for an ONU/router replacement. Their billing profile, due date, plan, and balance stay unchanged.'}
+              ? `Showing ${visibleCustomers.length} of ${customers.length} customer profiles. Pending customers and customers without an assigned plan remain visible but cannot receive the device yet.`
+              : `Showing ${visibleCustomers.length} of ${customers.length} customer profiles. Select a registered customer for an ONU/router replacement; billing information remains unchanged.`}
           </p>
           {selectedCustomer && (
             <div className="mt-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">

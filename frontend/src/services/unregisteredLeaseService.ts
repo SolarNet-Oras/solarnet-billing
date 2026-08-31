@@ -79,7 +79,7 @@ export interface CustomerLinkCandidate {
   account_number: string;
   full_name: string;
   address: string;
-  status: 'active' | 'suspended' | 'expired';
+  status: 'active' | 'suspended' | 'expired' | 'pending' | string;
   service_plan_id: string | null;
   monthly_fee: number;
   mac_address: string | null;
