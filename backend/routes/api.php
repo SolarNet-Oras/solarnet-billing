@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\TicketController;
 use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WireguardController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -160,6 +161,15 @@ Route::prefix('v1')->group(function () {
             Route::post('nas-clients', [RadiusIpOeController::class, 'storeNasClient']);
             Route::put('nas-clients/{id}', [RadiusIpOeController::class, 'updateNasClient']);
             Route::post('nas-clients/{id}/sync', [RadiusIpOeController::class, 'syncNasClient']);
+        });
+        Route::middleware('role:super_admin')->prefix('wireguard')->group(function () {
+            Route::get('/', [WireguardController::class, 'index']);
+            Route::post('peers', [WireguardController::class, 'store']);
+            Route::put('peers/{peer}', [WireguardController::class, 'update']);
+            Route::delete('peers/{peer}', [WireguardController::class, 'destroy']);
+            Route::get('peers/{peer}/scripts', [WireguardController::class, 'scripts']);
+            Route::post('peers/{peer}/inspect', [WireguardController::class, 'inspect'])->middleware('throttle:12,1');
+            Route::post('peers/{peer}/test', [WireguardController::class, 'test'])->middleware('throttle:8,1');
         });
         // Router routes (MikroTik) - require permission
         Route::apiResource('routers', RouterController::class)->only(['index', 'show'])->middleware('permission:view-routers');

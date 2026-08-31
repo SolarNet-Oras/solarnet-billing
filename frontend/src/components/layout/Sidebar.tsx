@@ -22,6 +22,7 @@ import {
   Users,
   Upload,
   Wifi,
+  Waypoints,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -57,6 +58,7 @@ const navItems: NavItem[] = [
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Cybersecurity', path: '/cybersecurity', icon: ShieldCheck, roles: ['super_admin', 'admin', 'noc'] },
   { name: 'RADIUS / IPoE', path: '/radius-ipoe', icon: Radio, roles: ['super_admin', 'admin'] },
+  { name: 'WireGuard', path: '/wireguard', icon: Waypoints, roles: ['super_admin'] },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Users', path: '/users', icon: Users, roles: ['super_admin'] },
   { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },

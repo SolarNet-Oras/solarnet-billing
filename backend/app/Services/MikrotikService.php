@@ -2897,6 +2897,38 @@ class MikrotikService
         }
     }
 
+    /** Read WireGuard peer runtime counters from RouterOS without changing it. */
+    public function wireguardPeerStatus(Router $router, string $interfaceName, string $serverPublicKey): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router, 3, 8));
+            $interfaces = $client->query('/interface/wireguard/print')->read();
+            $interface = collect($interfaces)->first(fn (array $row) => ($row['name'] ?? '') === $interfaceName);
+            if (! $interface) {
+                return ['success' => false, 'code' => 'INTERFACE_NOT_FOUND', 'message' => "WireGuard interface {$interfaceName} was not found on RouterOS."];
+            }
+
+            $peers = $client->query('/interface/wireguard/peers/print')->read();
+            $peer = collect($peers)->first(fn (array $row) => hash_equals((string) ($row['public-key'] ?? ''), $serverPublicKey));
+            if (! $peer) {
+                return ['success' => false, 'code' => 'PEER_NOT_FOUND', 'message' => 'The saved VPS public key is not present in the selected RouterOS WireGuard peer list.'];
+            }
+
+            return ['success' => true, 'data' => [
+                'interface' => $interfaceName,
+                'running' => ($interface['running'] ?? 'false') === 'true' && ($interface['disabled'] ?? 'false') !== 'true',
+                'latest_handshake' => $peer['last-handshake'] ?? null,
+                'rx_bytes' => (int) ($peer['rx'] ?? 0),
+                'tx_bytes' => (int) ($peer['tx'] ?? 0),
+                'current_endpoint' => $peer['current-endpoint-address'] ?? null,
+                'current_endpoint_port' => $peer['current-endpoint-port'] ?? null,
+                'disabled' => ($peer['disabled'] ?? 'false') === 'true',
+            ]];
+        } catch (Throwable $e) {
+            return ['success' => false, 'code' => 'ROUTER_UNREACHABLE', 'message' => 'Could not read WireGuard status from RouterOS: '.$e->getMessage()];
+        }
+    }
+
     /**
      * Read one SNMPv2c OID from a device reachable by the router itself.
      *

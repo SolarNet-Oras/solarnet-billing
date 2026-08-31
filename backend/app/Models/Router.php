@@ -76,4 +76,9 @@ class Router extends Model
     {
         return $this->hasOne(RadiusNasClient::class);
     }
+
+    public function wireguardPeers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(WireguardPeer::class);
+    }
 }
