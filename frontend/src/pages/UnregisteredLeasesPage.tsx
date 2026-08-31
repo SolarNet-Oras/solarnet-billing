@@ -167,7 +167,7 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const handleQuickRegister = async (
     lease: UnregisteredLease,
-    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean; confirm_current_client_reassignment?: boolean },
+    overrides?: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean; confirm_current_client_reassignment?: boolean; confirm_duplicate_mac_resolution?: boolean },
   ): Promise<void> => {
     setRegisteringId(lease.id);
     setError('');
@@ -180,6 +180,7 @@ const UnregisteredLeasesPage: React.FC = () => {
         monthly_fee: overrides?.monthly_fee ?? lease.suggested_plan?.price,
         confirm_mac_reassignment: overrides?.confirm_mac_reassignment,
         confirm_current_client_reassignment: overrides?.confirm_current_client_reassignment,
+        confirm_duplicate_mac_resolution: overrides?.confirm_duplicate_mac_resolution,
       });
 
       // Compose a status line that ALSO surfaces the MikroTik sync outcome —
@@ -536,9 +537,9 @@ const StaticLeasesTable: React.FC<{
                       </button>
                     </div>
                   ) : lease.known_customer_identity ? (
-                    <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
-                      Duplicate customer MAC — review required
-                    </span>
+                    <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                      <AlertTriangle className="h-4 w-4" /> Set final MAC owner
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -676,9 +677,9 @@ const DynamicLeasesTable: React.FC<{
                       </button>
                     </div>
                   ) : lease.known_customer_identity ? (
-                    <span className="inline-flex max-w-48 rounded-md bg-muted px-2.5 py-1.5 text-left text-xs font-medium text-muted-foreground">
-                      Duplicate customer MAC — review required
-                    </span>
+                    <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                      <AlertTriangle className="h-4 w-4" /> Set final MAC owner
+                    </button>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2 justify-end">
                       <button
@@ -747,7 +748,7 @@ const QuickRegisterModal: React.FC<{
   busy: boolean;
   mode: 'register' | 'reassign';
   onClose: () => void;
-  onSubmit: (payload: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean }) => void;
+  onSubmit: (payload: { existing_customer_id?: string; full_name?: string; service_plan_id?: string; monthly_fee?: number; confirm_mac_reassignment?: boolean; confirm_duplicate_mac_resolution?: boolean }) => void;
 }> = ({ lease, plans, customers, busy, mode, onClose, onSubmit }) => {
   const [fullName, setFullName] = useState<string>(
     lease.comment || lease.hostname || `Client ${lease.mac_address.slice(-5)}`
@@ -759,7 +760,8 @@ const QuickRegisterModal: React.FC<{
   const linkingExistingCustomer = Boolean(selectedCustomer);
   const chosenPlan = plans.find((p) => p.id === planId);
   const currentCustomer = lease.known_customer_identity?.customer;
-  const isReassignment = mode === 'reassign' && Boolean(currentCustomer);
+  const isDuplicateResolution = mode === 'reassign' && lease.known_customer_identity?.status === 'ambiguous';
+  const isReassignment = mode === 'reassign' && (Boolean(currentCustomer) || isDuplicateResolution);
 
   return (
     <div
@@ -776,7 +778,9 @@ const QuickRegisterModal: React.FC<{
             <h3 className="text-lg font-semibold text-foreground">{isReassignment ? 'Reassign device to another client' : 'Register client'}</h3>
             <p className="text-xs text-muted-foreground mt-1">
               {isReassignment
-                ? 'Choose Client B and confirm the transfer. Client A keeps all billing history; only the reused device MAC and stale IP are removed from Client A.'
+                ? isDuplicateResolution
+                  ? 'Choose the one real user of this MAC. Other customer accounts keep their billing history; only their duplicate MAC and stale IP links are cleared.'
+                  : 'Choose Client B and confirm the transfer. Client A keeps all billing history; only the reused device MAC and stale IP are removed from Client A.'
                 : 'Pick a plan — MikroTik will be updated with comment, made static, and rate-limited to the plan.'}
             </p>
           </div>
@@ -796,19 +800,22 @@ const QuickRegisterModal: React.FC<{
           <div>Hostname: {lease.hostname || '(none)'}</div>
         </div>
 
-        {isReassignment && currentCustomer && (
+        {isReassignment && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-            <p className="font-semibold">Current device owner: {currentCustomer.full_name} · {currentCustomer.account_number}</p>
-            <p className="mt-1">Use this only after Client A has disconnected and this same ONU/router is now installed for Client B.</p>
+            {isDuplicateResolution ? (
+              <><p className="font-semibold">Duplicate MAC currently appears on:</p><ul className="mt-1 list-disc pl-5">{lease.known_customer_identity?.customers?.map((owner) => <li key={owner.id}>{owner.full_name} · {owner.account_number}</li>)}</ul></>
+            ) : currentCustomer ? (
+              <><p className="font-semibold">Current device owner: {currentCustomer.full_name} · {currentCustomer.account_number}</p><p className="mt-1">Use this only after Client A has disconnected and this same ONU/router is now installed for Client B.</p></>
+            ) : null}
             <label className="mt-3 flex cursor-pointer items-start gap-2 font-medium">
               <input type="checkbox" checked={reassignmentConfirmed} onChange={(event) => setReassignmentConfirmed(event.target.checked)} className="mt-0.5" />
-              <span>I confirm Client A no longer uses this device. Move this MAC and current DHCP lease to Client B.</span>
+              <span>{isDuplicateResolution ? 'I verified the real user. Make the selected customer the only owner of this MAC.' : 'I confirm Client A no longer uses this device. Move this MAC and current DHCP lease to Client B.'}</span>
             </label>
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-medium mb-1.5">{isReassignment ? 'New customer (Client B) *' : 'Link to an existing customer (optional)'}</label>
+          <label className="block text-sm font-medium mb-1.5">{isDuplicateResolution ? 'Final real MAC owner *' : isReassignment ? 'New customer (Client B) *' : 'Link to an existing customer (optional)'}</label>
           <select
             value={existingCustomerId}
             onChange={(event) => {
@@ -824,7 +831,7 @@ const QuickRegisterModal: React.FC<{
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             data-testid="quick-register-existing-customer"
           >
-            <option value="">{isReassignment ? 'Select Client B' : 'Create a new customer from this lease'}</option>
+            <option value="">{isDuplicateResolution ? 'Select the real user' : isReassignment ? 'Select Client B' : 'Create a new customer from this lease'}</option>
             {customers.filter((customer) => !isReassignment || customer.id !== currentCustomer?.id).map((customer) => (
               <option key={customer.id} value={customer.id} disabled={!customer.service_plan_id}>
                 {customer.full_name} · {customer.account_number}{customer.service_plan ? ` · ${customer.service_plan.name}` : ' · no plan set'}
@@ -898,6 +905,7 @@ const QuickRegisterModal: React.FC<{
                 service_plan_id: linkingExistingCustomer ? undefined : (planId || undefined),
                 monthly_fee: linkingExistingCustomer ? undefined : chosenPlan?.price,
                 confirm_mac_reassignment: isReassignment ? reassignmentConfirmed : undefined,
+                confirm_duplicate_mac_resolution: isDuplicateResolution ? reassignmentConfirmed : undefined,
               })
             }
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50"

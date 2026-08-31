@@ -70,6 +70,8 @@ export interface QuickRegisterPayload {
   confirm_mac_reassignment?: boolean;
   /** Required when moving an exact known customer MAC to its current DHCP router. */
   confirm_current_client_reassignment?: boolean;
+  /** Required when choosing the one real owner of a MAC found on multiple profiles. */
+  confirm_duplicate_mac_resolution?: boolean;
 }
 
 export interface CustomerLinkCandidate {
