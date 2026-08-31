@@ -15,9 +15,11 @@ class CustomerLocationCaptureService
     public const TOKEN_TTL_MINUTES = 30;
 
     /**
-     * An IP is used only to bind this browser session to an already matched
-     * DHCP lease. The authenticated customer, router, lease and stored ONU
-     * reference must all agree; ambiguity always fails closed.
+     * The source IP binds the three browser requests to one short-lived flow.
+     * It is not compared with a private DHCP address: HTTPS sees the public
+     * NAT address while RouterOS stores the subscriber's private lease. The
+     * authenticated customer, router, current matched lease and stored ONU
+     * reference must still all agree; ambiguity always fails closed.
      */
     public function createRequest(Customer $customer, string $sourceIp): array
     {
@@ -28,7 +30,6 @@ class CustomerLocationCaptureService
         $leases = DhcpLease::query()
             ->where('customer_id', $customer->id)
             ->where('router_id', $customer->router_id)
-            ->where('ip_address', $sourceIp)
             ->where('is_matched', true)
             ->where('is_current', true)
             ->where('status', 'bound')
@@ -115,7 +116,7 @@ class CustomerLocationCaptureService
         if ($lock) $query->lockForUpdate();
         $capture = $query->first();
         if (!$capture || $capture->router_id !== $customer->router_id || $capture->onu_reference !== trim((string) $customer->onu_information)) return null;
-        $lease = DhcpLease::query()->whereKey($capture->dhcp_lease_id)->where('customer_id', $customer->id)->where('router_id', $customer->router_id)->where('ip_address', $sourceIp)->where('is_matched', true)->where('is_current', true)->where('status', 'bound')->first();
+        $lease = DhcpLease::query()->whereKey($capture->dhcp_lease_id)->where('customer_id', $customer->id)->where('router_id', $customer->router_id)->where('is_matched', true)->where('is_current', true)->where('status', 'bound')->first();
         return $lease ? $capture : null;
     }
 

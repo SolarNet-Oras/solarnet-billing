@@ -100,7 +100,9 @@ const CustomerDashboardPage: React.FC = () => {
       setLocationToken(capture.token);
       setLocationPrompt(true);
     } catch (error: any) {
-      setLocationMessage(error.response?.data?.message || 'SolarNet could not safely identify your service connection. Please contact support.');
+      setLocationMessage(error.response?.status === 429
+        ? 'Location sharing was tried several times. Please wait one minute, then tap Share location once.'
+        : error.response?.data?.message || 'SolarNet could not safely identify your service connection. Please contact support.');
     } finally { setLocationBusy(false); }
   };
 
@@ -118,7 +120,7 @@ const CustomerDashboardPage: React.FC = () => {
             accuracy: position.coords.accuracy,
           });
           setLocationPreview({ latitude: preview.latitude, longitude: preview.longitude, accuracy: preview.accuracy });
-        } catch (error: any) { setLocationMessage(error.response?.data?.data?.message || 'We could not save this location reading. Please try again.'); }
+        } catch (error: any) { setLocationMessage(error.response?.status === 429 ? 'Please wait one minute before trying location sharing again.' : error.response?.data?.data?.message || 'We could not save this location reading. Please try again.'); }
         finally { setLocationBusy(false); }
       },
       (error) => { setLocationBusy(false); setLocationMessage(error.code === error.PERMISSION_DENIED ? 'Location permission was not granted. SolarNet will not collect your location.' : 'Your location could not be determined. Please try again.'); },
@@ -133,7 +135,7 @@ const CustomerDashboardPage: React.FC = () => {
       await customerPortalService.confirmLocationCapture(locationToken);
       setLocationPrompt(false); setLocationPreview(null); setLocationToken(null);
       await fetchDashboardData();
-    } catch (error: any) { setLocationMessage(error.response?.data?.data?.message || 'This location request is no longer available.'); }
+    } catch (error: any) { setLocationMessage(error.response?.status === 429 ? 'Please wait one minute, then confirm this location again.' : error.response?.data?.data?.message || 'This location request is no longer available.'); }
     finally { setLocationBusy(false); }
   };
 
