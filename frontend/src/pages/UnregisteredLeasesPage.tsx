@@ -50,17 +50,6 @@ const LeaseActivityBadge: React.FC<{ lease: UnregisteredLease }> = ({ lease }) =
   );
 };
 
-/** A healthy registered lease does not belong in the exception workspace. */
-const isHealthyRegisteredLease = (lease: UnregisteredLease): boolean => {
-  const identity = lease.known_customer_identity;
-
-  return lease.is_current
-    && lease.status === 'bound'
-    && identity?.status === 'known_customer'
-    && identity.customer_count === 1
-    && identity.customer?.same_router === true;
-};
-
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
   // Show every backend-returned lease by default. This prevents valid rows
@@ -259,11 +248,15 @@ const UnregisteredLeasesPage: React.FC = () => {
       : customerLinked
       ? `\n\nCustomer link${identifiedNames ? `: ${identifiedNames}` : ' detected'}. This removes only the inactive static reservation from ${routerName(lease.router_id)}. The customer account, saved MAC ownership, billing, plan, and records will remain unchanged. A later DHCP sync may recreate the reservation if this router is still assigned to the customer.`
       : '';
-    const confirmation = window.prompt(`Delete this ${activeUnregistered ? 'active unregistered' : 'inactive'} static lease from ${routerName(lease.router_id)}?${ownerWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
+    const leaseKind = lease.is_dynamic ? 'dynamic' : 'static';
+    const dynamicWarning = lease.is_dynamic
+      ? '\n\nA dynamic lease can be recreated immediately when the device requests DHCP again. This action does not delete a customer.'
+      : '';
+    const confirmation = window.prompt(`Delete this ${activeUnregistered ? 'active unregistered' : 'inactive'} ${leaseKind} lease from ${routerName(lease.router_id)}?${ownerWarning}${dynamicWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
     if (confirmation === null) return;
     setRegisteringId(lease.id); setError(''); setNotice('');
     try {
-      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), customerLinked, activeUnregistered);
+      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), customerLinked, activeUnregistered, lease.is_dynamic);
       setStaticLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setDynamicLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setNotice(result.message);
@@ -291,7 +284,6 @@ const UnregisteredLeasesPage: React.FC = () => {
       // This page is an exception/review workspace. A uniquely identified,
       // bound customer on the correct router has no registration conflict and
       // remains available in Customers and live network monitoring instead.
-      if (isHealthyRegisteredLease(lease)) return false;
       const active = lease.is_current && lease.status === 'bound';
       if (activityFilter === 'active' && !active) return false;
       if (activityFilter === 'inactive' && active) return false;
@@ -309,7 +301,6 @@ const UnregisteredLeasesPage: React.FC = () => {
   const filteredStaticLeases = filterLeases(staticLeases);
   const filteredDynamicLeases = filterLeases(dynamicLeases);
   const allFilteredLeaseCount = filteredStaticLeases.length + filteredDynamicLeases.length;
-  const healthyRegisteredHidden = [...staticLeases, ...dynamicLeases].filter(isHealthyRegisteredLease).length;
 
   return (
     <DashboardLayout>
@@ -324,10 +315,9 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  DHCP exceptions for review. Healthy registered customers that are active on their assigned router are hidden; unregistered, conflicting, different-router, inactive, waiting, and stale leases remain visible. Router lease state mirrors every minute; this page refreshes every 30 seconds.
+                  Complete DHCP lease inventory for review. Dynamic, static, registered, conflicting, inactive, waiting, and stale leases remain visible. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
                 {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
-                {healthyRegisteredHidden > 0 && <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">{healthyRegisteredHidden} healthy registered lease{healthyRegisteredHidden === 1 ? '' : 's'} hidden from this exception list.</p>}
               </div>
             </div>
           </div>
@@ -446,6 +436,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               onReassign={openReassignmentModal}
               onManualRegister={handleManualAdd}
               onClientMigration={() => navigate('/super-admin/client-migrations')}
+              onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
               registeringId={registeringId}
             />
           </div>
@@ -468,6 +459,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             onReassign={openReassignmentModal}
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
+            onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
             registeringId={registeringId}
           />
         )}
@@ -666,8 +658,9 @@ const DynamicLeasesTable: React.FC<{
   onReassign: (lease: UnregisteredLease) => void;
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
+  onDeleteInactive: (lease: UnregisteredLease) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onReassign, onManualRegister, onClientMigration, registeringId }) => {
+}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onReassign, onManualRegister, onClientMigration, onDeleteInactive, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -731,7 +724,12 @@ const DynamicLeasesTable: React.FC<{
                 </td>
                 <td className="px-4 py-3 text-right">
                   {!lease.is_current || lease.status !== 'bound' ? (
-                    <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — review</span>
+                      <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                        {registeringId === lease.id ? 'Deleting…' : 'Delete lease'}
+                      </button>
+                    </div>
                   ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       {lease.known_customer_identity.customer?.can_push_to_router && (

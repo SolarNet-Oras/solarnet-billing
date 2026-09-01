@@ -168,13 +168,17 @@ class UnregisteredLeaseController extends Controller
             'confirmation_mac' => 'required|string|max:32',
             'acknowledge_customer_linked_lease' => 'nullable|boolean',
             'acknowledge_active_unregistered_lease' => 'nullable|boolean',
+            'acknowledge_dynamic_lease' => 'nullable|boolean',
         ]);
         $lease = DhcpLease::with('router')->findOrFail($id);
         if ($this->normalizedMacKey((string) $request->input('confirmation_mac')) !== $this->normalizedMacKey($lease->mac_address)) {
             return response()->json(['success' => false, 'message' => 'MAC confirmation did not match. No lease was removed.'], 422);
         }
-        if ($lease->is_dynamic || ! $lease->router) {
-            return response()->json(['success' => false, 'message' => 'Only an exact static lease can use this action. Dynamic leases and customer records were not changed.'], 422);
+        if (! $lease->router) {
+            return response()->json(['success' => false, 'message' => 'The source router is unavailable. No lease was removed.'], 422);
+        }
+        if ($lease->is_dynamic && ! $request->boolean('acknowledge_dynamic_lease')) {
+            return response()->json(['success' => false, 'message' => 'Deleting a dynamic lease can briefly interrupt the device and it may immediately request DHCP again. Explicit acknowledgement is required.'], 422);
         }
 
         $macKey = $this->normalizedMacKey($lease->mac_address);
@@ -194,7 +198,12 @@ class UnregisteredLeaseController extends Controller
         }
 
         $allowBoundRemoval = $activeUnregisteredLease || ($customerLinkedLease && $customerLinkedAcknowledged);
-        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address, $allowBoundRemoval);
+        $result = app(MikrotikService::class)->removeInactiveStaticLease(
+            $lease->router,
+            $lease->mac_address,
+            $allowBoundRemoval,
+            (bool) $lease->is_dynamic
+        );
         if (($result['code'] ?? null) === 'LEASE_NOT_FOUND') {
             Log::notice('Stale local DHCP lease mirror removed after MikroTik absence was verified', [
                 'lease_id' => $lease->id,

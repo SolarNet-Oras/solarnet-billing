@@ -2413,11 +2413,11 @@ class MikrotikService
     }
 
     /**
-     * Remove one exact inactive static DHCP lease from RouterOS.
+     * Remove one exact DHCP lease from RouterOS after controller confirmation.
      * Customer ownership is validated by the controller before this call;
      * this method independently refuses dynamic or currently bound leases.
      */
-    public function removeInactiveStaticLease(Router $router, string $macAddress, bool $allowBoundUnregistered = false): array
+    public function removeInactiveStaticLease(Router $router, string $macAddress, bool $allowBoundUnregistered = false, bool $allowDynamic = false): array
     {
         if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
             return ['success' => false, 'code' => 'ROUTER_OFFLINE', 'message' => 'Router is not online. No lease was removed.'];
@@ -2442,7 +2442,7 @@ class MikrotikService
             $lease = $matches[0];
             $dynamic = filter_var($lease['dynamic'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $status = strtolower((string) ($lease['status'] ?? 'unknown'));
-            if ($dynamic || ($status === 'bound' && ! $allowBoundUnregistered)) {
+            if (($dynamic && ! $allowDynamic) || ($status === 'bound' && ! $allowBoundUnregistered && ! $allowDynamic)) {
                 return [
                     'success' => false,
                     'code' => 'LIVE_LEASE_PROTECTED',
@@ -2460,7 +2460,9 @@ class MikrotikService
                 return ['success' => false, 'code' => 'REMOVAL_NOT_CONFIRMED', 'message' => 'RouterOS did not confirm removal of the exact lease.'];
             }
 
-            $kind = $status === 'bound' ? 'Active unregistered static lease' : 'Inactive static lease';
+            $kind = $dynamic
+                ? 'Dynamic lease'
+                : ($status === 'bound' ? 'Active unregistered static lease' : 'Inactive static lease');
 
             return ['success' => true, 'code' => 'LEASE_REMOVED', 'message' => "{$kind} {$mac} was removed from {$router->name}."];
         } catch (\Throwable $e) {

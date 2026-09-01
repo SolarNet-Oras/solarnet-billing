@@ -173,12 +173,13 @@ export const unregisteredLeaseService = {
     return response.data;
   },
 
-  async deleteInactive(leaseId: string, confirmationMac: string, acknowledgeCustomerLinkedLease = false, acknowledgeActiveUnregisteredLease = false): Promise<{ success: boolean; message: string }> {
+  async deleteInactive(leaseId: string, confirmationMac: string, acknowledgeCustomerLinkedLease = false, acknowledgeActiveUnregisteredLease = false, acknowledgeDynamicLease = false): Promise<{ success: boolean; message: string }> {
     const response = await api.delete<{ success: boolean; message: string }>(`/unregistered-leases/${leaseId}/inactive`, {
       data: {
         confirmation_mac: confirmationMac,
         acknowledge_customer_linked_lease: acknowledgeCustomerLinkedLease,
         acknowledge_active_unregistered_lease: acknowledgeActiveUnregisteredLease,
+        acknowledge_dynamic_lease: acknowledgeDynamicLease,
       },
     });
     return response.data;
