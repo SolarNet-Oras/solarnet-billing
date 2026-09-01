@@ -111,6 +111,10 @@ class UnregisteredLeaseController extends Controller
         $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
             ->where(function ($q) {
                 $q->where('is_dynamic', true)
+                  // Legacy imports may not have classified the RouterOS row.
+                  // Static+comment owns only explicit false values, so null
+                  // must live here to guarantee that no DHCP row is hidden.
+                  ->orWhereNull('is_dynamic')
                   ->orWhereNull('comment')
                   ->orWhere('comment', '');
             })
