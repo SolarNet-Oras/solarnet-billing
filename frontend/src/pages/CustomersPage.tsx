@@ -49,6 +49,13 @@ const CustomersPage: React.FC = () => {
       const params = new URLSearchParams();
       if (search) params.append('search', search);
       if (statusFilter) params.append('status', statusFilter);
+      const [sortBy, sortDirection] = sortOrder === 'name_asc' ? ['name', 'asc']
+        : sortOrder === 'name_desc' ? ['name', 'desc']
+          : sortOrder === 'address_asc' ? ['address', 'asc']
+            : sortOrder === 'address_desc' ? ['address', 'desc']
+              : sortOrder === 'oldest' ? ['created_at', 'asc'] : ['created_at', 'desc'];
+      params.append('sort_by', sortBy);
+      params.append('sort_direction', sortDirection);
       
       params.set('per_page', '100');
       params.set('page', '1');
@@ -68,7 +75,7 @@ const CustomersPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search, statusFilter, sortOrder]);
 
   useEffect(() => {
     fetchCustomers();

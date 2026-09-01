@@ -50,6 +50,8 @@ class CustomerController extends Controller
         $perPage = min(max((int) $request->input('per_page', 15), 1), 100);
         $search = $request->input('search');
         $status = $request->input('status');
+        $sortBy = (string) $request->input('sort_by', 'created_at');
+        $sortDirection = strtolower((string) $request->input('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
         
         // Pending self-service applications are handled through Tickets until
         // installation/binding approval. They must not appear as clients yet.
@@ -66,8 +68,17 @@ class CustomerController extends Controller
             $query->where('status', $status);
         }
         
-        // Sort
-        $query->orderBy('created_at', 'desc');
+        // Sorting is restricted to this explicit list; request values are
+        // never used as raw column names or SQL fragments.
+        if ($sortBy === 'name') {
+            $query->orderByRaw('LOWER(full_name) ' . $sortDirection)->orderBy('id');
+        } elseif ($sortBy === 'address') {
+            $query->orderByRaw("LOWER(COALESCE(address, '')) " . $sortDirection)
+                ->orderByRaw('LOWER(full_name) ASC')
+                ->orderBy('id');
+        } else {
+            $query->orderBy('created_at', $sortDirection)->orderBy('id');
+        }
         
         $customers = $query->paginate($perPage);
         
