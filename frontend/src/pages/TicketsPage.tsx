@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   Search,
@@ -38,6 +38,7 @@ const TicketsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showMacCorrection, setShowMacCorrection] = useState(false);
@@ -121,8 +122,13 @@ const TicketsPage: React.FC = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await customerService.getCustomers({ per_page: 1000 });
-      setCustomers(response.data);
+      const firstPage = await customerService.getCustomers({ per_page: 100, page: 1 });
+      const allCustomers = [...firstPage.data];
+      for (let page = 2; page <= (firstPage.meta?.last_page || 1); page += 1) {
+        const response = await customerService.getCustomers({ per_page: 100, page });
+        allCustomers.push(...response.data);
+      }
+      setCustomers(allCustomers.sort((a, b) => a.full_name.localeCompare(b.full_name)));
     } catch (error) {
       console.error('Error fetching customers:', error);
     }
@@ -130,6 +136,10 @@ const TicketsPage: React.FC = () => {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.customer_id) {
+      window.alert('Select a customer before creating the ticket.');
+      return;
+    }
     try {
       await ticketService.createTicket(formData);
       setShowCreateModal(false);
@@ -215,6 +225,7 @@ const TicketsPage: React.FC = () => {
   };
 
   const resetForm = () => {
+    setCustomerSearch('');
     setFormData({
       customer_id: '',
       subject: '',
@@ -223,6 +234,24 @@ const TicketsPage: React.FC = () => {
       category: 'general',
     });
   };
+
+  const visibleCustomerChoices = useMemo(() => {
+    const term = customerSearch.trim().toLocaleLowerCase();
+    if (!term) return customers;
+
+    return customers.filter((customer) => [
+      customer.full_name,
+      customer.account_number,
+      customer.address,
+      customer.contact_number,
+      customer.email,
+    ].some((value) => String(value ?? '').toLocaleLowerCase().includes(term)));
+  }, [customerSearch, customers]);
+
+  const selectedFormCustomer = useMemo(
+    () => customers.find((customer) => customer.id === formData.customer_id) ?? null,
+    [customers, formData.customer_id],
+  );
 
   const getStatusBadge = (status: string) => {
     const badges = {
@@ -469,19 +498,51 @@ const TicketsPage: React.FC = () => {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                      <select
-                        value={formData.customer_id}
-                        onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        required
-                      >
-                        <option value="">Select a customer</option>
-                        {customers.map((customer) => (
-                          <option key={customer.id} value={customer.id}>
-                            {customer.full_name} ({customer.account_number})
-                          </option>
-                        ))}
-                      </select>
+                      <div className="rounded-lg border border-gray-300 bg-white">
+                        <div className="relative border-b border-gray-200">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="search"
+                            value={customerSearch}
+                            onChange={(event) => setCustomerSearch(event.target.value)}
+                            placeholder="Search name, account, address, phone, or email"
+                            className="w-full rounded-t-lg py-2.5 pl-9 pr-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+                            autoFocus
+                          />
+                        </div>
+                        {selectedFormCustomer && (
+                          <div className="border-b border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                            <span className="font-semibold">Selected:</span> {selectedFormCustomer.full_name} · {selectedFormCustomer.account_number}
+                          </div>
+                        )}
+                        <div className="max-h-64 overflow-y-auto" role="listbox" aria-label="All customers">
+                          {visibleCustomerChoices.map((customer) => {
+                            const selected = customer.id === formData.customer_id;
+                            return (
+                              <button
+                                key={customer.id}
+                                type="button"
+                                role="option"
+                                aria-selected={selected}
+                                onClick={() => setFormData({ ...formData, customer_id: customer.id })}
+                                className={`block w-full border-b border-gray-100 px-3 py-2.5 text-left text-sm transition last:border-b-0 ${selected ? 'bg-blue-600 text-white' : 'text-gray-900 hover:bg-blue-50'}`}
+                              >
+                                <span className="block font-semibold">{customer.full_name}</span>
+                                <span className={`block text-xs ${selected ? 'text-blue-100' : 'text-gray-500'}`}>
+                                  {customer.account_number}{customer.address ? ` · ${customer.address}` : ''}
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {visibleCustomerChoices.length === 0 && (
+                            <p className="px-3 py-6 text-center text-sm text-gray-500">No customer matches this search.</p>
+                          )}
+                        </div>
+                        <div className="border-t border-gray-200 px-3 py-2 text-xs text-gray-500">
+                          Showing {visibleCustomerChoices.length} of {customers.length} customers
+                        </div>
+                      </div>
+                      {!formData.customer_id && <p className="mt-1 text-xs text-red-600">Select one customer to create the ticket.</p>}
                     </div>
 
                     <div>
@@ -552,7 +613,8 @@ const TicketsPage: React.FC = () => {
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      disabled={!formData.customer_id}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Create Ticket
                     </button>
