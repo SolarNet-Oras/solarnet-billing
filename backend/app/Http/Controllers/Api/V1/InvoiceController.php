@@ -7,9 +7,11 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
+use App\Services\OfficeCashLiquidationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class InvoiceController extends Controller
@@ -273,11 +275,21 @@ class InvoiceController extends Controller
             $paymentData['cash_change_advance_amount'] = $applyChangeAsAdvance ? $cashChange : 0;
         }
         $paymentData['received_by'] = $request->user()->id;
-        $payment = $this->invoiceService->recordPayment($invoice, $paymentData);
+        [$payment, $remittance] = DB::transaction(function () use ($invoice, $paymentData, $request) {
+            $payment = $this->invoiceService->recordPayment($invoice, $paymentData);
+            $remittance = $payment->payment_method === 'cash'
+                ? app(OfficeCashLiquidationService::class)->submit($payment, $request->user())
+                : null;
+
+            return [$payment, $remittance];
+        });
 
         return response()->json([
-            'message' => 'Payment recorded successfully',
+            'message' => $remittance
+                ? 'Cash payment recorded and added to pending office liquidation.'
+                : 'Payment recorded successfully',
             'payment' => $payment,
+            'remittance' => $remittance,
             'invoice' => $invoice->fresh(['customer', 'items', 'payments']),
         ], 201);
     }

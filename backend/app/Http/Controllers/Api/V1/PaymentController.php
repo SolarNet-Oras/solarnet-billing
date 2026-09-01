@@ -7,8 +7,10 @@ use App\Models\Payment;
 use App\Models\Customer;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
+use App\Services\OfficeCashLiquidationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
@@ -40,8 +42,21 @@ class PaymentController extends Controller
         }
         $data['transaction_id'] = 'ADV-' . now()->format('YmdHis') . '-' . Str::upper(Str::random(6));
         $data['received_by'] = $request->user()->id;
-        $payment = $invoices->recordAdvancePayment($customer, $data);
-        return response()->json(['message' => 'Advance payment reserved for the selected future billing cycle.', 'payment' => $payment, 'credit_summary' => $invoices->creditSummary($customer)], 201);
+        [$payment, $remittance] = DB::transaction(function () use ($customer, $data, $invoices, $request) {
+            $payment = $invoices->recordAdvancePayment($customer, $data);
+            return [
+                $payment,
+                app(OfficeCashLiquidationService::class)->submit($payment, $request->user()),
+            ];
+        });
+        return response()->json([
+            'message' => $remittance
+                ? 'Advance payment recorded and added to pending office liquidation.'
+                : 'Advance payment reserved for the selected future billing cycle.',
+            'payment' => $payment,
+            'remittance' => $remittance,
+            'credit_summary' => $invoices->creditSummary($customer),
+        ], 201);
     }
 
     private function normalizedCashBreakdown(array $rows): array
