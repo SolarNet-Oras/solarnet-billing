@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 @layer base {
+  ::selection {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    text-shadow: none;
+  }
+
+  ::-moz-selection {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    text-shadow: none;
+  }
+
   :root {
     /* Soft neutral workspace background; cards remain brighter for contrast. */
     --background: 220 20% 94%;
