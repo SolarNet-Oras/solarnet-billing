@@ -548,10 +548,12 @@ const StaticLeasesTable: React.FC<{
                   {!lease.is_current || lease.status !== 'bound' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
-                      {lease.is_current && !lease.is_dynamic && (
+                      {!lease.is_dynamic && (
                         <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
                           {registeringId === lease.id
                             ? 'Deleting…'
+                            : !lease.is_current
+                              ? 'Remove stale record'
                             : lease.known_customer_identity || lease.is_matched
                               ? 'Delete reservation from MikroTik'
                               : 'Delete from MikroTik'}

@@ -172,8 +172,8 @@ class UnregisteredLeaseController extends Controller
         if ($this->normalizedMacKey((string) $request->input('confirmation_mac')) !== $this->normalizedMacKey($lease->mac_address)) {
             return response()->json(['success' => false, 'message' => 'MAC confirmation did not match. No lease was removed.'], 422);
         }
-        if (! $lease->is_current || $lease->is_dynamic || $lease->status === 'bound' || ! $lease->router) {
-            return response()->json(['success' => false, 'message' => 'Only a current inactive static lease can be removed. No customer or active lease was changed.'], 422);
+        if ($lease->is_dynamic || $lease->status === 'bound' || ! $lease->router) {
+            return response()->json(['success' => false, 'message' => 'Only a locally inactive static lease can use this action. No customer or active lease was changed.'], 422);
         }
 
         $macKey = $this->normalizedMacKey($lease->mac_address);
@@ -187,6 +187,18 @@ class UnregisteredLeaseController extends Controller
         }
 
         $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address);
+        if (! $lease->is_current && ($result['code'] ?? null) === 'LEASE_NOT_FOUND') {
+            Log::notice('Stale local DHCP lease mirror removed after MikroTik absence was verified', [
+                'lease_id' => $lease->id,
+                'router_id' => $lease->router_id,
+                'mac_address' => $lease->mac_address,
+                'ip_address' => $lease->ip_address,
+                'user_id' => $request->user()?->id,
+            ]);
+            $lease->delete();
+
+            return response()->json(['success' => true, 'message' => 'MikroTik confirmed that this lease no longer exists. The stale local display record was removed.']);
+        }
         if (! ($result['success'] ?? false)) {
             return response()->json(['success' => false, 'message' => $result['message'] ?? 'MikroTik did not remove the lease.'], 422);
         }

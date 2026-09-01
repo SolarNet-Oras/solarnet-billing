@@ -2420,7 +2420,7 @@ class MikrotikService
     public function removeInactiveStaticLease(Router $router, string $macAddress): array
     {
         if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
-            return ['success' => false, 'message' => 'Router is not online. No lease was removed.'];
+            return ['success' => false, 'code' => 'ROUTER_OFFLINE', 'message' => 'Router is not online. No lease was removed.'];
         }
 
         try {
@@ -2434,7 +2434,7 @@ class MikrotikService
             $matches = $client->query($find)->read();
 
             if (count($matches) !== 1) {
-                return ['success' => false, 'message' => count($matches) === 0
+                return ['success' => false, 'code' => count($matches) === 0 ? 'LEASE_NOT_FOUND' : 'AMBIGUOUS_LEASE', 'message' => count($matches) === 0
                     ? 'The exact lease no longer exists on MikroTik.'
                     : 'More than one RouterOS lease uses this MAC. No lease was removed.'];
             }
@@ -2443,21 +2443,27 @@ class MikrotikService
             $dynamic = filter_var($lease['dynamic'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $status = strtolower((string) ($lease['status'] ?? 'unknown'));
             if ($dynamic || $status === 'bound') {
-                return ['success' => false, 'message' => 'Only one inactive static lease can be removed. This RouterOS lease is dynamic or currently bound.'];
+                return [
+                    'success' => false,
+                    'code' => 'LIVE_LEASE_PROTECTED',
+                    'router_status' => $status,
+                    'router_dynamic' => $dynamic,
+                    'message' => 'MikroTik currently reports this lease as ' . ($dynamic ? 'dynamic' : $status) . '. It was not deleted. Run Sync from all routers to refresh the displayed state.',
+                ];
             }
             if (empty($lease['.id'])) {
-                return ['success' => false, 'message' => 'RouterOS did not return an exact lease identifier. No lease was removed.'];
+                return ['success' => false, 'code' => 'LEASE_ID_MISSING', 'message' => 'RouterOS did not return an exact lease identifier. No lease was removed.'];
             }
 
             $client->query((new Query('/ip/dhcp-server/lease/remove'))->equal('.id', $lease['.id']))->read();
             if ($client->query($find)->read() !== []) {
-                return ['success' => false, 'message' => 'RouterOS did not confirm removal of the exact lease.'];
+                return ['success' => false, 'code' => 'REMOVAL_NOT_CONFIRMED', 'message' => 'RouterOS did not confirm removal of the exact lease.'];
             }
 
-            return ['success' => true, 'message' => "Inactive static lease {$mac} was removed from {$router->name}."];
+            return ['success' => true, 'code' => 'LEASE_REMOVED', 'message' => "Inactive static lease {$mac} was removed from {$router->name}."];
         } catch (\Throwable $e) {
             Log::warning('Inactive MikroTik DHCP lease removal failed', ['router_id' => $router->id, 'mac' => $macAddress, 'error' => $e->getMessage()]);
-            return ['success' => false, 'message' => 'MikroTik lease removal failed: ' . $e->getMessage()];
+            return ['success' => false, 'code' => 'ROUTER_ERROR', 'message' => 'MikroTik lease removal failed: ' . $e->getMessage()];
         }
     }
 
