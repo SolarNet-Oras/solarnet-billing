@@ -402,7 +402,7 @@ const TicketsPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {profileChanges.map((change) => (
-                  <tr key={change.id} className="hover:bg-gray-50">
+                  <tr key={change.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/80">
                     <td className="px-4 py-3"><div className="font-medium text-gray-900">{change.customer.full_name}</div><div className="text-xs text-gray-500">{change.customer.account_number}</div></td>
                     <td className="px-4 py-3 text-gray-800"><div>{change.requested_full_name && <>Name: <strong>{change.requested_full_name}</strong></>}</div>{change.requested_service_plan && <div className="text-xs text-gray-500">Plan: {change.requested_service_plan.name} · ₱{Number(change.requested_service_plan.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}/mo</div>}</td>
                     <td className="px-4 py-3 capitalize text-gray-700">{change.status}</td>
@@ -472,7 +472,7 @@ const TicketsPage: React.FC = () => {
                 </tr>
               ) : (
                 filteredTickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/80 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {ticket.ticket_number}
                     </td>
@@ -560,10 +560,10 @@ const TicketsPage: React.FC = () => {
                                 role="option"
                                 aria-selected={selected}
                                 onClick={() => setFormData({ ...formData, customer_id: customer.id })}
-                                className={`block w-full border-b border-gray-100 px-3 py-2.5 text-left text-sm transition last:border-b-0 ${selected ? 'bg-blue-600 text-white' : 'text-gray-900 hover:bg-blue-50'}`}
+                                className={`block w-full border-b border-gray-100 px-3 py-2.5 text-left text-sm transition last:border-b-0 ${selected ? 'bg-blue-600 text-white dark:bg-cyan-400 dark:text-slate-950' : 'text-gray-900 hover:bg-blue-50 dark:text-slate-100 dark:hover:bg-slate-800'}`}
                               >
                                 <span className="block font-semibold">{customer.full_name}</span>
-                                <span className={`block text-xs ${selected ? 'text-blue-100' : 'text-gray-500'}`}>
+                                <span className={`block text-xs ${selected ? 'text-blue-100 dark:text-slate-800' : 'text-gray-500 dark:text-slate-300'}`}>
                                   {customer.account_number}{customer.address ? ` · ${customer.address}` : ''}
                                 </span>
                               </button>
@@ -642,7 +642,7 @@ const TicketsPage: React.FC = () => {
                         setShowCreateModal(false);
                         resetForm();
                       }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
                     >
                       Cancel
                     </button>
