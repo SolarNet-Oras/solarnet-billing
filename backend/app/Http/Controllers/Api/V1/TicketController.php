@@ -8,6 +8,7 @@ use App\Services\TicketService;
 use App\Services\TicketWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class TicketController extends Controller
@@ -53,6 +54,31 @@ class TicketController extends Controller
         ]);
         if ($validator->fails()) return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         return response()->json(['message' => 'Ticket created successfully', 'ticket' => $this->ticketService->createTicket($request->all())], 201);
+    }
+
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate([
+            'confirmation_ticket_number' => ['required', 'string', 'max:32'],
+        ]);
+        $ticket = Ticket::findOrFail($id);
+        if (! hash_equals($ticket->ticket_number, trim($data['confirmation_ticket_number']))) {
+            return response()->json(['message' => 'Ticket-number confirmation did not match. Nothing was deleted.'], 422);
+        }
+
+        $ticketNumber = $ticket->ticket_number;
+        Log::notice('Support ticket deleted by authorized user', [
+            'ticket_id' => $ticket->id,
+            'ticket_number' => $ticketNumber,
+            'customer_id' => $ticket->customer_id,
+            'workflow_status' => $ticket->workflow_status,
+            'deleted_by' => $request->user()?->id,
+        ]);
+        $ticket->delete();
+
+        return response()->json([
+            'message' => "Ticket {$ticketNumber} and its ticket-only comments/history were deleted. The customer and all billing/network records were preserved.",
+        ]);
     }
 
     public function assign(Request $request, string $id): JsonResponse

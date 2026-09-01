@@ -7,6 +7,7 @@ import {
   AlertCircle,
   XCircle,
   ClipboardCheck,
+  Trash2,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
@@ -29,6 +30,9 @@ const TicketsPage: React.FC = () => {
   const canApproveInstallations = ['admin', 'super_admin'].some((role) =>
     user?.role === role || user?.roles?.some((item) => typeof item === 'string' ? item === role : item.name === role),
   );
+  const canDeleteTickets = user?.permissions?.includes('delete-tickets')
+    || user?.role === 'super_admin'
+    || user?.roles?.some((item) => typeof item === 'string' ? item === 'super_admin' : item.name === 'super_admin');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -156,6 +160,26 @@ const TicketsPage: React.FC = () => {
       fetchTickets();
     } catch (error) {
       console.error('Error updating status:', error);
+    }
+  };
+
+  const handleDeleteTicket = async (ticket: Ticket): Promise<void> => {
+    const confirmation = window.prompt(
+      `Delete ${ticket.ticket_number}?\n\nThis removes the ticket and its comments/history. The customer, billing, payments, and network records are preserved.\n\nType the exact ticket number to confirm:`,
+    );
+    if (confirmation === null) return;
+
+    try {
+      const response = await ticketService.deleteTicket(ticket.id, confirmation.trim());
+      setTickets((current) => current.filter((item) => item.id !== ticket.id));
+      setInstallationApprovals((current) => current.filter((item) => item.id !== ticket.id));
+      if (selectedTicket?.id === ticket.id) {
+        setSelectedTicket(null);
+        setShowViewModal(false);
+      }
+      window.alert(response.message);
+    } catch (error: any) {
+      window.alert(error.response?.data?.message || 'The ticket could not be deleted.');
     }
   };
 
@@ -471,6 +495,7 @@ const TicketsPage: React.FC = () => {
                       {new Date(ticket.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <div className="flex items-center justify-end gap-3">
                       <button
                         onClick={() => {
                           setSelectedTicket(ticket);
@@ -480,6 +505,16 @@ const TicketsPage: React.FC = () => {
                       >
                         View
                       </button>
+                      {canDeleteTickets && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteTicket(ticket)}
+                          className="inline-flex items-center gap-1 font-medium text-rose-600 hover:text-rose-800"
+                        >
+                          <Trash2 className="h-4 w-4" /> Delete
+                        </button>
+                      )}
+                      </div>
                     </td>
                   </tr>
                 ))
