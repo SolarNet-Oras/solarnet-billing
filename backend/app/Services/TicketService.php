@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendTicketCreatedSms;
 use App\Models\Ticket;
 use App\Models\TicketComment;
 use Carbon\Carbon;
@@ -48,6 +49,8 @@ class TicketService
             ]);
 
             app(TicketWorkflowService::class)->history($ticket, auth()->user(), 'ticket_created', null, $ticket->workflow_status);
+
+            DB::afterCommit(fn () => SendTicketCreatedSms::dispatch($ticket->id));
 
             return $ticket->fresh(['customer', 'assignedTechnician', 'comments']);
         });
