@@ -35,6 +35,7 @@ class TicketService
     public function createTicket(array $data): Ticket
     {
         return DB::transaction(function () use ($data) {
+            $ticketType = $data['ticket_type'] ?? $this->inferType($data['subject'], $data['category'] ?? 'general');
             $ticket = Ticket::create([
                 'ticket_number' => $this->generateTicketNumber(),
                 'customer_id' => $data['customer_id'],
@@ -43,8 +44,8 @@ class TicketService
                 'priority' => $data['priority'] ?? 'medium',
                 'category' => $data['category'] ?? 'general',
                 'status' => 'open',
-                'ticket_type' => $this->inferType($data['subject'], $data['category'] ?? 'general'),
-                'workflow_status' => $this->inferType($data['subject'], $data['category'] ?? 'general') === 'installation' ? 'unclaimed' : 'open',
+                'ticket_type' => $ticketType,
+                'workflow_status' => $ticketType === 'installation' ? 'unclaimed' : 'open',
             ]);
 
             app(TicketWorkflowService::class)->history($ticket, auth()->user(), 'ticket_created', null, $ticket->workflow_status);

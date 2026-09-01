@@ -51,6 +51,7 @@ class TicketController extends Controller
             'customer_id' => 'required|uuid|exists:customers,id', 'subject' => 'required|string|max:255',
             'description' => 'required|string', 'priority' => 'nullable|in:low,medium,high,urgent',
             'category' => 'nullable|in:technical,billing,general,network_issue',
+            'ticket_type' => 'nullable|in:repair,installation,other',
         ]);
         if ($validator->fails()) return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         return response()->json(['message' => 'Ticket created successfully', 'ticket' => $this->ticketService->createTicket($request->all())], 201);

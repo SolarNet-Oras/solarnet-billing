@@ -50,6 +50,7 @@ const TicketsPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     customer_id: '',
+    ticket_type: 'other' as 'repair' | 'installation' | 'other',
     subject: '',
     description: '',
     priority: 'medium' as const,
@@ -145,12 +146,17 @@ const TicketsPage: React.FC = () => {
       return;
     }
     try {
-      await ticketService.createTicket(formData);
+      const response = await ticketService.createTicket(formData);
       setShowCreateModal(false);
-      fetchTickets();
+      await fetchTickets();
+      if (formData.ticket_type === 'installation') await fetchInstallationApprovals();
       resetForm();
-    } catch (error) {
+      window.alert(response.message);
+    } catch (error: any) {
       console.error('Error creating ticket:', error);
+      const errors = error.response?.data?.errors;
+      const firstError = errors ? Object.values(errors).flat()[0] : null;
+      window.alert(String(firstError || error.response?.data?.message || 'Could not create the ticket.'));
     }
   };
 
@@ -252,6 +258,7 @@ const TicketsPage: React.FC = () => {
     setCustomerSearch('');
     setFormData({
       customer_id: '',
+      ticket_type: 'other',
       subject: '',
       description: '',
       priority: 'medium',
@@ -531,6 +538,36 @@ const TicketsPage: React.FC = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Create New Ticket</h2>
                 <form onSubmit={handleCreateTicket}>
                   <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ticket type</label>
+                      <select
+                        value={formData.ticket_type}
+                        onChange={(event) => {
+                          const ticketType = event.target.value as 'repair' | 'installation' | 'other';
+                          setFormData((current) => ({
+                            ...current,
+                            ticket_type: ticketType,
+                            subject: ticketType === 'installation'
+                              ? 'New Installation Application — approval and binding required'
+                              : current.ticket_type === 'installation' ? '' : current.subject,
+                            category: ticketType === 'repair'
+                              ? 'technical'
+                              : ticketType === 'installation' ? 'general' : current.category,
+                          }));
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="other">General / billing concern</option>
+                        <option value="repair">Repair / no-internet concern</option>
+                        <option value="installation">New Installation Application</option>
+                      </select>
+                      {formData.ticket_type === 'installation' && (
+                        <p className="mt-1 text-xs text-blue-700 dark:text-cyan-300">
+                          This enters the technician claim, installation MAC/notes, and administrator approval workflow.
+                        </p>
+                      )}
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
                       <div className="rounded-lg border border-gray-300 bg-white">

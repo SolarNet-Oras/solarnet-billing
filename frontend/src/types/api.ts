@@ -344,6 +344,7 @@ export interface CreateTicketRequest {
   customer_id: string;
   subject: string;
   description: string;
+  ticket_type?: 'repair' | 'installation' | 'other';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   category?: 'technical' | 'billing' | 'general' | 'network_issue';
 }
