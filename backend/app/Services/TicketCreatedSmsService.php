@@ -37,13 +37,10 @@ class TicketCreatedSmsService
     {
         $name = Str::limit(trim((string) $ticket->customer?->full_name), 32, '');
         $subject = Str::limit((string) preg_replace('/\s+/', ' ', trim((string) $ticket->subject)), 72, '...');
-        $priority = ucfirst((string) ($ticket->priority ?: 'medium'));
-
         return "SOLARNET SUPPORT\n\n"
             . "Hi {$name},\n\n"
             . "Your ticket {$ticket->ticket_number} has been created.\n"
-            . "Concern: {$subject}\n"
-            . "Priority: {$priority}\n\n"
+            . "Concern: {$subject}\n\n"
             . "Please be advised that our technician may visit your home at any time within 48 hours. Please be patient. We sincerely apologize for the inconvenience.\n\n"
             . "Keep your ticket number for follow-up.\n"
             . "This is an auto-generated SMS.";
