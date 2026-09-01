@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
@@ -14,6 +14,7 @@ const CustomersPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'address_asc' | 'address_desc'>('newest');
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
   const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
@@ -72,6 +73,21 @@ const CustomersPage: React.FC = () => {
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
+
+  const sortedCustomers = useMemo(() => {
+    const rows = [...customers];
+    const compareText = (left?: string | null, right?: string | null) => String(left || '').localeCompare(String(right || ''), 'en-PH', { sensitivity: 'base', numeric: true });
+    rows.sort((left, right) => {
+      if (sortOrder === 'name_asc') return compareText(left.full_name, right.full_name);
+      if (sortOrder === 'name_desc') return compareText(right.full_name, left.full_name);
+      if (sortOrder === 'address_asc') return compareText(left.address, right.address) || compareText(left.full_name, right.full_name);
+      if (sortOrder === 'address_desc') return compareText(right.address, left.address) || compareText(left.full_name, right.full_name);
+      const leftTime = new Date(left.created_at).getTime() || 0;
+      const rightTime = new Date(right.created_at).getTime() || 0;
+      return sortOrder === 'oldest' ? leftTime - rightTime : rightTime - leftTime;
+    });
+    return rows;
+  }, [customers, sortOrder]);
 
   const handleConfirmDelete = async (): Promise<void> => {
     if (!deleteTarget) return;
@@ -410,7 +426,7 @@ const CustomersPage: React.FC = () => {
 
         {/* Filters */}
         <div className="bg-card border border-border rounded-lg p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Search */}
             <div className="md:col-span-2">
               <input
@@ -433,6 +449,20 @@ const CustomersPage: React.FC = () => {
               <option value="suspended">Suspended</option>
               <option value="expired">Expired</option>
               <option value="pending">Pending</option>
+            </select>
+
+            <select
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}
+              className="px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Sort customers"
+            >
+              <option value="newest">Newest to oldest</option>
+              <option value="oldest">Oldest to newest</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+              <option value="address_asc">Address: A to Z</option>
+              <option value="address_desc">Address: Z to A</option>
             </select>
           </div>
         </div>
@@ -520,7 +550,7 @@ const CustomersPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {customers.map((customer) => (
+                  {sortedCustomers.map((customer) => (
                     <tr
                       key={customer.id}
                       className={`hover:bg-secondary/50 transition-colors ${selectedIds.has(customer.id) ? 'bg-primary/5' : ''}`}
