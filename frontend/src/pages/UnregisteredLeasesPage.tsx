@@ -50,6 +50,18 @@ const LeaseActivityBadge: React.FC<{ lease: UnregisteredLease }> = ({ lease }) =
   );
 };
 
+/** Healthy registered static reservations belong in customer/network monitoring. */
+const isHealthyRegisteredStaticLease = (lease: UnregisteredLease): boolean => {
+  const identity = lease.known_customer_identity;
+
+  return !lease.is_dynamic
+    && lease.is_current
+    && lease.status === 'bound'
+    && identity?.status === 'known_customer'
+    && identity.customer_count === 1
+    && identity.customer?.same_router === true;
+};
+
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
   // Show every backend-returned lease by default. This prevents valid rows
@@ -298,9 +310,10 @@ const UnregisteredLeasesPage: React.FC = () => {
     });
   };
 
-  const filteredStaticLeases = filterLeases(staticLeases);
+  const filteredStaticLeases = filterLeases(staticLeases).filter((lease) => !isHealthyRegisteredStaticLease(lease));
   const filteredDynamicLeases = filterLeases(dynamicLeases);
   const allFilteredLeaseCount = filteredStaticLeases.length + filteredDynamicLeases.length;
+  const healthyRegisteredStaticHidden = staticLeases.filter(isHealthyRegisteredStaticLease).length;
 
   return (
     <DashboardLayout>
@@ -315,9 +328,10 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  Complete DHCP lease inventory for review. Dynamic, static, registered, conflicting, inactive, waiting, and stale leases remain visible. Router lease state mirrors every minute; this page refreshes every 30 seconds.
+                  DHCP exceptions for review. Healthy registered static reservations are hidden; dynamic, unregistered, conflicting, different-router, inactive, waiting, and stale leases remain visible. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
                 {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
+                {healthyRegisteredStaticHidden > 0 && <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">{healthyRegisteredStaticHidden} healthy registered static reservation{healthyRegisteredStaticHidden === 1 ? '' : 's'} hidden.</p>}
               </div>
             </div>
           </div>
