@@ -110,6 +110,13 @@ class CustomerController extends Controller
             ->where('status', '!=', 'pending')
             ->when($search !== '', fn ($query) => $query->search($search))
             ->when($status !== '', fn ($query) => $query->where('status', $status))
+            ->where(function ($query) {
+                $missing = ['', 'n/a', 'na', 'none', 'not recorded', 'to be updated', '-'];
+                foreach (['contact_number', 'email', 'mac_address', 'ip_address'] as $column) {
+                    $query->orWhereNull($column)
+                        ->orWhereIn(DB::raw("LOWER(TRIM({$column}))"), $missing);
+                }
+            })
             ->orderBy('full_name')
             ->get([
                 'id',
@@ -137,7 +144,7 @@ class CustomerController extends Controller
 
         $suffix = $status !== '' ? '-' . strtolower(preg_replace('/[^a-z0-9]+/i', '-', $status)) : '';
 
-        return $pdf->download('solarnet-customer-register' . $suffix . '-' . $generatedAt->format('Y-m-d') . '.pdf');
+        return $pdf->download('solarnet-incomplete-customer-details' . $suffix . '-' . $generatedAt->format('Y-m-d') . '.pdf');
     }
 
     /**

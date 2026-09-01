@@ -32,16 +32,16 @@
         <div class="company">{{ $company['name'] }}</div>
         <div class="subtitle">{{ $company['tagline'] }}</div>
         <div class="report-title">
-            <strong>Customer Contact &amp; Network Register</strong>
+            <strong>Incomplete Customer Details</strong>
             <span>Generated {{ $generatedAt->format('M d, Y h:i A') }} &middot; {{ $generatedBy }}</span>
         </div>
     </div>
 
     <div class="summary">
-        <strong>{{ $customers->count() }}</strong> registered customer{{ $customers->count() === 1 ? '' : 's' }} included.
+        <strong>{{ $customers->count() }}</strong> registered customer{{ $customers->count() === 1 ? '' : 's' }} missing a phone number, email, MAC address, or IP address.
         @if($filters['status'] !== '') Status: <strong>{{ ucfirst($filters['status']) }}</strong>. @endif
         @if($filters['search'] !== '') Search: <strong>{{ $filters['search'] }}</strong>. @endif
-        Missing contact or network values are clearly marked as not recorded.
+        Customers with all four required details complete are excluded from this report.
     </div>
 
     @if($customers->isEmpty())
@@ -57,20 +57,27 @@
                 <th style="width:12%">IP address</th>
             </tr></thead>
             <tbody>
+            @php($missingValues = ['', 'n/a', 'na', 'none', 'not recorded', 'to be updated', '-'])
             @foreach($customers as $customer)
+                @php
+                    $phoneMissing = in_array(strtolower(trim((string) $customer->contact_number)), $missingValues, true);
+                    $emailMissing = in_array(strtolower(trim((string) $customer->email)), $missingValues, true);
+                    $macMissing = in_array(strtolower(trim((string) $customer->mac_address)), $missingValues, true);
+                    $ipMissing = in_array(strtolower(trim((string) $customer->ip_address)), $missingValues, true);
+                @endphp
                 <tr>
                     <td><div class="mono">{{ $customer->account_number }}</div><div class="status">{{ $customer->status }}</div></td>
                     <td class="name">{{ $customer->full_name }}</td>
-                    <td class="{{ $customer->contact_number ? '' : 'missing' }}">{{ $customer->contact_number ?: 'Not recorded' }}</td>
-                    <td class="{{ $customer->email ? '' : 'missing' }}">{{ $customer->email ?: 'Not recorded' }}</td>
-                    <td class="mono {{ $customer->mac_address ? '' : 'missing' }}">{{ $customer->mac_address ?: 'Not recorded' }}</td>
-                    <td class="mono {{ $customer->ip_address ? '' : 'missing' }}">{{ $customer->ip_address ?: 'Not recorded' }}</td>
+                    <td class="{{ $phoneMissing ? 'missing' : '' }}">{{ $phoneMissing ? 'Not recorded' : $customer->contact_number }}</td>
+                    <td class="{{ $emailMissing ? 'missing' : '' }}">{{ $emailMissing ? 'Not recorded' : $customer->email }}</td>
+                    <td class="mono {{ $macMissing ? 'missing' : '' }}">{{ $macMissing ? 'Not recorded' : $customer->mac_address }}</td>
+                    <td class="mono {{ $ipMissing ? 'missing' : '' }}">{{ $ipMissing ? 'Not recorded' : $customer->ip_address }}</td>
                 </tr>
             @endforeach
             </tbody>
         </table>
     @endif
 
-    <div class="footer">SolarNet customer contact and network register &middot; Read-only export</div>
+    <div class="footer">SolarNet incomplete customer details report &middot; Read-only export</div>
 </body>
 </html>

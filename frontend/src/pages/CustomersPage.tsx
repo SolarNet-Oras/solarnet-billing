@@ -149,12 +149,12 @@ const CustomersPage: React.FC = () => {
       const link = document.createElement('a');
       const date = new Date().toISOString().slice(0, 10);
       link.href = url;
-      link.download = `solarnet-customer-register-${date}.pdf`;
+      link.download = `solarnet-incomplete-customer-details-${date}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setNotice(`Customer register PDF downloaded for ${customers.length} matching customer${customers.length === 1 ? '' : 's'}.`);
+      setNotice('Incomplete customer details PDF downloaded. Complete customer records are excluded.');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to download the customer register PDF.');
       logger.error('Failed to download customer register PDF', err);
@@ -403,7 +403,7 @@ const CustomersPage: React.FC = () => {
               data-testid="download-customers-pdf"
             >
               <Download className="h-4 w-4" />
-              {exportingPdf ? 'Preparing PDF…' : 'Download PDF'}
+              {exportingPdf ? 'Preparing PDF…' : 'Download Missing Data PDF'}
             </button>
             <button
               type="button"
