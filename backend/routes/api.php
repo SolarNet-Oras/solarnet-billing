@@ -254,6 +254,7 @@ Route::prefix('v1')->group(function () {
             Route::get('dynamic',                   [UnregisteredLeaseController::class, 'dynamic'])->middleware('permission:view-dhcp');
             Route::get('customer-link-candidates',  [UnregisteredLeaseController::class, 'customerLinkCandidates'])->middleware('permission:create-customers|manage-dhcp');
             Route::post('{id}/quick-register',      [UnregisteredLeaseController::class, 'quickRegister'])->middleware('permission:create-customers|manage-dhcp');
+            Route::delete('{id}/inactive',          [UnregisteredLeaseController::class, 'destroyInactive'])->middleware('permission:manage-dhcp');
         });
 
         // AI Assistant (floating chat). Keep it available on every employee

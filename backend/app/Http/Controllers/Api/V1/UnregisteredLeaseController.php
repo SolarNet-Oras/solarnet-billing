@@ -161,6 +161,40 @@ class UnregisteredLeaseController extends Controller
         ]);
     }
 
+    /** Delete one explicitly confirmed, unowned, inactive static lease. */
+    public function destroyInactive(Request $request, string $id): JsonResponse
+    {
+        $request->validate(['confirmation_mac' => 'required|string|max:32']);
+        $lease = DhcpLease::with('router')->findOrFail($id);
+        if ($this->normalizedMacKey((string) $request->input('confirmation_mac')) !== $this->normalizedMacKey($lease->mac_address)) {
+            return response()->json(['success' => false, 'message' => 'MAC confirmation did not match. No lease was removed.'], 422);
+        }
+        if (! $lease->is_current || $lease->is_dynamic || $lease->status === 'bound' || $lease->is_matched || $lease->customer_id || ! $lease->router) {
+            return response()->json(['success' => false, 'message' => 'Only a current, unowned, inactive static lease can be removed. No customer or active lease was changed.'], 422);
+        }
+
+        $macKey = $this->normalizedMacKey($lease->mac_address);
+        $customerOwnsMac = Customer::query()->whereNotNull('mac_address')
+            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macKey])->exists();
+        if ($customerOwnsMac) {
+            return response()->json(['success' => false, 'message' => 'A customer profile owns this MAC. Remove or reassign ownership through the guarded customer workflow instead.'], 422);
+        }
+
+        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address);
+        if (! ($result['success'] ?? false)) {
+            return response()->json(['success' => false, 'message' => $result['message'] ?? 'MikroTik did not remove the lease.'], 422);
+        }
+
+        Log::notice('Unowned inactive DHCP lease removed from MikroTik', [
+            'lease_id' => $lease->id, 'router_id' => $lease->router_id,
+            'mac_address' => $lease->mac_address, 'ip_address' => $lease->ip_address,
+            'user_id' => $request->user()?->id,
+        ]);
+        $lease->delete();
+
+        return response()->json(['success' => true, 'message' => $result['message']]);
+    }
+
     /**
      * Register a field-installed client from the technician dashboard.
      *

@@ -2413,6 +2413,55 @@ class MikrotikService
     }
 
     /**
+     * Remove one exact inactive static DHCP lease from RouterOS.
+     * Customer ownership is validated by the controller before this call;
+     * this method independently refuses dynamic or currently bound leases.
+     */
+    public function removeInactiveStaticLease(Router $router, string $macAddress): array
+    {
+        if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
+            return ['success' => false, 'message' => 'Router is not online. No lease was removed.'];
+        }
+
+        try {
+            $config = (new Config())
+                ->set('host', $router->host)->set('user', $router->username)
+                ->set('pass', $router->password)->set('port', $router->port)
+                ->set('timeout', 3)->set('socket_timeout', 5)->set('attempts', 1)->set('delay', 1);
+            $client = new Client($config);
+            $mac = strtoupper(trim($macAddress));
+            $find = (new Query('/ip/dhcp-server/lease/print'))->where('mac-address', $mac);
+            $matches = $client->query($find)->read();
+
+            if (count($matches) !== 1) {
+                return ['success' => false, 'message' => count($matches) === 0
+                    ? 'The exact lease no longer exists on MikroTik.'
+                    : 'More than one RouterOS lease uses this MAC. No lease was removed.'];
+            }
+
+            $lease = $matches[0];
+            $dynamic = filter_var($lease['dynamic'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $status = strtolower((string) ($lease['status'] ?? 'unknown'));
+            if ($dynamic || $status === 'bound') {
+                return ['success' => false, 'message' => 'Only one inactive static lease can be removed. This RouterOS lease is dynamic or currently bound.'];
+            }
+            if (empty($lease['.id'])) {
+                return ['success' => false, 'message' => 'RouterOS did not return an exact lease identifier. No lease was removed.'];
+            }
+
+            $client->query((new Query('/ip/dhcp-server/lease/remove'))->equal('.id', $lease['.id']))->read();
+            if ($client->query($find)->read() !== []) {
+                return ['success' => false, 'message' => 'RouterOS did not confirm removal of the exact lease.'];
+            }
+
+            return ['success' => true, 'message' => "Inactive static lease {$mac} was removed from {$router->name}."];
+        } catch (\Throwable $e) {
+            Log::warning('Inactive MikroTik DHCP lease removal failed', ['router_id' => $router->id, 'mac' => $macAddress, 'error' => $e->getMessage()]);
+            return ['success' => false, 'message' => 'MikroTik lease removal failed: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Add an IP address to a MikroTik firewall address-list.
      */
     public function addAddressList(Router $router, string $listName, string $address, ?string $comment = null): array

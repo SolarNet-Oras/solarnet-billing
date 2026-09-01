@@ -237,6 +237,20 @@ const UnregisteredLeasesPage: React.FC = () => {
     navigate(`/customers/new?${params.toString()}`);
   };
 
+  const handleDeleteInactive = async (lease: UnregisteredLease): Promise<void> => {
+    const confirmation = window.prompt(`Delete this inactive static lease from ${routerName(lease.router_id)}?\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
+    if (confirmation === null) return;
+    setRegisteringId(lease.id); setError(''); setNotice('');
+    try {
+      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim());
+      setStaticLeases((rows) => rows.filter((row) => row.id !== lease.id));
+      setDynamicLeases((rows) => rows.filter((row) => row.id !== lease.id));
+      setNotice(result.message);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'The inactive lease was not removed.');
+    } finally { setRegisteringId(null); }
+  };
+
   const openRegistrationModal = (lease: UnregisteredLease): void => {
     setModalMode('register');
     setModalLease(lease);
@@ -390,6 +404,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               onRegister={openRegistrationModal}
               onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
               onReassign={openReassignmentModal}
+              onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
               registeringId={registeringId}
             />
             <DynamicLeasesTable
@@ -410,6 +425,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             onRegister={openRegistrationModal}
             onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
             onReassign={openReassignmentModal}
+            onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
             registeringId={registeringId}
           />
         ) : (
@@ -451,8 +467,9 @@ const StaticLeasesTable: React.FC<{
   onRegister: (lease: UnregisteredLease) => void;
   onPushKnownCustomer: (lease: UnregisteredLease, customerId: string, confirmation?: { confirm_current_client_reassignment?: boolean }) => void;
   onReassign: (lease: UnregisteredLease) => void;
+  onDeleteInactive: (lease: UnregisteredLease) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, registeringId }) => {
+}> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, onDeleteInactive, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -518,7 +535,14 @@ const StaticLeasesTable: React.FC<{
                 </td>
                 <td className="px-4 py-3 text-right">
                   {!lease.is_current || lease.status !== 'bound' ? (
-                    <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
+                      {lease.is_current && !lease.is_dynamic && !lease.is_matched && !lease.known_customer_identity && (
+                        <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                          {registeringId === lease.id ? 'Deleting…' : 'Delete from MikroTik'}
+                        </button>
+                      )}
+                    </div>
                   ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       {lease.known_customer_identity.customer?.can_push_to_router && (
@@ -548,15 +572,6 @@ const StaticLeasesTable: React.FC<{
                           {registeringId === lease.id ? 'Reassigning…' : 'Reassign to current client'}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onReassign(lease)}
-                        disabled={registeringId === lease.id}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
-                      >
-                        <AlertTriangle className="h-4 w-4" />
-                        Reassign to another client
-                      </button>
                     </div>
                   ) : lease.known_customer_identity ? (
                     <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
@@ -690,15 +705,6 @@ const DynamicLeasesTable: React.FC<{
                           {registeringId === lease.id ? 'Reassigning…' : 'Reassign to current client'}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onReassign(lease)}
-                        disabled={registeringId === lease.id}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200 dark:hover:bg-amber-950/30"
-                      >
-                        <AlertTriangle className="h-4 w-4" />
-                        Reassign to another client
-                      </button>
                     </div>
                   ) : lease.known_customer_identity ? (
                     <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">

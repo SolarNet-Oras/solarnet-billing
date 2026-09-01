@@ -172,6 +172,13 @@ export const unregisteredLeaseService = {
     );
     return response.data;
   },
+
+  async deleteInactive(leaseId: string, confirmationMac: string): Promise<{ success: boolean; message: string }> {
+    const response = await api.delete<{ success: boolean; message: string }>(`/unregistered-leases/${leaseId}/inactive`, {
+      data: { confirmation_mac: confirmationMac },
+    });
+    return response.data;
+  },
 };
 
 export type { ServicePlan };
