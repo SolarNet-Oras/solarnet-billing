@@ -50,6 +50,17 @@ const LeaseActivityBadge: React.FC<{ lease: UnregisteredLease }> = ({ lease }) =
   );
 };
 
+/** A healthy registered lease does not belong in the exception workspace. */
+const isHealthyRegisteredLease = (lease: UnregisteredLease): boolean => {
+  const identity = lease.known_customer_identity;
+
+  return lease.is_current
+    && lease.status === 'bound'
+    && identity?.status === 'known_customer'
+    && identity.customer_count === 1
+    && identity.customer?.same_router === true;
+};
+
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
   // Show every backend-returned lease by default. This prevents valid rows
@@ -274,6 +285,10 @@ const UnregisteredLeasesPage: React.FC = () => {
   const normalizedSearch = search.trim().toLowerCase();
   const filterLeases = (leases: UnregisteredLease[]): UnregisteredLease[] => {
     return leases.filter((lease) => {
+      // This page is an exception/review workspace. A uniquely identified,
+      // bound customer on the correct router has no registration conflict and
+      // remains available in Customers and live network monitoring instead.
+      if (isHealthyRegisteredLease(lease)) return false;
       const active = lease.is_current && lease.status === 'bound';
       if (activityFilter === 'active' && !active) return false;
       if (activityFilter === 'inactive' && active) return false;
@@ -291,6 +306,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const filteredStaticLeases = filterLeases(staticLeases);
   const filteredDynamicLeases = filterLeases(dynamicLeases);
   const allFilteredLeaseCount = filteredStaticLeases.length + filteredDynamicLeases.length;
+  const healthyRegisteredHidden = [...staticLeases, ...dynamicLeases].filter(isHealthyRegisteredLease).length;
 
   return (
     <DashboardLayout>
@@ -305,9 +321,10 @@ const UnregisteredLeasesPage: React.FC = () => {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">Unregistered Clients</h1>
                 <p className="text-muted-foreground mt-0.5">
-                  Live DHCP leases for review. Customer-owned devices show their identity; an administrator can explicitly move a reused device to another client after confirmation. Router lease state mirrors every minute; this page refreshes every 30 seconds.
+                  DHCP exceptions for review. Healthy registered customers that are active on their assigned router are hidden; unregistered, conflicting, different-router, inactive, waiting, and stale leases remain visible. Router lease state mirrors every minute; this page refreshes every 30 seconds.
                 </p>
                 {lastLeaseListRefresh && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">Lease list updated {lastLeaseListRefresh.toLocaleTimeString()}.</p>}
+                {healthyRegisteredHidden > 0 && <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">{healthyRegisteredHidden} healthy registered lease{healthyRegisteredHidden === 1 ? '' : 's'} hidden from this exception list.</p>}
               </div>
             </div>
           </div>
