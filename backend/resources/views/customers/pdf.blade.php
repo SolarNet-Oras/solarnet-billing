@@ -57,7 +57,9 @@
                 <th style="width:12%">IP address</th>
             </tr></thead>
             <tbody>
-            @php($missingValues = ['', 'n/a', 'na', 'none', 'not recorded', 'to be updated', '-'])
+            @php
+                $missingValues = ['', 'n/a', 'na', 'none', 'not recorded', 'to be updated', '-'];
+            @endphp
             @foreach($customers as $customer)
                 @php
                     $phoneMissing = in_array(strtolower(trim((string) $customer->contact_number)), $missingValues, true);
