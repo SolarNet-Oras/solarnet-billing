@@ -19,6 +19,7 @@ export interface UnregisteredLease {
   comment: string | null;
   rate_limit: string | null;
   is_dynamic: boolean;
+  is_current: boolean;
   is_matched: boolean;
   status: string;
   server: string;

@@ -76,11 +76,11 @@ class UnregisteredLeaseController extends Controller
     public function staticCommented(Request $request): JsonResponse
     {
         $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
-            ->active()
-            ->presentOnRouter()
             ->where('is_dynamic', false)
             ->whereNotNull('comment')
             ->where('comment', '!=', '')
+            ->orderByDesc('is_current')
+            ->orderByRaw("case when status = 'bound' then 0 else 1 end")
             ->orderBy('last_seen_at', 'desc')
             ->get();
 
@@ -109,8 +109,6 @@ class UnregisteredLeaseController extends Controller
     public function dynamic(Request $request): JsonResponse
     {
         $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
-            ->active()
-            ->presentOnRouter()
             ->where(function ($q) {
                 $q->where('is_dynamic', true)
                   ->orWhereNull('comment')
@@ -119,6 +117,8 @@ class UnregisteredLeaseController extends Controller
             // Filter out entries that are BOTH static AND commented (covered
             // by the quick-registration tab). A customer-owned dynamic lease
             // is intentionally retained for operator identification.
+            ->orderByDesc('is_current')
+            ->orderByRaw("case when status = 'bound' then 0 else 1 end")
             ->orderBy('last_seen_at', 'desc')
             ->get();
 

@@ -41,6 +41,15 @@ const LeaseCustomerIdentity: React.FC<{ lease: UnregisteredLease }> = ({ lease }
   );
 };
 
+const LeaseActivityBadge: React.FC<{ lease: UnregisteredLease }> = ({ lease }) => {
+  const active = lease.is_current && lease.status === 'bound';
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${active ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+      {active ? 'ACTIVE ON ROUTER' : `INACTIVE · ${String(lease.status || 'not current').toUpperCase()}`}
+    </span>
+  );
+};
+
 const UnregisteredLeasesPage: React.FC = () => {
   const navigate = useNavigate();
   // Show every backend-returned lease by default. This prevents valid rows
@@ -59,6 +68,7 @@ const UnregisteredLeasesPage: React.FC = () => {
   const [modalLease, setModalLease] = useState<UnregisteredLease | null>(null);
   const [modalMode, setModalMode] = useState<'register' | 'reassign'>('register');
   const [search, setSearch] = useState<string>('');
+  const [activityFilter, setActivityFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [lastLeaseListRefresh, setLastLeaseListRefresh] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -242,20 +252,19 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const normalizedSearch = search.trim().toLowerCase();
   const filterLeases = (leases: UnregisteredLease[]): UnregisteredLease[] => {
-    if (!normalizedSearch) return leases;
-
-    return leases.filter((lease) => [
-      lease.mac_address,
-      lease.ip_address,
-      lease.hostname,
-      lease.comment,
-      lease.rate_limit,
-      lease.status,
-      lease.server,
-      lease.known_customer_identity?.customer?.full_name,
-      lease.known_customer_identity?.customer?.account_number,
-      routerName(lease.router_id),
-    ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch)));
+    return leases.filter((lease) => {
+      const active = lease.is_current && lease.status === 'bound';
+      if (activityFilter === 'active' && !active) return false;
+      if (activityFilter === 'inactive' && active) return false;
+      if (!normalizedSearch) return true;
+      return [
+        lease.mac_address, lease.ip_address, lease.hostname, lease.comment,
+        lease.rate_limit, lease.status, lease.server,
+        lease.known_customer_identity?.customer?.full_name,
+        lease.known_customer_identity?.customer?.account_number,
+        routerName(lease.router_id),
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch));
+    });
   };
 
   const filteredStaticLeases = filterLeases(staticLeases);
@@ -332,6 +341,15 @@ const UnregisteredLeasesPage: React.FC = () => {
             </button>
           )}
           <p className="mt-1.5 text-xs text-muted-foreground">Searches static and dynamic DHCP leases from both MikroTik routers by client comment, full or partial IP address, MAC, hostname, router, or rate limit.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium text-muted-foreground">MAC activity:</span>
+          {(['all', 'active', 'inactive'] as const).map((state) => (
+            <button key={state} type="button" onClick={() => setActivityFilter(state)} className={`rounded-full px-3 py-1.5 font-medium capitalize ${activityFilter === state ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+              {state}
+            </button>
+          ))}
         </div>
 
         <div className="flex gap-1 border-b border-border">
@@ -457,6 +475,7 @@ const StaticLeasesTable: React.FC<{
               <th className="px-4 py-3 text-left">Client (comment)</th>
               <th className="px-4 py-3 text-left">MAC / IP</th>
               <th className="px-4 py-3 text-left">Rate limit → Plan</th>
+              <th className="px-4 py-3 text-left">MAC state</th>
               <th className="px-4 py-3 text-left">Router</th>
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
@@ -490,6 +509,7 @@ const StaticLeasesTable: React.FC<{
                     </div>
                   )}
                 </td>
+                <td className="px-4 py-3"><LeaseActivityBadge lease={lease} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <RouterIcon className="w-4 h-4" />
@@ -497,7 +517,9 @@ const StaticLeasesTable: React.FC<{
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity?.status === 'known_customer' ? (
+                  {!lease.is_current || lease.status !== 'bound' ? (
+                    <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
+                  ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       {lease.known_customer_identity.customer?.can_push_to_router && (
                         <button
@@ -617,7 +639,7 @@ const DynamicLeasesTable: React.FC<{
                   <div className="text-muted-foreground">{lease.ip_address}</div>
                 </td>
                 <td className="px-4 py-3">
-                  <span
+                  <div className="flex flex-col items-start gap-1.5"><span
                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       lease.is_dynamic
                         ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
@@ -625,7 +647,7 @@ const DynamicLeasesTable: React.FC<{
                     }`}
                   >
                     {lease.is_dynamic ? 'dynamic' : 'static (no comment)'}
-                  </span>
+                  </span><LeaseActivityBadge lease={lease} /></div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -637,7 +659,9 @@ const DynamicLeasesTable: React.FC<{
                   {new Date(lease.last_seen_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {lease.known_customer_identity?.status === 'known_customer' ? (
+                  {!lease.is_current || lease.status !== 'bound' ? (
+                    <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
+                  ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       {lease.known_customer_identity.customer?.can_push_to_router && (
                         <button
