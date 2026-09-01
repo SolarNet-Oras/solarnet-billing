@@ -167,13 +167,14 @@ class UnregisteredLeaseController extends Controller
         $request->validate([
             'confirmation_mac' => 'required|string|max:32',
             'acknowledge_customer_linked_lease' => 'nullable|boolean',
+            'acknowledge_active_unregistered_lease' => 'nullable|boolean',
         ]);
         $lease = DhcpLease::with('router')->findOrFail($id);
         if ($this->normalizedMacKey((string) $request->input('confirmation_mac')) !== $this->normalizedMacKey($lease->mac_address)) {
             return response()->json(['success' => false, 'message' => 'MAC confirmation did not match. No lease was removed.'], 422);
         }
-        if ($lease->is_dynamic || $lease->status === 'bound' || ! $lease->router) {
-            return response()->json(['success' => false, 'message' => 'Only a locally inactive static lease can use this action. No customer or active lease was changed.'], 422);
+        if ($lease->is_dynamic || ! $lease->router) {
+            return response()->json(['success' => false, 'message' => 'Only an exact static lease can use this action. Dynamic leases and customer records were not changed.'], 422);
         }
 
         $macKey = $this->normalizedMacKey($lease->mac_address);
@@ -181,12 +182,20 @@ class UnregisteredLeaseController extends Controller
             ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macKey])
             ->get(['id', 'account_number', 'full_name', 'router_id']);
         $customerLinkedLease = $owners->isNotEmpty() || $lease->is_matched || filled($lease->customer_id);
+        $activeUnregisteredLease = $lease->is_current && $lease->status === 'bound' && ! $customerLinkedLease;
 
-        if ($customerLinkedLease && ! $request->boolean('acknowledge_customer_linked_lease')) {
+        if ($lease->status === 'bound' && ! $activeUnregisteredLease) {
+            return response()->json(['success' => false, 'message' => 'This active lease is linked to customer data and cannot be deleted from the unregistered-client workspace.'], 422);
+        }
+        if ($activeUnregisteredLease && ! $request->boolean('acknowledge_active_unregistered_lease')) {
+            return response()->json(['success' => false, 'message' => 'Deleting this active unregistered static lease can briefly interrupt the device. Explicit acknowledgement is required.'], 422);
+        }
+
+        if (! $activeUnregisteredLease && $customerLinkedLease && ! $request->boolean('acknowledge_customer_linked_lease')) {
             return response()->json(['success' => false, 'message' => 'This inactive reservation is linked to customer data. Explicitly acknowledge that only the MikroTik lease will be deleted; the customer, MAC ownership, billing, and plan will be preserved.'], 422);
         }
 
-        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address);
+        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address, $activeUnregisteredLease);
         if (! $lease->is_current && ($result['code'] ?? null) === 'LEASE_NOT_FOUND') {
             Log::notice('Stale local DHCP lease mirror removed after MikroTik absence was verified', [
                 'lease_id' => $lease->id,
@@ -203,10 +212,11 @@ class UnregisteredLeaseController extends Controller
             return response()->json(['success' => false, 'message' => $result['message'] ?? 'MikroTik did not remove the lease.'], 422);
         }
 
-        Log::notice('Inactive DHCP lease removed from MikroTik', [
+        Log::notice('Guarded DHCP lease removal completed on MikroTik', [
             'lease_id' => $lease->id, 'router_id' => $lease->router_id,
             'mac_address' => $lease->mac_address, 'ip_address' => $lease->ip_address,
             'customer_linked_lease' => $customerLinkedLease,
+            'active_unregistered_lease' => $activeUnregisteredLease,
             'linked_customer_id' => $lease->customer_id,
             'customer_owner_ids' => $owners->pluck('id')->all(),
             'user_id' => $request->user()?->id,

@@ -250,17 +250,20 @@ const UnregisteredLeasesPage: React.FC = () => {
 
   const handleDeleteInactive = async (lease: UnregisteredLease): Promise<void> => {
     const customerLinked = Boolean(lease.known_customer_identity || lease.is_matched);
+    const activeUnregistered = lease.is_current && lease.status === 'bound' && !customerLinked && !lease.is_dynamic;
     const identifiedNames = lease.known_customer_identity?.status === 'ambiguous'
       ? lease.known_customer_identity.customers?.map((customer) => customer.full_name).filter(Boolean).join(', ')
       : lease.known_customer_identity?.customer?.full_name;
-    const ownerWarning = customerLinked
+    const ownerWarning = activeUnregistered
+      ? `\n\nThis is an active unregistered static lease. Removing it can briefly interrupt the device, and the device may immediately request DHCP again. No customer account will be deleted.`
+      : customerLinked
       ? `\n\nCustomer link${identifiedNames ? `: ${identifiedNames}` : ' detected'}. This removes only the inactive static reservation from ${routerName(lease.router_id)}. The customer account, saved MAC ownership, billing, plan, and records will remain unchanged. A later DHCP sync may recreate the reservation if this router is still assigned to the customer.`
       : '';
-    const confirmation = window.prompt(`Delete this inactive static lease from ${routerName(lease.router_id)}?${ownerWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
+    const confirmation = window.prompt(`Delete this ${activeUnregistered ? 'active unregistered' : 'inactive'} static lease from ${routerName(lease.router_id)}?${ownerWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
     if (confirmation === null) return;
     setRegisteringId(lease.id); setError(''); setNotice('');
     try {
-      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), customerLinked);
+      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), customerLinked, activeUnregistered);
       setStaticLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setDynamicLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setNotice(result.message);
@@ -612,16 +615,23 @@ const StaticLeasesTable: React.FC<{
                       <AlertTriangle className="h-4 w-4" /> Set final MAC owner
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => onRegister(lease)}
-                      disabled={registeringId === lease.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
-                      data-testid={`register-lease-btn-${lease.id}`}
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      {registeringId === lease.id ? 'Registering…' : 'Register'}
-                    </button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onRegister(lease)}
+                        disabled={registeringId === lease.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition disabled:opacity-50"
+                        data-testid={`register-lease-btn-${lease.id}`}
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        {registeringId === lease.id ? 'Working…' : 'Register'}
+                      </button>
+                      {!lease.is_dynamic && (
+                        <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                          {registeringId === lease.id ? 'Working…' : 'Delete active lease'}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>

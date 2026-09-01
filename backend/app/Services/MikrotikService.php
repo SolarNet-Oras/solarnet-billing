@@ -2417,7 +2417,7 @@ class MikrotikService
      * Customer ownership is validated by the controller before this call;
      * this method independently refuses dynamic or currently bound leases.
      */
-    public function removeInactiveStaticLease(Router $router, string $macAddress): array
+    public function removeInactiveStaticLease(Router $router, string $macAddress, bool $allowBoundUnregistered = false): array
     {
         if (in_array($router->connection_status, ['offline', 'unknown', null], true)) {
             return ['success' => false, 'code' => 'ROUTER_OFFLINE', 'message' => 'Router is not online. No lease was removed.'];
@@ -2442,7 +2442,7 @@ class MikrotikService
             $lease = $matches[0];
             $dynamic = filter_var($lease['dynamic'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $status = strtolower((string) ($lease['status'] ?? 'unknown'));
-            if ($dynamic || $status === 'bound') {
+            if ($dynamic || ($status === 'bound' && ! $allowBoundUnregistered)) {
                 return [
                     'success' => false,
                     'code' => 'LIVE_LEASE_PROTECTED',
@@ -2460,7 +2460,9 @@ class MikrotikService
                 return ['success' => false, 'code' => 'REMOVAL_NOT_CONFIRMED', 'message' => 'RouterOS did not confirm removal of the exact lease.'];
             }
 
-            return ['success' => true, 'code' => 'LEASE_REMOVED', 'message' => "Inactive static lease {$mac} was removed from {$router->name}."];
+            $kind = $status === 'bound' ? 'Active unregistered static lease' : 'Inactive static lease';
+
+            return ['success' => true, 'code' => 'LEASE_REMOVED', 'message' => "{$kind} {$mac} was removed from {$router->name}."];
         } catch (\Throwable $e) {
             Log::warning('Inactive MikroTik DHCP lease removal failed', ['router_id' => $router->id, 'mac' => $macAddress, 'error' => $e->getMessage()]);
             return ['success' => false, 'code' => 'ROUTER_ERROR', 'message' => 'MikroTik lease removal failed: ' . $e->getMessage()];
