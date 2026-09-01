@@ -238,16 +238,18 @@ const UnregisteredLeasesPage: React.FC = () => {
   };
 
   const handleDeleteInactive = async (lease: UnregisteredLease): Promise<void> => {
-    const staleOwner = lease.known_customer_identity?.status === 'known_customer'
-      && lease.known_customer_identity.customer?.same_router === false;
-    const ownerWarning = staleOwner
-      ? `\n\nThis MAC belongs to ${lease.known_customer_identity?.customer?.full_name}, whose account is assigned to a different router. The customer account and MAC ownership will be preserved.`
+    const customerLinked = Boolean(lease.known_customer_identity || lease.is_matched);
+    const identifiedNames = lease.known_customer_identity?.status === 'ambiguous'
+      ? lease.known_customer_identity.customers?.map((customer) => customer.full_name).filter(Boolean).join(', ')
+      : lease.known_customer_identity?.customer?.full_name;
+    const ownerWarning = customerLinked
+      ? `\n\nCustomer link${identifiedNames ? `: ${identifiedNames}` : ' detected'}. This removes only the inactive static reservation from ${routerName(lease.router_id)}. The customer account, saved MAC ownership, billing, plan, and records will remain unchanged. A later DHCP sync may recreate the reservation if this router is still assigned to the customer.`
       : '';
     const confirmation = window.prompt(`Delete this inactive static lease from ${routerName(lease.router_id)}?${ownerWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
     if (confirmation === null) return;
     setRegisteringId(lease.id); setError(''); setNotice('');
     try {
-      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), staleOwner);
+      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), customerLinked);
       setStaticLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setDynamicLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setNotice(result.message);
@@ -369,6 +371,10 @@ const UnregisteredLeasesPage: React.FC = () => {
               {state}
             </button>
           ))}
+        </div>
+
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100">
+          <span className="font-semibold">About waiting leases:</span> RouterOS <code>waiting</code> means a static reservation is configured but the device is not currently bound. <strong>Sync from all routers</strong> safely refreshes its displayed state; SolarNet does not force-renew or interrupt customer devices.
         </div>
 
         <div className="flex gap-1 border-b border-border">
@@ -543,17 +549,11 @@ const StaticLeasesTable: React.FC<{
                     <div className="flex flex-wrap justify-end gap-2">
                       <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
                       {lease.is_current && !lease.is_dynamic && (
-                        (!lease.is_matched && !lease.known_customer_identity)
-                        || (
-                          lease.known_customer_identity?.status === 'known_customer'
-                          && lease.known_customer_identity.customer?.same_router === false
-                        )
-                      ) && (
                         <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
                           {registeringId === lease.id
                             ? 'Deleting…'
-                            : lease.known_customer_identity?.status === 'known_customer'
-                              ? 'Delete stale from MikroTik'
+                            : lease.known_customer_identity || lease.is_matched
+                              ? 'Delete reservation from MikroTik'
                               : 'Delete from MikroTik'}
                         </button>
                       )}
