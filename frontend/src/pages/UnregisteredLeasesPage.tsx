@@ -609,11 +609,23 @@ const StaticLeasesTable: React.FC<{
                           {registeringId === lease.id ? 'Reassigning…' : 'Reassign to current client'}
                         </button>
                       )}
+                      {!lease.is_dynamic && (
+                        <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                          {registeringId === lease.id ? 'Working…' : 'Force delete lease'}
+                        </button>
+                      )}
                     </div>
                   ) : lease.known_customer_identity ? (
-                    <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
-                      <AlertTriangle className="h-4 w-4" /> Set final MAC owner
-                    </button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => onReassign(lease)} disabled={registeringId === lease.id} className="inline-flex items-center gap-1.5 rounded-md border border-rose-500 px-3 py-1.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                        <AlertTriangle className="h-4 w-4" /> Set final MAC owner
+                      </button>
+                      {!lease.is_dynamic && (
+                        <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-700 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-50 dark:bg-rose-950/30 dark:text-rose-200">
+                          {registeringId === lease.id ? 'Working…' : 'Force delete lease'}
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex flex-wrap justify-end gap-2">
                       <button

@@ -183,20 +183,19 @@ class UnregisteredLeaseController extends Controller
             ->get(['id', 'account_number', 'full_name', 'router_id']);
         $customerLinkedLease = $owners->isNotEmpty() || $lease->is_matched || filled($lease->customer_id);
         $activeUnregisteredLease = $lease->is_current && $lease->status === 'bound' && ! $customerLinkedLease;
+        $customerLinkedAcknowledged = $request->boolean('acknowledge_customer_linked_lease');
 
-        if ($lease->status === 'bound' && ! $activeUnregisteredLease) {
-            return response()->json(['success' => false, 'message' => 'This active lease is linked to customer data and cannot be deleted from the unregistered-client workspace.'], 422);
-        }
         if ($activeUnregisteredLease && ! $request->boolean('acknowledge_active_unregistered_lease')) {
             return response()->json(['success' => false, 'message' => 'Deleting this active unregistered static lease can briefly interrupt the device. Explicit acknowledgement is required.'], 422);
         }
 
-        if (! $activeUnregisteredLease && $customerLinkedLease && ! $request->boolean('acknowledge_customer_linked_lease')) {
-            return response()->json(['success' => false, 'message' => 'This inactive reservation is linked to customer data. Explicitly acknowledge that only the MikroTik lease will be deleted; the customer, MAC ownership, billing, and plan will be preserved.'], 422);
+        if (! $activeUnregisteredLease && $customerLinkedLease && ! $customerLinkedAcknowledged) {
+            return response()->json(['success' => false, 'message' => 'This reservation is linked to customer data. Explicitly acknowledge that only the MikroTik lease will be deleted; the customer, MAC ownership, billing, and plan will be preserved.'], 422);
         }
 
-        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address, $activeUnregisteredLease);
-        if (! $lease->is_current && ($result['code'] ?? null) === 'LEASE_NOT_FOUND') {
+        $allowBoundRemoval = $activeUnregisteredLease || ($customerLinkedLease && $customerLinkedAcknowledged);
+        $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address, $allowBoundRemoval);
+        if (($result['code'] ?? null) === 'LEASE_NOT_FOUND') {
             Log::notice('Stale local DHCP lease mirror removed after MikroTik absence was verified', [
                 'lease_id' => $lease->id,
                 'router_id' => $lease->router_id,
@@ -206,7 +205,7 @@ class UnregisteredLeaseController extends Controller
             ]);
             $lease->delete();
 
-            return response()->json(['success' => true, 'message' => 'MikroTik confirmed that this lease no longer exists. The stale local display record was removed.']);
+            return response()->json(['success' => true, 'message' => 'MikroTik confirmed that this exact lease no longer exists. Its local web-app record was removed. Customer and billing data were preserved.']);
         }
         if (! ($result['success'] ?? false)) {
             return response()->json(['success' => false, 'message' => $result['message'] ?? 'MikroTik did not remove the lease.'], 422);
