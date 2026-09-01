@@ -379,7 +379,7 @@ const InvoicesPage: React.FC = () => {
               </tr>
             ) : (
               filteredInvoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-gray-50">
+                <tr key={invoice.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800/90">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {invoice.invoice_number}
                   </td>
@@ -412,7 +412,7 @@ const InvoicesPage: React.FC = () => {
                           setSelectedInvoice(invoice);
                           setShowViewModal(true);
                         }}
-                        className="text-blue-600 hover:text-blue-900"
+                        className="text-blue-600 hover:text-blue-900 dark:text-cyan-400 dark:hover:text-cyan-200"
                         title="View Details"
                       >
                         <Eye className="w-4 h-4" />
@@ -420,7 +420,7 @@ const InvoicesPage: React.FC = () => {
                       <button
                         onClick={() => handleDownloadPdf(invoice)}
                         disabled={downloadingInvoiceId !== null}
-                        className="text-green-600 hover:text-green-900 disabled:cursor-wait disabled:opacity-60"
+                        className="text-green-600 hover:text-green-900 disabled:cursor-wait disabled:opacity-60 dark:text-emerald-400 dark:hover:text-emerald-200"
                         title={downloadingInvoiceId === invoice.id ? 'Downloading PDF…' : 'Download PDF'}
                       >
                         {downloadingInvoiceId === invoice.id
@@ -430,7 +430,7 @@ const InvoicesPage: React.FC = () => {
                       {invoice.status === 'draft' && (
                         <button
                           onClick={() => handleMarkAsSent(invoice.id)}
-                          className="text-purple-600 hover:text-purple-900"
+                          className="text-purple-600 hover:text-purple-900 dark:text-violet-400 dark:hover:text-violet-200"
                           title="Mark as Sent"
                         >
                           <Send className="w-4 h-4" />
@@ -444,7 +444,7 @@ const InvoicesPage: React.FC = () => {
                             setPaymentData({ ...paymentData, amount: invoice.balance });
                             setShowPaymentModal(true);
                           }}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200"
                           title="Record Payment"
                         >
                           <PhilippinePeso className="w-4 h-4" />
@@ -653,7 +653,7 @@ const InvoicesPage: React.FC = () => {
                       setShowCreateModal(false);
                       resetForm();
                     }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                   >
                     Cancel
                   </button>
@@ -789,7 +789,7 @@ const InvoicesPage: React.FC = () => {
                       setShowPaymentModal(false);
                       resetPaymentForm();
                     }}
-                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 sm:w-auto"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800 sm:w-auto"
                   >
                     Cancel
                   </button>
@@ -902,7 +902,7 @@ const InvoicesPage: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setShowViewModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   Close
                 </button>
