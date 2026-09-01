@@ -25,6 +25,20 @@ interface ProfileChangeRequest {
   created_at: string;
 }
 
+interface InstallationPlanOption {
+  id: string;
+  name: string;
+  download_speed: number;
+  upload_speed: number;
+  price: number;
+}
+
+const emptyInstallationApplication = {
+  full_name: '', email: '', contact_number: '', address: '', service_plan_id: '', notes: '',
+  gps_coordinates: undefined as { latitude: number; longitude: number } | undefined,
+  location_accuracy_meters: undefined as number | undefined,
+};
+
 const TicketsPage: React.FC = () => {
   const { user } = useAuth();
   const canApproveInstallations = ['admin', 'super_admin'].some((role) =>
@@ -47,6 +61,9 @@ const TicketsPage: React.FC = () => {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showMacCorrection, setShowMacCorrection] = useState(false);
   const [macCorrection, setMacCorrection] = useState({ mac_address: '', reason: '' });
+  const [installationPlans, setInstallationPlans] = useState<InstallationPlanOption[]>([]);
+  const [installationForm, setInstallationForm] = useState(emptyInstallationApplication);
+  const [installationLocating, setInstallationLocating] = useState(false);
 
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -64,6 +81,9 @@ const TicketsPage: React.FC = () => {
     fetchInstallationApprovals();
     fetchCustomers();
     fetchProfileChanges();
+    api.get('/customer-portal/service-plans')
+      .then((response) => setInstallationPlans(response.data?.data || []))
+      .catch(() => setInstallationPlans([]));
   }, [statusFilter, priorityFilter]);
   /* oxlint-enable react-hooks/exhaustive-deps */
 
@@ -141,6 +161,25 @@ const TicketsPage: React.FC = () => {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.ticket_type === 'installation') {
+      try {
+        const response = await api.post('/customer-portal/signup', installationForm);
+        const application = response.data?.data;
+        setShowCreateModal(false);
+        setInstallationForm(emptyInstallationApplication);
+        resetForm();
+        await fetchTickets();
+        await fetchInstallationApprovals();
+        window.alert(
+          `Installation application created.\n\nAccount: ${application?.account_number || 'Pending'}\nTemporary password: ${application?.password || 'Sent by email'}`,
+        );
+      } catch (error: any) {
+        const errors = error.response?.data?.errors;
+        const firstError = errors ? Object.values(errors).flat()[0] : null;
+        window.alert(String(firstError || error.response?.data?.message || 'Could not create the installation application.'));
+      }
+      return;
+    }
     if (!formData.customer_id) {
       window.alert('Select a customer before creating the ticket.');
       return;
@@ -167,6 +206,30 @@ const TicketsPage: React.FC = () => {
     } catch (error) {
       console.error('Error updating status:', error);
     }
+  };
+
+  const captureInstallationLocation = (): void => {
+    if (!navigator.geolocation) {
+      window.alert('This device cannot provide an installation location. You may continue without GPS coordinates.');
+      return;
+    }
+    if (!window.confirm('Capture location only while you are at the client’s exact installation address. Continue?')) return;
+    setInstallationLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setInstallationForm((current) => ({
+          ...current,
+          gps_coordinates: { latitude: coords.latitude, longitude: coords.longitude },
+          location_accuracy_meters: coords.accuracy,
+        }));
+        setInstallationLocating(false);
+      },
+      () => {
+        setInstallationLocating(false);
+        window.alert('Location permission was not granted. You may continue without GPS coordinates.');
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
   };
 
   const handleDeleteTicket = async (ticket: Ticket): Promise<void> => {
@@ -256,6 +319,7 @@ const TicketsPage: React.FC = () => {
 
   const resetForm = () => {
     setCustomerSearch('');
+    setInstallationForm(emptyInstallationApplication);
     setFormData({
       customer_id: '',
       ticket_type: 'other',
@@ -568,6 +632,41 @@ const TicketsPage: React.FC = () => {
                       )}
                     </div>
 
+                    {formData.ticket_type === 'installation' ? (
+                      <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-cyan-800 dark:bg-slate-900/60">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-200">Applicant full name *
+                            <input required value={installationForm.full_name} onChange={(event) => setInstallationForm((current) => ({ ...current, full_name: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Juan Dela Cruz" />
+                          </label>
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-200">Email address *
+                            <input required type="email" value={installationForm.email} onChange={(event) => setInstallationForm((current) => ({ ...current, email: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="client@example.com" />
+                          </label>
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-200">Contact number *
+                            <input required value={installationForm.contact_number} onChange={(event) => setInstallationForm((current) => ({ ...current, contact_number: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="09XXXXXXXXX" />
+                          </label>
+                          <label className="text-sm font-medium text-gray-700 dark:text-slate-200">Preferred service plan *
+                            <select required value={installationForm.service_plan_id} onChange={(event) => setInstallationForm((current) => ({ ...current, service_plan_id: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2">
+                              <option value="">Select plan</option>
+                              {installationPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.download_speed}/{plan.upload_speed} Mbps · ₱{Number(plan.price).toLocaleString('en-PH')}/mo</option>)}
+                            </select>
+                          </label>
+                        </div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-200">Installation address *
+                          <textarea required rows={2} value={installationForm.address} onChange={(event) => setInstallationForm((current) => ({ ...current, address: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Street, barangay, municipality, province" />
+                        </label>
+                        <div className="rounded-lg border border-blue-200 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-800">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div><p className="text-sm font-semibold text-gray-900 dark:text-slate-100">Exact installation location (optional)</p><p className="text-xs text-gray-600 dark:text-slate-300">Capture only while physically at the installation address.</p></div>
+                            <button type="button" disabled={installationLocating} onClick={captureInstallationLocation} className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:text-cyan-300 dark:hover:bg-slate-700">{installationLocating ? 'Capturing…' : installationForm.gps_coordinates ? 'Update GPS' : 'Capture GPS'}</button>
+                          </div>
+                          {installationForm.gps_coordinates && <p className="mt-2 font-mono text-xs text-emerald-700 dark:text-emerald-300">{installationForm.gps_coordinates.latitude.toFixed(6)}, {installationForm.gps_coordinates.longitude.toFixed(6)} · ±{Math.round(installationForm.location_accuracy_meters || 0)} m</p>}
+                        </div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-200">Application notes (optional)
+                          <textarea rows={3} value={installationForm.notes} onChange={(event) => setInstallationForm((current) => ({ ...current, notes: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Landmark, preferred contact time, or relevant installation details" />
+                        </label>
+                        <p className="text-xs text-blue-800 dark:text-cyan-300">A pending customer account and installation ticket will be created. The client receives portal credentials through the existing welcome-email system.</p>
+                      </div>
+                    ) : (<>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
                       <div className="rounded-lg border border-gray-300 bg-white">
@@ -670,6 +769,7 @@ const TicketsPage: React.FC = () => {
                         </select>
                       </div>
                     </div>
+                    </>)}
                   </div>
 
                   <div className="mt-6 flex justify-end gap-3">
@@ -685,10 +785,12 @@ const TicketsPage: React.FC = () => {
                     </button>
                     <button
                       type="submit"
-                      disabled={!formData.customer_id}
+                      disabled={formData.ticket_type === 'installation'
+                        ? !installationForm.full_name.trim() || !installationForm.email.trim() || !installationForm.contact_number.trim() || !installationForm.address.trim() || !installationForm.service_plan_id
+                        : !formData.customer_id}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Create Ticket
+                      {formData.ticket_type === 'installation' ? 'Create Installation Application' : 'Create Ticket'}
                     </button>
                   </div>
                 </form>
