@@ -107,7 +107,11 @@ class CustomerController extends Controller
         $status = trim((string) $request->input('status', ''));
 
         $customers = Customer::query()
-            ->with('servicePlan:id,name,download_speed,upload_speed,price')
+            ->with([
+                'servicePlan:id,name,download_speed,upload_speed,price',
+                'router:id,name,host,location',
+                'technician:id,name',
+            ])
             ->where('status', '!=', 'pending')
             ->when($search !== '', fn ($query) => $query->search($search))
             ->when($status !== '', fn ($query) => $query->where('status', $status))
@@ -117,11 +121,21 @@ class CustomerController extends Controller
                 'account_number',
                 'full_name',
                 'address',
+                'gps_coordinates',
                 'contact_number',
+                'email',
                 'installation_date',
                 'billing_cycle_day',
+                'router_id',
                 'service_plan_id',
                 'monthly_fee',
+                'mac_address',
+                'mac_binding_status',
+                'ip_address',
+                'vlan',
+                'onu_information',
+                'olt_port',
+                'technician_id',
                 'status',
             ]);
 
