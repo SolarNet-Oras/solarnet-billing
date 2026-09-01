@@ -2,12 +2,51 @@
 
 namespace App\Services;
 
+use App\Jobs\SendTicketCreatedSms;
 use App\Models\Ticket;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 class TicketCreatedSmsService
 {
+    /**
+     * Make the first provider request immediately after commit. Only a real
+     * provider/network failure is queued for retry, so delivery does not rely
+     * on a healthy worker for its initial attempt.
+     */
+    public function sendAfterCreation(string $ticketId): string
+    {
+        try {
+            $result = $this->deliver($ticketId);
+            if ($result === 'failed') {
+                $this->queueRetry($ticketId);
+            }
+
+            return $result;
+        } catch (Throwable $exception) {
+            Log::error('Immediate ticket-created SMS attempt crashed; retry queued', [
+                'ticket_id' => $ticketId,
+                'error' => $exception->getMessage(),
+            ]);
+            $this->queueRetry($ticketId);
+
+            return 'failed';
+        }
+    }
+
+    private function queueRetry(string $ticketId): void
+    {
+        try {
+            SendTicketCreatedSms::dispatch($ticketId)->delay(now()->addMinute());
+        } catch (Throwable $exception) {
+            Log::error('Ticket-created SMS retry could not be queued', [
+                'ticket_id' => $ticketId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     /** @return 'sent'|'failed'|'skipped_not_configured'|'skipped_no_phone'|'skipped_invalid_phone'|'skipped_invalid_sender_id'|'skipped_empty_message' */
     public function deliver(string $ticketId): string
     {

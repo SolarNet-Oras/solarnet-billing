@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Jobs\SendTicketCreatedSms;
 use App\Models\Customer;
 use App\Models\CustomerTroubleshootingSession;
 use App\Models\DhcpLease;
@@ -125,7 +124,7 @@ class CustomerTroubleshootingService
             return $ticket;
         });
 
-        SendTicketCreatedSms::dispatch($ticket->id)->afterCommit();
+        app(TicketCreatedSmsService::class)->sendAfterCreation($ticket->id);
 
         return ['ticket' => ['id' => $ticket->id, 'ticket_number' => $ticket->ticket_number, 'status' => $ticket->status], 'message' => 'Your technical support ticket has been created. SolarNet staff can now review the diagnostic details.'];
     }
