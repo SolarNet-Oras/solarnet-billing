@@ -76,7 +76,6 @@ class UnregisteredLeaseController extends Controller
     public function staticCommented(Request $request): JsonResponse
     {
         $leases = DhcpLease::with(['router:id,name', 'customer:id,account_number,full_name,status,router_id,mac_address'])
-            ->unmatched()
             ->active()
             ->presentOnRouter()
             ->where('is_dynamic', false)
@@ -85,7 +84,11 @@ class UnregisteredLeaseController extends Controller
             ->orderBy('last_seen_at', 'desc')
             ->get();
 
-        // Attach a suggested service plan based on rate_limit
+        // Do not hide matched or customer-owned rows. The frontend presents
+        // their verified identity and guarded push/reassignment actions, just
+        // like the dynamic tab. Visibility is read-only; quickRegister still
+        // enforces exact ownership under database locks before any change.
+        // Attach a suggested service plan based on rate_limit.
         $plans = ServicePlan::where('is_active', true)->get();
         $leases->each(function (DhcpLease $lease) use ($plans) {
             $lease->suggested_plan = $this->matchPlanByRateLimit($lease->rate_limit, $plans);
