@@ -238,11 +238,16 @@ const UnregisteredLeasesPage: React.FC = () => {
   };
 
   const handleDeleteInactive = async (lease: UnregisteredLease): Promise<void> => {
-    const confirmation = window.prompt(`Delete this inactive static lease from ${routerName(lease.router_id)}?\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
+    const staleOwner = lease.known_customer_identity?.status === 'known_customer'
+      && lease.known_customer_identity.customer?.same_router === false;
+    const ownerWarning = staleOwner
+      ? `\n\nThis MAC belongs to ${lease.known_customer_identity?.customer?.full_name}, whose account is assigned to a different router. The customer account and MAC ownership will be preserved.`
+      : '';
+    const confirmation = window.prompt(`Delete this inactive static lease from ${routerName(lease.router_id)}?${ownerWarning}\n\nType the exact MAC address to confirm:\n${lease.mac_address}`);
     if (confirmation === null) return;
     setRegisteringId(lease.id); setError(''); setNotice('');
     try {
-      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim());
+      const result = await unregisteredLeaseService.deleteInactive(lease.id, confirmation.trim(), staleOwner);
       setStaticLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setDynamicLeases((rows) => rows.filter((row) => row.id !== lease.id));
       setNotice(result.message);
@@ -537,9 +542,19 @@ const StaticLeasesTable: React.FC<{
                   {!lease.is_current || lease.status !== 'bound' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       <span className="inline-flex rounded-md bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">Inactive lease — view only</span>
-                      {lease.is_current && !lease.is_dynamic && !lease.is_matched && !lease.known_customer_identity && (
+                      {lease.is_current && !lease.is_dynamic && (
+                        (!lease.is_matched && !lease.known_customer_identity)
+                        || (
+                          lease.known_customer_identity?.status === 'known_customer'
+                          && lease.known_customer_identity.customer?.same_router === false
+                        )
+                      ) && (
                         <button type="button" onClick={() => onDeleteInactive(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
-                          {registeringId === lease.id ? 'Deleting…' : 'Delete from MikroTik'}
+                          {registeringId === lease.id
+                            ? 'Deleting…'
+                            : lease.known_customer_identity?.status === 'known_customer'
+                              ? 'Delete stale from MikroTik'
+                              : 'Delete from MikroTik'}
                         </button>
                       )}
                     </div>

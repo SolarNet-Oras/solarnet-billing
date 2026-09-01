@@ -161,23 +161,33 @@ class UnregisteredLeaseController extends Controller
         ]);
     }
 
-    /** Delete one explicitly confirmed, unowned, inactive static lease. */
+    /** Delete one explicitly confirmed inactive static lease without changing customer ownership. */
     public function destroyInactive(Request $request, string $id): JsonResponse
     {
-        $request->validate(['confirmation_mac' => 'required|string|max:32']);
+        $request->validate([
+            'confirmation_mac' => 'required|string|max:32',
+            'acknowledge_customer_owned_stale_lease' => 'nullable|boolean',
+        ]);
         $lease = DhcpLease::with('router')->findOrFail($id);
         if ($this->normalizedMacKey((string) $request->input('confirmation_mac')) !== $this->normalizedMacKey($lease->mac_address)) {
             return response()->json(['success' => false, 'message' => 'MAC confirmation did not match. No lease was removed.'], 422);
         }
-        if (! $lease->is_current || $lease->is_dynamic || $lease->status === 'bound' || $lease->is_matched || $lease->customer_id || ! $lease->router) {
-            return response()->json(['success' => false, 'message' => 'Only a current, unowned, inactive static lease can be removed. No customer or active lease was changed.'], 422);
+        if (! $lease->is_current || $lease->is_dynamic || $lease->status === 'bound' || ! $lease->router) {
+            return response()->json(['success' => false, 'message' => 'Only a current inactive static lease can be removed. No customer or active lease was changed.'], 422);
         }
 
         $macKey = $this->normalizedMacKey($lease->mac_address);
-        $customerOwnsMac = Customer::query()->whereNotNull('mac_address')
-            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macKey])->exists();
-        if ($customerOwnsMac) {
-            return response()->json(['success' => false, 'message' => 'A customer profile owns this MAC. Remove or reassign ownership through the guarded customer workflow instead.'], 422);
+        $owners = Customer::query()->whereNotNull('mac_address')
+            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [$macKey])
+            ->get(['id', 'account_number', 'full_name', 'router_id']);
+        $customerOwnedStaleLease = $owners->isNotEmpty()
+            && $owners->every(fn (Customer $owner) => filled($owner->router_id) && $owner->router_id !== $lease->router_id);
+
+        if ($owners->isNotEmpty() && (! $customerOwnedStaleLease || ! $request->boolean('acknowledge_customer_owned_stale_lease'))) {
+            return response()->json(['success' => false, 'message' => 'Customer-owned leases can be removed only when every identified owner is assigned to a different router and the stale-lease warning is explicitly acknowledged.'], 422);
+        }
+        if ($owners->isEmpty() && ($lease->is_matched || $lease->customer_id)) {
+            return response()->json(['success' => false, 'message' => 'This lease has an unresolved local customer link. Resolve ownership before deleting it.'], 422);
         }
 
         $result = app(MikrotikService::class)->removeInactiveStaticLease($lease->router, $lease->mac_address);
@@ -185,9 +195,11 @@ class UnregisteredLeaseController extends Controller
             return response()->json(['success' => false, 'message' => $result['message'] ?? 'MikroTik did not remove the lease.'], 422);
         }
 
-        Log::notice('Unowned inactive DHCP lease removed from MikroTik', [
+        Log::notice('Inactive DHCP lease removed from MikroTik', [
             'lease_id' => $lease->id, 'router_id' => $lease->router_id,
             'mac_address' => $lease->mac_address, 'ip_address' => $lease->ip_address,
+            'customer_owned_stale_lease' => $customerOwnedStaleLease,
+            'customer_owner_ids' => $owners->pluck('id')->all(),
             'user_id' => $request->user()?->id,
         ]);
         $lease->delete();
