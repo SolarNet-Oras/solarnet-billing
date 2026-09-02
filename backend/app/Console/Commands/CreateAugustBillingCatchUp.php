@@ -105,7 +105,11 @@ class CreateAugustBillingCatchUp extends Command
         $this->info("Created {$created}; skipped existing {$skipped}; errors ".count($errors).'.');
         $this->line('SMS: '.json_encode($smsResults));
         if ($errors !== []) $this->table(['Account', 'Error'], $errors);
-        $this->line('Initial emails and eligible SMS were queued. The production worker records actual provider delivery results.');
+        if ($created > 0) {
+            $this->line('Initial emails and eligible SMS were queued for the created invoices. The production worker records actual provider delivery results.');
+        } else {
+            $this->warn('No invoice was created, so no email or SMS was queued. Resolve the errors above, then run the dry-run again before retrying.');
+        }
 
         return $errors === [] ? self::SUCCESS : self::FAILURE;
     }
