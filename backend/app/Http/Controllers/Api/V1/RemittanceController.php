@@ -21,10 +21,17 @@ class RemittanceController extends Controller
 {
     public function collectorDashboard(Request $request): JsonResponse
     {
+        $today = today();
+        $issuedFrom = $today->copy()->subMonthNoOverflow()->startOfMonth();
+        $perPage = min(max($request->integer('per_page', 200), 1), 200);
+
         $invoices = Invoice::with('customer:id,account_number,full_name,address,contact_number')
-            ->where('balance', '>', 0)->whereDate('due_date', '<=', today())
+            ->where('balance', '>', 0)
+            ->whereBetween('issue_date', [$issuedFrom->toDateString(), $today->toDateString()])
             ->whereIn('status', ['sent', 'overdue', 'partial'])
-            ->orderBy('due_date')->paginate($request->integer('per_page', 50));
+            ->orderBy('due_date')
+            ->orderBy('invoice_number')
+            ->paginate($perPage);
         $invoices->getCollection()->transform(function (Invoice $invoice) {
             $invoice->setAttribute('previous_balance', (float) Invoice::query()
                 ->where('customer_id', $invoice->customer_id)
