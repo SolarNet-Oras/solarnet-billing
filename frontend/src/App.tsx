@@ -36,6 +36,7 @@ import CyberSecurityPage from '@/pages/CyberSecurityPage';
 import FacebookAutomationPage from '@/pages/FacebookAutomationPage';
 import WireguardPage from '@/pages/WireguardPage';
 import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
+import LegalPage from '@/pages/LegalPage';
 
 // ============================================================================
 // Main App Component
@@ -51,6 +52,9 @@ const App: React.FC = (): JSX.Element => {
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/suspended" element={<SuspendedAccountPage />} />
+              <Route path="/privacy-policy" element={<LegalPage />} />
+              <Route path="/terms" element={<LegalPage />} />
+              <Route path="/data-deletion" element={<LegalPage />} />
               
               {/* Protected Routes */}
               <Route
