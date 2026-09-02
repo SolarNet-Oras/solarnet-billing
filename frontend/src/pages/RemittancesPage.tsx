@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
 
-type Invoice = { id: string; invoice_number: string; due_date: string; balance: number; previous_balance?: number; customer?: { account_number: string; full_name: string; address?: string } };
+type Invoice = { id: string; invoice_number: string; due_date: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { account_number: string; full_name: string; address?: string } };
 type CashLine = { denomination: number; count: number; amount: number };
 type Checkout = { checkout_url: string; reference_number: string; invoice_number: string; checkout_session_id?: string };
 type QrPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; qr_image_url?: string | null; reference_number: string; invoice_number: string; amount: number; status: string; expires_at?: string | null };
@@ -56,7 +56,7 @@ export default function RemittancesPage() {
   const cashMatches = Math.round(cashExpected * 100) === Math.round(cashCounted * 100);
 
   const closePayment = () => { setPaymentInvoice(null); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
-  const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
+  const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.customer_outstanding || invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
   const signaturePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = signatureCanvas.current;
     if (!canvas) return null;
@@ -119,7 +119,8 @@ export default function RemittancesPage() {
   const recordPayment = async () => {
     if (!paymentInvoice || paymentMethod === 'mobile_money') return;
     const amount = Number(paymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > paymentInvoice.balance) return window.alert(`Enter an amount up to ${peso(paymentInvoice.balance)}.`);
+    const collectibleBalance = Number(paymentInvoice.customer_outstanding || paymentInvoice.balance);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > collectibleBalance) return window.alert(`Enter an amount up to ${peso(collectibleBalance)}.`);
     if (paymentMethod === 'bank_transfer' && !reference.trim()) return window.alert('Enter the bank transaction reference.');
     if (paymentMethod === 'cash' && cashStep === 'details') { setCashStep('signature'); return; }
     if (paymentMethod === 'cash' && !signaturePresent) return window.alert('The client or an authorized family member must sign before confirming cash payment.');

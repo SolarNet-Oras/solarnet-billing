@@ -40,6 +40,10 @@ class RemittanceController extends Controller
                 ->whereNotIn('status', ['paid', 'cancelled'])
                 ->whereDate('due_date', '<', $invoice->due_date)
                 ->sum('balance'));
+            $invoice->setAttribute('customer_outstanding', (float) Invoice::query()
+                ->where('customer_id', $invoice->customer_id)
+                ->unpaid()
+                ->sum('balance'));
             return $invoice;
         });
         $unremittedPayments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id');
@@ -173,6 +177,11 @@ class RemittanceController extends Controller
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
         abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may record payment only for a due invoice.');
+        $customerOutstanding = (float) Invoice::query()
+            ->where('customer_id', $invoice->customer_id)
+            ->unpaid()
+            ->sum('balance');
+        abort_if((float) $data['amount'] > $customerOutstanding, 422, 'The amount exceeds this customer\'s total outstanding invoice balance.');
         $data['collector_id'] = $request->user()->id;
         $data['payment_date'] = now()->toDateString();
 
