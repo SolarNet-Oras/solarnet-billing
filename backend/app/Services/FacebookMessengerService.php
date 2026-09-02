@@ -54,6 +54,9 @@ class FacebookMessengerService
         if ($activeConnections->isNotEmpty() && $activeConnections->every(fn (FacebookPageConnection $connection) => $connection->webhook_subscribed_at === null)) {
             $blockers[] = 'The connected Page has not been subscribed to Messenger webhook events.';
         }
+        if ($activeConnections->isNotEmpty() && $activeConnections->every(fn (FacebookPageConnection $connection) => $connection->last_webhook_at === null)) {
+            $blockers[] = 'Meta has not delivered a signed Messenger webhook yet. Send a new message from a different Facebook account and confirm the Meta Messenger webhook callback subscribes to messages.';
+        }
         $latestAutoReply = FacebookMessengerMessage::query()->where('source', 'ai_auto')->latest('created_at')->first();
 
         return [
@@ -344,7 +347,10 @@ class FacebookMessengerService
 
         if ((bool) Setting::get('facebook_automation.auto_reply_enabled', false)
             && ! $conversation->human_handoff_required) {
-            SendFacebookMessengerAutoReply::dispatch($record->id);
+            // Run after the webhook response has been returned to Meta. This
+            // keeps webhook acknowledgement fast and does not leave customer
+            // replies dependent only on a separately running queue worker.
+            SendFacebookMessengerAutoReply::dispatchAfterResponse($record->id);
         }
     }
 
@@ -440,20 +446,21 @@ class FacebookMessengerService
 
         $draft = $this->aiDraft($conversation);
         if (! $draft['success']) {
-            FacebookMessengerMessage::create([
-                'facebook_messenger_conversation_id' => $conversation->id,
-                'reply_to_message_id' => $inbound->id,
-                'direction' => 'outbound',
-                'source' => 'ai_auto',
-                'message_text' => null,
-                'delivery_status' => 'failed',
-                'delivery_error' => $draft['message'] ?? 'AI could not prepare an automatic reply.',
-            ]);
             Log::warning('Facebook Messenger automatic reply was not prepared', [
                 'conversation_id' => $conversation->id,
                 'inbound_message_id' => $inbound->id,
                 'reason' => $draft['message'] ?? 'unknown',
             ]);
+
+            $fallback = 'Hi! Thank you for messaging SolarNet. We received your message and we are sorry for any inconvenience. Our support team will review your concern as soon as possible. For account-specific billing details, please use our secure customer portal or wait for an authorized SolarNet staff member to assist you here.';
+            $delivery = $this->sendConversationReply($conversation, $fallback, 'ai_auto', $inbound->id);
+            if (! $delivery['success']) {
+                Log::warning('Facebook Messenger fallback reply failed', [
+                    'conversation_id' => $conversation->id,
+                    'inbound_message_id' => $inbound->id,
+                    'reason' => $delivery['message'] ?? 'unknown',
+                ]);
+            }
             return;
         }
 
