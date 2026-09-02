@@ -1000,9 +1000,15 @@ class CustomerController extends Controller
             return compact('updatedCustomers', 'updatedInvoices', 'skipped', 'results');
         });
 
+        $message = match ($action) {
+            'previous_balance' => "Previous balance recorded as {$summary['updatedInvoices']} opening-balance invoice(s). The customer profile was not changed.",
+            'discount' => "Client setup applied. {$summary['updatedInvoices']} invoice(s) received the reviewed discount; no customer profile field was changed.",
+            default => "Client setup applied to {$summary['updatedCustomers']} customer(s) and {$summary['updatedInvoices']} invoice(s).",
+        };
+
         return response()->json([
             'status' => 'success',
-            'message' => "Client setup applied to {$summary['updatedCustomers']} customer(s) and {$summary['updatedInvoices']} invoice(s).",
+            'message' => $message,
             'data' => $summary,
         ]);
     }
