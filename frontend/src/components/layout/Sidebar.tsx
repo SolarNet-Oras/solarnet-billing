@@ -118,6 +118,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+            const label = item.path === '/remittances' && hasRole('collector')
+              ? 'Collection Desk'
+              : item.name;
 
             return (
               <Link
@@ -135,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 }`}>
                   <Icon className="h-4 w-4" strokeWidth={1.8} />
                 </span>
-                <span>{item.name}</span>
+                <span>{label}</span>
               </Link>
             );
           })}
