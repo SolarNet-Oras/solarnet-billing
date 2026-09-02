@@ -15,10 +15,12 @@ return new class extends Migration {
             $table->string('router_public_key', 64);
             $table->string('server_public_key', 64);
             $table->string('server_endpoint');
-            $table->unsignedSmallInteger('server_port')->default(51820);
+            // PostgreSQL has no unsigned smallint; valid UDP ports above 32767
+            // (including WireGuard's conventional 51820) require an integer.
+            $table->unsignedInteger('server_port')->default(51820);
             $table->string('server_tunnel_address')->default('10.77.0.1/30');
             $table->string('peer_tunnel_address')->unique();
-            $table->unsignedSmallInteger('router_listen_port')->default(13231);
+            $table->unsignedInteger('router_listen_port')->default(13231);
             $table->unsignedSmallInteger('persistent_keepalive')->default(25);
             $table->boolean('enabled')->default(true);
             $table->timestamp('latest_handshake_at')->nullable();
