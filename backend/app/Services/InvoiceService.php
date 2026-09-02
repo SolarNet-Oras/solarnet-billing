@@ -8,6 +8,7 @@ use App\Models\CustomerCredit;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\Setting;
 use App\Services\BillingSuspensionService;
 use Carbon\Carbon;
@@ -226,11 +227,6 @@ class InvoiceService
 
                 if ($existingInvoice) {
                     $results['skipped']++;
-                    continue;
-                }
-
-                if ($this->isCycleFullyCovered($customer, $billingDate)) {
-                    $results['covered']++;
                     continue;
                 }
 
@@ -507,15 +503,12 @@ class InvoiceService
     public function recordPayment(Invoice $invoice, array $paymentData): Payment
     {
         return DB::transaction(function () use ($invoice, $paymentData) {
-            // Lock the invoice before allocation. This serializes a manual
-            // receipt, PayMongo webhook, and checkout reconciliation that hit
-            // the same receivable at the same time.
-            $invoice = Invoice::query()
-                ->with('customer')
-                ->whereKey($invoice->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $amount = round((float) $paymentData['amount'], 2);
+            // Lock the customer first, then every collectible invoice in a
+            // deterministic order. This serializes payments across different
+            // invoice screens for the same account.
+            $invoice = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+            $customer = Customer::query()->with('servicePlan')->whereKey($invoice->customer_id)->lockForUpdate()->firstOrFail();
+            $amountCents = $this->moneyToCents($paymentData['amount']);
 
             // Gateway callbacks provide a durable transaction ID. Treat a
             // replay for the same invoice/customer as idempotent; reject an
@@ -526,14 +519,14 @@ class InvoiceService
                 if ($existing) {
                     if ($existing->invoice_id === $invoice->id
                         && $existing->customer_id === $invoice->customer_id
-                        && (int) round((float) $existing->amount * 100) === (int) round($amount * 100)) {
+                        && $this->moneyToCents($existing->amount) === $amountCents) {
                         return $existing->fresh(['invoice', 'customer']);
                     }
                     throw new \RuntimeException('This payment transaction ID was already used for a different payment.');
                 }
             }
-            if ($amount <= 0 || $amount > round((float) $invoice->balance, 2)) {
-                throw new \RuntimeException('Payment amount must not exceed the current invoice balance.');
+            if ($amountCents <= 0) {
+                throw new \RuntimeException('Payment amount must be greater than zero.');
             }
 
             // Create payment record
@@ -543,7 +536,9 @@ class InvoiceService
                 'collector_id' => $paymentData['collector_id'] ?? null,
                 'received_by' => $paymentData['received_by'] ?? null,
                 'payment_number' => $this->generatePaymentNumber(),
-                'amount' => $amount,
+                // This is the full amount of money received. Allocations below
+                // never rewrite or split this source record.
+                'amount' => $this->centsToMoney($amountCents),
                 'cash_counted_amount' => $paymentData['cash_counted_amount'] ?? null,
                 'cash_change_amount' => $paymentData['cash_change_amount'] ?? null,
                 'cash_change_advance_amount' => $paymentData['cash_change_advance_amount'] ?? null,
@@ -559,24 +554,23 @@ class InvoiceService
                 'notes' => $paymentData['notes'] ?? null,
             ]);
 
-            // Update invoice paid amount and balance
-            $invoice->paid_amount += $payment->amount;
-            $invoice->balance = $invoice->total - $invoice->paid_amount;
-
-            // Update invoice status
-            if ($invoice->balance <= 0) {
-                $invoice->status = 'paid';
-                $invoice->paid_at = now();
-            } elseif ($invoice->paid_amount > 0) {
-                $invoice->status = 'partial';
+            $unallocatedCents = $this->allocatePaymentOldestFirst($payment, $customer, $amountCents);
+            if ($unallocatedCents > 0) {
+                CustomerCredit::create([
+                    'customer_id' => $customer->id,
+                    'payment_id' => $payment->id,
+                    'original_amount' => $this->centsToMoney($unallocatedCents),
+                    'remaining_amount' => $this->centsToMoney($unallocatedCents),
+                    'status' => 'unallocated',
+                    'notes' => 'Unallocated overpayment after all outstanding invoices were settled.',
+                ]);
             }
-
-            $invoice->save();
+            $this->assertPaymentOwnership($payment);
 
             $cashChangeAdvance = round((float) ($paymentData['cash_change_advance_amount'] ?? 0), 2);
             if ($cashChangeAdvance > 0) {
                 $cashTendered = round((float) ($paymentData['cash_counted_amount'] ?? 0), 2);
-                $availableChange = max(0, round($cashTendered - $amount, 2));
+                $availableChange = max(0, round($cashTendered - ($amountCents / 100), 2));
                 if ($payment->payment_method !== 'cash' || $cashChangeAdvance > $availableChange) {
                     throw new \RuntimeException('Advance credit from change must match cash received above the invoice payment amount.');
                 }
@@ -598,12 +592,12 @@ class InvoiceService
                 ]);
 
                 $this->createAdvanceCredits($invoice->customer, $changeAdvancePayment, $cashChangeAdvance, null);
+                $this->assertPaymentOwnership($changeAdvancePayment);
             }
 
             // Re-evaluate every unpaid invoice after commit. A settled balance
             // restores a suspended/expired customer; another eligible overdue
             // balance keeps the customer restricted.
-            $customer = $invoice->customer;
             if ($customer) {
                 DB::afterCommit(function () use ($customer, $payment) {
                     try {
@@ -654,8 +648,105 @@ class InvoiceService
                 'method' => $payment->payment_method,
             ]);
 
-            return $payment->fresh(['invoice', 'customer']);
+            return $payment->fresh(['invoice', 'customer', 'allocations.invoice']);
         });
+    }
+
+    /** Allocate one immutable receipt across this customer's oldest debt. */
+    private function allocatePaymentOldestFirst(Payment $payment, Customer $customer, int $availableCents): int
+    {
+        $invoices = Invoice::query()
+            ->where('customer_id', $customer->id)
+            ->whereNotIn('status', ['paid', 'cancelled'])
+            ->where('balance', '>', 0)
+            ->orderBy('billing_period_start')
+            ->orderBy('issue_date')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($invoices as $receivable) {
+            if ($availableCents <= 0) break;
+
+            // Reconcile cached fields from the allocation ledger before using
+            // the balance. Existing payments were backfilled by the migration.
+            $this->reconcileInvoiceFromAllocations($receivable);
+            $balanceCents = $this->moneyToCents($receivable->balance);
+            if ($balanceCents <= 0) continue;
+
+            $allocatedCents = min($availableCents, $balanceCents);
+            PaymentAllocation::create([
+                'payment_id' => $payment->id,
+                'invoice_id' => $receivable->id,
+                'amount' => $this->centsToMoney($allocatedCents),
+            ]);
+            $availableCents -= $allocatedCents;
+            $this->reconcileInvoiceFromAllocations($receivable->fresh());
+        }
+
+        return $availableCents;
+    }
+
+    /** Materialize paid_amount, balance and status from the allocation ledger. */
+    private function reconcileInvoiceFromAllocations(Invoice $invoice): void
+    {
+        $paidCents = $this->moneyToCents(PaymentAllocation::query()
+            ->where('invoice_id', $invoice->id)
+            ->sum('amount'));
+        $chargeCents = $this->moneyToCents($invoice->total);
+        $balanceCents = max(0, $chargeCents - $paidCents);
+
+        $invoice->paid_amount = $this->centsToMoney($paidCents);
+        $invoice->balance = $this->centsToMoney($balanceCents);
+        if ($balanceCents === 0) {
+            $invoice->status = 'paid';
+            $invoice->paid_at ??= now();
+        } elseif ($paidCents > 0) {
+            $invoice->status = 'partial';
+            $invoice->paid_at = null;
+        } elseif ($invoice->due_date?->lt(now(config('app.timezone', 'Asia/Manila'))->startOfDay())) {
+            $invoice->status = 'overdue';
+            $invoice->paid_at = null;
+        } else {
+            $invoice->status = 'sent';
+            $invoice->paid_at = null;
+        }
+        $invoice->save();
+    }
+
+    private function moneyToCents(mixed $amount): int
+    {
+        $normalized = is_float($amount)
+            ? number_format($amount, 2, '.', '')
+            : str_replace([',', ' '], '', trim((string) $amount));
+        if (! preg_match('/^([+-]?)(\d+)(?:\.(\d+))?$/', $normalized, $matches)) {
+            throw new \InvalidArgumentException('Invalid monetary amount.');
+        }
+
+        $fraction = str_pad($matches[3] ?? '', 3, '0');
+        $cents = ((int) $matches[2] * 100) + (int) substr($fraction, 0, 2);
+        if ((int) $fraction[2] >= 5) $cents++;
+        return ($matches[1] ?? '') === '-' ? -$cents : $cents;
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        return sprintf('%d.%02d', intdiv($cents, 100), abs($cents % 100));
+    }
+
+    /** Every received peso is either allocated to an invoice or still credit. */
+    private function assertPaymentOwnership(Payment $payment): void
+    {
+        $received = $this->moneyToCents($payment->amount);
+        $allocated = $this->moneyToCents(PaymentAllocation::query()
+            ->where('payment_id', $payment->id)->sum('amount'));
+        $credit = $this->moneyToCents(CustomerCredit::query()
+            ->where('payment_id', $payment->id)->sum('remaining_amount'));
+
+        if ($received !== $allocated + $credit) {
+            throw new \RuntimeException('Payment ownership invariant failed; no financial changes were committed.');
+        }
     }
 
     public function recordAdvancePayment(Customer $customer, array $paymentData): Payment
@@ -701,6 +792,7 @@ class InvoiceService
                     ? Carbon::parse($paymentData['covered_cycle_date'], config('app.timezone', 'Asia/Manila'))
                     : null,
             );
+            $this->assertPaymentOwnership($payment);
 
             DB::afterCommit(function () use ($payment) {
                 try {
@@ -767,7 +859,6 @@ class InvoiceService
 
         foreach ((new AdvancePaymentAllocator())->allocate($amount, $cycleAmount) as $allocation) {
             $allocated = $allocation['amount'];
-            $fullyCovered = $allocation['fully_covered'];
             CustomerCredit::create([
                 'customer_id' => $customer->id,
                 'payment_id' => $payment->id,
@@ -775,12 +866,12 @@ class InvoiceService
                 'covered_period_start' => $cycleDate->copy()->subMonthNoOverflow(),
                 'covered_period_end' => $cycleDate,
                 'original_amount' => $allocated,
-                // Fully covered cycles are settled without creating a second
-                // invoice charge. Partial reservations remain available for
-                // the cycle invoice to consume.
-                'remaining_amount' => $fullyCovered ? 0 : $allocated,
-                'status' => $fullyCovered ? 'fully_applied' : 'advance',
-                'applied_at' => $fullyCovered ? now() : null,
+                // The invoice remains the owner of the future service charge.
+                // Even a fully funded cycle stays available until that invoice
+                // exists and receives an explicit allocation.
+                'remaining_amount' => $allocated,
+                'status' => 'advance',
+                'applied_at' => null,
                 'notes' => 'Advance payment reserved for billing cycle ' . $cycleDate->toDateString(),
             ]);
             $cycleDate->addMonthNoOverflow();
@@ -853,7 +944,27 @@ class InvoiceService
         foreach ($credits as $credit) {
             if ($remaining <= 0) break;
             $applied = min($remaining, (float) $credit->remaining_amount);
-            Payment::create(['invoice_id' => $invoice->id, 'customer_id' => $invoice->customer_id, 'payment_number' => $this->generatePaymentNumber(), 'amount' => $applied, 'payment_method' => 'other', 'payment_date' => now(), 'notes' => 'Applied advance credit' . ($credit->covered_cycle_date ? ' for cycle ' . $credit->covered_cycle_date->toDateString() : '')]);
+            if (! $credit->payment_id) {
+                // Legacy credit without a source receipt cannot fabricate new
+                // money. Leave it untouched for an explicit reconciliation.
+                continue;
+            }
+            $allocation = PaymentAllocation::query()
+                ->where('payment_id', $credit->payment_id)
+                ->where('invoice_id', $invoice->id)
+                ->lockForUpdate()
+                ->first();
+            $newAllocationCents = $this->moneyToCents($applied)
+                + ($allocation ? $this->moneyToCents($allocation->amount) : 0);
+            if ($allocation) {
+                $allocation->update(['amount' => $this->centsToMoney($newAllocationCents)]);
+            } else {
+                PaymentAllocation::create([
+                    'payment_id' => $credit->payment_id,
+                    'invoice_id' => $invoice->id,
+                    'amount' => $this->centsToMoney($newAllocationCents),
+                ]);
+            }
             $credit->decrement('remaining_amount', $applied);
             $credit->refresh();
             if ((float) $credit->remaining_amount <= 0) {
@@ -861,13 +972,10 @@ class InvoiceService
             } elseif ($credit->covered_cycle_date) {
                 $credit->update(['status' => 'partially_applied']);
             }
-            $invoice->paid_amount += $applied;
+            $this->assertPaymentOwnership($credit->payment()->firstOrFail());
             $remaining -= $applied;
         }
-        $invoice->balance = max(0, $invoice->total - $invoice->paid_amount);
-        if ($invoice->balance <= 0) { $invoice->status = 'paid'; $invoice->paid_at = now(); }
-        elseif ($invoice->paid_amount > 0) $invoice->status = 'partial';
-        $invoice->save();
+        $this->reconcileInvoiceFromAllocations($invoice->fresh());
     }
 
     /**

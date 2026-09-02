@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Payment extends Model
 {
@@ -37,10 +38,10 @@ class Payment extends Model
     ];
 
     protected $casts = [
-        'amount' => 'float',
-        'cash_counted_amount' => 'float',
-        'cash_change_amount' => 'float',
-        'cash_change_advance_amount' => 'float',
+        'amount' => 'decimal:2',
+        'cash_counted_amount' => 'decimal:2',
+        'cash_change_amount' => 'decimal:2',
+        'cash_change_advance_amount' => 'decimal:2',
         'cash_breakdown' => 'array',
         'payer_signature_similarity' => 'float',
         'payment_date' => 'date',
@@ -61,4 +62,5 @@ class Payment extends Model
     public function receiver(): BelongsTo { return $this->belongsTo(User::class, 'received_by'); }
     public function remittance(): BelongsTo { return $this->belongsTo(Remittance::class); }
     public function paymongoCheckout(): HasOne { return $this->hasOne(PaymongoCheckout::class, 'payment_id'); }
+    public function allocations(): HasMany { return $this->hasMany(PaymentAllocation::class); }
 }

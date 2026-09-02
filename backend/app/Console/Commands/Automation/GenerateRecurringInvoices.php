@@ -86,12 +86,6 @@ class GenerateRecurringInvoices extends Command
                 continue;
             }
 
-            if ($invoices->isCycleFullyCovered($customer, $cycleDate)) {
-                $covered++;
-                $skipped++;
-                continue;
-            }
-
             // Do not generate an empty invoice for a client without a billable plan/fee.
             if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
                 $skipped++;

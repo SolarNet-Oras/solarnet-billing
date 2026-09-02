@@ -44,12 +44,12 @@ class Invoice extends Model
         'billing_period_start' => 'date',
         'billing_period_end' => 'date',
         'recurring_cycle_date' => 'date',
-        'subtotal' => 'float',
-        'tax' => 'float',
-        'discount' => 'float',
-        'total' => 'float',
-        'paid_amount' => 'float',
-        'balance' => 'float',
+        'subtotal' => 'decimal:2',
+        'tax' => 'decimal:2',
+        'discount' => 'decimal:2',
+        'total' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
+        'balance' => 'decimal:2',
         'sent_at' => 'datetime',
         'paid_at' => 'datetime',
         'initial_email_attempt_count' => 'integer',
@@ -70,6 +70,11 @@ class Invoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class);
     }
 
     public function billingSmsNotifications(): HasMany

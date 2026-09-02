@@ -698,7 +698,6 @@ const InvoicesPage: React.FC = () => {
                       value={paymentData.amount}
                       onChange={(e) => setPaymentData({ ...paymentData, amount: parseFloat(e.target.value) })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      max={isAdvancePayment ? undefined : selectedInvoice.balance}
                       min="0.01"
                       placeholder="0.00"
                       required

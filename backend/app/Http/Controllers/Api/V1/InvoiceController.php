@@ -254,14 +254,6 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        // Check if amount exceeds balance
-        if ($request->amount > $invoice->balance) {
-            return response()->json([
-                'message' => 'Payment amount exceeds invoice balance',
-                'invoice_balance' => $invoice->balance,
-            ], 422);
-        }
-
         $paymentData = $request->all();
         if ($request->input('payment_method') === 'cash') {
             $paymentData['cash_breakdown'] = $this->normalizedCashBreakdown($request->input('cash_breakdown', []));

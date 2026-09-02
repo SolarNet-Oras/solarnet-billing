@@ -30,6 +30,7 @@ class RemittanceController extends Controller
                 ->where('customer_id', $invoice->customer_id)
                 ->whereKeyNot($invoice->id)
                 ->where('balance', '>', 0)
+                ->whereNotIn('status', ['paid', 'cancelled'])
                 ->whereDate('due_date', '<', $invoice->due_date)
                 ->sum('balance'));
             return $invoice;
@@ -165,7 +166,6 @@ class RemittanceController extends Controller
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
         abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may record payment only for a due invoice.');
-        abort_if((float) $data['amount'] > (float) $invoice->balance, 422, 'Payment amount exceeds invoice balance.');
         $data['collector_id'] = $request->user()->id;
         $data['payment_date'] = now()->toDateString();
 

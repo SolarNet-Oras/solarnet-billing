@@ -7,6 +7,7 @@ use App\Models\CustomerAccountReconciliation;
 use App\Models\CustomerCredit;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 
 /**
  * The one read-model used when billing determines whether service may change.
@@ -29,7 +30,9 @@ class CustomerAccountReconciliationService
         $credits = CustomerCredit::query()->where('customer_id', $customer->id)->get(['remaining_amount']);
 
         $outstanding = round((float) $openInvoices->sum('balance'), 2);
-        $allocated = round((float) $invoices->sum('paid_amount'), 2);
+        $allocated = round((float) PaymentAllocation::query()
+            ->whereIn('invoice_id', $invoices->pluck('id'))
+            ->sum('amount'), 2);
         $confirmed = round((float) $payments->sum('amount'), 2);
         $availableCredit = round((float) $credits->sum('remaining_amount'), 2);
         $hasOverdue = $openInvoices->contains(fn (Invoice $invoice) => $invoice->status === 'overdue'
@@ -44,7 +47,7 @@ class CustomerAccountReconciliationService
             'total_invoiced' => round((float) $invoices->sum('total'), 2),
             'confirmed_payment_total' => $confirmed,
             'allocated_payment_total' => $allocated,
-            'recorded_invoice_payment_total' => round((float) $payments->whereNotNull('invoice_id')->sum('amount'), 2),
+            'recorded_invoice_payment_total' => $allocated,
             'available_credit_total' => $availableCredit,
             'outstanding_balance' => $outstanding,
             'invoice_count' => $invoices->count(),

@@ -168,8 +168,7 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
                 throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
             }
-            if ($invoice->balance <= 0) { $checkout->update(['status' => 'paid', 'paid_at' => now()]); return; }
-            $payment = $this->invoices->recordPayment($invoice, ['amount' => min($checkout->amount, $invoice->balance), 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo GCash checkout | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
+            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo GCash checkout | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
             $checkout->update(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id]);
         });
     }
@@ -226,17 +225,15 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $locked->customer_id || ($locked->account_number && $invoice->customer?->account_number !== $locked->account_number)) {
                 throw new RuntimeException('PayMongo QR Ph account verification failed. No payment was recorded.');
             }
-            if ((float) $invoice->balance > 0) {
-                $payment = $this->invoices->recordPayment($invoice, [
-                    'amount' => min((float) $locked->amount, (float) $invoice->balance),
+            $payment = $this->invoices->recordPayment($invoice, [
+                    'amount' => $locked->amount,
                     'payment_method' => 'mobile_money',
                     'payment_date' => now(),
                     'transaction_id' => $paymongoPaymentId,
                     'reference' => $locked->reference_number,
                     'notes' => 'PayMongo QR Ph | Payment Intent ' . $locked->payment_intent_id . ' | Account ' . $locked->account_number,
                 ]);
-                $locked->payment_id = $payment->id;
-            }
+            $locked->payment_id = $payment->id;
             $locked->status = 'paid';
             $locked->paymongo_payment_id = $paymongoPaymentId;
             $locked->webhook_event_id = $eventId ?: $locked->webhook_event_id;
