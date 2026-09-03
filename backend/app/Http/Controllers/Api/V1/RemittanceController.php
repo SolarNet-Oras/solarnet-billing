@@ -22,16 +22,35 @@ class RemittanceController extends Controller
     public function collectorDashboard(Request $request): JsonResponse
     {
         $today = today();
-        $issuedFrom = $today->copy()->subMonthNoOverflow()->startOfMonth();
         $perPage = min(max($request->integer('per_page', 200), 1), 200);
+        $search = trim((string) $request->query('q', ''));
+        $sort = in_array($request->query('sort'), ['due_date', 'address'], true)
+            ? (string) $request->query('sort')
+            : 'due_date';
 
-        $invoices = Invoice::with('customer:id,account_number,full_name,address,contact_number')
+        $invoiceQuery = Invoice::with('customer:id,account_number,full_name,address,contact_number')
             ->where('balance', '>', 0)
-            ->whereBetween('issue_date', [$issuedFrom->toDateString(), $today->toDateString()])
+            ->whereDate('due_date', '<=', $today)
             ->whereIn('status', ['sent', 'overdue', 'partial'])
-            ->orderBy('due_date')
-            ->orderBy('invoice_number')
-            ->paginate($perPage);
+            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search) {
+                $query->where('invoice_number', 'ilike', "%{$search}%")
+                    ->orWhereHas('customer', fn ($customer) => $customer
+                        ->where('full_name', 'ilike', "%{$search}%")
+                        ->orWhere('account_number', 'ilike', "%{$search}%")
+                        ->orWhere('address', 'ilike', "%{$search}%"));
+            }));
+
+        if ($sort === 'address') {
+            $invoiceQuery->orderBy(
+                Customer::select('address')->whereColumn('customers.id', 'invoices.customer_id')
+            )->orderBy('due_date');
+        } else {
+            $invoiceQuery->orderBy('due_date')->orderBy(
+                Customer::select('address')->whereColumn('customers.id', 'invoices.customer_id')
+            );
+        }
+
+        $invoices = $invoiceQuery->orderBy('invoice_number')->paginate($perPage);
         $invoices->getCollection()->transform(function (Invoice $invoice) {
             $invoice->setAttribute('previous_balance', (float) Invoice::query()
                 ->where('customer_id', $invoice->customer_id)
