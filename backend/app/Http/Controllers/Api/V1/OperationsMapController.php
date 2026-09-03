@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\OperationsMapAsset;
+use App\Models\StaffLiveLocation;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,9 +14,52 @@ use Illuminate\Validation\ValidationException;
 
 class OperationsMapController extends Controller
 {
-    public function index(OperationsMapService $operationsMap): JsonResponse
+    public function index(Request $request, OperationsMapService $operationsMap): JsonResponse
     {
-        return response()->json(['data' => $operationsMap->snapshot()]);
+        $data = $operationsMap->snapshot();
+        $data['staff_locations'] = $request->user()->hasAnyRole(['super_admin', 'admin'])
+            ? StaffLiveLocation::query()
+                ->where('sharing_enabled', true)
+                ->where('captured_at', '>=', now()->subMinutes(5))
+                ->with('user.roles:id,name')
+                ->latest('captured_at')
+                ->get()
+                ->map(fn (StaffLiveLocation $location) => [
+                    'user_id' => $location->user_id,
+                    'name' => $location->user?->name,
+                    'role' => $location->user?->roles->pluck('name')->intersect(['collector', 'technician'])->first(),
+                    'latitude' => $location->latitude,
+                    'longitude' => $location->longitude,
+                    'accuracy_meters' => $location->accuracy_meters,
+                    'captured_at' => $location->captured_at?->toIso8601String(),
+                ])->values()
+            : [];
+
+        return response()->json(['data' => $data]);
+    }
+
+    public function updateMyLocation(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasAnyRole(['collector', 'technician']), 403);
+        $data = $request->validate([
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
+            'accuracy_meters' => ['nullable', 'numeric', 'min:0', 'max:5000'],
+        ]);
+        $location = StaffLiveLocation::updateOrCreate(
+            ['user_id' => $request->user()->id],
+            [...$data, 'sharing_enabled' => true, 'captured_at' => now()]
+        );
+
+        return response()->json(['message' => 'Live location shared.', 'captured_at' => $location->captured_at]);
+    }
+
+    public function stopMyLocation(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasAnyRole(['collector', 'technician']), 403);
+        StaffLiveLocation::where('user_id', $request->user()->id)->update(['sharing_enabled' => false]);
+
+        return response()->json(['message' => 'Live location sharing stopped.']);
     }
 
     public function store(Request $request, OperationsMapService $operationsMap): JsonResponse

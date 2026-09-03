@@ -54,7 +54,7 @@ const navItems: NavItem[] = [
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
-  { name: 'Operations Map', path: '/operations-map', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin', 'technician', 'noc'] },
+  { name: 'Operations Map', path: '/operations-map', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin', 'technician', 'collector', 'noc'] },
   { name: 'Facebook Automation', path: '/facebook-automation', icon: MessageCircle, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Cybersecurity', path: '/cybersecurity', icon: ShieldCheck, roles: ['super_admin', 'admin', 'noc'] },

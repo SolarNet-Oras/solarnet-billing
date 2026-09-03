@@ -33,9 +33,17 @@ type MapAsset = {
   created_by: { id: string; name: string } | null;
   updated_at: string | null;
 };
+type StaffLocation = Coordinates & {
+  user_id: string;
+  name: string;
+  role: string;
+  accuracy_meters: number | null;
+  captured_at: string;
+};
 type MapData = {
   clients: ClientPin[];
   assets: MapAsset[];
+  staff_locations: StaffLocation[];
   summary: {
     mapped_clients: number;
     unmapped_clients: number;
@@ -197,8 +205,13 @@ export default function OperationsMapPage(): React.JSX.Element {
   const [assetForm, setAssetForm] = useState<AssetForm | null>(null);
   const [savingAsset, setSavingAsset] = useState(false);
   const [capturingLocation, setCapturingLocation] = useState(false);
+  const [sharingLocation, setSharingLocation] = useState(false);
+  const locationWatch = useRef<number | null>(null);
+  const lastLocationUpload = useRef(0);
   const roles = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canManageAssets = ['super_admin', 'admin', 'technician', 'noc'].some((role) => roles.includes(role));
+  const isFieldStaff = ['collector', 'technician'].some((role) => roles.includes(role));
+  const canViewStaff = ['super_admin', 'admin'].some((role) => roles.includes(role));
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -215,12 +228,65 @@ export default function OperationsMapPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!canViewStaff) return undefined;
+    const refresh = window.setInterval(() => { void load(); }, 30000);
+    return () => window.clearInterval(refresh);
+  }, [canViewStaff, load]);
+
+  useEffect(() => () => {
+    if (locationWatch.current !== null) navigator.geolocation.clearWatch(locationWatch.current);
+  }, []);
+
+  const startLiveSharing = (): void => {
+    if (!navigator.geolocation || locationWatch.current !== null) return;
+    if (!window.confirm('Share your live work location with SolarNet administrators while this page remains open? Sharing expires automatically if updates stop.')) return;
+    setSharingLocation(true);
+    locationWatch.current = navigator.geolocation.watchPosition(async (position) => {
+      if (Date.now() - lastLocationUpload.current < 15000) return;
+      lastLocationUpload.current = Date.now();
+      try {
+        await api.put('/operations-map/my-live-location', {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy_meters: position.coords.accuracy,
+        });
+      } catch (requestError: unknown) {
+        const response = requestError as { response?: { data?: { message?: string } } };
+        setError(response.response?.data?.message || 'Live location could not be updated.');
+      }
+    }, () => {
+      setError('Location permission was denied or the device could not provide a current position.');
+      setSharingLocation(false);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 });
+  };
+
+  const stopLiveSharing = async (): Promise<void> => {
+    if (locationWatch.current !== null) navigator.geolocation.clearWatch(locationWatch.current);
+    locationWatch.current = null;
+    setSharingLocation(false);
+    await api.delete('/operations-map/my-live-location');
+  };
 
   const visibleClients = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return data?.clients || [];
-    return (data?.clients || []).filter((client) => `${client.full_name} ${client.account_number} ${client.address || ''}`.toLowerCase().includes(term));
-  }, [data?.clients, query]);
+    const staffPins: ClientPin[] = canViewStaff ? (data?.staff_locations || []).map((staff) => ({
+      id: `staff-${staff.user_id}`,
+      account_number: (staff.role || 'field staff').replaceAll('_', ' ').toUpperCase(),
+      full_name: staff.name,
+      address: `Live staff GPS · accuracy ${staff.accuracy_meters ? Math.round(staff.accuracy_meters) + ' m' : 'unknown'}`,
+      customer_status: 'live field staff',
+      latitude: staff.latitude,
+      longitude: staff.longitude,
+      location_source: `staff_live:${staff.captured_at}`,
+      network_state: 'unknown',
+      network_label: `Live ${staff.role || 'field staff'} location`,
+      lease: null,
+    })) : [];
+    const pins = [...(data?.clients || []), ...staffPins];
+    if (!term) return pins;
+    return pins.filter((client) => `${client.full_name} ${client.account_number} ${client.address || ''}`.toLowerCase().includes(term));
+  }, [canViewStaff, data?.clients, data?.staff_locations, query]);
   const bounds = useMemo(() => mapBounds(visibleClients, data?.assets || []), [visibleClients, data?.assets]);
   useEffect(() => { setMapView(bounds ? fitMapView(bounds) : null); }, [bounds]);
 
@@ -300,6 +366,8 @@ export default function OperationsMapPage(): React.JSX.Element {
   return <DashboardLayout><main className="mx-auto max-w-[1600px] space-y-4">
     <header className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex items-center gap-2"><MapPinned className="h-5 w-5 text-primary" /><h1 className="text-xl font-bold text-foreground sm:text-2xl">Operations Map</h1></div><p className="mt-1 max-w-3xl text-sm text-muted-foreground">A shared geographic view of saved client locations, mapped service coverage, NAPs, pole attachments, and fiber routes.</p></div><div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">Updated {data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : '—'}</span><button type="button" onClick={() => void load()} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button></div></header>
     {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
+    {isFieldStaff && <section className="flex flex-col gap-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-semibold text-foreground">Field location sharing</h2><p className="mt-1 text-xs text-muted-foreground">Visible only to administrators while this page is open. A position disappears from the live map after five minutes without an update.</p></div>{sharingLocation ? <button type="button" onClick={() => void stopLiveSharing()} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white">Stop sharing</button> : <button type="button" onClick={startLiveSharing} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white">Start live sharing</button>}</section>}
+    {canViewStaff && <section className="rounded-2xl border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-foreground">Live field team</h2><p className="text-xs text-muted-foreground">Consent-based collector and technician positions updated within the last five minutes.</p></div><span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-700 dark:text-sky-300">{data?.staff_locations?.length || 0} sharing</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{(data?.staff_locations || []).map((staff) => <button type="button" key={staff.user_id} onClick={() => { setQuery(staff.name); setSelectedKey(`client:staff-${staff.user_id}`); }} className="rounded-xl border border-border bg-background p-3 text-left hover:border-sky-500"><p className="font-semibold text-foreground">{staff.name}</p><p className="text-xs capitalize text-muted-foreground">{staff.role} · {staff.accuracy_meters ? `±${Math.round(staff.accuracy_meters)} m` : 'accuracy unavailable'}</p><p className="mt-1 text-[11px] text-muted-foreground">Updated {new Date(staff.captured_at).toLocaleTimeString('en-PH')}</p></button>)}{!data?.staff_locations?.length && <p className="text-sm text-muted-foreground">No collector or technician is currently sharing.</p>}</div></section>}
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><SummaryCard icon={<MapPin className="h-4 w-4 text-sky-600" />} label="Mapped clients" value={data?.summary.mapped_clients ?? 0} detail={`${data?.summary.unmapped_clients ?? 0} need coordinates`} /><SummaryCard icon={<Wifi className="h-4 w-4 text-emerald-600" />} label="Live DHCP lease" value={data?.summary.network_states.online ?? 0} detail="Latest RouterOS lease sync" /><SummaryCard icon={<WifiOff className="h-4 w-4 text-rose-600" />} label="No current lease" value={data?.summary.network_states.offline ?? 0} detail={`${data?.summary.network_states.restricted ?? 0} billing restricted`} /><SummaryCard icon={<Network className="h-4 w-4 text-violet-600" />} label="Physical network map" value={(data?.summary.assets.naps ?? 0) + (data?.summary.assets.poles ?? 0) + (data?.summary.assets.fiber_routes ?? 0)} detail={`${data?.summary.assets.naps ?? 0} NAPs · ${data?.summary.assets.poles ?? 0} poles · ${data?.summary.assets.fiber_routes ?? 0} routes`} /></section>
     <section className="rounded-2xl border border-border bg-card p-3 sm:p-4"><div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between"><div><div className="flex items-center gap-2"><Layers3 className="h-4 w-4 text-primary" /><h2 className="font-semibold text-foreground">Map layers</h2></div><p className="mt-1 text-xs text-muted-foreground">Choose one or more layers to appear on the map.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setLayers(defaultLayers)} className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-bold text-primary">All layers</button>{layerMeta.map((layer) => <button key={layer.key} type="button" onClick={() => toggleLayer(layer.key)} aria-pressed={layers[layer.key]} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${layers[layer.key] ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground hover:bg-muted'}`}>{layer.label}</button>)}</div></div><div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search client name, account number, or address" className="w-full rounded-lg border border-input bg-background py-2.5 pl-10 pr-3 text-sm text-foreground lg:max-w-lg" /></div></section>
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]"><article className="overflow-hidden rounded-2xl border border-border bg-slate-950 shadow-inner"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/70 px-4 py-3"><div><h2 className="font-semibold text-white">Service-area responsibility</h2><p className="mt-0.5 text-xs text-slate-300">OpenStreetMap base map with saved operational overlays—not a legal boundary.</p></div><MapLegend showStatus={layers.status} /></div>{!bounds || !mapView ? <EmptyMap /> : <RealOperationsMap view={mapView} clients={visibleClients} assets={data?.assets || []} layers={layers} selectedKey={selectedKey} onSelect={setSelectedKey} onChangeView={setMapView} onFit={() => setMapView(fitMapView(bounds))} />}</article><aside className="rounded-2xl border border-border bg-card p-4"><h2 className="font-semibold text-foreground">Selected map item</h2>{selectedClient ? <SelectedClient client={selectedClient} /> : selectedAsset ? <SelectedAsset asset={selectedAsset} /> : <p className="mt-3 text-sm text-muted-foreground">Select a client pin, NAP, pole, or fiber line to inspect it and open directions.</p>}{selectedCoordinate && <a href={`https://www.google.com/maps/dir/?api=1&destination=${selectedCoordinate.latitude},${selectedCoordinate.longitude}`} target="_blank" rel="noreferrer" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground"><Navigation className="h-4 w-4" />Open Google Maps</a>}<div className="mt-5 border-t pt-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Network indicator source</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{data?.source_note || 'Loading source details…'}</p></div></aside></section>

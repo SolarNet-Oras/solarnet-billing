@@ -153,7 +153,7 @@ const App: React.FC = (): JSX.Element => {
               />
               <Route
                 path="/operations-map"
-                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin', 'technician', 'noc']}><OperationsMapPage /></ProtectedRoute>}
+                element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin', 'technician', 'collector', 'noc']}><OperationsMapPage /></ProtectedRoute>}
               />
               <Route
                 path="/cybersecurity"
