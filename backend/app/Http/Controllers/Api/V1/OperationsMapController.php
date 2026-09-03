@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\OperationsMapAsset;
+use App\Models\Payment;
 use App\Models\StaffLiveLocation;
+use App\Models\Ticket;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,24 +20,78 @@ class OperationsMapController extends Controller
     public function index(Request $request, OperationsMapService $operationsMap): JsonResponse
     {
         $data = $operationsMap->snapshot();
-        $data['staff_locations'] = Schema::hasTable('staff_live_locations')
-            && $request->user()->hasAnyRole(['super_admin', 'admin'])
-            ? StaffLiveLocation::query()
+        $canViewStaff = Schema::hasTable('staff_live_locations')
+            && $request->user()->hasAnyRole(['super_admin', 'admin']);
+
+        if (! $canViewStaff) {
+            $data['staff_locations'] = [];
+
+            return response()->json(['data' => $data]);
+        }
+
+        $locations = StaffLiveLocation::query()
                 ->where('sharing_enabled', true)
                 ->where('captured_at', '>=', now()->subMinutes(5))
                 ->with('user.roles:id,name')
                 ->latest('captured_at')
-                ->get()
-                ->map(fn (StaffLiveLocation $location) => [
+                ->get();
+        $staffIds = $locations->pluck('user_id');
+        $activeTickets = Ticket::query()
+            ->whereIn('assigned_to', $staffIds)
+            ->whereNotIn('status', ['resolved', 'closed'])
+            ->with('customer:id,full_name,address')
+            ->latest('updated_at')
+            ->get()
+            ->unique('assigned_to')
+            ->keyBy('assigned_to');
+        $todayCollections = Payment::query()
+            ->whereIn('collector_id', $staffIds)
+            ->whereDate('payment_date', today())
+            ->selectRaw('collector_id, COUNT(*) as payment_count, COALESCE(SUM(amount), 0) as payment_total')
+            ->groupBy('collector_id')
+            ->get()
+            ->keyBy('collector_id');
+
+        $data['staff_locations'] = $locations
+                ->map(function (StaffLiveLocation $location) use ($activeTickets, $todayCollections): array {
+                    $role = $location->user?->roles->pluck('name')->intersect(['collector', 'technician'])->first();
+                    $ticket = $activeTickets->get($location->user_id);
+                    $collections = $todayCollections->get($location->user_id);
+                    $activity = $role === 'technician' && $ticket
+                        ? [
+                            'label' => $ticket->status === 'in_progress' ? 'Working on assigned ticket' : 'Assigned ticket pending',
+                            'detail' => trim($ticket->ticket_number.' · '.($ticket->customer?->full_name ?: 'Customer unavailable')),
+                            'reference' => $ticket->ticket_number,
+                            'customer' => $ticket->customer?->full_name,
+                            'address' => $ticket->customer?->address,
+                        ]
+                        : ($role === 'collector'
+                            ? [
+                                'label' => ((int) ($collections?->payment_count ?? 0)) > 0 ? 'Field collection activity' : 'Available for collection duty',
+                                'detail' => ((int) ($collections?->payment_count ?? 0)).' payment(s) recorded today · PHP '.number_format((float) ($collections?->payment_total ?? 0), 2),
+                                'reference' => null,
+                                'customer' => null,
+                                'address' => null,
+                            ]
+                            : [
+                                'label' => 'Available for field assignment',
+                                'detail' => 'No active assignment recorded in SolarNet.',
+                                'reference' => null,
+                                'customer' => null,
+                                'address' => null,
+                            ]);
+
+                    return [
                     'user_id' => $location->user_id,
                     'name' => $location->user?->name,
-                    'role' => $location->user?->roles->pluck('name')->intersect(['collector', 'technician'])->first(),
+                    'role' => $role,
                     'latitude' => $location->latitude,
                     'longitude' => $location->longitude,
                     'accuracy_meters' => $location->accuracy_meters,
                     'captured_at' => $location->captured_at?->toIso8601String(),
-                ])->values()
-            : [];
+                    'activity' => $activity,
+                    ];
+                })->values();
 
         return response()->json(['data' => $data]);
     }
