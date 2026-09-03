@@ -37,6 +37,7 @@ import FacebookAutomationPage from '@/pages/FacebookAutomationPage';
 import WireguardPage from '@/pages/WireguardPage';
 import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
 import LegalPage from '@/pages/LegalPage';
+import SmsAdvisoryPage from '@/pages/SmsAdvisoryPage';
 
 // ============================================================================
 // Main App Component
@@ -163,6 +164,7 @@ const App: React.FC = (): JSX.Element => {
                 path="/facebook-automation"
                 element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin']}><FacebookAutomationPage /></ProtectedRoute>}
               />
+              <Route path="/sms-advisories" element={<ProtectedRoute allowedRoles={['super_admin', 'admin']}><SmsAdvisoryPage /></ProtectedRoute>} />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />
               <Route path="/radius-ipoe" element={<ProtectedRoute allowedRoles={['super_admin', 'admin']}><RadiusIpOePage /></ProtectedRoute>} />

@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\RadiusIpOeController;
 use App\Http\Controllers\Api\V1\ServicePlanController;
 use App\Http\Controllers\Api\V1\SettingsController;
+use App\Http\Controllers\Api\V1\SmsAdvisoryController;
 use App\Http\Controllers\Api\V1\TicketController;
 use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -375,6 +376,12 @@ Route::prefix('v1')->group(function () {
         // relied on for access control; the endpoint is role-gated as well.
         Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
             ->middleware('role:super_admin|admin|cashier|accounting');
+
+        Route::middleware('role:super_admin|admin')->prefix('sms-advisories')->group(function () {
+            Route::get('/', [SmsAdvisoryController::class, 'index']);
+            Route::post('preview', [SmsAdvisoryController::class, 'preview'])->middleware('throttle:20,1');
+            Route::post('send', [SmsAdvisoryController::class, 'send'])->middleware('throttle:3,10');
+        });
 
         // Operations Map reads saved GPS points and the latest stored DHCP
         // lease state only. Asset writes are geographic field references and
