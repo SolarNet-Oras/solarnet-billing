@@ -49,7 +49,8 @@ class SendSmsAdvisoryRecipient implements ShouldQueue
             $counts = SmsAdvisoryRecipient::where('campaign_id', $campaign->id)
                 ->selectRaw("status, COUNT(*) as aggregate")
                 ->groupBy('status')->pluck('aggregate', 'status');
-            $pending = (int) ($counts['queued'] ?? 0) + (int) ($counts['processing'] ?? 0);
+            $terminal = (int) ($counts['sent'] ?? 0) + (int) ($counts['failed'] ?? 0) + (int) ($counts['skipped'] ?? 0);
+            $pending = max(0, (int) $campaign->recipient_count - $terminal);
             $campaign->forceFill([
                 'sent_count' => (int) ($counts['sent'] ?? 0),
                 'failed_count' => (int) ($counts['failed'] ?? 0),

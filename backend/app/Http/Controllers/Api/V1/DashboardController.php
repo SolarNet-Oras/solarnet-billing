@@ -437,11 +437,11 @@ class DashboardController extends Controller
                 || ($target && ($queue['target'] ?? null) === $target);
         });
 
-        return $candidates->sortByDesc(function (array $queue): int {
+        return $candidates->sortByDesc(function (array $queue): float {
             $rate = $this->trafficPair($queue['rate'] ?? null);
             $bytes = $this->trafficPair($queue['bytes'] ?? null);
-            return array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $rate)) * 1000000000000
-                + array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $bytes));
+            return (float) array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $rate)) * 1000000000000.0
+                + (float) array_sum(array_map(static fn ($value) => (int) ($value ?? 0), $bytes));
         })->first();
     }
 
