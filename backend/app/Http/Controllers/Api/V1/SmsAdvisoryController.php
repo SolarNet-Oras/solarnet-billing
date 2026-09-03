@@ -22,7 +22,15 @@ class SmsAdvisoryController extends Controller
     public function index(): JsonResponse
     {
         $campaigns = SmsAdvisoryCampaign::with('creator:id,name')
-            ->latest()->limit(30)->get();
+            ->latest()->limit(30)->get()
+            ->each(function (SmsAdvisoryCampaign $campaign): void {
+                $campaign->setAttribute('pending_count', max(0,
+                    (int) $campaign->recipient_count
+                    - (int) $campaign->sent_count
+                    - (int) $campaign->failed_count
+                    - (int) $campaign->skipped_count
+                ));
+            });
 
         return response()->json(['data' => $campaigns]);
     }
