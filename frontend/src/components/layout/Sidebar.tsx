@@ -114,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          {navItems.filter((item) => !hasRole('technician') || item.path === '/dashboard' || item.path === '/operations-map' || item.path === '/install-staff-app').map((item) => {
+          {navItems.filter((item) => !hasRole('technician') || hasRole('collector') || item.path === '/dashboard' || item.path === '/operations-map' || item.path === '/install-staff-app').map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
