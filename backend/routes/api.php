@@ -379,6 +379,7 @@ Route::prefix('v1')->group(function () {
 
         Route::middleware('role:super_admin|admin')->prefix('sms-advisories')->group(function () {
             Route::get('/', [SmsAdvisoryController::class, 'index']);
+            Route::post('compose', [SmsAdvisoryController::class, 'compose'])->middleware('throttle:6,1');
             Route::post('preview', [SmsAdvisoryController::class, 'preview'])->middleware('throttle:20,1');
             Route::post('send', [SmsAdvisoryController::class, 'send'])->middleware('throttle:3,10');
         });

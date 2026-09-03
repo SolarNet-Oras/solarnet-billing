@@ -8,10 +8,12 @@ use App\Models\Customer;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
 use App\Services\PhilSmsService;
+use App\Services\Ai\OpenAiClient;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class SmsAdvisoryController extends Controller
@@ -37,6 +39,41 @@ class SmsAdvisoryController extends Controller
             'provider_configured' => $sms->isConfigured(),
             'sample' => $recipients->take(5)->map(fn (array $row) => ['name' => $row['customer']->full_name, 'phone' => '••••'.substr($row['recipient'], -4)])->values(),
         ]]);
+    }
+
+    public function compose(Request $request, OpenAiClient $ai): JsonResponse
+    {
+        $data = $request->validate([
+            'topic' => ['required', 'string', 'min:3', 'max:160'],
+            'verified_facts' => ['required', 'string', 'min:5', 'max:1200'],
+            'language' => ['required', Rule::in(['english', 'filipino', 'bilingual'])],
+            'tone' => ['required', Rule::in(['clear', 'empathetic', 'urgent'])],
+        ]);
+
+        try {
+            $response = $ai->chatCompletion([
+                ['role' => 'system', 'content' => implode("\n", [
+                    'You write operational SMS advisories for SolarNet Internet in the Philippines.',
+                    'Use only the verified facts supplied by the administrator. Never invent dates, places, outage causes, prices, restoration times, links, or contact details.',
+                    'Return only one ready-to-review SMS message with no markdown, quotation marks, headings, analysis, emojis, or placeholders.',
+                    'Keep it at or below 420 characters. Start with SOLARNET ADVISORY:. Use a calm customer-service tone and concise spacing.',
+                    'This is a draft only and will be reviewed by an administrator before sending.',
+                ])],
+                ['role' => 'user', 'content' => "Topic: {$data['topic']}\nLanguage: {$data['language']}\nTone: {$data['tone']}\nVerified facts:\n{$data['verified_facts']}"],
+            ], [], 'gpt-5.4-mini');
+        } catch (\Throwable $e) {
+            Log::warning('SMS advisory AI composition failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'AI could not prepare an advisory draft. No SMS was sent.'], 503);
+        }
+
+        $draft = trim((string) ($response['content'] ?? ''));
+        $draft = preg_replace('/^```(?:text)?\s*|\s*```$/i', '', $draft) ?: $draft;
+        $draft = trim($draft, " \t\n\r\0\x0B\"");
+        if ($draft === '') {
+            return response()->json(['message' => 'AI returned an empty advisory draft. No SMS was sent.'], 503);
+        }
+
+        return response()->json(['data' => ['message' => mb_substr($draft, 0, 459)]]);
     }
 
     public function send(Request $request, PhilSmsService $sms): JsonResponse

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, MessageSquareText, RefreshCw, Send } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MessageSquareText, RefreshCw, Send, Sparkles } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import api from '@/services/api';
 
@@ -18,6 +18,8 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [aiForm, setAiForm] = useState({ topic: '', verified_facts: '', language: 'bilingual', tone: 'empathetic' });
+  const [aiBusy, setAiBusy] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     try { const response = await api.get('/sms-advisories'); setCampaigns(response.data.data || []); }
@@ -36,6 +38,19 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
     finally { setBusy(false); }
   };
 
+  const composeWithAi = async (): Promise<void> => {
+    setAiBusy(true); setError(''); setMessage('');
+    try {
+      const response = await api.post('/sms-advisories/compose', aiForm);
+      setForm((current) => ({ ...current, title: current.title || aiForm.topic, message: response.data.data.message }));
+      setPreview(null);
+      setMessage('AI draft prepared. Review every fact before previewing recipients.');
+    } catch (requestError: unknown) {
+      const e = requestError as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+      setError(e.response?.data?.errors ? Object.values(e.response.data.errors).flat().join(' ') : e.response?.data?.message || 'AI could not prepare an advisory draft.');
+    } finally { setAiBusy(false); }
+  };
+
   const send = async (): Promise<void> => {
     if (!preview || !window.confirm(`Queue this advisory for ${preview.eligible_recipients} verified recipient(s)?`)) return;
     setBusy(true); setError(''); setMessage('');
@@ -50,6 +65,16 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
     <main className="mx-auto max-w-6xl space-y-5">
       {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">{error}</p>}
       {message && <p className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">{message}</p>}
+
+      <section className="rounded-2xl border border-violet-400/40 bg-gradient-to-br from-violet-500/10 to-blue-500/5 p-4 sm:p-6">
+        <div className="flex items-start gap-3"><Sparkles className="mt-0.5 h-6 w-6 text-violet-600 dark:text-violet-300" /><div><h1 className="text-lg font-bold text-foreground">AI advisory composer</h1><p className="text-sm text-muted-foreground">Provide verified operational facts. AI prepares text only—it cannot select recipients, queue, or send an SMS.</p></div></div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="text-sm font-medium text-foreground">Topic<input value={aiForm.topic} onChange={(e) => setAiForm((current) => ({ ...current, topic: e.target.value }))} maxLength={160} placeholder="Example: Maintenance in Barangay Bato" className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2.5" /></label>
+          <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium text-foreground">Language<select value={aiForm.language} onChange={(e) => setAiForm((current) => ({ ...current, language: e.target.value }))} className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2.5"><option value="bilingual">English + Filipino</option><option value="english">English</option><option value="filipino">Filipino</option></select></label><label className="text-sm font-medium text-foreground">Tone<select value={aiForm.tone} onChange={(e) => setAiForm((current) => ({ ...current, tone: e.target.value }))} className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2.5"><option value="empathetic">Empathetic</option><option value="clear">Clear</option><option value="urgent">Urgent</option></select></label></div>
+          <label className="text-sm font-medium text-foreground md:col-span-2">Verified facts<textarea value={aiForm.verified_facts} onChange={(e) => setAiForm((current) => ({ ...current, verified_facts: e.target.value }))} maxLength={1200} rows={4} placeholder="Enter only confirmed date, time, affected area, reason, expected restoration, and approved contact information." className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2.5" /><span className="mt-1 block text-xs text-muted-foreground">AI is instructed not to invent missing details. You remain responsible for factual review.</span></label>
+        </div>
+        <button type="button" disabled={aiBusy || aiForm.topic.trim().length < 3 || aiForm.verified_facts.trim().length < 5} onClick={() => void composeWithAi()} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Sparkles className={`h-4 w-4 ${aiBusy ? 'animate-pulse' : ''}`} />{aiBusy ? 'Preparing draft…' : 'Generate advisory draft'}</button>
+      </section>
 
       <section className="rounded-2xl border border-border bg-card p-4 sm:p-6">
         <div className="flex items-start gap-3"><MessageSquareText className="mt-0.5 h-6 w-6 text-primary" /><div><h1 className="text-lg font-bold text-foreground">Prepare customer advisory</h1><p className="text-sm text-muted-foreground">Operational notices only. Recipient phone numbers remain hidden and no message is sent during preview.</p></div></div>
