@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendSmsAdvisoryRecipient;
 use App\Models\Customer;
+use App\Models\Router;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
 use App\Services\PhilSmsService;
@@ -26,14 +27,33 @@ class SmsAdvisoryController extends Controller
         return response()->json(['data' => $campaigns]);
     }
 
+    public function options(): JsonResponse
+    {
+        return response()->json(['data' => [
+            'routers' => Router::query()
+                ->orderByDesc('is_active')
+                ->orderBy('name')
+                ->get(['id', 'name', 'location', 'is_active', 'connection_status'])
+                ->map(fn (Router $router) => [
+                    'id' => $router->id,
+                    'name' => $router->name,
+                    'location' => $router->location,
+                    'is_active' => $router->is_active,
+                    'connection_status' => $router->connection_status,
+                    'registered_customers' => Customer::where('router_id', $router->id)->count(),
+                ])->values(),
+        ]]);
+    }
+
     public function preview(Request $request, PhilSmsService $sms): JsonResponse
     {
         $data = $this->validated($request, false);
-        $recipients = $this->recipients($data['recipient_filter'], $sms);
+        $routerId = $data['router_id'] ?? null;
+        $recipients = $this->recipients($data['recipient_filter'], $routerId, $sms);
 
         return response()->json(['data' => [
             'eligible_recipients' => $recipients->count(),
-            'excluded_invalid_or_missing_phone' => $this->query($data['recipient_filter'])->count() - $recipients->count(),
+            'excluded_invalid_or_missing_phone' => $this->query($data['recipient_filter'], $routerId)->count() - $recipients->count(),
             'sms_parts' => $this->smsParts($data['message']),
             'estimated_units' => $recipients->count() * $this->smsParts($data['message']),
             'provider_configured' => $sms->isConfigured(),
@@ -80,15 +100,19 @@ class SmsAdvisoryController extends Controller
     {
         $data = $this->validated($request, true);
         abort_unless($sms->isConfigured(), 422, 'PhilSMS is not configured. No advisory was queued.');
-        $recipients = $this->recipients($data['recipient_filter'], $sms);
+        $routerId = $data['router_id'] ?? null;
+        $recipients = $this->recipients($data['recipient_filter'], $routerId, $sms);
         abort_if($recipients->isEmpty(), 422, 'No customer with a valid Philippine mobile number matched this filter.');
 
-        $campaign = DB::transaction(function () use ($request, $data, $recipients): SmsAdvisoryCampaign {
+        $router = $routerId ? Router::findOrFail($routerId) : null;
+        $campaign = DB::transaction(function () use ($request, $data, $recipients, $router): SmsAdvisoryCampaign {
             $campaign = SmsAdvisoryCampaign::create([
                 'created_by' => $request->user()->id,
                 'title' => $data['title'],
                 'message' => trim($data['message']),
                 'recipient_filter' => $data['recipient_filter'],
+                'router_id' => $router?->id,
+                'router_name' => $router?->name,
                 'status' => 'queued',
                 'recipient_count' => $recipients->count(),
             ]);
@@ -117,19 +141,22 @@ class SmsAdvisoryController extends Controller
             'title' => ['required', 'string', 'max:120'],
             'message' => ['required', 'string', 'min:5', 'max:459'],
             'recipient_filter' => ['required', Rule::in(['all', 'active', 'suspended', 'disconnected'])],
+            'router_id' => ['nullable', 'uuid', 'exists:routers,id'],
             'confirmation' => [$sending ? 'required' : 'nullable', Rule::in(['SEND SOLARNET ADVISORY'])],
             'authorized' => [$sending ? 'accepted' : 'nullable'],
         ]);
     }
 
-    private function query(string $filter): Builder
+    private function query(string $filter, ?string $routerId): Builder
     {
-        return Customer::query()->when($filter !== 'all', fn (Builder $query) => $query->where('status', $filter));
+        return Customer::query()
+            ->when($filter !== 'all', fn (Builder $query) => $query->where('status', $filter))
+            ->when($routerId, fn (Builder $query) => $query->where('router_id', $routerId));
     }
 
-    private function recipients(string $filter, PhilSmsService $sms)
+    private function recipients(string $filter, ?string $routerId, PhilSmsService $sms)
     {
-        return $this->query($filter)->get(['id', 'full_name', 'contact_number'])
+        return $this->query($filter, $routerId)->get(['id', 'full_name', 'contact_number'])
             ->map(fn (Customer $customer) => ['customer' => $customer, 'recipient' => $sms->normalisePhilippineMobile((string) $customer->contact_number)])
             ->filter(fn (array $row) => $row['recipient'] !== null)
             ->unique('recipient')->values();
