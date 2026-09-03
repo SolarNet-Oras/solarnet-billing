@@ -72,6 +72,14 @@ Schedule::command('automation:recover-billing-deliveries')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Every minute — move durable mass-advisory recipient rows into Redis. The
+// database is the outbox, so an HTTP/Redis interruption cannot lose a campaign.
+Schedule::command('sms:dispatch-advisory-outbox --limit=250')
+    ->everyMinute()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Every 5 minutes — reconcile billing and network suspension state.
 Schedule::command('automation:auto-suspend')
     ->everyFiveMinutes()

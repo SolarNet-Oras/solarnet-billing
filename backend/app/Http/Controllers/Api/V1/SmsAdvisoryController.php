@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendSmsAdvisoryRecipient;
 use App\Models\Customer;
 use App\Models\Router;
 use App\Models\SmsAdvisoryCampaign;
@@ -136,11 +135,10 @@ class SmsAdvisoryController extends Controller
             return $campaign;
         });
 
-        $campaign->recipients()->pluck('id')->each(function (string $id, int $index): void {
-            SendSmsAdvisoryRecipient::dispatch($id)->delay(now()->addSeconds(intdiv($index, 5)));
-        });
-
-        return response()->json(['message' => "Advisory queued for {$campaign->recipient_count} verified recipient(s).", 'data' => $campaign], 202);
+        return response()->json([
+            'message' => "Advisory safely staged for {$campaign->recipient_count} verified recipient(s). Delivery starts within one minute.",
+            'data' => $campaign,
+        ], 202);
     }
 
     private function validated(Request $request, bool $sending): array
