@@ -383,8 +383,6 @@ Route::prefix('v1')->group(function () {
             ->middleware('role:super_admin|admin|office_admin|technician|collector|noc');
         Route::put('operations-map/my-live-location', [OperationsMapController::class, 'updateMyLocation'])
             ->middleware(['role:collector|technician', 'throttle:30,1']);
-        Route::delete('operations-map/my-live-location', [OperationsMapController::class, 'stopMyLocation'])
-            ->middleware('role:collector|technician');
         Route::middleware('role:super_admin|admin|technician|noc')->group(function () {
             Route::post('operations-map/assets', [OperationsMapController::class, 'store']);
             Route::put('operations-map/assets/{operationsMapAsset}', [OperationsMapController::class, 'update']);

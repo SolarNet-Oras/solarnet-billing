@@ -54,14 +54,6 @@ class OperationsMapController extends Controller
         return response()->json(['message' => 'Live location shared.', 'captured_at' => $location->captured_at]);
     }
 
-    public function stopMyLocation(Request $request): JsonResponse
-    {
-        abort_unless($request->user()->hasAnyRole(['collector', 'technician']), 403);
-        StaffLiveLocation::where('user_id', $request->user()->id)->update(['sharing_enabled' => false]);
-
-        return response()->json(['message' => 'Live location sharing stopped.']);
-    }
-
     public function store(Request $request, OperationsMapService $operationsMap): JsonResponse
     {
         $asset = new OperationsMapAsset($this->validatedAsset($request));
