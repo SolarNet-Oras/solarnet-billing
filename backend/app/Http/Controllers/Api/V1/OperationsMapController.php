@@ -8,6 +8,7 @@ use App\Models\StaffLiveLocation;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -17,7 +18,8 @@ class OperationsMapController extends Controller
     public function index(Request $request, OperationsMapService $operationsMap): JsonResponse
     {
         $data = $operationsMap->snapshot();
-        $data['staff_locations'] = $request->user()->hasAnyRole(['super_admin', 'admin'])
+        $data['staff_locations'] = Schema::hasTable('staff_live_locations')
+            && $request->user()->hasAnyRole(['super_admin', 'admin'])
             ? StaffLiveLocation::query()
                 ->where('sharing_enabled', true)
                 ->where('captured_at', '>=', now()->subMinutes(5))
@@ -41,6 +43,11 @@ class OperationsMapController extends Controller
     public function updateMyLocation(Request $request): JsonResponse
     {
         abort_unless($request->user()->hasAnyRole(['collector', 'technician']), 403);
+        abort_unless(
+            Schema::hasTable('staff_live_locations'),
+            503,
+            'Staff location storage is not installed yet. Run the pending database migrations.'
+        );
         $data = $request->validate([
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
