@@ -36,6 +36,9 @@ export default function RemittancesPage() {
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const signatureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const remittanceSubmitInFlight = useRef(false);
+  const liquidationInFlight = useRef(false);
+  const validationInFlight = useRef(false);
   const [drawingSignature, setDrawingSignature] = useState(false);
   const [signaturePresent, setSignaturePresent] = useState(false);
   const [familySigner, setFamilySigner] = useState(false);
@@ -129,11 +132,13 @@ export default function RemittancesPage() {
   };
 
   const submitRemittance = async () => {
+    if (remittanceSubmitInFlight.current) return;
     if (!window.confirm(`Submit ${peso(unremitted)} to the cashier for validation? Only physical cash requires a bill count.`)) return;
+    remittanceSubmitInFlight.current = true;
     setBusy(true);
     try { const response = await api.post('/collector/remittances', {}); window.alert(response.data?.message || 'Remittance submitted.'); await load(); }
     catch (error: any) { window.alert(error.response?.data?.message || 'Could not submit the remittance.'); }
-    finally { setBusy(false); }
+    finally { remittanceSubmitInFlight.current = false; setBusy(false); }
   };
 
   const recordPayment = async () => {
@@ -213,20 +218,22 @@ export default function RemittancesPage() {
   }, [paymentInvoice, checkout, qrPayment]);
 
   const liquidate = async () => {
-    if (!liquidationTarget || !cashMatches) return;
+    if (!liquidationTarget || !cashMatches || liquidationInFlight.current) return;
+    liquidationInFlight.current = true;
     setBusy(true);
     try { const response = await api.post(`/remittances/${liquidationTarget.id}/liquidate`, { cash_breakdown: breakdown.map(({ denomination, count }) => ({ denomination, count })) }); window.alert(response.data?.message || 'Cash liquidated.'); setLiquidationTarget(null); setCounts({}); await load(); }
     catch (error: any) { window.alert(error.response?.data?.message || 'Could not liquidate cash.'); }
-    finally { setBusy(false); }
+    finally { liquidationInFlight.current = false; setBusy(false); }
   };
   const validate = async () => {
-    if (!verifyTarget) return;
+    if (!verifyTarget || validationInFlight.current) return;
     const received = Number(receivedAmount);
     if (!Number.isFinite(received) || received < 0) return window.alert('Enter the amount received.');
+    validationInFlight.current = true;
     setBusy(true);
     try { const response = await api.post(`/remittances/${verifyTarget.id}/receive`, { received_amount: received }); window.alert(response.data?.message || 'Remittance validated.'); setVerifyTarget(null); await load(); }
     catch (error: any) { window.alert(error.response?.data?.message || 'Could not validate remittance.'); }
-    finally { setBusy(false); }
+    finally { validationInFlight.current = false; setBusy(false); }
   };
 
   return <DashboardLayout><main className="space-y-6 p-4 md:p-6">

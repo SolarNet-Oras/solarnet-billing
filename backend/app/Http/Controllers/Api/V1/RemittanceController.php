@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\ServicePlan;
+use App\Models\User;
 use App\Services\InvoiceService;
 use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
@@ -296,6 +297,10 @@ class RemittanceController extends Controller
     {
         $data = $request->validate(['notes' => 'nullable|string|max:1000']);
         $remittance = DB::transaction(function () use ($request, $data) {
+            // Serialize submissions per collector. Locking only matching
+            // unremitted payments cannot lock an empty result set, allowing a
+            // rapid duplicate HTTP request to race the first transaction.
+            User::query()->whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
             $payments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id')->lockForUpdate()->get();
             abort_if($payments->isEmpty(), 422, 'There are no unremitted collector payments.');
             $remittance = Remittance::create([
@@ -322,6 +327,7 @@ class RemittanceController extends Controller
         $remittance = DB::transaction(function () use ($request, $id, $data) {
             $remittance = Remittance::with('payments')->lockForUpdate()->findOrFail($id);
             abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been validated.');
+            abort_if($remittance->liquidated_at || $remittance->liquidated_by, 422, 'This remittance has already been liquidated.');
             $denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
             $counts = collect($data['cash_breakdown'])->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
             $breakdown = collect($denominations)->map(fn (int $denomination) => [
@@ -353,12 +359,16 @@ class RemittanceController extends Controller
     public function receive(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['received_amount' => 'required|numeric|min:0', 'notes' => 'nullable|string|max:1000']);
-        $remittance = Remittance::with('payments')->findOrFail($id);
-        abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been verified.');
-        abort_unless($remittance->liquidated_at && $remittance->liquidated_by, 422, 'Cash must be liquidated by an administrator or cashier before validation.');
-        $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
-        abort_unless((int) round((float) $remittance->cash_counted_amount * 100) === (int) round($cashExpected * 100), 422, 'The stored cash liquidation does not match recorded cash payments.');
-        $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (float) $data['received_amount'] === (float) $remittance->declared_amount ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
+        $remittance = DB::transaction(function () use ($request, $id, $data) {
+            $remittance = Remittance::with('payments')->lockForUpdate()->findOrFail($id);
+            abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been verified.');
+            abort_unless($remittance->liquidated_at && $remittance->liquidated_by, 422, 'Cash must be liquidated by an administrator or cashier before validation.');
+            $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
+            abort_unless((int) round((float) $remittance->cash_counted_amount * 100) === (int) round($cashExpected * 100), 422, 'The stored cash liquidation does not match recorded cash payments.');
+            $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (float) $data['received_amount'] === (float) $remittance->declared_amount ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
+
+            return $remittance->fresh(['collector', 'liquidator', 'receiver', 'payments']);
+        });
         return response()->json(['message' => $remittance->status === 'received' ? 'Remittance received and verified.' : 'Remittance recorded with a discrepancy for review.', 'remittance' => $remittance]);
     }
 }

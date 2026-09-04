@@ -22,6 +22,9 @@ class OfficeCashLiquidationService
         }
 
         return DB::transaction(function () use ($payment, $officeUser) {
+            // One office user can create only one cash bundle at a time, even
+            // if a browser retries the payment request before its first reply.
+            User::query()->whereKey($officeUser->id)->lockForUpdate()->firstOrFail();
             $payments = Payment::query()
                 ->whereNull('remittance_id')
                 ->where('payment_method', 'cash')
