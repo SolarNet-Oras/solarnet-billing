@@ -43,6 +43,8 @@ const InvoicesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'due_soon' | 'due_latest' | 'customer_az' | 'balance_high' | 'balance_low'>('newest');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -95,12 +97,21 @@ const InvoicesPage: React.FC = () => {
   useEffect(() => {
     fetchInvoices();
     fetchCustomers();
-  }, [currentPage, statusFilter, perPage]);
+  }, [currentPage, statusFilter, perPage, sortBy, debouncedSearch]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const params: any = { page: currentPage, per_page: perPage };
+      const params: any = { page: currentPage, per_page: perPage, sort: sortBy };
+      if (debouncedSearch) params.q = debouncedSearch;
       
       if (statusFilter !== 'all') {
         if (statusFilter === 'unpaid') {
@@ -274,14 +285,7 @@ const InvoicesPage: React.FC = () => {
     );
   };
 
-  const filteredInvoices = invoices.filter((invoice) => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      invoice.invoice_number.toLowerCase().includes(searchLower) ||
-      invoice.customer?.full_name?.toLowerCase().includes(searchLower) ||
-      invoice.customer?.account_number?.toLowerCase().includes(searchLower)
-    );
-  });
+  const filteredInvoices = invoices;
 
   return (
     <DashboardLayout>
@@ -318,6 +322,21 @@ const InvoicesPage: React.FC = () => {
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
             <option value="unpaid">Unpaid</option>
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(event) => { setSortBy(event.target.value as typeof sortBy); setCurrentPage(1); }}
+            className="bg-white px-4 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            aria-label="Sort invoices"
+          >
+            <option value="newest">Newest invoices</option>
+            <option value="oldest">Oldest invoices</option>
+            <option value="due_soon">Due date: earliest</option>
+            <option value="due_latest">Due date: latest</option>
+            <option value="customer_az">Customer: A to Z</option>
+            <option value="balance_high">Balance: highest</option>
+            <option value="balance_low">Balance: lowest</option>
           </select>
 
           <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">

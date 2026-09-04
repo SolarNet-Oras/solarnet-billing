@@ -19,6 +19,8 @@ export const invoiceService = {
     to_date?: string;
     overdue?: boolean;
     unpaid?: boolean;
+    q?: string;
+    sort?: 'newest' | 'oldest' | 'due_soon' | 'due_latest' | 'customer_az' | 'balance_high' | 'balance_low';
     page?: number;
     per_page?: number;
   }): Promise<PaginatedResponse<Invoice>> => {

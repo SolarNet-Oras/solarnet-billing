@@ -111,7 +111,7 @@ class Invoice extends Model
     {
         return $query->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
                     ->where('balance', '>', 0)
-                    ->whereIn('status', ['sent', 'partial']);
+                    ->whereIn('status', ['sent', 'partial', 'overdue']);
     }
 
     public function scopeUnpaid($query)

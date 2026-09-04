@@ -32,13 +32,24 @@ class InvoiceController extends Controller
     {
         $query = Invoice::with(['customer', 'items', 'payments.paymongoCheckout']);
 
+        if ($request->filled('q')) {
+            $search = trim($request->string('q')->toString());
+            $query->where(function ($builder) use ($search) {
+                $builder->where('invoice_number', 'ilike', '%' . $search . '%')
+                    ->orWhereHas('customer', function ($customer) use ($search) {
+                        $customer->where('full_name', 'ilike', '%' . $search . '%')
+                            ->orWhere('account_number', 'ilike', '%' . $search . '%');
+                    });
+            });
+        }
+
         // Filter by customer
         if ($request->has('customer_id')) {
             $query->where('customer_id', $request->customer_id);
         }
 
         // Filter by status
-        if ($request->has('status')) {
+        if ($request->filled('status') && in_array($request->string('status')->toString(), ['draft', 'sent', 'partial', 'paid', 'cancelled'], true)) {
             $query->where('status', $request->status);
         }
 
@@ -60,8 +71,21 @@ class InvoiceController extends Controller
             $query->unpaid();
         }
 
+        $sort = $request->string('sort', 'newest')->toString();
+        match ($sort) {
+            'oldest' => $query->orderBy('issue_date')->orderBy('created_at')->orderBy('id'),
+            'due_soon' => $query->orderBy('due_date')->orderBy('issue_date')->orderBy('id'),
+            'due_latest' => $query->orderByDesc('due_date')->orderByDesc('issue_date')->orderByDesc('id'),
+            'customer_az' => $query->orderBy(
+                Customer::select('full_name')->whereColumn('customers.id', 'invoices.customer_id')->limit(1)
+            )->orderBy('due_date')->orderBy('id'),
+            'balance_high' => $query->orderByDesc('balance')->orderBy('due_date')->orderBy('id'),
+            'balance_low' => $query->orderBy('balance')->orderBy('due_date')->orderBy('id'),
+            default => $query->orderByDesc('issue_date')->orderByDesc('created_at')->orderByDesc('id'),
+        };
+
         $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
-        $invoices = $query->latest('issue_date')->paginate($perPage);
+        $invoices = $query->paginate($perPage)->withQueryString();
 
         return response()->json($invoices);
     }
