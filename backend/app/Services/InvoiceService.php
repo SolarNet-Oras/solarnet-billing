@@ -101,7 +101,12 @@ class InvoiceService
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'customer_id' => $customer->id,
                 'issue_date' => $issueDate ?? now(config('app.timezone', 'Asia/Manila')),
-                'due_date' => $dueDate ?? now(config('app.timezone', 'Asia/Manila'))->addDays((int) Setting::get('billing.due_days', 7)),
+                // The customer's configured monthly cycle owns the due date.
+                // Lead days decide when automation creates/notifies, never when
+                // the customer's bill becomes due.
+                'due_date' => $dueDate
+                    ?? $customer->nextBillingDueDate(now(config('app.timezone', 'Asia/Manila')))
+                    ?? throw new \LogicException('Set the customer billing cycle day before generating an invoice.'),
                 'billing_period_start' => $billingPeriodStart,
                 'billing_period_end' => $billingPeriodEnd,
                 'recurring_cycle_date' => $recurringCycleDate,

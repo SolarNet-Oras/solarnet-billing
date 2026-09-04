@@ -57,7 +57,6 @@ const InvoicesPage: React.FC = () => {
     customer_id: '',
     billing_period_start: '',
     billing_period_end: '',
-    due_days: 15,
     discount: 0,
     notes: '',
     additional_items: [] as Array<{ description: string; quantity: number; unit_price: number }>,
@@ -205,7 +204,6 @@ const InvoicesPage: React.FC = () => {
       customer_id: '',
       billing_period_start: '',
       billing_period_end: '',
-      due_days: 15,
       discount: 0,
       notes: '',
       additional_items: [],
@@ -552,15 +550,14 @@ const InvoicesPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Due Days</label>
-                      <input
-                        type="number"
-                        value={formData.due_days}
-                        onChange={(e) => setFormData({ ...formData, due_days: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        min="1"
-                      />
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-blue-700">Invoice due date</span>
+                      {(() => {
+                        const customer = customers.find((item) => item.id === formData.customer_id);
+                        return customer?.billing_cycle_day
+                          ? `Customer billing cycle: every day ${customer.billing_cycle_day} of the month. The server assigns the next valid cycle date automatically.`
+                          : 'Select a customer with a configured billing cycle day.';
+                      })()}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Discount (₱)</label>

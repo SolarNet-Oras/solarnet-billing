@@ -86,7 +86,6 @@ class InvoiceController extends Controller
             'customer_id' => 'required|uuid|exists:customers,id',
             'billing_period_start' => 'required|date',
             'billing_period_end' => 'required|date|after_or_equal:billing_period_start',
-            'due_days' => 'nullable|integer|min:1|max:90',
             'additional_items' => 'nullable|array',
             'additional_items.*.description' => 'required|string',
             'additional_items.*.quantity' => 'nullable|integer|min:1',
@@ -124,12 +123,6 @@ class InvoiceController extends Controller
             $invoice->discount = $request->discount;
             $invoice->save();
             $this->invoiceService->calculateInvoiceTotals($invoice);
-        }
-
-        // Set custom due date if provided
-        if ($request->has('due_days')) {
-            $invoice->due_date = $invoice->issue_date->addDays($request->due_days);
-            $invoice->save();
         }
 
         // Add notes if provided
