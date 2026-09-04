@@ -664,7 +664,7 @@ PROMPT;
     /**
      * @return array{success:bool, image_token?:string, preview_data_url?:string, message?:string}
      */
-    public function generateMarketingPostImage(User $user, string $topic, ?string $details = null): array
+    public function generateMarketingPostImage(User $user, string $topic, ?string $details = null, ?string $caption = null): array
     {
         if (! $this->ai->isConfigured()) {
             return ['success' => false, 'message' => 'OpenAI is not configured on the server.'];
@@ -672,12 +672,16 @@ PROMPT;
 
         $topic = Str::limit(trim($topic), 160, '');
         $details = Str::limit(trim((string) $details), 1000, '');
+        $caption = Str::limit(trim((string) $caption), 5000, '');
         if ($topic === '') {
             return ['success' => false, 'message' => 'A post topic is required before generating an image.'];
         }
+        if ($caption === '') {
+            return ['success' => false, 'message' => 'Write or generate the approved post caption before generating its matching image.'];
+        }
 
         try {
-            $image = $this->ai->generateImage($this->aiMarketingPostImagePrompt($topic, $details));
+            $image = $this->ai->generateImage($this->aiMarketingPostImagePrompt($topic, $details, $caption));
         } catch (\Throwable $e) {
             Log::warning('Facebook Page AI image draft failed', ['error' => $e->getMessage()]);
             return ['success' => false, 'message' => $e->getMessage() ?: 'AI could not prepare a marketing image right now.'];
@@ -934,7 +938,7 @@ You are writing one public Facebook Page post for {$company}, a local internet s
 PROMPT;
     }
 
-    protected function aiMarketingPostImagePrompt(string $topic, string $details): string
+    protected function aiMarketingPostImagePrompt(string $topic, string $details, string $caption): string
     {
         $company = (string) Setting::get('company.name', 'SolarNet');
 
@@ -943,9 +947,10 @@ Use case: ads-marketing
 Asset type: a single square Facebook Page image for {$company}, a local internet service provider.
 Primary request: Create a clean, modern, trustworthy broadband-internet visual supporting this staff-approved topic: {$topic}
 Staff-approved facts: {$details}
+Approved Facebook caption (the authoritative source for the image): {$caption}
 Style/medium: polished contemporary commercial illustration or photography, suitable for a professional local internet provider.
-Composition/framing: square social-media composition with generous negative space; no in-image writing is required.
-Constraints: Do not include people who could be mistaken for a real customer, customer homes, bills, account data, payment claims, addresses, network credentials, QR codes, prices, speeds, guarantees, dates, third-party logos, or copyrighted characters. Do not create a SolarNet logo. Do not add text, letters, numbers, watermark, or UI screenshots inside the image. The administrator will review the image before publication.
+Composition/framing: square social-media composition. Make the artwork directly match the approved caption. Add one large, high-contrast, professionally typeset headline of no more than 8 words, using only the caption's central message. A short call to action may be added only when it already appears in the caption. Keep all text inside safe margins and readable on a phone; never place a paragraph or the full caption on the image.
+Constraints: Preserve the caption's meaning and language. Spell on-image text carefully. Do not invent or alter prices, coverage, promotions, speeds, deadlines, guarantees, contact details, or claims. Do not include real customers, customer homes, bills, account data, addresses, network credentials, QR codes, third-party logos, copyrighted characters, watermarks, or UI screenshots. Do not create or imitate a SolarNet logo. The administrator will review the image before publication.
 PROMPT;
     }
 

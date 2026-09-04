@@ -153,16 +153,16 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
   };
 
   const generateImage = async (): Promise<void> => {
-    if (!window.confirm('Generate one AI marketing image from this topic? This uses the server OpenAI image-generation budget and will not publish anything automatically.')) return;
+    if (!window.confirm('Generate one AI marketing image aligned with the approved caption? This uses the server OpenAI image-generation budget and will not publish anything automatically.')) return;
     setBusy('generate-image'); setError(''); setNotice('');
     try {
       const response = await api.post(
         '/facebook-automation/posts/image-generate',
-        { topic: topic.trim(), details: details.trim() || undefined },
+        { topic: topic.trim(), details: details.trim() || undefined, caption: messageText.trim() },
         { timeout: 150000 },
       );
       setSelectedImage(response.data.image_token, response.data.preview_data_url, 'AI-generated marketing image');
-      setNotice('AI image generated privately. Review it before saving the post draft.');
+      setNotice('AI image generated from the approved caption. Review the artwork and on-image wording before saving the post draft.');
     } catch (requestError: any) {
       setError(requestError.code === 'ECONNABORTED'
         ? 'AI image generation exceeded 150 seconds. No post was published; please try again.'
@@ -265,11 +265,11 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
         <button type="button" onClick={() => void generate()} disabled={busy !== '' || topic.trim().length < 3} className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-200"><Sparkles className="h-4 w-4" />{busy === 'generate' ? 'Writing...' : 'Generate AI post draft'}</button>
 
         <div className="rounded-xl border border-dashed border-border p-3">
-          <div className="flex items-start gap-2"><ImagePlus className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-semibold text-foreground">Optional post photo</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Drag a PNG/JPEG here, or generate one AI image from the approved topic. It stays private until publication.</p></div></div>
+          <div className="flex items-start gap-2"><ImagePlus className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div><p className="text-sm font-semibold text-foreground">Optional post photo</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Drag a PNG/JPEG here, or generate artwork aligned with the approved caption. AI adds a short readable headline from the caption; review its spelling before publication.</p></div></div>
           <div onDragOver={(event) => { event.preventDefault(); setDraggingImage(true); }} onDragLeave={() => setDraggingImage(false)} onDrop={(event) => { event.preventDefault(); setDraggingImage(false); const file = event.dataTransfer.files.item(0); if (file) void stageUploadedImage(file); }} className={`mt-3 rounded-lg border p-3 transition-colors ${draggingImage ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}>
             {selectedImagePreview ? <div className="space-y-2"><img src={selectedImagePreview} alt="Selected Facebook post preview" className="max-h-52 w-full rounded-md object-cover" /><div className="flex items-center justify-between gap-2"><span className="truncate text-xs text-muted-foreground">{selectedImageName}</span><button type="button" onClick={clearSelectedImage} disabled={busy !== ''} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-red-700 hover:underline dark:text-red-300"><X className="h-3.5 w-3.5" />Remove</button></div></div> : <label className="flex cursor-pointer items-center justify-center gap-2 py-5 text-center text-xs font-semibold text-muted-foreground hover:text-foreground"><Upload className="h-4 w-4" />Drop a photo here or choose a local file<input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void stageUploadedImage(file); event.currentTarget.value = ''; }} /></label>}
           </div>
-          <button type="button" onClick={() => void generateImage()} disabled={busy !== '' || topic.trim().length < 3} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-200"><Sparkles className="h-3.5 w-3.5" />{busy === 'generate-image' ? 'Generating image...' : 'Generate AI photo'}</button>
+          <button type="button" onClick={() => void generateImage()} disabled={busy !== '' || topic.trim().length < 3 || messageText.trim().length < 3} title={messageText.trim().length < 3 ? 'Write or generate the post caption first.' : undefined} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-200"><Sparkles className="h-3.5 w-3.5" />{busy === 'generate-image' ? 'Generating image...' : 'Generate caption-aligned AI photo'}</button>
         </div>
       </div>
 

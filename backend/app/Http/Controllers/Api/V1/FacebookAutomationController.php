@@ -277,12 +277,18 @@ class FacebookAutomationController extends Controller
         $validator = Validator::make($request->all(), [
             'topic' => 'required|string|min:3|max:160',
             'details' => 'nullable|string|max:1000',
+            'caption' => 'required|string|min:3|max:5000',
         ]);
         if ($validator->fails()) {
-            return response()->json(['success' => false, 'message' => 'A clear post topic is required before generating an image.', 'errors' => $validator->errors()], 422);
+            return response()->json(['success' => false, 'message' => 'A clear topic and approved caption are required before generating an image.', 'errors' => $validator->errors()], 422);
         }
 
-        $result = $this->facebook->generateMarketingPostImage($request->user(), $request->input('topic'), $request->input('details'));
+        $result = $this->facebook->generateMarketingPostImage(
+            $request->user(),
+            $request->input('topic'),
+            $request->input('details'),
+            $request->input('caption'),
+        );
         return response()->json($result, $result['success'] ? 200 : 503);
     }
 
