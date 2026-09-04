@@ -82,6 +82,11 @@ class Invoice extends Model
         return $this->hasMany(BillingSmsNotification::class);
     }
 
+    public function finalGracePeriodWarnings(): HasMany
+    {
+        return $this->hasMany(FinalGracePeriodWarning::class);
+    }
+
     public function isOverdue(): bool
     {
         return $this->due_date->lt(now(config('app.timezone', 'Asia/Manila'))->startOfDay()) && $this->balance > 0;
