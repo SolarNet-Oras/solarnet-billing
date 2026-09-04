@@ -39,7 +39,7 @@ class SolarNetEmailRenderer
             'amount_label' => 'Amount due',
             'amount' => $this->money((float) $invoice->balance),
             'cta_label' => 'VIEW & PAY ONLINE',
-            'cta_url' => $this->portalUrl(),
+            'cta_url' => app(InvoicePaymentLinkService::class)->url($invoice),
             'payment_note' => 'Use the secure SolarNet portal to review this invoice and complete payment. Online checkout is handled through PayMongo.',
             'reminder' => 'A PDF copy of this invoice is attached for your records. If you have already paid, please allow time for the payment to post.',
             'features' => ['Account-specific invoice', 'Secure online payment', 'SolarNet billing support'],
@@ -97,6 +97,7 @@ class SolarNetEmailRenderer
     /** @param array<string, mixed> $event */
     public function finalGraceWarning(Customer $customer, array $event): string
     {
+        $invoice = ($event['invoice'] ?? null) instanceof Invoice ? $event['invoice'] : null;
         return $this->render([
             'notice' => 'FINAL BILLING WARNING',
             'headline' => 'Your service is at risk of suspension.',
@@ -116,7 +117,9 @@ class SolarNetEmailRenderer
             'amount_label' => 'Outstanding balance',
             'amount' => $this->money((float) ($event['outstanding_balance'] ?? 0)),
             'cta_label' => 'VIEW & PAY ONLINE',
-            'cta_url' => $this->safeUrl($event['portal_url'] ?? null) ?? $this->portalUrl(),
+            'cta_url' => $invoice
+                ? app(InvoicePaymentLinkService::class)->url($invoice)
+                : ($this->safeUrl($event['portal_url'] ?? null) ?? $this->portalUrl()),
             'payment_note' => 'Payment is completed through the secure SolarNet portal. Online checkout is handled through PayMongo.',
             'reminder' => 'If you have already made a payment, please allow time for verification and posting. Contact SolarNet support if you need assistance.',
             'features' => ['Final account notice', 'Secure online payment', 'Fast support access'],

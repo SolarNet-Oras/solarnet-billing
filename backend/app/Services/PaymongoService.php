@@ -15,7 +15,7 @@ class PaymongoService
 {
     public function __construct(private InvoiceService $invoices) {}
 
-    public function createGcashCheckout(Invoice $invoice): array
+    public function createGcashCheckout(Invoice $invoice, ?string $returnUrl = null): array
     {
         $invoice->loadMissing('customer');
         $key = config('services.paymongo.secret_key');
@@ -27,6 +27,9 @@ class PaymongoService
         $accountNumber = $customer->account_number;
         $reference = 'SLR-' . $accountNumber . '-' . $invoice->invoice_number . '-' . Str::upper(Str::random(8));
         $origin = CustomerPortalUrl::base();
+        $returnUrl = $returnUrl && str_starts_with($returnUrl, $origin . '/pay/')
+            ? $returnUrl
+            : $origin . '/customer/billing';
         $payload = ['data' => ['attributes' => [
             'line_items' => [[
                 'currency' => 'PHP', 'amount' => (int) round($invoice->balance * 100), 'name' => "SolarNet {$accountNumber} - {$invoice->invoice_number}", 'quantity' => 1,
@@ -34,8 +37,8 @@ class PaymongoService
             'payment_method_types' => ['gcash'],
             'description' => "SolarNet account {$accountNumber}: {$customer->full_name} - invoice {$invoice->invoice_number}",
             'reference_number' => $reference,
-            'success_url' => $origin . '/customer/billing?payment=success',
-            'cancel_url' => $origin . '/customer/billing?payment=cancelled',
+            'success_url' => $returnUrl . '?payment=success',
+            'cancel_url' => $returnUrl . '?payment=cancelled',
             'billing' => ['name' => $customer->full_name, 'email' => $customer->email, 'phone' => $customer->contact_number],
         ]]];
         $response = Http::withBasicAuth($key, '')->acceptJson()->post(rtrim(config('services.paymongo.base_url'), '/') . '/checkout_sessions', $payload);

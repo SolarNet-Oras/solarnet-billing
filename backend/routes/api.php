@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\FinancialMonitoringController;
 use App\Http\Controllers\Api\V1\FacebookAutomationController;
 use App\Http\Controllers\Api\V1\OperationsMapController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\PublicInvoicePaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
 use App\Http\Controllers\Api\V1\RoleController;
@@ -455,6 +456,17 @@ Route::prefix('v1')->group(function () {
         Route::get('service-plans', [ServicePlanController::class, 'publicIndex']);
         Route::get('branding', [SettingsController::class, 'publicBranding']);
         Route::get('manifest.webmanifest', [SettingsController::class, 'publicManifest']);
+
+        // Email payment links are HMAC-signed, invoice-scoped and intentionally
+        // expose no customer dashboard or reusable portal session.
+        Route::prefix('pay/{token}')->middleware('throttle:30,1')->group(function () {
+            Route::get('/', [PublicInvoicePaymentController::class, 'show']);
+            Route::post('gcash', [PublicInvoicePaymentController::class, 'gcash']);
+            Route::post('gcash/reconcile', [PublicInvoicePaymentController::class, 'reconcileGcash']);
+            Route::post('qr-ph', [PublicInvoicePaymentController::class, 'qrPh']);
+            Route::post('qr-ph/{checkoutId}/attach', [PublicInvoicePaymentController::class, 'attach']);
+            Route::post('qr-ph/{checkoutId}/reconcile', [PublicInvoicePaymentController::class, 'reconcileQrPh']);
+        });
 
         // Protected customer routes
         Route::middleware('api')->group(function () {

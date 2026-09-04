@@ -38,6 +38,7 @@ import WireguardPage from '@/pages/WireguardPage';
 import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
 import LegalPage from '@/pages/LegalPage';
 import SmsAdvisoryPage from '@/pages/SmsAdvisoryPage';
+import InvoiceQuickPayPage from '@/pages/InvoiceQuickPayPage';
 
 // ============================================================================
 // Main App Component
@@ -190,6 +191,7 @@ const App: React.FC = (): JSX.Element => {
               
               {/* Customer Portal Routes */}
               <Route path="/customer/login" element={<CustomerLoginPage />} />
+              <Route path="/pay/:token" element={<InvoiceQuickPayPage />} />
               <Route path="/customer/dashboard" element={<CustomerDashboardPage />} />
               <Route path="/customer/billing" element={<CustomerBillingPage />} />
               <Route path="/customer/change-password" element={<CustomerChangePasswordPage />} />
