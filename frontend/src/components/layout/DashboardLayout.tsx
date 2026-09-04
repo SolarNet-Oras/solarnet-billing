@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import FloatingAiAssistant from '@/components/ai/FloatingAiAssistant';
 import MandatoryFieldLocation from '@/components/staff/MandatoryFieldLocation';
+import TechnicianTicketAlerts from '@/components/staff/TechnicianTicketAlerts';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -32,6 +33,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, head
       {/* Floating AI Assistant — appears on every authenticated page */}
       <FloatingAiAssistant />
       <MandatoryFieldLocation />
+      <TechnicianTicketAlerts />
     </div>
   );
 };
