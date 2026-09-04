@@ -21,7 +21,7 @@ class RemittanceController extends Controller
 {
     public function collectorDashboard(Request $request): JsonResponse
     {
-        $today = today();
+        $today = now(config('app.timezone', 'Asia/Manila'))->startOfDay();
         $perPage = min(max($request->integer('per_page', 200), 1), 200);
         $search = trim((string) $request->query('q', ''));
         $sort = in_array($request->query('sort'), ['due_date', 'address'], true)

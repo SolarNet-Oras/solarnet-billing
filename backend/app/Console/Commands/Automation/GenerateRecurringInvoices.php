@@ -51,15 +51,15 @@ class GenerateRecurringInvoices extends Command
         $billingDate = $dateOption
             ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()
             : now($timezone)->startOfDay();
-        $leadDays = (int) Setting::get('billing.invoice_generation_days_before_due', 7);
-        $cycleDate = $billingDate->copy()->addDays($leadDays);
+        $leadDays = max(0, (int) Setting::get('billing.invoice_generation_days_before_due', 7));
         $dryRun = (bool) $this->option('dry-run');
 
         $customers = Customer::active()
             ->whereNotNull('installation_date')
             ->whereDate('installation_date', '<=', $billingDate)
             ->with('servicePlan')
-            ->get()
+            ->get();
+        /*
             // An installation on the 29th–31st bills on the final valid day of
             // a shorter month. This is the normal anniversary rule and avoids
             // silently skipping customers in February.
@@ -67,12 +67,20 @@ class GenerateRecurringInvoices extends Command
                 $customer->billingCycleDay(),
                 $cycleDate->daysInMonth,
             ) === $cycleDate->day);
+        */
+
+        $cycleDates = collect(range(0, $leadDays))
+            ->map(fn (int $offset) => $billingDate->copy()->addDays($offset));
 
         $generated = [];
         $skipped = 0;
         $covered = 0;
         $errors = [];
-        foreach ($customers as $customer) {
+        $candidates = 0;
+        foreach ($cycleDates as $cycleDate) {
+          foreach ($customers as $customer) {
+            if (min($customer->billingCycleDay(), $cycleDate->daysInMonth) !== $cycleDate->day) continue;
+            $candidates++;
             if ($customer->hasCompanyOwnedPlan()) {
                 $skipped++;
                 continue;
@@ -106,17 +114,18 @@ class GenerateRecurringInvoices extends Command
                     );
                     $invoices->markAsSent($invoice);
                 }
-                $generated[] = ['customer' => $customer->full_name, 'account_number' => $customer->account_number];
+                $generated[] = ['customer' => $customer->full_name, 'account_number' => $customer->account_number, 'due_date' => $cycleDate->toDateString()];
             } catch (\Throwable $e) {
-                $errors[] = ['customer_id' => $customer->id, 'error' => $e->getMessage()];
+                $errors[] = ['customer_id' => $customer->id, 'due_date' => $cycleDate->toDateString(), 'error' => $e->getMessage()];
             }
+          }
         }
 
         return [
             'run_date' => $billingDate->toDateString(),
-            'billing_cycle_date' => $cycleDate->toDateString(),
+            'billing_cycle_window' => [$billingDate->toDateString(), $billingDate->copy()->addDays($leadDays)->toDateString()],
             'dry_run' => $dryRun,
-            'candidates' => $customers->count(),
+            'candidates' => $candidates,
             'generated' => count($generated),
             'covered_by_advance' => $covered,
             'skipped' => $skipped,
