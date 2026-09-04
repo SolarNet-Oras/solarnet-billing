@@ -68,7 +68,8 @@ class RemittanceController extends Controller
         $unremittedPayments = Payment::where('collector_id', $request->user()->id)->whereNull('remittance_id');
         $unremitted = (clone $unremittedPayments)->sum('amount');
         $unremittedCash = (clone $unremittedPayments)->where('payment_method', 'cash')->sum('amount');
-        return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted, 'unremitted_cash_amount' => (float) $unremittedCash]);
+        return response()->json(['invoices' => $invoices, 'unremitted_amount' => (float) $unremitted, 'unremitted_cash_amount' => (float) $unremittedCash])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 
     /** Locations are limited to non-deleted customer records with confirmed coordinates. */

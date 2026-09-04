@@ -50,6 +50,21 @@ export default function RemittancesPage() {
     } else setRemittances(response.data?.data || []);
   };
   useEffect(() => { void load(collectionSearch, collectionSort); }, [collector, collectionSort]);
+  useEffect(() => {
+    if (!collector) return;
+    const refreshDueClients = () => void load(collectionSearch, collectionSort);
+    const timer = window.setInterval(refreshDueClients, 60_000);
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshDueClients(); };
+    window.addEventListener('focus', refreshDueClients);
+    window.addEventListener('online', refreshDueClients);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshDueClients);
+      window.removeEventListener('online', refreshDueClients);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [collector, collectionSearch, collectionSort]);
 
   const paymentTotals = (item: Remittance) => (item.payments || []).reduce((all, payment) => ({ ...all, [payment.payment_method]: (all[payment.payment_method] || 0) + Number(payment.amount) }), {} as Record<string, number>);
   const cashExpected = Number((liquidationTarget?.payments || []).filter((payment) => payment.payment_method === 'cash').reduce((sum, payment) => sum + Number(payment.amount), 0));
