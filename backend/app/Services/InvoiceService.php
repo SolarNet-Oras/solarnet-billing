@@ -332,11 +332,11 @@ class InvoiceService
      *
      * @return 'sent'|'skipped_already_sent'|'skipped_in_progress'|'skipped_attempt_limit'|'skipped_no_email'|'skipped_no_balance'|'failed'
      */
-    public function sendInitialInvoiceEmail(Invoice $invoice): string
+    public function sendInitialInvoiceEmail(Invoice $invoice, bool $forceResend = false): string
     {
         $invoice->loadMissing(['customer', 'items', 'payments']);
         $customer = $invoice->customer;
-        if ($invoice->exists && $invoice->initial_email_sent_at !== null) {
+        if (!$forceResend && $invoice->exists && $invoice->initial_email_sent_at !== null) {
             return 'skipped_already_sent';
         }
         if (!$customer || blank($customer->email)) {
@@ -362,16 +362,17 @@ class InvoiceService
         }
 
         if ($invoice->exists) {
-            $claimed = Invoice::query()
+            $claim = Invoice::query()
                 ->whereKey($invoice->id)
-                ->whereNull('initial_email_sent_at')
-                ->where('initial_email_attempt_count', '<', 2)
                 ->where(function ($query) {
                     $query->where('initial_email_status', '!=', 'sending')
                         ->orWhereNull('initial_email_status')
                         ->orWhere('initial_email_last_attempt_at', '<=', now()->subMinutes(10));
-                })
-                ->update([
+                });
+            if (!$forceResend) {
+                $claim->whereNull('initial_email_sent_at')->where('initial_email_attempt_count', '<', 2);
+            }
+            $claimed = $claim->update([
                     'initial_email_status' => 'sending',
                     'initial_email_attempt_count' => DB::raw('initial_email_attempt_count + 1'),
                     'initial_email_last_attempt_at' => now(),
@@ -380,11 +381,11 @@ class InvoiceService
 
             if ($claimed !== 1) {
                 $invoice->refresh();
-                if ($invoice->initial_email_sent_at !== null) {
+                if (!$forceResend && $invoice->initial_email_sent_at !== null) {
                     return 'skipped_already_sent';
                 }
 
-                return (int) $invoice->initial_email_attempt_count >= 2
+                return !$forceResend && (int) $invoice->initial_email_attempt_count >= 2
                     ? 'skipped_attempt_limit'
                     : 'skipped_in_progress';
             }
