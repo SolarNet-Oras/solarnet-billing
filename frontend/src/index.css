@@ -2,6 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes solarnet-button-spin {
+  to { transform: rotate(360deg); }
+}
+
+button[data-api-loading="true"] {
+  cursor: wait !important;
+  pointer-events: none;
+  opacity: 0.78;
+}
+
+button[data-api-loading="true"]::before {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.5rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  content: "";
+  vertical-align: -0.125em;
+  animation: solarnet-button-spin 0.7s linear infinite;
+}
+
 @layer base {
   ::selection {
     background-color: hsl(var(--primary));

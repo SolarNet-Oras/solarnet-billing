@@ -16,6 +16,56 @@ import { tokenStorage } from '@/lib/tokenStorage';
 import { HTTP_STATUS } from '@/lib/constants';
 import type { ApiResponse, ApiError } from '@/types/api';
 
+type ActionRequestConfig = InternalAxiosRequestConfig & {
+  _solarnetActionButton?: HTMLButtonElement;
+};
+
+let lastActionButton: { button: HTMLButtonElement; at: number } | null = null;
+
+if (typeof document !== 'undefined' && !document.documentElement.dataset.apiButtonProgressInstalled) {
+  document.documentElement.dataset.apiButtonProgressInstalled = 'true';
+  document.addEventListener('click', (event) => {
+    const button = event.target instanceof Element ? event.target.closest('button') as HTMLButtonElement | null : null;
+    if (!button || button.disabled) return;
+    if (button.dataset.apiLoading === 'true') {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    lastActionButton = { button, at: Date.now() };
+  }, true);
+  document.addEventListener('submit', (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    const submitter = event.submitter instanceof HTMLButtonElement
+      ? event.submitter
+      : form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submitter && !submitter.disabled) lastActionButton = { button: submitter, at: Date.now() };
+  }, true);
+}
+
+const startButtonProgress = (config: ActionRequestConfig): void => {
+  const candidate = lastActionButton;
+  if (!candidate || Date.now() - candidate.at > 1500 || !candidate.button.isConnected || candidate.button.dataset.manualLoading === 'true') return;
+  config._solarnetActionButton = candidate.button;
+  const active = Number(candidate.button.dataset.apiLoadingCount || 0) + 1;
+  candidate.button.dataset.apiLoadingCount = String(active);
+  candidate.button.dataset.apiLoading = 'true';
+  candidate.button.setAttribute('aria-busy', 'true');
+};
+
+const finishButtonProgress = (config?: ActionRequestConfig): void => {
+  const button = config?._solarnetActionButton;
+  if (!button) return;
+  const active = Math.max(0, Number(button.dataset.apiLoadingCount || 1) - 1);
+  if (active > 0) {
+    button.dataset.apiLoadingCount = String(active);
+    return;
+  }
+  delete button.dataset.apiLoadingCount;
+  delete button.dataset.apiLoading;
+  button.removeAttribute('aria-busy');
+};
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -55,6 +105,7 @@ export const api: AxiosInstance = axios.create({
  */
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+    startButtonProgress(config as ActionRequestConfig);
     // Customer portal requests use their own token (stored at portal login)
     // Match only the actual customer portal API namespace. Admin endpoints
     // such as /customer-portal-accounts must continue using the staff token.
@@ -88,12 +139,15 @@ api.interceptors.request.use(
  */
 api.interceptors.response.use(
   (response: AxiosResponse): AxiosResponse => {
+    finishButtonProgress(response.config as ActionRequestConfig);
     return response;
   },
   async (error: unknown): Promise<never> => {
     if (!axios.isAxiosError(error)) {
       return Promise.reject(error);
     }
+
+    finishButtonProgress(error.config as ActionRequestConfig | undefined);
 
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 

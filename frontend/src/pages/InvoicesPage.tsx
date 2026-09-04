@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   FileText, 
   Plus, 
@@ -28,6 +28,8 @@ const paymentMethodLabels: Record<Payment['payment_method'], string> = {
   other: 'Other',
 };
 
+const newPaymentAttemptId = () => `OFFICE-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+
 function PaymentMethod({ methods }: { methods: Payment[] }): React.JSX.Element {
   if (methods.length === 0) return <span className="text-gray-400">Not paid</span>;
 
@@ -51,6 +53,9 @@ const InvoicesPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalInvoices, setTotalInvoices] = useState(0);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const paymentSubmissionInFlight = useRef(false);
+  const paymentAttemptId = useRef(newPaymentAttemptId());
 
   // Form states
   const [formData, setFormData] = useState({
@@ -140,7 +145,7 @@ const InvoicesPage: React.FC = () => {
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInvoice) return;
+    if (!selectedInvoice || paymentSubmissionInFlight.current) return;
 
     if (isAdvancePayment && !advanceAmountIsValid) {
       window.alert('Enter a cash amount greater than ₱0.00 to create advance credit. A ₱0.00 payment cannot be recorded as customer credit.');
@@ -150,10 +155,13 @@ const InvoicesPage: React.FC = () => {
       window.alert('Cash received must cover the payment amount. Enter the bills received, then return the displayed change to the client.');
       return;
     }
+    paymentSubmissionInFlight.current = true;
+    setPaymentSubmitting(true);
     try {
       const requestData = {
         ...paymentData,
         amount: paymentAmount,
+        transaction_id: paymentData.transaction_id.trim() || (!isAdvancePayment ? paymentAttemptId.current : undefined),
         ...(paymentData.payment_method === 'cash' ? {
           cash_breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })),
           cash_change_to_advance: hasCashChange && cashChangeToAdvance,
@@ -170,6 +178,9 @@ const InvoicesPage: React.FC = () => {
       resetPaymentForm();
     } catch (error) {
       console.error('Error recording payment:', error);
+    } finally {
+      paymentSubmissionInFlight.current = false;
+      setPaymentSubmitting(false);
     }
   };
 
@@ -211,6 +222,7 @@ const InvoicesPage: React.FC = () => {
   };
 
   const resetPaymentForm = () => {
+    paymentAttemptId.current = newPaymentAttemptId();
     setPaymentData({
       amount: 0,
       payment_method: 'cash',
@@ -439,6 +451,7 @@ const InvoicesPage: React.FC = () => {
                           onClick={() => {
                             setSelectedInvoice(invoice);
                             setCashChangeToAdvance(false);
+                            paymentAttemptId.current = newPaymentAttemptId();
                             setPaymentData({ ...paymentData, amount: invoice.balance });
                             setShowPaymentModal(true);
                           }}
@@ -454,6 +467,7 @@ const InvoicesPage: React.FC = () => {
                             setSelectedInvoice(invoice);
                             setIsAdvancePayment(true);
                             setCashChangeToAdvance(false);
+                            paymentAttemptId.current = newPaymentAttemptId();
                             setPaymentData({ ...paymentData, amount: 0, payment_method: 'cash', transaction_id: '' });
                             setCashCounts({});
                             setShowPaymentModal(true);
@@ -699,6 +713,7 @@ const InvoicesPage: React.FC = () => {
                       placeholder="0.00"
                       required
                     />
+                    {!isAdvancePayment && <p className="mt-1 text-xs text-gray-500">Partial payment is allowed. Enter any amount from ₱0.01 up to the customer’s outstanding balance; the unpaid remainder stays on the invoice.</p>}
                     {isAdvancePayment && <p className="mt-1 text-xs text-gray-500">The invoice can be ₱0.00; the payment itself must be greater than ₱0.00 to create advance credit.</p>}
                   </div>
 
@@ -781,6 +796,7 @@ const InvoicesPage: React.FC = () => {
                 <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"
+                    disabled={paymentSubmitting}
                     onClick={() => {
                       setShowPaymentModal(false);
                       resetPaymentForm();
@@ -791,10 +807,13 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={(paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
-                    className="w-full rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                    disabled={paymentSubmitting || (paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
+                    aria-busy={paymentSubmitting}
+                    data-manual-loading="true"
+                    className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
-                    {isAdvancePayment ? 'Save advance credit' : 'Record Payment'}
+                    {paymentSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {paymentSubmitting ? 'Processing…' : isAdvancePayment ? 'Save advance credit' : 'Record Payment'}
                   </button>
                 </div>
               </form>
