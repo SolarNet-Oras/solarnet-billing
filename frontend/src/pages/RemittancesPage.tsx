@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
 
-type Invoice = { id: string; invoice_number: string; due_date: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { account_number: string; full_name: string; address?: string } };
+type Invoice = { id: string; invoice_number: string; due_date: string; due_date_local?: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { account_number: string; full_name: string; address?: string } };
 type CashLine = { denomination: number; count: number; amount: number };
 type Checkout = { checkout_url: string; reference_number: string; invoice_number: string; checkout_session_id?: string };
 type QrPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; qr_image_url?: string | null; reference_number: string; invoice_number: string; amount: number; status: string; expires_at?: string | null };
@@ -45,7 +45,10 @@ export default function RemittancesPage() {
   const load = async (search = collectionSearch, sort = collectionSort) => {
     const response = collector ? await api.get('/collector/dashboard', { params: { per_page: 200, q: search.trim() || undefined, sort } }) : await api.get('/remittances');
     if (collector) {
-      setInvoices(response.data?.invoices?.data || []);
+      setInvoices((response.data?.invoices?.data || []).map((invoice: Invoice) => ({
+        ...invoice,
+        due_date: invoice.due_date_local || invoice.due_date,
+      })));
       setUnremitted(Number(response.data?.unremitted_amount || 0));
     } else setRemittances(response.data?.data || []);
   };

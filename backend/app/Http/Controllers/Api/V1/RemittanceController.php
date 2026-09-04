@@ -52,6 +52,8 @@ class RemittanceController extends Controller
 
         $invoices = $invoiceQuery->orderBy('invoice_number')->paginate($perPage);
         $invoices->getCollection()->transform(function (Invoice $invoice) {
+            // A due date is a Philippine calendar date, not a UTC timestamp.
+            $invoice->setAttribute('due_date_local', $invoice->due_date?->format('Y-m-d'));
             $invoice->setAttribute('previous_balance', (float) Invoice::query()
                 ->where('customer_id', $invoice->customer_id)
                 ->whereKeyNot($invoice->id)
