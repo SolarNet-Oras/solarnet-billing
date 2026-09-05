@@ -47,6 +47,7 @@ const TicketsPage: React.FC = () => {
   const canDeleteTickets = user?.permissions?.includes('delete-tickets')
     || user?.role === 'super_admin'
     || user?.roles?.some((item) => typeof item === 'string' ? item === 'super_admin' : item.name === 'super_admin');
+  const canCreateTickets = user?.permissions?.includes('create-tickets') || false;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -449,13 +450,13 @@ const TicketsPage: React.FC = () => {
             </select>
           </div>
 
-          <button
+          {canCreateTickets && <button
             onClick={() => setShowCreateModal(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
             New Ticket
-          </button>
+          </button>}
         </div>
 
         <section className="mb-6" data-testid="client-profile-change-requests">
@@ -595,7 +596,7 @@ const TicketsPage: React.FC = () => {
         </div>
 
         {/* Create Ticket Modal */}
-        {showCreateModal && (
+        {canCreateTickets && showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="p-6">
