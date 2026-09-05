@@ -27,7 +27,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Administrative access to most features',
                 'permissions' => [
                     'view-dashboard', 'view-users', 'create-users', 'edit-users',
-                    'view-customers', 'create-customers', 'edit-customers', 'delete-customers',
+                    'view-customers', 'create-customers', 'edit-customers',
                     'suspend-customers', 'restore-customers',
                     'view-routers', 'create-routers', 'edit-routers',
                     'view-dhcp', 'sync-dhcp',

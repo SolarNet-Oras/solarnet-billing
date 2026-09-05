@@ -8,8 +8,12 @@ import { logger } from '@/lib/logger';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
 import { Download, FileUp, Link2, MapPin } from 'lucide-react';
 import { CustomerRegistrationImportModal } from '@/components/customers/CustomerRegistrationImportModal';
+import { useAuth } from '@/hooks/useAuth';
 
 const CustomersPage: React.FC = () => {
+  const { user } = useAuth();
+  const roleNames = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
+  const canDeleteCustomers = roleNames.includes('super_admin');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
@@ -484,14 +488,14 @@ const CustomersPage: React.FC = () => {
               <strong data-testid="bulk-selected-count">{selectedIds.size}</strong> customer{selectedIds.size === 1 ? '' : 's'} selected
             </div>
             <div className="flex gap-2">
-              <button
+              {canDeleteCustomers && <button
                 type="button"
                 onClick={() => setSelectedIds(new Set())}
                 className="px-3 py-1.5 text-sm bg-secondary text-secondary-foreground rounded-md hover:opacity-90"
                 data-testid="bulk-clear-selection"
               >
                 Clear
-              </button>
+              </button>}
               <button
                 type="button"
                 onClick={() => { setBulkDeleteOpen(true); setError(''); }}
@@ -626,14 +630,14 @@ const CustomersPage: React.FC = () => {
                         >
                           Edit
                         </Link>
-                        <button
+                        {canDeleteCustomers && <button
                           type="button"
                           onClick={() => { setDeleteTarget(customer); setError(''); }}
                           className="text-red-600 hover:underline dark:text-red-400"
                           data-testid={`delete-customer-${customer.id}`}
                         >
                           Delete
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   ))}
@@ -942,7 +946,7 @@ const CustomersPage: React.FC = () => {
                   <option value="previous_balance">Add previous bill balance</option>
                   <option value="discount">Add discount to open invoices</option>
                   <option value="status">Set account status</option>
-                  <option value="delete">Delete selected clients</option>
+                  {canDeleteCustomers && <option value="delete">Delete selected clients</option>}
                 </select>
 
                 {clientSetupAction === 'billing_due_date' && (
@@ -1084,7 +1088,7 @@ const CustomersPage: React.FC = () => {
                   </div>
                 )}
 
-                {clientSetupAction === 'delete' && (
+                {canDeleteCustomers && clientSetupAction === 'delete' && (
                   <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
                     Deletes (soft-archives) every selected customer record. Use this only for accidental imports or test clients. This action requires the separate delete-customers permission.
                   </p>
@@ -1119,7 +1123,7 @@ const CustomersPage: React.FC = () => {
       )}
 
       {/* Delete confirmation modal */}
-      {deleteTarget && (
+      {canDeleteCustomers && deleteTarget && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           data-testid="delete-customer-modal"
@@ -1155,7 +1159,7 @@ const CustomersPage: React.FC = () => {
       )}
 
       {/* Bulk delete confirmation modal */}
-      {bulkDeleteOpen && (
+      {canDeleteCustomers && bulkDeleteOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           data-testid="bulk-delete-modal"

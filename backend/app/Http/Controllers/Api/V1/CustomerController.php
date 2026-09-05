@@ -726,8 +726,15 @@ class CustomerController extends Controller
     /**
      * Remove the specified customer (soft delete)
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
+        if (! $request->user()?->hasRole('super_admin')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only the Super Administrator can delete customer records.',
+            ], 403);
+        }
+
         $customer = Customer::findOrFail($id);
         $customer->delete();
 
@@ -744,6 +751,13 @@ class CustomerController extends Controller
      */
     public function bulkDestroy(Request $request): JsonResponse
     {
+        if (! $request->user()?->hasRole('super_admin')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only the Super Administrator can delete customer records.',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'customer_ids'   => 'required|array|min:1',
             'customer_ids.*' => 'required|uuid|exists:customers,id',
