@@ -378,7 +378,7 @@ Route::prefix('v1')->group(function () {
         Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
             ->middleware('role:super_admin|admin|cashier|accounting');
 
-        Route::middleware('role:super_admin|admin')->prefix('sms-advisories')->group(function () {
+        Route::middleware('role:super_admin|admin|office_admin')->prefix('sms-advisories')->group(function () {
             Route::get('/', [SmsAdvisoryController::class, 'index']);
             Route::get('options', [SmsAdvisoryController::class, 'options']);
             Route::post('compose', [SmsAdvisoryController::class, 'compose'])->middleware('throttle:6,1');

@@ -57,7 +57,7 @@ const navItems: NavItem[] = [
   { name: 'Tickets', path: '/tickets', icon: Ticket, permission: 'view-tickets' },
   { name: 'Operations Map', path: '/operations-map', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin', 'technician', 'collector', 'noc'] },
   { name: 'Facebook Automation', path: '/facebook-automation', icon: MessageCircle, roles: ['super_admin', 'admin', 'office_admin'] },
-  { name: 'Mass SMS Advisory', path: '/sms-advisories', icon: MessageSquareText, roles: ['super_admin', 'admin'] },
+  { name: 'Mass SMS Advisory', path: '/sms-advisories', icon: MessageSquareText, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
   { name: 'Cybersecurity', path: '/cybersecurity', icon: ShieldCheck, roles: ['super_admin', 'admin', 'noc'] },
   { name: 'RADIUS / IPoE', path: '/radius-ipoe', icon: Radio, roles: ['super_admin', 'admin'] },
