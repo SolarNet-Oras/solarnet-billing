@@ -40,6 +40,11 @@ export const servicePlanService = {
     return response.data.data;
   },
 
+  async getOptions(): Promise<ServicePlan[]> {
+    const response = await api.get<{ success: boolean; data: ServicePlan[] }>('/service-plan-options');
+    return response.data.data;
+  },
+
   async getOne(id: string): Promise<ServicePlan> {
     const response = await api.get<{ success: boolean; data: ServicePlan }>(`/service-plans/${id}`);
     return response.data.data;

@@ -319,6 +319,7 @@ Route::prefix('v1')->group(function () {
         });
         
         // Service Plans routes (require permission)
+        Route::get('service-plan-options', [ServicePlanController::class, 'options'])->middleware('role:super_admin|admin|office_admin|technician');
         Route::apiResource('service-plans', ServicePlanController::class)->only(['index', 'show'])->middleware('permission:view-service-plans');
         Route::apiResource('service-plans', ServicePlanController::class)->only(['store'])->middleware('permission:create-service-plans');
         Route::apiResource('service-plans', ServicePlanController::class)->only(['update'])->middleware('permission:edit-service-plans');

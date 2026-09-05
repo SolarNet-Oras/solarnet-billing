@@ -26,6 +26,24 @@ class ServicePlanController extends Controller
     }
 
     /**
+     * Minimal active-plan list for staff who may assign a customer promo but
+     * are not permitted to manage the service-plan catalogue.
+     */
+    public function options(): JsonResponse
+    {
+        $plans = ServicePlan::query()
+            ->where('is_active', true)
+            ->orderBy('price')
+            ->orderBy('name')
+            ->get(['id', 'name', 'price', 'download_speed', 'upload_speed', 'is_active']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $plans,
+        ]);
+    }
+
+    /**
      * Public listing used by the self-signup page.
      * Returns only active plans and only the fields safe to expose publicly.
      */

@@ -86,7 +86,7 @@ const EditCustomerPage: React.FC = () => {
     try {
       const [customerResponse, plans, rs] = await Promise.all([
         api.get<CustomerDetailResponse>(`/customers/${id}`),
-        servicePlanService.getAll().catch(() => [] as ServicePlan[]),
+        (isOfficeAdminOnly ? servicePlanService.getOptions() : servicePlanService.getAll()).catch(() => [] as ServicePlan[]),
         routerService.getAll().catch(() => [] as Router[]),
       ]);
       setServicePlans(plans.filter((p) => p.is_active));
