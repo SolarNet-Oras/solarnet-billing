@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
+use App\Models\ServicePlan;
 use App\Services\CustomerAccountService;
 use App\Services\CustomerAccountReconciliationService;
 use App\Services\BillingSuspensionService;
@@ -440,12 +441,12 @@ class CustomerController extends Controller
             && $actor->hasRole('office_admin')
             && ! $actor->hasAnyRole(['super_admin', 'admin', 'technician']);
         if ($officeAdminOnly) {
-            $allowed = ['address', 'contact_number', 'email', 'mac_address'];
+            $allowed = ['full_name', 'address', 'contact_number', 'email', 'mac_address', 'service_plan_id'];
             $disallowed = array_values(array_diff(array_keys($request->all()), $allowed));
             if ($disallowed !== []) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Office Administrators can edit only the customer address, phone number, email address, and MAC address. Customer status and billing/service fields were not changed.',
+                    'message' => 'Office Administrators can edit only the customer name, promo, address, phone number, email address, and MAC address. Customer status and protected billing/service fields were not changed.',
                     'errors' => ['fields' => $disallowed],
                 ], 403);
             }
@@ -484,6 +485,25 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        if ($officeAdminOnly && array_key_exists('service_plan_id', $validated)) {
+            if (blank($validated['service_plan_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Select an active promo/service plan. Office Administrators cannot remove a customer plan.',
+                ], 422);
+            }
+
+            $plan = ServicePlan::query()->whereKey($validated['service_plan_id'])->where('is_active', true)->first();
+            if (! $plan) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The selected promo/service plan is not active.',
+                ], 422);
+            }
+            // The plan owns its official monthly price; Office Admin cannot
+            // submit an independent fee from a modified browser request.
+            $validated['monthly_fee'] = $plan->price;
+        }
         if (array_key_exists('installation_date', $validated)) {
             $installationDate = Carbon::parse($validated['installation_date'])->startOfDay();
             $validated['installation_date'] = $installationDate->toDateString();

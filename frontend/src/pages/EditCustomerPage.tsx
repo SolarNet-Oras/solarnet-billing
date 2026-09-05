@@ -170,9 +170,11 @@ const EditCustomerPage: React.FC = () => {
     const payload: Record<string, unknown> = isOfficeAdminOnly
       ? {
           address: formData.address,
+          full_name: formData.full_name,
           contact_number: formData.contact_number,
           email: formData.email || null,
           mac_address: formData.mac_address || null,
+          service_plan_id: formData.service_plan_id,
         }
       : Object.fromEntries(Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined));
     delete payload.coordinates;
@@ -319,7 +321,7 @@ const EditCustomerPage: React.FC = () => {
         </section>}
 
         {isOfficeAdminOnly && <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-          Office Administrator access is limited to phone number, home address, email address, and MAC address. Customer status, billing, plan, router, IP address, and other technical fields cannot be changed.
+          Office Administrator access is limited to customer name, promo/service plan, phone number, home address, email address, and MAC address. Customer status, due date, router, IP address, and other protected fields cannot be changed.
         </div>}
 
         <form onSubmit={handleSubmit} className="bg-card border border-border rounded-lg p-6 space-y-6" data-testid="edit-customer-form">
@@ -354,7 +356,7 @@ const EditCustomerPage: React.FC = () => {
                 />
                 <p className="text-xs text-muted-foreground mt-1">Exactly 10 digits, no letters.</p>
               </div>
-              <Field label="Full Name *" name="full_name" value={formData.full_name} onChange={handleChange} required disabled={isOfficeAdminOnly} testId="edit-full-name" />
+              <Field label="Full Name *" name="full_name" value={formData.full_name} onChange={handleChange} required testId="edit-full-name" />
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-foreground mb-2">Address *</label>
                 <textarea name="address" value={formData.address} onChange={handleChange} required rows={3}
@@ -427,6 +429,20 @@ const EditCustomerPage: React.FC = () => {
                 </select>
               </div>
             </div>
+          </section>}
+
+          {isOfficeAdminOnly && <section>
+            <h2 className="text-xl font-semibold text-foreground mb-4">Promo</h2>
+            <label className="block text-sm font-medium text-foreground mb-2">Service Plan *</label>
+            <select name="service_plan_id" value={formData.service_plan_id} onChange={handleChange} required
+              className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              data-testid="edit-service-plan">
+              <option value="">Select promo/service plan</option>
+              {servicePlans.map((plan) => <option key={plan.id} value={plan.id}>
+                {plan.name} — {plan.download_speed}/{plan.upload_speed} Mbps — ₱{Number(plan.price).toFixed(2)}/mo
+              </option>)}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">The official monthly fee is applied automatically from the selected promo.</p>
           </section>}
 
           {/* Network Information */}
