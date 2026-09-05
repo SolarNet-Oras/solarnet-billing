@@ -6,6 +6,7 @@ import { servicePlanService, type ServicePlan } from '@/services/servicePlanServ
 import { routerService, type Router } from '@/services/routerService';
 import type { Customer } from '@/types/api';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
+import { useAuth } from '@/hooks/useAuth';
 import { Activity, Ban, CheckCircle2, Crosshair, MapPin, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
 
 interface DhcpLease {
@@ -58,6 +59,10 @@ const EMPTY: FormData = {
 const EditCustomerPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const roleNames = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
+  const isOfficeAdminOnly = roleNames.includes('office_admin')
+    && !roleNames.some((role) => ['super_admin', 'admin', 'technician'].includes(String(role)));
 
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -162,11 +167,16 @@ const EditCustomerPage: React.FC = () => {
     setNotice('');
 
     // Strip empty-string keys so backend "nullable" rules apply cleanly
-    const payload: Record<string, unknown> = Object.fromEntries(
-      Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined)
-    );
+    const payload: Record<string, unknown> = isOfficeAdminOnly
+      ? {
+          address: formData.address,
+          contact_number: formData.contact_number,
+          email: formData.email || null,
+          mac_address: formData.mac_address || null,
+        }
+      : Object.fromEntries(Object.entries(formData).filter(([, v]) => v !== '' && v !== undefined));
     delete payload.coordinates;
-    if (formData.coordinates.trim()) {
+    if (!isOfficeAdminOnly && formData.coordinates.trim()) {
       const [latitude, longitude] = formData.coordinates.split(',').map((value) => Number(value.trim()));
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         setSaving(false);
@@ -253,7 +263,7 @@ const EditCustomerPage: React.FC = () => {
           </div>
         )}
 
-        <section className="bg-card border border-border rounded-lg p-6" data-testid="customer-network-controls">
+        {!isOfficeAdminOnly && <section className="bg-card border border-border rounded-lg p-6" data-testid="customer-network-controls">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Internet Control</h2>
@@ -306,11 +316,15 @@ const EditCustomerPage: React.FC = () => {
               )}
             </div>
           )}
-        </section>
+        </section>}
+
+        {isOfficeAdminOnly && <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+          Office Administrator access is limited to phone number, home address, email address, and MAC address. Customer status, billing, plan, router, IP address, and other technical fields cannot be changed.
+        </div>}
 
         <form onSubmit={handleSubmit} className="bg-card border border-border rounded-lg p-6 space-y-6" data-testid="edit-customer-form">
           {/* Basic Information */}
-          <section>
+          {!isOfficeAdminOnly && <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Installation Location</h2>
             <Field label="Coordinates" name="coordinates" value={formData.coordinates} onChange={handleChange} placeholder="11.123456, 125.123456" testId="edit-coordinates" />
             <p className="mt-2 text-xs text-muted-foreground">Enter latitude and longitude separated by a comma.</p>
@@ -318,7 +332,7 @@ const EditCustomerPage: React.FC = () => {
               <button type="button" onClick={useCurrentLocation} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><Crosshair className="h-4 w-4" /> Use this device location</button>
               {formData.coordinates.includes(',') && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formData.coordinates)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><MapPin className="h-4 w-4" /> Pin on Google Maps</a>}
             </div>
-          </section>
+          </section>}
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Basic Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -329,6 +343,7 @@ const EditCustomerPage: React.FC = () => {
                   name="account_number"
                   value={formData.account_number}
                   onChange={handleChange}
+                  disabled={isOfficeAdminOnly}
                   required
                   pattern="\d{10}"
                   maxLength={10}
@@ -339,7 +354,7 @@ const EditCustomerPage: React.FC = () => {
                 />
                 <p className="text-xs text-muted-foreground mt-1">Exactly 10 digits, no letters.</p>
               </div>
-              <Field label="Full Name *" name="full_name" value={formData.full_name} onChange={handleChange} required testId="edit-full-name" />
+              <Field label="Full Name *" name="full_name" value={formData.full_name} onChange={handleChange} required disabled={isOfficeAdminOnly} testId="edit-full-name" />
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-foreground mb-2">Address *</label>
                 <textarea name="address" value={formData.address} onChange={handleChange} required rows={3}
@@ -352,7 +367,7 @@ const EditCustomerPage: React.FC = () => {
           </section>
 
           {/* Service Information */}
-          <section>
+          {!isOfficeAdminOnly && <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">Service Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -412,7 +427,7 @@ const EditCustomerPage: React.FC = () => {
                 </select>
               </div>
             </div>
-          </section>
+          </section>}
 
           {/* Network Information */}
           <section>
@@ -424,27 +439,27 @@ const EditCustomerPage: React.FC = () => {
                   For a replacement ONU/router, save the full MAC after it appears in DHCP. An exact bound lease is made static and receives this client&apos;s plan limit. If it has not appeared yet, the client safely waits for an exact match.
                 </p>
               </div>
-              <Field label="IP Address" name="ip_address" value={formData.ip_address} onChange={handleChange} placeholder="192.168.1.1" testId="edit-ip-address" />
-              <Field label="VLAN" name="vlan" value={formData.vlan} onChange={handleChange} testId="edit-vlan" />
+              {!isOfficeAdminOnly && <Field label="IP Address" name="ip_address" value={formData.ip_address} onChange={handleChange} placeholder="192.168.1.1" testId="edit-ip-address" />}
+              {!isOfficeAdminOnly && <Field label="VLAN" name="vlan" value={formData.vlan} onChange={handleChange} testId="edit-vlan" />}
             </div>
           </section>
 
           {/* ONU / OLT */}
-          <section>
+          {!isOfficeAdminOnly && <section>
             <h2 className="text-xl font-semibold text-foreground mb-4">ONU/OLT Information (Fiber)</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="ONU Information" name="onu_information" value={formData.onu_information} onChange={handleChange} testId="edit-onu-information" />
               <Field label="OLT Port" name="olt_port" value={formData.olt_port} onChange={handleChange} testId="edit-olt-port" />
             </div>
-          </section>
+          </section>}
 
           {/* Notes */}
-          <div>
+          {!isOfficeAdminOnly && <div>
             <label className="block text-sm font-medium text-foreground mb-2">Notes</label>
             <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4}
               className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="edit-notes" />
-          </div>
+          </div>}
 
           {/* Actions */}
           <div className="flex gap-4 pt-4">
@@ -474,14 +489,15 @@ interface FieldProps {
   required?: boolean;
   placeholder?: string;
   testId?: string;
+  disabled?: boolean;
 }
-const Field: React.FC<FieldProps> = ({ label, name, value, onChange, type = 'text', required, placeholder, testId }) => (
+const Field: React.FC<FieldProps> = ({ label, name, value, onChange, type = 'text', required, placeholder, testId, disabled }) => (
   <div>
     <label className="block text-sm font-medium text-foreground mb-2">{label}</label>
-    <input type={type} name={name} value={value} onChange={onChange} required={required} placeholder={placeholder}
+    <input type={type} name={name} value={value} onChange={onChange} required={required} placeholder={placeholder} disabled={disabled}
       min={type === 'number' ? '0' : undefined}
       step={type === 'number' ? '0.01' : undefined}
-      className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+      className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
       data-testid={testId} />
   </div>
 );

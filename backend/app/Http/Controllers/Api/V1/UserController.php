@@ -141,6 +141,8 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:20',
             'password' => 'nullable|string|min:8|confirmed',
             'is_active' => 'boolean',
+            'roles' => 'sometimes|required|array|min:1',
+            'roles.*' => 'exists:roles,name',
         ]);
 
         if ($validator->fails()) {
@@ -156,12 +158,27 @@ class UserController extends Controller
         }
 
         $data = $request->only(['name', 'email', 'phone', 'is_active']);
+
+        if ($request->has('roles') && $request->user()->id === $user->id) {
+            $currentRoles = $user->roles()->pluck('name')->sort()->values()->all();
+            $requestedRoles = collect($request->input('roles'))->sort()->values()->all();
+            if ($currentRoles !== $requestedRoles) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot modify your own roles. Edit your profile fields without changing the role selection.',
+                ], 403);
+            }
+        }
         
         if ($request->filled('password')) {
             $data['password'] = Hash::make($request->password);
         }
 
         $user->update($data);
+        if ($request->has('roles')) {
+            $user->syncRoles($request->input('roles'));
+        }
+        $user->load('roles');
 
         return response()->json([
             'status' => 'success',
@@ -172,6 +189,7 @@ class UserController extends Controller
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'is_active' => $user->is_active,
+                'roles' => $user->roles->pluck('name'),
             ],
         ]);
     }

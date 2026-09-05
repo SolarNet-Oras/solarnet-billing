@@ -431,6 +431,25 @@ class CustomerController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $customer = Customer::findOrFail($id);
+
+        // Office administrators may correct contact and device identity only.
+        // Keep this controller guard in addition to the UI so a crafted API
+        // request cannot change billing, service, router, or account status.
+        $actor = $request->user();
+        $officeAdminOnly = $actor !== null
+            && $actor->hasRole('office_admin')
+            && ! $actor->hasAnyRole(['super_admin', 'admin', 'technician']);
+        if ($officeAdminOnly) {
+            $allowed = ['address', 'contact_number', 'email', 'mac_address'];
+            $disallowed = array_values(array_diff(array_keys($request->all()), $allowed));
+            if ($disallowed !== []) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Office Administrators can edit only the customer address, phone number, email address, and MAC address. Customer status and billing/service fields were not changed.',
+                    'errors' => ['fields' => $disallowed],
+                ], 403);
+            }
+        }
         
         $validator = Validator::make($request->all(), [
             'account_number' => ['sometimes', 'required', 'string', 'regex:/^\d{10}$/', 'unique:customers,account_number,' . $id],
