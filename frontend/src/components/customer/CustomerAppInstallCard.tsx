@@ -189,31 +189,31 @@ export default function CustomerAppInstallCard({
   };
 
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm">
+    <section className="mt-6 overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 text-slate-900 shadow-sm dark:border-cyan-500/30 dark:from-slate-950 dark:via-blue-950/90 dark:to-slate-900 dark:text-slate-100 dark:shadow-[0_18px_50px_rgba(8,145,178,0.16)]">
       <div className="flex gap-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-700 to-cyan-500 text-white shadow-md shadow-cyan-500/20 dark:from-cyan-400 dark:to-blue-500 dark:text-slate-950">
           <Smartphone className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-700">Customer application</p>
-          <h3 className="mt-1 text-lg font-bold text-slate-900">Install SolarNet Customer App</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-700 dark:text-cyan-300">Customer application</p>
+          <h3 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Install SolarNet Customer App</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-700 dark:text-slate-200">
             Install your client-only portal for invoices, payments, account details, and support. It opens your customer dashboard and does not provide access to the employee or administrator application.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             {showInstall && isOfficialCustomerDomain && !installed && (
-              <button type="button" onClick={() => void install()} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+              <button type="button" onClick={() => void install()} className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-700 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-blue-800 hover:to-cyan-700 dark:from-cyan-400 dark:to-blue-500 dark:text-slate-950">
                 <Download className="h-4 w-4" /> Download and install Customer App
               </button>
             )}
-            {installed && <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-4 w-4"/>Customer App installed</span>}
+            {installed && <span className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4"/>Customer App installed</span>}
           </div>
-          <div className="mt-5 border-t border-sky-200/80 pt-4">
-            <h4 className="font-semibold text-slate-900">Optional billing and service alerts</h4>
-            <p className="mt-1 text-sm leading-6 text-slate-600">Alerts are linked to your signed-in customer account, not your Wi-Fi address.</p>
+          <div className="mt-5 border-t border-sky-200/80 pt-4 dark:border-cyan-400/20">
+            <h4 className="font-semibold text-slate-950 dark:text-white">Optional billing and service alerts</h4>
+            <p className="mt-1 text-sm leading-6 text-slate-700 dark:text-slate-200">Alerts are linked to your signed-in customer account, not your Wi-Fi address.</p>
           <div className="mt-3 flex flex-wrap gap-3">
             {thisDeviceSubscribed ? (
-              <button type="button" disabled={pushBusy} onClick={() => void disableAlerts()} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-70">
+              <button type="button" disabled={pushBusy} onClick={() => void disableAlerts()} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-70 dark:border-emerald-400/40 dark:bg-emerald-400/15 dark:text-emerald-100 dark:hover:bg-emerald-400/25">
                 {pushBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Alerts enabled · turn off
               </button>
@@ -225,15 +225,15 @@ export default function CustomerAppInstallCard({
             )}
           </div>
           </div>
-          {pushPermission === 'denied' && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Notifications are blocked for this site. Enable them in your browser or phone settings, then return here.</p>}
-          {pushPermission === 'unsupported' && <p className="mt-3 rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700">This browser does not support portal notifications. You can still use the customer portal normally.</p>}
-          {subscribedDeviceCount > 1 && <p className="mt-3 text-xs text-slate-600">Alerts are also enabled on {subscribedDeviceCount - 1} other signed-in device{subscribedDeviceCount === 2 ? '' : 's'}.</p>}
-          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-600">
-            <BellOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> Permission is optional. You can turn alerts off here or in your phone’s browser/app settings.
+          {pushPermission === 'denied' && <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">Notifications are blocked for this site. Enable them in your browser or phone settings, then return here.</p>}
+          {pushPermission === 'unsupported' && <p className="mt-3 rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100">This browser does not support portal notifications. You can still use the customer portal normally.</p>}
+          {subscribedDeviceCount > 1 && <p className="mt-3 text-xs font-medium text-slate-700 dark:text-cyan-100">Alerts are also enabled on {subscribedDeviceCount - 1} other signed-in device{subscribedDeviceCount === 2 ? '' : 's'}.</p>}
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-700 dark:text-slate-200">
+            <BellOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-600 dark:text-cyan-300" /> Permission is optional. You can turn alerts off here or in your phone’s browser/app settings.
           </p>
-          {pushMessage && <p className="mt-2 rounded-lg bg-white/80 px-3 py-2 text-sm text-slate-700">{pushMessage}</p>}
+          {pushMessage && <p className="mt-2 rounded-lg border border-sky-200 bg-white/90 px-3 py-2 text-sm font-medium text-slate-800 dark:border-cyan-400/25 dark:bg-slate-900/80 dark:text-cyan-100">{pushMessage}</p>}
           {showIosHelp && showInstall && (
-            <p className="mt-3 rounded-lg bg-white/80 p-3 text-sm text-slate-700">
+            <p className="mt-3 rounded-lg border border-sky-200 bg-white/90 p-3 text-sm text-slate-800 dark:border-cyan-400/25 dark:bg-slate-900/80 dark:text-slate-100">
               {isIos ? <>Open this customer portal in Safari, tap <strong>Share</strong>, then choose <strong>Add to Home Screen</strong>.</> : <>Reload this customer dashboard once, then click <strong>Download and install Customer App</strong> again. In Chrome or Edge you can also choose <strong>Install SolarNet Customer App</strong> from the browser menu.</>}
             </p>
           )}
