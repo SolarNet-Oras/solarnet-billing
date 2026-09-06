@@ -78,7 +78,11 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, title = 'Network Op
               aria-label="Open account menu"
               aria-expanded={menuOpen}
             >
-              {user?.name?.charAt(0).toUpperCase() || 'U'}
+              {user?.profile_photo_url ? (
+                <img src={user.profile_photo_url} alt="" className="h-full w-full rounded-full object-cover" />
+              ) : (
+                user?.name?.charAt(0).toUpperCase() || 'U'
+              )}
             </button>
 
             <div

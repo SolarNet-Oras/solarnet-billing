@@ -25,6 +25,7 @@ class User extends Authenticatable implements JWTSubject
         'name',
         'email',
         'phone',
+        'profile_photo_path',
         'password',
         'is_active',
         'last_login_at',
@@ -38,7 +39,17 @@ class User extends Authenticatable implements JWTSubject
     protected $hidden = [
         'password',
         'remember_token',
+        'profile_photo_path',
     ];
+
+    protected $appends = ['profile_photo_url'];
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return $this->profile_photo_path
+            ? '/storage/'.ltrim($this->profile_photo_path, '/')
+            : null;
+    }
 
     /**
      * Get the attributes that should be cast.
