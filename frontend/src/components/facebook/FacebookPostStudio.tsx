@@ -129,7 +129,10 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
   };
 
   const stageUploadedImage = async (file: File): Promise<void> => {
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const browserReportsSupportedType = ['image/jpeg', 'image/jpg', 'image/png'].includes(file.type.toLowerCase());
+    const browserOmitsTypeButExtensionIsSupported = file.type === '' && ['jpg', 'jpeg', 'png'].includes(extension || '');
+    if (!browserReportsSupportedType && !browserOmitsTypeButExtensionIsSupported) {
       setError('Upload a PNG or JPEG image.');
       return;
     }
@@ -143,12 +146,16 @@ export function FacebookPostStudio({ connections }: { connections: PageConnectio
     try {
       const form = new FormData();
       form.append('image', file);
-      const response = await api.post('/facebook-automation/posts/image-upload', form);
+      const response = await api.post('/facebook-automation/posts/image-upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      });
       setSelectedImage(response.data.image_token, preview, file.name);
       setNotice('Photo attached privately. It will be sent only if an administrator publishes this draft.');
     } catch (requestError: any) {
       URL.revokeObjectURL(preview);
-      setError(requestError.response?.data?.message || 'Could not upload the selected photo.');
+      const validationErrors = Object.values(requestError.response?.data?.errors || {}).flat().filter(Boolean);
+      setError(requestError.response?.data?.message || validationErrors[0] || 'Could not upload the selected photo.');
     } finally { setBusy(''); }
   };
 

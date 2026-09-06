@@ -261,15 +261,52 @@ class FacebookAutomationController extends Controller
 
     public function uploadPostImage(Request $request): JsonResponse
     {
+        if (! $request->hasFile('image')) {
+            $limit = min($this->phpUploadLimitBytes('upload_max_filesize'), $this->phpUploadLimitBytes('post_max_size'));
+            $message = $request->server('CONTENT_LENGTH', 0) > $limit
+                ? 'The server rejected this upload before validation. Rebuild the backend so its PHP upload limit is active, then try again.'
+                : 'No readable image reached SolarNet. Choose the PNG or JPEG again and retry.';
+
+            return response()->json(['success' => false, 'message' => $message], 422);
+        }
+
+        $image = $request->file('image');
+        if (! $image?->isValid()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The image upload was interrupted or rejected by PHP (upload error '.$image?->getError().'). Please select it again.',
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'image' => 'required|image|mimes:jpg,jpeg,png|max:10240',
         ]);
         if ($validator->fails()) {
-            return response()->json(['success' => false, 'message' => 'Upload a PNG or JPEG image no larger than 10 MB.', 'errors' => $validator->errors()], 422);
+            $errors = $validator->errors();
+            $message = $errors->has('image')
+                ? (str_contains(implode(' ', $errors->get('image')), 'kilobytes')
+                    ? 'This image is larger than 10 MB. Choose a smaller PNG or JPEG image.'
+                    : 'SolarNet could not verify this file as a genuine PNG or JPEG image. Converting or exporting it as PNG/JPEG should fix it.')
+                : 'The selected image could not be validated.';
+
+            return response()->json(['success' => false, 'message' => $message, 'errors' => $errors], 422);
         }
 
-        $result = $this->facebook->stagePostImageUpload($request->user(), $request->file('image'));
+        $result = $this->facebook->stagePostImageUpload($request->user(), $image);
         return response()->json($result, $result['success'] ? 201 : 422);
+    }
+
+    private function phpUploadLimitBytes(string $setting): int
+    {
+        $value = strtolower(trim((string) ini_get($setting)));
+        if ($value === '') return PHP_INT_MAX;
+        $number = (float) $value;
+        return (int) ($number * match (substr($value, -1)) {
+            'g' => 1024 ** 3,
+            'm' => 1024 ** 2,
+            'k' => 1024,
+            default => 1,
+        });
     }
 
     public function generatePostImage(Request $request): JsonResponse
