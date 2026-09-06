@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check } from 'lucide-react';
+import { X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check, ShieldCheck, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { aiService, getAiErrorMessage, type AiChatResponse, type AiConversationSummary } from '@/services/aiService';
@@ -252,29 +252,30 @@ const FloatingAiAssistant: React.FC = () => {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 h-16 w-16 overflow-hidden rounded-full border-2 border-cyan-300/80 bg-slate-950 shadow-2xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
+          className="group fixed bottom-5 right-5 z-40 h-[4.5rem] w-[4.5rem] overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-all duration-300 hover:-translate-y-1 hover:scale-105 active:translate-y-0 active:scale-95 sm:bottom-6 sm:right-6"
           aria-label="Open AI Assistant"
           data-testid="ai-assistant-open-btn"
         >
-          <img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover" />
-          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-background" />
+          <span className="absolute inset-0 overflow-hidden rounded-full"><img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" /></span>
+          <span className="absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full border-[3px] border-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,.9)]" />
         </button>
       )}
 
       {/* Drawer */}
       {open && (
         <div
-          className="fixed bottom-6 right-6 z-40 w-[520px] max-w-[calc(100vw-24px)] h-[680px] max-h-[calc(100vh-48px)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          className="fixed bottom-3 right-3 z-40 flex h-[720px] max-h-[calc(100vh-24px)] w-[590px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-[1.6rem] border border-cyan-400/40 bg-card shadow-[0_28px_90px_rgba(2,8,23,.38),0_0_0_1px_rgba(56,189,248,.12)] sm:bottom-6 sm:right-6 sm:max-h-[calc(100vh-48px)]"
           data-testid="ai-assistant-drawer"
         >
           {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-fuchsia-500 via-violet-600 to-blue-600 text-white">
-            <div className="h-9 w-9 overflow-hidden rounded-full border border-cyan-200/70 bg-slate-950 shadow-sm">
+          <div className="relative flex items-center gap-3 overflow-hidden border-b border-cyan-300/20 bg-[linear-gradient(115deg,#020617_0%,#082f49_46%,#1d4ed8_100%)] px-4 py-3.5 text-white">
+            <div className="pointer-events-none absolute -right-10 -top-16 h-40 w-40 rounded-full bg-cyan-300/15 blur-2xl" />
+            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border-2 border-cyan-200/80 bg-slate-950 shadow-[0_0_18px_rgba(34,211,238,.35)]">
               <img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sm">SolarNet Assistant</div>
-              <div className="text-xs opacity-80">
+            <div className="relative min-w-0 flex-1">
+              <div className="flex items-center gap-2"><span className="text-sm font-bold tracking-wide">SolarNet Assistant</span><span className="rounded-full border border-emerald-300/30 bg-emerald-400/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.18em] text-emerald-200">Online</span></div>
+              <div className="mt-0.5 truncate text-xs text-cyan-100/80">
                 <span>{languageName} · </span>
                 {conversationId ? 'Ongoing chat' : 'New chat'} · Hi, {user?.name?.split(' ')[0] || 'there'} 👋
               </div>
@@ -282,7 +283,7 @@ const FloatingAiAssistant: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowSidebar((v) => !v)}
-              className="p-1.5 hover:bg-white/20 rounded transition-colors"
+              className="relative rounded-xl border border-white/10 bg-white/5 p-2 transition-colors hover:bg-white/15"
               aria-label="History"
               data-testid="ai-history-btn"
               title="Chat history"
@@ -292,7 +293,7 @@ const FloatingAiAssistant: React.FC = () => {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="p-1.5 hover:bg-white/20 rounded transition-colors"
+              className="relative rounded-xl border border-white/10 bg-white/5 p-2 transition-colors hover:bg-white/15"
               aria-label="Close"
               data-testid="ai-assistant-close-btn"
             >
@@ -303,7 +304,7 @@ const FloatingAiAssistant: React.FC = () => {
           {/* History sidebar */}
           {showSidebar && (
             <div
-              className="absolute inset-0 top-[64px] bg-card z-10 flex flex-col p-3 overflow-y-auto"
+              className="absolute inset-0 top-[72px] z-10 flex flex-col overflow-y-auto bg-card/95 p-4 backdrop-blur-xl"
               data-testid="ai-history-panel"
             >
               <button
@@ -346,28 +347,29 @@ const FloatingAiAssistant: React.FC = () => {
           )}
 
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-background/40">
+          <div ref={scrollRef} className="relative flex-1 space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(14,165,233,.12),transparent_38%)] p-4 sm:p-5">
             {messages.length === 0 && (
-              <div className="space-y-4">
-                <div className="text-center py-4">
-                  <div className="mx-auto mb-3 h-20 w-20 overflow-hidden rounded-full border-2 border-cyan-300 bg-slate-950 shadow-lg shadow-blue-500/20">
+              <div className="space-y-5">
+                <div className="pt-2 text-center">
+                  <div className="mx-auto mb-3 h-24 w-24 overflow-hidden rounded-full border-[3px] border-cyan-300 bg-slate-950 shadow-[0_0_0_7px_rgba(14,165,233,.08),0_14px_35px_rgba(2,132,199,.28)]">
                     <img src="/solarnet-ai-chat.png" alt="SolarNet AI Chat" className="h-full w-full object-cover" />
                   </div>
-                  <div className="font-semibold text-foreground">How can I help?</div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                  <div className="text-xl font-bold tracking-tight text-foreground">How can I help?</div>
+                  <div className="mx-auto mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
                     Support in English or Filipino. I use read-only customer, DHCP lease, and network data when needed.
                   </div>
+                  <div className="mt-3 flex flex-wrap justify-center gap-2"><span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"><ShieldCheck className="h-3 w-3" />Read-only insights</span><span className="inline-flex items-center gap-1 rounded-full border border-cyan-300/40 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-semibold text-cyan-700 dark:text-cyan-300"><Zap className="h-3 w-3" />English + Filipino</span></div>
                 </div>
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {suggestions.map((s, idx) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => void sendMessage(s)}
-                      className="text-left px-3 py-2 rounded-lg border border-border hover:bg-secondary text-sm text-foreground transition-colors"
+                      className="group rounded-xl border border-border/80 bg-card/80 px-3.5 py-3 text-left text-xs font-medium leading-5 text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-400/60 hover:bg-cyan-500/5 hover:shadow-md"
                       data-testid={`ai-suggestion-${idx}`}
                     >
-                      {s}
+                      <span className="mr-2 text-cyan-500">✦</span>{s}
                     </button>
                   ))}
                 </div>
@@ -422,7 +424,7 @@ const FloatingAiAssistant: React.FC = () => {
           </div>
 
           {/* Input */}
-          <div className="border-t border-border p-3 bg-card">
+          <div className="border-t border-cyan-500/15 bg-card/95 p-3.5 backdrop-blur-xl">
             {canSelectModel && (
               <label className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">AI model</span>
@@ -442,7 +444,7 @@ const FloatingAiAssistant: React.FC = () => {
                 </select>
               </label>
             )}
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 rounded-2xl border border-input bg-background p-1.5 shadow-inner focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400/15">
               <textarea
                 ref={inputRef}
                 value={message}
@@ -450,7 +452,7 @@ const FloatingAiAssistant: React.FC = () => {
                 onKeyDown={handleKeyDown}
                 placeholder="Ask in English or Filipino..."
                 rows={1}
-                className="flex-1 resize-none px-3 py-2 rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary max-h-32"
+                className="max-h-32 flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-0"
                 data-testid="ai-input"
                 disabled={sending}
               />
@@ -458,7 +460,7 @@ const FloatingAiAssistant: React.FC = () => {
                 type="button"
                 onClick={() => void sendMessage(message)}
                 disabled={sending || !message.trim()}
-                className="w-10 h-10 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-opacity"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-700 text-white shadow-md shadow-blue-500/20 transition-all hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Send"
                 data-testid="ai-send-btn"
               >
