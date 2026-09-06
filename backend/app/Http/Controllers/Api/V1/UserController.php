@@ -209,7 +209,7 @@ class UserController extends Controller
             ], 403);
         }
 
-        $user = $this->visibleUsers()->findOrFail($id);
+        $user = $this->visibleUsers()->with('roles')->findOrFail($id);
         
         // Prevent deleting own account
         if ($user->id === auth()->id()) {
@@ -218,12 +218,32 @@ class UserController extends Controller
                 'message' => 'You cannot delete your own account',
             ], 403);
         }
+
+        if ($user->hasRole('super_admin')) {
+            $otherActiveSuperAdministrators = User::query()
+                ->where('id', '!=', $user->id)
+                ->where('is_active', true)
+                ->whereHas('roles', fn ($query) => $query->where('name', 'super_admin'))
+                ->exists();
+
+            if (! $otherActiveSuperAdministrators) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The last active Super Administrator cannot be deleted. Assign another active Super Administrator first.',
+                ], 422);
+            }
+        }
         
+        // Staff users can own immutable financial, security, messaging, and
+        // cleanup audit records. Soft deletion removes login and UI access
+        // without destroying that historical accountability or violating the
+        // database foreign keys protecting it.
+        $user->update(['is_active' => false]);
         $user->delete();
 
         return response()->json([
             'status' => 'success',
-            'message' => 'User deleted successfully',
+            'message' => 'User access removed successfully. Historical audit records were preserved.',
         ]);
     }
 

@@ -150,7 +150,7 @@ export default function UsersPage() {
   };
 
   const del = async (u: UserRow) => {
-    if (!confirm(`Delete user ${u.name}? This cannot be undone.`)) return;
+    if (!confirm(`Delete staff access for ${u.name}? The account will no longer be able to sign in. Historical audit and transaction attribution will be preserved.`)) return;
     try {
       await api.delete(`/users/${u.id}`);
       await load();
