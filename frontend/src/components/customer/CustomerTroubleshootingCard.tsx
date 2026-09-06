@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, MessageCircle, Send, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MessageCircle, Send, ShieldCheck } from 'lucide-react';
 import customerPortalService, { type CustomerTroubleshootingResponse } from '../../services/customerPortalService';
 
 type ChatLine = { role: 'assistant' | 'customer'; content: string };
@@ -59,7 +59,7 @@ const CustomerTroubleshootingCard: React.FC = () => {
     <section className="mb-8 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
       <div className="flex items-start justify-between gap-4 border-b border-blue-50 bg-gradient-to-r from-blue-50 to-sky-50 p-5">
         <div className="flex gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white"><Wrench className="h-5 w-5" /></div>
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-cyan-300 bg-slate-950 shadow-md"><img src="/solarnet-ai-chat.png" alt="SolarNet AI Chat" className="h-full w-full object-cover" /></div>
           <div><h3 className="font-bold text-slate-900">No internet? Let’s check safely</h3><p className="mt-1 text-sm text-slate-600">You may reply in English or Filipino. SolarNet checks your account and synchronized network data without changing your router.</p></div>
         </div>
         {!session && <button type="button" onClick={() => void start()} disabled={busy} className="shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">Start check</button>}

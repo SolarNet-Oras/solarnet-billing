@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Sparkles, X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check } from 'lucide-react';
+import { X, Send, Loader2, Wrench, Trash2, MessageSquarePlus, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { aiService, getAiErrorMessage, type AiChatResponse, type AiConversationSummary } from '@/services/aiService';
@@ -252,11 +252,11 @@ const FloatingAiAssistant: React.FC = () => {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-br from-fuchsia-500 via-violet-600 to-blue-600 text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center group"
+          className="fixed bottom-6 right-6 z-40 h-16 w-16 overflow-hidden rounded-full border-2 border-cyan-300/80 bg-slate-950 shadow-2xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95"
           aria-label="Open AI Assistant"
           data-testid="ai-assistant-open-btn"
         >
-          <Sparkles className="w-6 h-6 group-hover:rotate-12 transition-transform" />
+          <img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover" />
           <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-background" />
         </button>
       )}
@@ -269,8 +269,8 @@ const FloatingAiAssistant: React.FC = () => {
         >
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-fuchsia-500 via-violet-600 to-blue-600 text-white">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
+            <div className="h-9 w-9 overflow-hidden rounded-full border border-cyan-200/70 bg-slate-950 shadow-sm">
+              <img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-sm">SolarNet Assistant</div>
@@ -350,8 +350,8 @@ const FloatingAiAssistant: React.FC = () => {
             {messages.length === 0 && (
               <div className="space-y-4">
                 <div className="text-center py-4">
-                  <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gradient-to-br from-fuchsia-500 via-violet-600 to-blue-600 flex items-center justify-center">
-                    <Sparkles className="w-6 h-6 text-white" />
+                  <div className="mx-auto mb-3 h-20 w-20 overflow-hidden rounded-full border-2 border-cyan-300 bg-slate-950 shadow-lg shadow-blue-500/20">
+                    <img src="/solarnet-ai-chat.png" alt="SolarNet AI Chat" className="h-full w-full object-cover" />
                   </div>
                   <div className="font-semibold text-foreground">How can I help?</div>
                   <div className="text-xs text-muted-foreground mt-1">
