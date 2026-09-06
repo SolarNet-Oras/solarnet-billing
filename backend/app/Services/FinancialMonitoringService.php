@@ -7,6 +7,7 @@ use App\Models\FinancialEntry;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Remittance;
+use App\Models\User;
 use Carbon\Carbon;
 
 /**
@@ -114,6 +115,7 @@ class FinancialMonitoringService
         $collectionRate = $billed > 0 ? self::rounded(($totalCollections / $billed) * 100) : null;
         $expenseRatio = $totalCollections > 0 ? self::rounded(($expenses / $totalCollections) * 100) : null;
         $study = $this->study($billed, $totalCollections, $expenses, $netMovement, $outstanding, $overdue, $pendingRemittances, $collectionRate);
+        $collectorCash = $this->collectorCashAccountability($start, $end);
 
         return [
             'period' => [
@@ -149,6 +151,7 @@ class FinancialMonitoringService
                 'discrepancy_declared_amount' => self::rounded((float) ($pendingRemittances?->discrepancy_amount ?? 0)),
                 'discrepancy_variance_amount' => self::rounded((float) ($pendingRemittances?->discrepancy_variance ?? 0)),
             ],
+            'collector_cash' => $collectorCash,
             'study' => $study,
             'anomalies' => $anomalies,
             'data_sources' => [
@@ -162,6 +165,91 @@ class FinancialMonitoringService
                 'Internal wallet transfers are excluded from net operating movement because they do not create or spend company funds.',
             ],
             'generated_at' => now(config('app.timezone', 'Asia/Manila'))->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Cash accountability is derived only from cash payments assigned to a
+     * collector. A null remittance_id is the authoritative unremitted state.
+     * Submission and verification percentages describe workflow progress;
+     * they never create or move money.
+     *
+     * @return array{summary: array<string, int|float>, collectors: array<int, array<string, int|float|string|null>>}
+     */
+    private function collectorCashAccountability(Carbon $start, Carbon $end): array
+    {
+        $collectors = User::query()
+            ->whereHas('roles', fn ($query) => $query->where('name', 'collector'))
+            ->orderBy('name')
+            ->get(['id', 'name', 'is_active']);
+
+        if ($collectors->isEmpty()) {
+            return ['summary' => ['collector_count' => 0, 'cash_on_hand' => 0.0, 'awaiting_office_review' => 0.0, 'discrepancy_variance' => 0.0], 'collectors' => []];
+        }
+
+        $from = $start->copy()->startOfDay()->toDateTimeString();
+        $to = $end->copy()->endOfDay()->toDateTimeString();
+        $rows = Payment::query()
+            ->leftJoin('remittances', 'remittances.id', '=', 'payments.remittance_id')
+            ->whereIn('payments.collector_id', $collectors->pluck('id'))
+            ->where('payments.payment_method', 'cash')
+            ->selectRaw(implode(', ', [
+                'payments.collector_id',
+                'COUNT(CASE WHEN payments.remittance_id IS NULL THEN 1 END) as unremitted_count',
+                'COALESCE(SUM(CASE WHEN payments.remittance_id IS NULL THEN payments.amount ELSE 0 END), 0) as unremitted_amount',
+                'MIN(CASE WHEN payments.remittance_id IS NULL THEN payments.payment_date END) as oldest_unremitted_date',
+                "COALESCE(SUM(CASE WHEN remittances.status = 'submitted' THEN payments.amount ELSE 0 END), 0) as awaiting_review_amount",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? THEN payments.amount ELSE 0 END), 0) as period_collected",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND payments.remittance_id IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_submitted",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.liquidated_at IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_liquidated",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.status = 'received' THEN payments.amount ELSE 0 END), 0) as period_verified",
+            ]), [$from, $to, $from, $to, $from, $to, $from, $to])
+            ->groupBy('payments.collector_id')
+            ->get()
+            ->keyBy('collector_id');
+
+        $discrepancies = Remittance::query()
+            ->whereIn('collector_id', $collectors->pluck('id'))
+            ->where('status', 'discrepancy')
+            ->selectRaw('collector_id, COUNT(*) as discrepancy_count, COALESCE(SUM(ABS(declared_amount - COALESCE(received_amount, 0))), 0) as discrepancy_variance')
+            ->groupBy('collector_id')
+            ->get()
+            ->keyBy('collector_id');
+
+        $items = $collectors->map(function (User $collector) use ($rows, $discrepancies): array {
+            $row = $rows->get($collector->id);
+            $variance = $discrepancies->get($collector->id);
+            $collected = self::rounded((float) ($row?->period_collected ?? 0));
+            $submitted = self::rounded((float) ($row?->period_submitted ?? 0));
+            $verified = self::rounded((float) ($row?->period_verified ?? 0));
+
+            return [
+                'collector_id' => $collector->id,
+                'collector_name' => $collector->name,
+                'is_active' => (bool) $collector->is_active,
+                'unremitted_payment_count' => (int) ($row?->unremitted_count ?? 0),
+                'cash_on_hand' => self::rounded((float) ($row?->unremitted_amount ?? 0)),
+                'oldest_unremitted_date' => $row?->oldest_unremitted_date,
+                'awaiting_office_review' => self::rounded((float) ($row?->awaiting_review_amount ?? 0)),
+                'discrepancy_count' => (int) ($variance?->discrepancy_count ?? 0),
+                'discrepancy_variance' => self::rounded((float) ($variance?->discrepancy_variance ?? 0)),
+                'period_cash_collected' => $collected,
+                'period_cash_submitted' => $submitted,
+                'period_cash_liquidated' => self::rounded((float) ($row?->period_liquidated ?? 0)),
+                'period_cash_verified' => $verified,
+                'submission_progress_percent' => $collected > 0 ? min(100.0, self::rounded(($submitted / $collected) * 100)) : 100.0,
+                'verification_progress_percent' => $collected > 0 ? min(100.0, self::rounded(($verified / $collected) * 100)) : 100.0,
+            ];
+        })->sortByDesc('cash_on_hand')->values();
+
+        return [
+            'summary' => [
+                'collector_count' => $items->count(),
+                'cash_on_hand' => self::rounded((float) $items->sum('cash_on_hand')),
+                'awaiting_office_review' => self::rounded((float) $items->sum('awaiting_office_review')),
+                'discrepancy_variance' => self::rounded((float) $items->sum('discrepancy_variance')),
+            ],
+            'collectors' => $items->all(),
         ];
     }
 
