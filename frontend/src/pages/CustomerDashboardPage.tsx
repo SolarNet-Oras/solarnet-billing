@@ -17,6 +17,7 @@ import type { Customer } from '../types/api';
 import { formatPHP } from '../lib/currency';
 import CustomerAppInstallCard from '../components/customer/CustomerAppInstallCard';
 import CustomerTroubleshootingCard from '../components/customer/CustomerTroubleshootingCard';
+import CustomerReferralCard from '../components/customer/CustomerReferralCard';
 import { clearSuspensionBadge, showSuspensionBadge } from '../lib/customerAppBadge';
 
 const CustomerDashboardPage: React.FC = () => {
@@ -230,6 +231,8 @@ const CustomerDashboardPage: React.FC = () => {
         )}
 
         <CustomerTroubleshootingCard />
+
+        <CustomerReferralCard />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

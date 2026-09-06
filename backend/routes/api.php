@@ -478,6 +478,9 @@ Route::prefix('v1')->group(function () {
         // Protected customer routes
         Route::middleware('api')->group(function () {
             Route::get('dashboard', [CustomerPortalController::class, 'dashboard']);
+            Route::get('referrals', [CustomerPortalController::class, 'referrals']);
+            Route::post('referrals', [CustomerPortalController::class, 'submitReferral'])->middleware('throttle:5,1');
+            Route::post('referrals/{id}/reward-choice', [CustomerPortalController::class, 'chooseReferralReward'])->middleware('throttle:5,1');
             Route::get('invoices', [CustomerPortalController::class, 'invoices']);
             Route::get('invoices/{id}', [CustomerPortalController::class, 'invoice']);
             Route::get('payments', [CustomerPortalController::class, 'payments']);

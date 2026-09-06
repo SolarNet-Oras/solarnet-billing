@@ -196,6 +196,8 @@ class Customer extends Model
 
     public function credits(): HasMany { return $this->hasMany(CustomerCredit::class); }
 
+    public function referrals(): HasMany { return $this->hasMany(CustomerReferral::class, 'referrer_customer_id'); }
+
     public function locationEvents(): HasMany { return $this->hasMany(CustomerLocationEvent::class); }
 
     /** Browser subscriptions that this customer expressly enabled for portal alerts. */

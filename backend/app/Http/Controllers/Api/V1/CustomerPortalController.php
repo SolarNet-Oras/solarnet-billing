@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
+use App\Models\CustomerReferral;
 use App\Models\CustomerWebPushSubscription;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
@@ -15,6 +16,7 @@ use App\Services\BillingSuspensionService;
 use App\Services\CustomerLocationCaptureService;
 use App\Services\CustomerWebPushNotificationService;
 use App\Services\CustomerPortalTokenService;
+use App\Services\CustomerReferralService;
 use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -400,6 +402,98 @@ class CustomerPortalController extends Controller
                 ] : null,
             ],
         ]);
+    }
+
+    public function referrals(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $customer->referrals()->latest()->get()->map(fn (CustomerReferral $referral) => $this->referralPayload($referral)),
+            'reward_amount' => CustomerReferralService::REWARD_AMOUNT,
+        ]);
+    }
+
+    public function submitReferral(Request $request): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+
+        $validated = $request->validate([
+            'name' => 'required|string|min:2|max:255',
+            'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]{7,30}$/'],
+            'email' => 'nullable|email|max:255',
+            'address' => 'required|string|min:3|max:1000',
+        ]);
+        $phone = CustomerReferralService::normalizePhone($validated['phone']);
+        $email = strtolower(trim((string) ($validated['email'] ?? '')));
+        if (strlen($phone) < 7) {
+            return response()->json(['status' => 'error', 'message' => 'Enter a valid phone number.'], 422);
+        }
+
+        $existingCustomer = Customer::query()->where(function ($query) use ($phone, $email) {
+            $query->whereRaw("regexp_replace(COALESCE(contact_number, ''), '[^0-9]', '', 'g') = ?", [$phone]);
+            if ($email !== '') $query->orWhereRaw('LOWER(email) = ?', [$email]);
+        })->exists();
+        if ($existingCustomer) {
+            return response()->json(['status' => 'error', 'message' => 'This person already has a SolarNet customer record and cannot be submitted as a new referral.'], 422);
+        }
+
+        if (CustomerReferral::query()->where('phone_normalized', $phone)
+            ->when($email !== '', fn ($query) => $query->orWhere('email_normalized', $email))->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'This prospect was already referred. A second referral bonus cannot be created.'], 422);
+        }
+
+        $referral = CustomerReferral::create([
+            'referrer_customer_id' => $customer->id,
+            'prospect_name' => trim($validated['name']),
+            'phone' => trim($validated['phone']),
+            'phone_normalized' => $phone,
+            'email' => $email !== '' ? $email : null,
+            'email_normalized' => $email !== '' ? $email : null,
+            'address' => trim($validated['address']),
+            'status' => 'submitted',
+            'reward_amount' => CustomerReferralService::REWARD_AMOUNT,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Referral submitted. The ₱200 bonus becomes available only after this person is verified as a new active SolarNet subscriber.',
+            'data' => $this->referralPayload($referral),
+        ], 201);
+    }
+
+    public function chooseReferralReward(Request $request, string $id, CustomerReferralService $service): JsonResponse
+    {
+        $customer = $this->getAuthenticatedCustomer($request);
+        if (!$customer) return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        $validated = $request->validate(['reward_choice' => 'required|in:cash,billing_credit']);
+        $referral = CustomerReferral::query()->whereKey($id)->where('referrer_customer_id', $customer->id)->firstOrFail();
+        $referral = $service->chooseReward($customer, $referral, $validated['reward_choice']);
+        $message = $referral->reward_choice === 'billing_credit'
+            ? 'Your ₱200 referral bonus was added as customer credit and will be deducted from a future invoice.'
+            : 'Your ₱200 cash claim is recorded. Bring a valid ID and your SolarNet account number to the SolarNet office; staff must verify and release the cash.';
+
+        return response()->json(['status' => 'success', 'message' => $message, 'data' => $this->referralPayload($referral)]);
+    }
+
+    private function referralPayload(CustomerReferral $referral): array
+    {
+        return [
+            'id' => $referral->id,
+            'name' => $referral->prospect_name,
+            'phone' => $referral->phone,
+            'email' => $referral->email,
+            'address' => $referral->address,
+            'status' => $referral->status,
+            'reward_choice' => $referral->reward_choice,
+            'reward_amount' => (float) $referral->reward_amount,
+            'qualified_at' => $referral->qualified_at?->toIso8601String(),
+            'rewarded_at' => $referral->rewarded_at?->toIso8601String(),
+            'created_at' => $referral->created_at?->toIso8601String(),
+        ];
     }
 
     /**

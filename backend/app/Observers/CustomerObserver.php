@@ -25,6 +25,7 @@ class CustomerObserver
         // Sync queue after customer is created
         $this->syncQueue($customer, 'created');
         $this->syncRadiusSubscriber($customer, 'customer_created');
+        \App\Jobs\ReconcileCustomerReferral::dispatch($customer->id)->afterCommit();
     }
 
     /**
@@ -52,6 +53,10 @@ class CustomerObserver
         if ($changed) {
             $this->syncQueue($customer, 'updated');
             $this->syncRadiusSubscriber($customer, 'customer_updated');
+        }
+
+        if ($customer->wasChanged(['status', 'contact_number', 'email'])) {
+            \App\Jobs\ReconcileCustomerReferral::dispatch($customer->id)->afterCommit();
         }
     }
 

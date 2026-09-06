@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\CustomerReferral;
 use App\Models\CustomerNotificationLog;
 use App\Models\CustomerWebPushSubscription;
 use App\Models\Invoice;
@@ -32,6 +33,7 @@ class CustomerWebPushNotificationService
     public const PAYMENT_RECEIVED = 'PAYMENT_RECEIVED';
     public const SERVICE_RESTORED = 'SERVICE_RESTORED';
     public const PUSH_TEST = 'PUSH_TEST';
+    public const REFERRAL_QUALIFIED = 'REFERRAL_QUALIFIED';
 
     private const WEB_PUSH_CLASS = 'Minishlink\\WebPush\\WebPush';
     private const SUBSCRIPTION_CLASS = 'Minishlink\\WebPush\\Subscription';
@@ -147,6 +149,20 @@ class CustomerWebPushNotificationService
             null,
             null,
             now()->format('Y-m-d-H-i-s-u'),
+        );
+    }
+
+    public function sendReferralQualified(Customer $customer, CustomerReferral $referral): string
+    {
+        return $this->send(
+            $customer,
+            self::REFERRAL_QUALIFIED,
+            'Your SolarNet referral earned ₱200',
+            $referral->prospect_name.' is now an active SolarNet customer. Open your account to choose cash or future-bill credit.',
+            '/customer/dashboard',
+            null,
+            null,
+            (string) $referral->id,
         );
     }
 

@@ -10,6 +10,20 @@ export interface CompanyBranding {
   facebook_url: string;
 }
 
+export interface CustomerReferral {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  address: string;
+  status: 'submitted' | 'qualified' | 'cash_claim_requested' | 'rewarded' | string;
+  reward_choice: 'cash' | 'billing_credit' | null;
+  reward_amount: number;
+  qualified_at: string | null;
+  rewarded_at: string | null;
+  created_at: string;
+}
+
 const DEFAULT_APP_ICON = '/solarnet-mark.svg';
 
 const applyBranding = (branding: CompanyBranding): void => {
@@ -198,6 +212,21 @@ export const customerPortalService = {
   }> => {
     const response = await api.post(`/customer-portal/invoices/${invoiceId}/gcash-checkout`);
     return response.data.data;
+  },
+
+  getReferrals: async (): Promise<{ data: CustomerReferral[]; reward_amount: number }> => {
+    const response = await api.get('/customer-portal/referrals');
+    return response.data;
+  },
+
+  submitReferral: async (data: { name: string; phone: string; email?: string; address: string }): Promise<{ message: string; data: CustomerReferral }> => {
+    const response = await api.post('/customer-portal/referrals', data);
+    return response.data;
+  },
+
+  chooseReferralReward: async (id: string, rewardChoice: 'cash' | 'billing_credit'): Promise<{ message: string; data: CustomerReferral }> => {
+    const response = await api.post(`/customer-portal/referrals/${id}/reward-choice`, { reward_choice: rewardChoice });
+    return response.data;
   },
 
   startQrPhPayment: async (invoiceId: string): Promise<{
