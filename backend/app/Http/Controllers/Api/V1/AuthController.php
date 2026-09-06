@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Role;
 use App\Support\LegacyDefaultAdministrator;
+use App\Services\StaffProfilePhotoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -248,6 +249,7 @@ class AuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
+                'profile_photo_url' => $user->profile_photo_url,
                 'is_active' => $user->is_active,
                 'last_login_at' => $user->last_login_at,
                 'email_verified_at' => $user->email_verified_at,
@@ -263,6 +265,28 @@ class AuthController extends Controller
                 })->values(),
             ],
         ]);
+    }
+
+    public function uploadProfilePhoto(Request $request, StaffProfilePhotoService $photos): JsonResponse
+    {
+        $request->validate([
+            'photo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096', 'dimensions:min_width=128,min_height=128,max_width=4096,max_height=4096'],
+        ]);
+
+        $user = $photos->replace($request->user(), $request->file('photo'));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Profile picture updated.',
+            'data' => ['profile_photo_url' => $user->profile_photo_url],
+        ]);
+    }
+
+    public function removeProfilePhoto(Request $request, StaffProfilePhotoService $photos): JsonResponse
+    {
+        $photos->remove($request->user());
+
+        return response()->json(['status' => 'success', 'message' => 'Profile picture removed.']);
     }
 
     /**
@@ -301,6 +325,7 @@ class AuthController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'phone' => $user->phone,
+                    'profile_photo_url' => $user->profile_photo_url,
                     'roles' => $user->roles->pluck('name'),
                     'permissions' => collect($user->permissions())->pluck('name'),
                 ],

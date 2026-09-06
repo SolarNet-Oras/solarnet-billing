@@ -41,6 +41,7 @@ import SmsAdvisoryPage from '@/pages/SmsAdvisoryPage';
 import InvoiceQuickPayPage from '@/pages/InvoiceQuickPayPage';
 import StaffPasswordResetPage from '@/pages/StaffPasswordResetPage';
 import StaffSignupPage from '@/pages/StaffSignupPage';
+import StaffProfilePage from '@/pages/StaffProfilePage';
 
 // ============================================================================
 // Main App Component
@@ -205,6 +206,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/signup" element={<SignupPage />} />
 
               {/* Staff user management */}
+              <Route path="/profile" element={<ProtectedRoute><StaffProfilePage /></ProtectedRoute>} />
               <Route
                 path="/users"
                 element={

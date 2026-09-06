@@ -79,6 +79,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::post('/refresh', [AuthController::class, 'refresh']);
             Route::get('/me', [AuthController::class, 'me']);
+            Route::post('/profile/photo', [AuthController::class, 'uploadProfilePhoto'])->middleware('throttle:10,1');
+            Route::delete('/profile/photo', [AuthController::class, 'removeProfilePhoto'])->middleware('throttle:10,1');
         });
 
         Route::middleware(['auth:api', 'role:admin|super_admin'])->group(function () {

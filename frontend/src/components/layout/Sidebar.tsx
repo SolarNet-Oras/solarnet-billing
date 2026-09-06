@@ -47,6 +47,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { name: 'My Profile', path: '/profile', icon: UserRound },
   { name: 'Customers', path: '/customers', icon: UserRound, permission: 'view-customers' },
   { name: 'Billing', path: '/billing', icon: PhilippinePeso, permission: 'view-invoices' },
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'cashier', 'office_admin'] },
@@ -118,6 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
           {navItems.filter((item) => !hasRole('technician')
             || item.path === '/dashboard'
+            || item.path === '/profile'
             || item.path === '/operations-map'
             || item.path === '/install-staff-app'
             || (hasRole('collector') && item.path === '/remittances')).map((item) => {
