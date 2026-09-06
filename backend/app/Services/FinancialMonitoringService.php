@@ -86,7 +86,15 @@ class FinancialMonitoringService
 
         $pendingRemittances = Remittance::query()
             ->whereIn('status', ['submitted', 'discrepancy'])
-            ->selectRaw('COUNT(*) as count, COALESCE(SUM(declared_amount), 0) as amount')
+            ->selectRaw(implode(', ', [
+                'COUNT(*) as count',
+                'COALESCE(SUM(declared_amount), 0) as amount',
+                "COALESCE(SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END), 0) as submitted_count",
+                "COALESCE(SUM(CASE WHEN status = 'submitted' THEN declared_amount ELSE 0 END), 0) as submitted_amount",
+                "COALESCE(SUM(CASE WHEN status = 'discrepancy' THEN 1 ELSE 0 END), 0) as discrepancy_count",
+                "COALESCE(SUM(CASE WHEN status = 'discrepancy' THEN declared_amount ELSE 0 END), 0) as discrepancy_amount",
+                "COALESCE(SUM(CASE WHEN status = 'discrepancy' THEN ABS(declared_amount - COALESCE(received_amount, 0)) ELSE 0 END), 0) as discrepancy_variance",
+            ]))
             ->first();
 
         $availableAdvanceCredit = (float) CustomerCredit::query()
@@ -135,6 +143,11 @@ class FinancialMonitoringService
             'remittances' => [
                 'pending_count' => (int) ($pendingRemittances?->count ?? 0),
                 'pending_declared_amount' => self::rounded((float) ($pendingRemittances?->amount ?? 0)),
+                'submitted_count' => (int) ($pendingRemittances?->submitted_count ?? 0),
+                'submitted_declared_amount' => self::rounded((float) ($pendingRemittances?->submitted_amount ?? 0)),
+                'discrepancy_count' => (int) ($pendingRemittances?->discrepancy_count ?? 0),
+                'discrepancy_declared_amount' => self::rounded((float) ($pendingRemittances?->discrepancy_amount ?? 0)),
+                'discrepancy_variance_amount' => self::rounded((float) ($pendingRemittances?->discrepancy_variance ?? 0)),
             ],
             'study' => $study,
             'anomalies' => $anomalies,

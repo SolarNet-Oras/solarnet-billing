@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Landmark, RefreshCw, ReceiptText, ShieldAlert, ShieldCheck, Sparkles, WalletCards } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatPHP } from '@/lib/currency';
 import api from '@/services/api';
+import { useAuth } from '@/hooks/useAuth';
 
 type WalletName = 'cash' | 'gcash' | 'bpi' | 'landbank' | 'online';
 type Wallet = {
@@ -23,7 +25,15 @@ type MonitoringData = {
   daily_metrics: DailyMetric[];
   allocation_plan: { collection_base: number; planning_base: number; retained_operations: number; allocations: Allocation[]; note: string };
   accounts_receivable: { open_invoice_count: number; outstanding_balance: number; overdue_balance: number; available_advance_credit: number };
-  remittances: { pending_count: number; pending_declared_amount: number };
+  remittances: {
+    pending_count: number;
+    pending_declared_amount: number;
+    submitted_count: number;
+    submitted_declared_amount: number;
+    discrepancy_count: number;
+    discrepancy_declared_amount: number;
+    discrepancy_variance_amount: number;
+  };
   study: { headline: string; findings: string[]; action_required: string };
   anomalies: { summary: { review_count: number; duplicate_payment_count: number; duplicate_invoice_count: number }; items: Anomaly[] };
   data_sources: string[];
@@ -42,6 +52,7 @@ const WALLET_DISPLAY: Array<{ key: WalletName; label: string; accent: string }> 
 const currentMonth = (): string => new Date().toISOString().slice(0, 7);
 
 export default function FinancialMonitoringPage(): React.JSX.Element {
+  const { user } = useAuth();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<MonitoringData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +77,8 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   const anomalies = data?.anomalies.items ?? [];
   const totalWalletMovement = WALLET_DISPLAY.reduce((total, wallet) => total + (wallets?.[wallet.key]?.balance ?? 0), 0);
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
+  const roleNames = [user?.role, ...(user?.roles ?? []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
+  const canReviewRemittances = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(role as string));
   const askFinanceAi = (): void => {
     window.dispatchEvent(new CustomEvent('solarnet:open-ai', {
       detail: { prompt: `Explain the verified Financial Monitoring study for ${month}. Use the finance tool, show Result, Data source, Calculation, Findings, Risk, Recommendation, and Action required. Do not change any financial record.` },
@@ -141,11 +154,12 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
           </article>
 
           <article className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-            <h2 className="font-semibold text-foreground">Controls to review</h2>
+            <h2 className="font-semibold text-foreground">Controls requiring staff review</h2>
+            <p className="mt-1 text-sm text-muted-foreground">These figures flag unfinished verification work. They do not automatically mean money is missing.</p>
             <div className="mt-4 space-y-3">
-              <ReviewRow label="Collector remittances awaiting review" value={formatPHP(data?.remittances.pending_declared_amount)} detail={`${data?.remittances.pending_count ?? 0} pending submitted/discrepancy remittance(s)`} warning={(data?.remittances.pending_count ?? 0) > 0} />
-              <ReviewRow label="Overdue receivables" value={formatPHP(data?.accounts_receivable.overdue_balance)} detail="Open invoices past due date" warning={(data?.accounts_receivable.overdue_balance ?? 0) > 0} />
-              <ReviewRow label="Available advance credit" value={formatPHP(data?.accounts_receivable.available_advance_credit)} detail="Customer credit not yet applied to an invoice" />
+              <RemittanceReviewCard remittances={data?.remittances} canReview={canReviewRemittances} />
+              <ReviewRow label="Overdue receivables" value={formatPHP(data?.accounts_receivable.overdue_balance)} detail="Remaining customer debt on open invoices whose due date has passed. This is money still collectible, not cash already received." warning={(data?.accounts_receivable.overdue_balance ?? 0) > 0} />
+              <ReviewRow label="Available advance credit" value={formatPHP(data?.accounts_receivable.available_advance_credit)} detail="Customer money already recorded as unused credit and reserved for future invoices. It is not another unpaid balance." />
             </div>
           </article>
         </section>
@@ -174,6 +188,25 @@ function FlowArrow(): React.JSX.Element {
 
 function ReviewRow({ label, value, detail, warning = false }: { label: string; value: string; detail: string; warning?: boolean }): React.JSX.Element {
   return <div className="rounded-xl border border-border bg-background p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-foreground">{label}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div><p className={`shrink-0 text-sm font-bold ${warning ? 'text-amber-700 dark:text-amber-400' : 'text-foreground'}`}>{value}</p></div></div>;
+}
+
+function RemittanceReviewCard({ remittances, canReview }: { remittances?: MonitoringData['remittances']; canReview: boolean }): React.JSX.Element {
+  const pending = remittances?.pending_count ?? 0;
+  const submitted = remittances?.submitted_count ?? 0;
+  const discrepancies = remittances?.discrepancy_count ?? 0;
+
+  return <div className={`rounded-xl border p-3.5 ${pending > 0 ? 'border-amber-300 bg-amber-50/70 dark:border-amber-900/70 dark:bg-amber-950/20' : 'border-border bg-background'}`}>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><p className="text-sm font-semibold text-foreground">Collector remittances awaiting review</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Collector remittance records still open because they await office liquidation or contain a verified mismatch.</p></div>
+      <div className="text-right"><p className={`text-lg font-bold ${pending > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'}`}>{formatPHP(remittances?.pending_declared_amount)}</p><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Combined declared amount</p></div>
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="rounded-lg border border-border/70 bg-background/80 p-2.5"><p className="text-xs font-semibold text-foreground">{submitted} submitted</p><p className="mt-0.5 text-sm font-bold text-foreground">{formatPHP(remittances?.submitted_declared_amount)}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Waiting for an administrator or cashier to count and liquidate the collector cash.</p></div>
+      <div className="rounded-lg border border-border/70 bg-background/80 p-2.5"><p className="text-xs font-semibold text-foreground">{discrepancies} with discrepancy</p><p className="mt-0.5 text-sm font-bold text-foreground">{formatPHP(remittances?.discrepancy_declared_amount)}</p><p className="mt-1 text-[11px] leading-4 text-muted-foreground">Already checked, but the received amount differed. Recorded difference: <b className="text-foreground">{formatPHP(remittances?.discrepancy_variance_amount)}</b>.</p></div>
+    </div>
+    <div className="mt-3 rounded-lg bg-background/70 p-2.5 text-[11px] leading-5 text-muted-foreground"><b className="text-foreground">What to do:</b> Open Remittances, compare each declaration with its linked payments and actual cash, liquidate and validate matching submissions, then investigate every recorded discrepancy according to your finance policy. The combined declared amount is not automatically a cash shortage.</div>
+    <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">{pending} record{pending === 1 ? '' : 's'} still require attention.</p>{canReview && <Link to="/remittances" className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700">Review remittances <ArrowRight className="h-3.5 w-3.5" /></Link>}</div>
+  </div>;
 }
 
 function AllocationCard({ label, value, detail, accent = 'text-foreground' }: { label: string; value: string; detail: string; accent?: string }): React.JSX.Element {
