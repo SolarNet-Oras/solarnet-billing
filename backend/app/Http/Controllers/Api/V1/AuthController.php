@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Role;
 use App\Support\LegacyDefaultAdministrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,10 +12,72 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends Controller
 {
+    private const PUBLIC_SIGNUP_ROLES = [
+        'cashier',
+        'office_admin',
+        'collector',
+        'technician',
+        'noc',
+        'accounting',
+        'viewer',
+    ];
+
+    public function signupRoles(): JsonResponse
+    {
+        $roles = Role::query()
+            ->whereIn('name', self::PUBLIC_SIGNUP_ROLES)
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->get(['name', 'display_name', 'description']);
+
+        return response()->json(['status' => 'success', 'data' => $roles]);
+    }
+
+    public function signup(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', 'max:20'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'role' => ['required', Rule::in(self::PUBLIC_SIGNUP_ROLES)],
+        ]);
+
+        if (LegacyDefaultAdministrator::isReservedEmail($data['email'])) {
+            return response()->json(['status' => 'error', 'message' => 'This email address cannot be registered.'], 422);
+        }
+
+        $role = Role::query()->where('name', $data['role'])->where('is_active', true)->first();
+        if (! $role) {
+            return response()->json(['status' => 'error', 'message' => 'The selected staff role is unavailable.'], 422);
+        }
+
+        $user = DB::transaction(function () use ($data, $role): User {
+            $user = User::create([
+                'name' => trim($data['name']),
+                'email' => Str::lower(trim($data['email'])),
+                'phone' => filled($data['phone'] ?? null) ? trim($data['phone']) : null,
+                'password' => Hash::make($data['password']),
+                'is_active' => false,
+            ]);
+            $user->roles()->attach($role->id);
+
+            return $user;
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Signup submitted. A Super Administrator must review and activate your account before you can sign in.',
+            'data' => ['id' => $user->id, 'status' => 'pending_approval'],
+        ], 201);
+    }
+
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate(['email' => ['required', 'email']]);

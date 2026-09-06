@@ -69,6 +69,8 @@ Route::prefix('v1')->group(function () {
         // Staff accounts are created by an administrator; customer self-service
         // signup lives under the customer-portal routes below.
         Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+        Route::get('/signup/roles', [AuthController::class, 'signupRoles'])->middleware('throttle:30,1');
+        Route::post('/signup', [AuthController::class, 'signup'])->middleware('throttle:3,1');
         Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
         Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
         

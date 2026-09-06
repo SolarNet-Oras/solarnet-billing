@@ -111,7 +111,7 @@ const LoginPage: React.FC = () => {
 
           <div className="mt-6 text-center">
             <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">Forgot your password?</Link>
-            <p className="mt-2 text-xs text-muted-foreground">Staff accounts are created by the Super Administrator.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Need a staff account? <Link to="/staff-signup" className="font-medium text-primary hover:underline">Submit a signup request</Link>.</p>
           </div>
         </div>
 
