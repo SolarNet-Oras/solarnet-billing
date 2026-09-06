@@ -9,10 +9,59 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends Controller
 {
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate(['email' => ['required', 'email']]);
+
+        $user = User::query()
+            ->whereRaw('LOWER(email) = ?', [Str::lower(trim((string) $request->input('email')))])
+            ->where('is_active', true)
+            ->first();
+
+        if ($user && ! LegacyDefaultAdministrator::isReservedEmail($user->email)) {
+            Password::broker()->sendResetLink(['email' => $user->email]);
+        }
+
+        // Do not reveal whether a staff email exists or whether it is disabled.
+        return response()->json([
+            'status' => 'success',
+            'message' => 'If that active staff email exists, a password-reset link has been sent.',
+        ]);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = User::query()->whereRaw('LOWER(email) = ?', [Str::lower(trim($data['email']))])->first();
+        if (! $user || ! $user->is_active || LegacyDefaultAdministrator::isReservedEmail($data['email'])) {
+            return response()->json(['status' => 'error', 'message' => 'This password-reset link is invalid or expired.'], 422);
+        }
+
+        $status = Password::broker()->reset($data, function (User $user, string $password): void {
+            $user->forceFill([
+                'password' => Hash::make($password),
+                'remember_token' => Str::random(60),
+            ])->save();
+        });
+
+        if ($status !== Password::PASSWORD_RESET) {
+            return response()->json(['status' => 'error', 'message' => 'This password-reset link is invalid or expired.'], 422);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Password reset successfully. You may now sign in.']);
+    }
+
     /**
      * Register a new user
      */

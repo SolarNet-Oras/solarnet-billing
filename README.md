@@ -144,18 +144,18 @@ php artisan migrate:rollback
 
 - JWT authentication configured
 - Laravel Sanctum installed for API tokens
-- Role-Based Access Control (RBAC) ready for implementation
+- Role-Based Access Control (RBAC) implemented for staff operations
 
 ## 📋 Next Steps (Phase 2)
 
 ### Phase 2: Authentication & RBAC
-- [ ] User model with JWT integration
-- [ ] Role and Permission models
-- [ ] Authentication API (login, register, logout)
-- [ ] Password reset flow
-- [ ] RBAC middleware
-- [ ] User management CRUD
-- [ ] Login/Register UI components
+- [x] User model with JWT integration
+- [x] Role and Permission models
+- [x] Authentication API (login, refresh, logout)
+- [x] Secure staff password-reset flow
+- [x] Active-account, role, and permission middleware
+- [x] Super Administrator user management CRUD
+- [x] Staff login and administrator-controlled account UI
 
 ### Phase 3: Dashboard & Core UI
 - [ ] Admin dashboard layout

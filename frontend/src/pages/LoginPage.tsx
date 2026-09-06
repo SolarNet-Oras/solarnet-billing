@@ -109,21 +109,16 @@ const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Register Link */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Don't have an account?{' '}
-              <Link to="/register" className="text-primary hover:underline font-medium">
-                Register here
-              </Link>
-            </p>
+            <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">Forgot your password?</Link>
+            <p className="mt-2 text-xs text-muted-foreground">Staff accounts are created by the Super Administrator.</p>
           </div>
         </div>
 
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-xs text-muted-foreground">
-            Phase 2: Authentication & RBAC System
+            Secure staff authentication and role-based access
           </p>
         </div>
       </div>

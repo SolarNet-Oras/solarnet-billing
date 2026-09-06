@@ -39,6 +39,7 @@ import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
 import LegalPage from '@/pages/LegalPage';
 import SmsAdvisoryPage from '@/pages/SmsAdvisoryPage';
 import InvoiceQuickPayPage from '@/pages/InvoiceQuickPayPage';
+import StaffPasswordResetPage from '@/pages/StaffPasswordResetPage';
 
 // ============================================================================
 // Main App Component
@@ -53,6 +54,8 @@ const App: React.FC = (): JSX.Element => {
             <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/forgot-password" element={<StaffPasswordResetPage request />} />
+              <Route path="/reset-password" element={<StaffPasswordResetPage />} />
               <Route path="/suspended" element={<SuspendedAccountPage />} />
               <Route path="/privacy-policy" element={<LegalPage />} />
               <Route path="/terms" element={<LegalPage />} />

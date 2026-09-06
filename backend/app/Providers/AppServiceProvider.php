@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Auth\Notifications\ResetPassword;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +25,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        ResetPassword::createUrlUsing(function ($user, string $token): string {
+            return rtrim((string) config('app.url'), '/') . '/reset-password?token=' . rawurlencode($token)
+                . '&email=' . rawurlencode((string) $user->email);
+        });
+
         // Register Customer observer for automatic queue sync
         Customer::observe(CustomerObserver::class);
 

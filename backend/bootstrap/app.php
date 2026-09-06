@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,
+            'active.staff' => \App\Http\Middleware\EnsureActiveStaffAccount::class,
         ]);
         
         // Configure API authentication to return JSON instead of redirecting

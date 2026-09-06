@@ -69,9 +69,11 @@ Route::prefix('v1')->group(function () {
         // Staff accounts are created by an administrator; customer self-service
         // signup lives under the customer-portal routes below.
         Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+        Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:3,1');
+        Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
         
         // Protected auth routes
-        Route::middleware('auth:api')->group(function () {
+        Route::middleware(['auth:api', 'active.staff'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::post('/refresh', [AuthController::class, 'refresh']);
             Route::get('/me', [AuthController::class, 'me']);
@@ -83,7 +85,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Protected routes (require authentication)
-    Route::middleware('auth:api')->group(function () {
+    Route::middleware(['auth:api', 'active.staff'])->group(function () {
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
         Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
