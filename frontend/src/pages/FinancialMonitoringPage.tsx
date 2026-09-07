@@ -55,8 +55,7 @@ type MonitoringData = {
 
 const WALLET_DISPLAY: Array<{ key: WalletName; label: string; accent: string }> = [
   { key: 'cash', label: 'Cash', accent: 'text-emerald-600 dark:text-emerald-400' },
-  { key: 'gcash', label: 'GCash', accent: 'text-violet-600 dark:text-violet-400' },
-  { key: 'paymongo', label: 'PayMongo · GCash + QR Ph', accent: 'text-fuchsia-600 dark:text-fuchsia-400' },
+  { key: 'gcash', label: 'GCash + PayMongo', accent: 'text-violet-600 dark:text-violet-400' },
   { key: 'bpi', label: 'BPI', accent: 'text-blue-600 dark:text-blue-400' },
   { key: 'landbank', label: 'Landbank', accent: 'text-cyan-600 dark:text-cyan-400' },
   { key: 'online', label: 'Online', accent: 'text-amber-600 dark:text-amber-400' },
@@ -88,7 +87,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
 
   const wallets = data?.wallets;
   const anomalies = data?.anomalies.items ?? [];
-  const totalWalletMovement = WALLET_DISPLAY.reduce((total, wallet) => total + (wallets?.[wallet.key]?.balance ?? 0), 0);
+  const totalWalletMovement = Object.values(wallets ?? {}).reduce((total, wallet) => total + wallet.balance, 0);
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
   const roleNames = [user?.role, ...(user?.roles ?? []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canReviewRemittances = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(role as string));
@@ -174,8 +173,18 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
             <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-foreground">Channel position</h2><p className="mt-1 text-sm text-muted-foreground">Running operational balances from all previous months through {data?.wallet_balance_as_of ?? 'today'}. The selected month does not limit these cards.</p></div><p className="text-sm font-semibold text-foreground">Overall total {formatPHP(totalWalletMovement)}</p></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {WALLET_DISPLAY.map(({ key, label, accent }) => {
-                const wallet = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
-                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'paymongo' && <PaymongoPosition position={data?.paymongo_account_position} />}</article>;
+                const base = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
+                const provider = key === 'gcash' ? wallets?.paymongo : undefined;
+                const wallet = provider ? {
+                  collections: base.collections + provider.collections,
+                  processing_fees: base.processing_fees + provider.processing_fees,
+                  cash_in: base.cash_in + provider.cash_in,
+                  transfers_in: base.transfers_in + provider.transfers_in,
+                  transfers_out: base.transfers_out + provider.transfers_out,
+                  expenses: base.expenses + provider.expenses,
+                  balance: base.balance + provider.balance,
+                } : base;
+                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'gcash' && <><div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted p-2 text-[11px]"><div><span className="text-muted-foreground">Direct GCash</span><p className="font-semibold text-foreground">{formatPHP(base.balance)}</p></div><div><span className="text-muted-foreground">PayMongo net ledger</span><p className="font-semibold text-foreground">{formatPHP(provider?.balance)}</p></div></div><PaymongoPosition position={data?.paymongo_account_position} /></>}</article>;
               })}
             </div>
           </article>
