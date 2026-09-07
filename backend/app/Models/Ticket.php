@@ -15,9 +15,13 @@ class Ticket extends Model
     protected $fillable = [
         'ticket_number',
         'customer_id',
+        'router_id',
+        'sms_advisory_campaign_id',
         'assigned_to',
         'subject',
         'description',
+        'scheduled_start_at',
+        'scheduled_end_at',
         'status',
         'priority',
         'category',
@@ -43,6 +47,8 @@ class Ticket extends Model
     protected $casts = [
         'resolved_at' => 'datetime',
         'closed_at' => 'datetime',
+        'scheduled_start_at' => 'datetime',
+        'scheduled_end_at' => 'datetime',
         'claimed_at' => 'datetime',
         'started_at' => 'datetime',
         'repair_details' => 'array',
@@ -56,6 +62,9 @@ class Ticket extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    public function router(): BelongsTo { return $this->belongsTo(Router::class); }
+    public function smsAdvisoryCampaign(): BelongsTo { return $this->belongsTo(SmsAdvisoryCampaign::class); }
 
     public function assignedTo(): BelongsTo
     {

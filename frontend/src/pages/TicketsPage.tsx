@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import ticketService from '../services/ticketService';
 import { customerService } from '../services/customerService';
+import { routerService, type Router } from '../services/routerService';
 import type { Ticket, Customer } from '../types/api';
 
 interface ProfileChangeRequest {
@@ -47,10 +48,15 @@ const TicketsPage: React.FC = () => {
   const canDeleteTickets = user?.permissions?.includes('delete-tickets')
     || user?.role === 'super_admin'
     || user?.roles?.some((item) => typeof item === 'string' ? item === 'super_admin' : item.name === 'super_admin');
-  const canCreateTickets = user?.permissions?.includes('create-tickets') || false;
+  const canCreateTickets = user?.permissions?.includes('create-tickets')
+    || user?.role === 'admin'
+    || user?.role === 'super_admin'
+    || user?.roles?.some((item) => typeof item === 'string' ? ['admin', 'super_admin'].includes(item) : ['admin', 'super_admin'].includes(item.name))
+    || false;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [routers, setRouters] = useState<Router[]>([]);
   const [profileChanges, setProfileChanges] = useState<ProfileChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -68,11 +74,16 @@ const TicketsPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     customer_id: '',
-    ticket_type: 'other' as 'repair' | 'installation' | 'other',
+    ticket_type: 'other' as 'repair' | 'installation' | 'other' | 'maintenance' | 'expansion',
     subject: '',
     description: '',
     priority: 'medium' as const,
     category: 'general' as const,
+    router_id: '',
+    scheduled_start_at: '',
+    scheduled_end_at: '',
+    maintenance_sms_authorized: false,
+    maintenance_sms_confirmation: '',
   });
 
   // The selected filters are the intended refresh triggers for these API loaders.
@@ -81,6 +92,7 @@ const TicketsPage: React.FC = () => {
     fetchTickets();
     fetchInstallationApprovals();
     fetchCustomers();
+    routerService.getAll().then(setRouters).catch(() => setRouters([]));
     fetchProfileChanges();
     api.get('/customer-portal/service-plans')
       .then((response) => setInstallationPlans(response.data?.data || []))
@@ -181,7 +193,16 @@ const TicketsPage: React.FC = () => {
       }
       return;
     }
-    if (!formData.customer_id) {
+    const networkWide = ['maintenance', 'expansion'].includes(formData.ticket_type);
+    if (networkWide && (!formData.router_id || !formData.scheduled_start_at)) {
+      window.alert('Select a router and scheduled start.');
+      return;
+    }
+    if (formData.ticket_type === 'maintenance' && (!formData.maintenance_sms_authorized || formData.maintenance_sms_confirmation !== 'NOTIFY ROUTER CUSTOMERS')) {
+      window.alert('Confirm the router-area maintenance SMS advisory.');
+      return;
+    }
+    if (!networkWide && !formData.customer_id) {
       window.alert('Select a customer before creating the ticket.');
       return;
     }
@@ -328,6 +349,11 @@ const TicketsPage: React.FC = () => {
       description: '',
       priority: 'medium',
       category: 'general',
+      router_id: '',
+      scheduled_start_at: '',
+      scheduled_end_at: '',
+      maintenance_sms_authorized: false,
+      maintenance_sms_confirmation: '',
     });
   };
 
@@ -395,7 +421,8 @@ const TicketsPage: React.FC = () => {
     return (
       ticket.ticket_number.toLowerCase().includes(searchLower) ||
       ticket.subject.toLowerCase().includes(searchLower) ||
-      ticket.customer?.full_name?.toLowerCase().includes(searchLower)
+      ticket.customer?.full_name?.toLowerCase().includes(searchLower) ||
+      ticket.router?.name?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -549,13 +576,13 @@ const TicketsPage: React.FC = () => {
                       {ticket.ticket_number}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {ticket.customer?.full_name || 'N/A'}
+                      {ticket.customer?.full_name || (ticket.router ? `${ticket.router.name} service area` : 'Network-wide')}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
                       {ticket.subject}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                      {ticket.ticket_type === 'installation' ? 'installation application' : ticket.ticket_type === 'repair' ? 'repair' : ticket.category.replace('_', ' ')}
+                      {ticket.ticket_type === 'installation' ? 'installation application' : ticket.ticket_type === 'repair' ? 'repair' : ticket.ticket_type === 'maintenance' ? 'maintenance' : ticket.ticket_type === 'expansion' ? 'network expansion' : ticket.category.replace('_', ' ')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getPriorityBadge(ticket.priority)}
@@ -608,14 +635,14 @@ const TicketsPage: React.FC = () => {
                       <select
                         value={formData.ticket_type}
                         onChange={(event) => {
-                          const ticketType = event.target.value as 'repair' | 'installation' | 'other';
+                          const ticketType = event.target.value as 'repair' | 'installation' | 'other' | 'maintenance' | 'expansion';
                           setFormData((current) => ({
                             ...current,
                             ticket_type: ticketType,
                             subject: ticketType === 'installation'
                               ? 'New Installation Application — approval and binding required'
                               : current.ticket_type === 'installation' ? '' : current.subject,
-                            category: ticketType === 'repair'
+                            category: ['repair', 'maintenance', 'expansion'].includes(ticketType)
                               ? 'technical'
                               : ticketType === 'installation' ? 'general' : current.category,
                           }));
@@ -624,6 +651,8 @@ const TicketsPage: React.FC = () => {
                       >
                         <option value="other">General / billing concern</option>
                         <option value="repair">Repair / no-internet concern</option>
+                        <option value="maintenance">Network Maintenance</option>
+                        <option value="expansion">Network Expansion</option>
                         <option value="installation">New Installation Application</option>
                       </select>
                       {formData.ticket_type === 'installation' && (
@@ -667,7 +696,28 @@ const TicketsPage: React.FC = () => {
                         </label>
                         <p className="text-xs text-blue-800 dark:text-cyan-300">A pending customer account and installation ticket will be created. The client receives portal credentials through the existing welcome-email system.</p>
                       </div>
-                    ) : (<>
+                    ) : ['maintenance', 'expansion'].includes(formData.ticket_type) ? (<>
+                    <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-800 dark:bg-slate-900/70">
+                      <label className="block text-sm font-medium text-gray-800 dark:text-slate-100">Affected router / service area *</label>
+                      <select required value={formData.router_id} onChange={(e) => setFormData({ ...formData, router_id: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        <option value="">Select router</option>
+                        {routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.location ? ` - ${router.location}` : ''}{router.is_active ? '' : ' (inactive)'}</option>)}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-slate-300">This list comes from Network Devices, so newly added routers appear automatically.</p>
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <label className="text-sm font-medium text-gray-800 dark:text-slate-100">Scheduled start *<input required type="datetime-local" value={formData.scheduled_start_at} onChange={(e) => setFormData({ ...formData, scheduled_start_at: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800" /></label>
+                        <label className="text-sm font-medium text-gray-800 dark:text-slate-100">Expected completion<input type="datetime-local" min={formData.scheduled_start_at || undefined} value={formData.scheduled_end_at} onChange={(e) => setFormData({ ...formData, scheduled_end_at: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800" /></label>
+                      </div>
+                      {formData.ticket_type === 'maintenance' && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                        <p className="font-semibold">Router-area SMS advisory</p>
+                        <p className="mt-1 text-xs">Creating this ticket queues one empathetic maintenance advisory to every customer assigned to the selected router who has a valid mobile number. Delivery is recorded in Mass SMS.</p>
+                        <label className="mt-3 flex items-start gap-2"><input type="checkbox" checked={formData.maintenance_sms_authorized} onChange={(e) => setFormData({ ...formData, maintenance_sms_authorized: e.target.checked })} className="mt-0.5" /><span>I authorize SMS delivery to customers assigned to this router.</span></label>
+                        <label className="mt-3 block text-xs font-semibold">Type NOTIFY ROUTER CUSTOMERS<input value={formData.maintenance_sms_confirmation} onChange={(e) => setFormData({ ...formData, maintenance_sms_confirmation: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900" /></label>
+                      </div>}
+                    </div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Subject</label><input required value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder={formData.ticket_type === 'maintenance' ? 'Planned reliability maintenance' : 'Fiber expansion project'} /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Work details</label><textarea required rows={4} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Scope, affected area, work plan, and customer impact" /></div>
+                    </>) : (<>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
                       <div className="rounded-lg border border-gray-300 bg-white">
@@ -788,10 +838,12 @@ const TicketsPage: React.FC = () => {
                       type="submit"
                       disabled={formData.ticket_type === 'installation'
                         ? !installationForm.full_name.trim() || !installationForm.email.trim() || !installationForm.contact_number.trim() || !installationForm.address.trim() || !installationForm.service_plan_id
-                        : !formData.customer_id}
+                        : ['maintenance', 'expansion'].includes(formData.ticket_type)
+                          ? !formData.router_id || !formData.scheduled_start_at || !formData.subject.trim() || !formData.description.trim() || (formData.ticket_type === 'maintenance' && (!formData.maintenance_sms_authorized || formData.maintenance_sms_confirmation !== 'NOTIFY ROUTER CUSTOMERS'))
+                          : !formData.customer_id}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {formData.ticket_type === 'installation' ? 'Create Installation Application' : 'Create Ticket'}
+                      {formData.ticket_type === 'installation' ? 'Create Installation Application' : formData.ticket_type === 'maintenance' ? 'Create + Queue Maintenance SMS' : 'Create Ticket'}
                     </button>
                   </div>
                 </form>

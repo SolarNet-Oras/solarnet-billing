@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
 use App\Services\TicketService;
+use App\Services\NetworkWorkTicketService;
 use App\Services\TicketWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,11 +14,11 @@ use Illuminate\Support\Facades\Validator;
 
 class TicketController extends Controller
 {
-    public function __construct(protected TicketService $ticketService, protected TicketWorkflowService $workflow) {}
+    public function __construct(protected TicketService $ticketService, protected TicketWorkflowService $workflow, protected NetworkWorkTicketService $networkWork) {}
 
     public function index(Request $request): JsonResponse
     {
-        $query = Ticket::with(['customer.servicePlan', 'assignedTechnician', 'comments', 'histories.user']);
+        $query = Ticket::with(['customer.servicePlan', 'router:id,name,location', 'smsAdvisoryCampaign:id,status,recipient_count,sent_count,failed_count,skipped_count', 'assignedTechnician', 'comments', 'histories.user']);
         if ($request->filled('status')) $query->where('workflow_status', $request->status);
         if ($request->filled('ticket_type')) $query->where('ticket_type', $request->ticket_type);
         if ($request->filled('priority')) $query->where('priority', $request->priority);
@@ -37,7 +38,7 @@ class TicketController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $ticket = Ticket::with(['customer.servicePlan', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
+        $ticket = Ticket::with(['customer.servicePlan', 'router:id,name,location', 'smsAdvisoryCampaign', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
         $ticket->setAttribute('client_notes', $ticket->customer?->notes);
         if ($ticket->ticket_type === 'installation' && $ticket->workflow_status === 'waiting_admin_approval') {
             $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));
@@ -48,13 +49,33 @@ class TicketController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'customer_id' => 'required|uuid|exists:customers,id', 'subject' => 'required|string|max:255',
+            'customer_id' => 'nullable|uuid|exists:customers,id', 'subject' => 'required|string|max:255',
             'description' => 'required|string', 'priority' => 'nullable|in:low,medium,high,urgent',
             'category' => 'nullable|in:technical,billing,general,network_issue',
-            'ticket_type' => 'nullable|in:repair,installation,other',
+            'ticket_type' => 'nullable|in:repair,installation,other,maintenance,expansion',
+            'router_id' => 'nullable|uuid|exists:routers,id',
+            'scheduled_start_at' => 'nullable|date',
+            'scheduled_end_at' => 'nullable|date|after:scheduled_start_at',
+            'maintenance_sms_authorized' => 'nullable|accepted',
+            'maintenance_sms_confirmation' => 'nullable|string',
         ]);
         if ($validator->fails()) return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
-        return response()->json(['message' => 'Ticket created successfully', 'ticket' => $this->ticketService->createTicket($request->all())], 201);
+        $data = $validator->validated();
+        $networkWide = in_array($data['ticket_type'] ?? null, ['maintenance', 'expansion'], true);
+        if ($networkWide) {
+            abort_unless($request->user()?->hasAnyRole(['super_admin', 'admin']), 403, 'Only an Administrator or Super Administrator can create network-wide tickets.');
+            if (blank($data['router_id'] ?? null) || blank($data['scheduled_start_at'] ?? null)) {
+                return response()->json(['message' => 'Select a router and scheduled start for this network-wide ticket.'], 422);
+            }
+            if ($data['ticket_type'] === 'maintenance' && (! $request->boolean('maintenance_sms_authorized') || ($data['maintenance_sms_confirmation'] ?? '') !== 'NOTIFY ROUTER CUSTOMERS')) {
+                return response()->json(['message' => 'Confirm the maintenance SMS advisory before creating this ticket.'], 422);
+            }
+            $ticket = $this->networkWork->create($data, $request->user());
+            $count = $ticket->smsAdvisoryCampaign?->recipient_count ?? 0;
+            return response()->json(['message' => $data['ticket_type'] === 'maintenance' ? "Maintenance ticket created. The advisory is queued for {$count} verified customer number(s) on {$ticket->router->name}." : 'Network expansion ticket created.', 'ticket' => $ticket], 201);
+        }
+        if (blank($data['customer_id'] ?? null)) return response()->json(['message' => 'Select a customer before creating this ticket.'], 422);
+        return response()->json(['message' => 'Ticket created successfully', 'ticket' => $this->ticketService->createTicket($data)], 201);
     }
 
     public function destroy(Request $request, string $id): JsonResponse

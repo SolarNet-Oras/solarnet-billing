@@ -277,7 +277,12 @@ export interface TicketComment {
 export interface Ticket {
   id: string;
   ticket_number: string;
-  customer_id: string;
+  customer_id: string | null;
+  router_id?: string | null;
+  router?: { id: string; name: string; location?: string | null } | null;
+  sms_advisory_campaign?: { id: string; status: string; recipient_count: number; sent_count: number; failed_count: number; skipped_count: number } | null;
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
   assigned_to: string | null;
   customer?: Customer;
   client_notes?: string | null;
@@ -288,7 +293,7 @@ export interface Ticket {
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   category: 'technical' | 'billing' | 'general' | 'network_issue';
-  ticket_type: 'repair' | 'installation' | 'other';
+  ticket_type: 'repair' | 'installation' | 'other' | 'maintenance' | 'expansion';
   workflow_status: 'unclaimed' | 'claimed' | 'open' | 'in_progress' | 'resolved' | 'closed' | 'waiting_admin_approval' | 'returned_for_correction' | 'registered';
   claimed_at: string | null;
   started_at: string | null;
@@ -343,10 +348,15 @@ export interface TicketHistory {
 }
 
 export interface CreateTicketRequest {
-  customer_id: string;
+  customer_id?: string;
+  router_id?: string;
   subject: string;
   description: string;
-  ticket_type?: 'repair' | 'installation' | 'other';
+  ticket_type?: 'repair' | 'installation' | 'other' | 'maintenance' | 'expansion';
+  scheduled_start_at?: string;
+  scheduled_end_at?: string;
+  maintenance_sms_authorized?: boolean;
+  maintenance_sms_confirmation?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   category?: 'technical' | 'billing' | 'general' | 'network_issue';
 }
