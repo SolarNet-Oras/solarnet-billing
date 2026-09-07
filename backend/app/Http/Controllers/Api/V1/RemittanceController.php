@@ -383,7 +383,6 @@ class RemittanceController extends Controller
                 if ($variance < 0) {
                     abort_unless(($data['shortage_reason'] ?? null) === 'travel_expense_gas', 422, 'Cash below the remittance is allowed only for Travel Expense - Gas.');
                     abort_unless(filled($data['expense_receipt_reference'] ?? null), 422, 'Official gas receipt number/reference is required.');
-                    abort_unless($receiptPath, 422, 'Upload the official gas receipt image or PDF.');
                 }
 
                 $entry = null;
@@ -399,7 +398,11 @@ class RemittanceController extends Controller
                         'source_wallet' => $variance > 0 ? null : 'cash',
                         'destination_wallet' => $variance > 0 ? 'cash' : null,
                         'reference' => $variance > 0 ? 'OVERAGE-'.$remittance->id : trim((string) $data['expense_receipt_reference']),
-                        'notes' => $variance > 0 ? 'Automatically recorded during cash liquidation.' : 'Official fuel receipt stored privately for remittance '.$remittance->id,
+                        'notes' => $variance > 0
+                            ? 'Automatically recorded during cash liquidation.'
+                            : ($receiptPath
+                                ? 'Official fuel receipt stored privately for remittance '.$remittance->id
+                                : 'Gas expense declared during remittance liquidation; no receipt file was uploaded.'),
                         'idempotency_key' => Str::uuid(),
                         'recorded_by' => $request->user()->id,
                     ]);

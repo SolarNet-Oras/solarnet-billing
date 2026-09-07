@@ -86,7 +86,7 @@ export default function RemittancesPage() {
   const cashCounted = breakdown.reduce((total, line) => total + line.amount, 0);
   const cashMatches = Math.round(cashExpected * 100) === Math.round(cashCounted * 100);
   const cashShortage = cashCounted < cashExpected;
-  const liquidationReady = cashCounted >= cashExpected || (shortageReason === 'travel_expense_gas' && Boolean(expenseReceiptReference.trim()) && Boolean(expenseReceipt));
+  const liquidationReady = cashCounted >= cashExpected || (shortageReason === 'travel_expense_gas' && Boolean(expenseReceiptReference.trim()));
 
   const closePayment = () => { setPaymentInvoice(null); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
   const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.customer_outstanding || invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
