@@ -30,6 +30,7 @@ type MonitoringData = {
   period: { month: string; start: string; end: string; timezone: string };
   flow: { billed: number; collections: number; cash_in: number; expenses: number; payment_processing_fees: number; net_collections_after_fees: number; net_operating_movement: number; collection_rate_percent: number | null; expense_ratio_percent: number | null };
   paymongo_settlements: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; pending_count: number; overall: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; tracking_started_at: string | null }; transactions: Array<{ payment_number: string | null; invoice_number: string | null; customer_name: string | null; account_number: string | null; payment_method: string | null; gross_amount: number; fee_amount: number; net_amount: number; paid_at: string | null }> };
+  paymongo_account_position: { available: number | null; pending: number | null; total_balance: number | null; next_payout_amount: number | null; next_payout_receive_at: string | null; currency: string; livemode: boolean | null; status: 'available' | 'unavailable'; message: string | null; refreshed_at: string };
   wallets: Record<WalletName, Wallet>;
   wallet_balance_as_of: string;
   daily_metrics: DailyMetric[];
@@ -173,7 +174,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {WALLET_DISPLAY.map(({ key, label, accent }) => {
                 const wallet = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
-                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl></article>;
+                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'gcash' && <PaymongoPosition position={data?.paymongo_account_position} />}</article>;
               })}
             </div>
           </article>
@@ -196,6 +197,12 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
       </main>
     </DashboardLayout>
   );
+}
+
+function PaymongoPosition({ position }: { position?: MonitoringData['paymongo_account_position'] }): React.JSX.Element {
+  if (!position || position.status !== 'available') return <div className="mt-3 rounded-lg border border-dashed border-border p-2 text-[11px] text-muted-foreground"><b className="text-foreground">PayMongo wallet:</b> {position?.message ?? 'Loading live balance…'}</div>;
+  const payoutDate = position.next_payout_receive_at ? new Date(position.next_payout_receive_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : 'No scheduled payout returned';
+  return <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-2.5 text-[11px] dark:border-violet-900/70 dark:bg-violet-950/20"><div className="flex items-center justify-between gap-2"><b className="text-violet-900 dark:text-violet-200">PayMongo wallet · {position.livemode ? 'LIVE' : 'TEST'}</b><span className="font-bold text-foreground">{formatPHP(position.total_balance)}</span></div><dl className="mt-2 space-y-1 text-muted-foreground"><div className="flex justify-between gap-2"><dt>Available now</dt><dd>{formatPHP(position.available)}</dd></div><div className="flex justify-between gap-2"><dt>Pending settlement</dt><dd>{formatPHP(position.pending)}</dd></div><div className="flex justify-between gap-2"><dt>Next payout</dt><dd className="font-semibold text-foreground">{position.next_payout_amount === null ? 'Not returned' : formatPHP(position.next_payout_amount)}</dd></div></dl><p className="mt-1.5 text-muted-foreground">Expected: {payoutDate}</p></div>;
 }
 
 function MetricCard({ icon, label, value, detail, positive }: { icon: React.ReactNode; label: string; value: string; detail: string; positive?: boolean }): React.JSX.Element {

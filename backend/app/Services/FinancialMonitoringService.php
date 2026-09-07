@@ -207,6 +207,7 @@ class FinancialMonitoringService
             'wallets' => $wallets,
             'wallet_balance_as_of' => $balanceDate,
             'paymongo_settlements' => $paymongo,
+            'paymongo_account_position' => app(PaymongoAccountPositionService::class)->snapshot(),
             'daily_metrics' => $dailyMetrics,
             'allocation_plan' => self::allocationPlan(self::rounded($totalCollections - $processingFees)),
             'accounts_receivable' => [
