@@ -238,6 +238,7 @@ class FinancialEntryController extends Controller
             'bank_bpi', 'deposit_to_bpi', 'bank', 'bank_transfer', 'transfer' => 'bpi',
             'bank_landbank', 'deposit_to_landbank' => 'landbank',
             'gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya', 'add_to_gcash' => 'gcash',
+            'paymongo' => 'paymongo',
             default => 'other',
         };
     }

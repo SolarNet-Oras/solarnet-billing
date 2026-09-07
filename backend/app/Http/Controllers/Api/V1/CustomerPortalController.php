@@ -633,7 +633,7 @@ class CustomerPortalController extends Controller
     }
 
     /** PayMongo webhook endpoint. The event is signed, then payment state is re-read from PayMongo. */
-    public function paymongoWebhook(Request $request, PaymongoService $paymongo): JsonResponse
+    public function paymongoWebhook(Request $request, PaymongoService $paymongo, \App\Services\PaymongoOutwardTransferService $transfers): JsonResponse
     {
         $secret = config('services.paymongo.webhook_secret');
         if (!$secret || !$this->validPaymongoSignature($request->getContent(), (string) $request->header('Paymongo-Signature'), $secret)) {
@@ -649,6 +649,10 @@ class CustomerPortalController extends Controller
         $paymentIntentId = data_get($resource, 'attributes.payment_intent_id')
             ?? data_get($resource, 'attributes.payment_intent.data.id')
             ?? data_get($resource, 'attributes.payment_intent.id');
+        if (in_array($eventType, ['transfer.outward.successful', 'transfer.outward.failed'], true)) {
+            $transfers->receive((array) $resource, $eventId, $eventType);
+            return response()->json(['status' => 'ok']);
+        }
         if ($sessionId && !in_array($eventType, ['payment.paid', 'payment.failed', 'qrph.expired'], true)) {
             $paymongo->reconcileCheckout((string) $sessionId);
         } elseif ($paymentIntentId && in_array($eventType, ['payment.paid', 'payment.failed', 'qrph.expired'], true)) {

@@ -571,6 +571,7 @@ class FinancialMonitoringService
         return match (strtolower((string) $method)) {
             'cash', 'add_to_cash' => 'cash',
             'gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya', 'add_to_gcash' => 'gcash',
+            'paymongo' => 'paymongo',
             'bank_bpi', 'deposit_to_bpi', 'bank', 'bank_transfer', 'transfer' => 'bpi',
             'bank_landbank', 'deposit_to_landbank' => 'landbank',
             'online', 'credit_card' => 'online',
