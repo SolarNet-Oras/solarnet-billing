@@ -41,6 +41,9 @@ const ADMIN_CHAT_MODELS = [
 ] as const;
 
 const ADMIN_CHAT_MODEL_STORAGE_KEY = 'solarnet-ai-admin-chat-model';
+const AI_LAUNCHER_POSITION_STORAGE_KEY = 'solarnet-ai-launcher-position';
+const AI_LAUNCHER_SIZE = 72;
+const AI_LAUNCHER_MARGIN = 12;
 
 /**
  * Copyable code block for markdown fenced blocks.
@@ -120,12 +123,59 @@ const FloatingAiAssistant: React.FC = () => {
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [languageName, setLanguageName] = useState<string>('English / Filipino');
   const [selectedModel, setSelectedModel] = useState<string>(ADMIN_CHAT_MODELS[0]);
+  const [launcherPosition, setLauncherPosition] = useState<{ x: number; y: number } | null>(null);
+  const launcherDrag = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const roleNames = [(user as any)?.role, ...(((user as any)?.roles || []).map((role: any) => typeof role === 'string' ? role : role?.name))].filter(Boolean);
   const canSelectModel = roleNames.some((role: string) => ['super_admin', 'admin'].includes(role));
   const isSuperAdmin = roleNames.includes('super_admin');
   const isFinanceRole = roleNames.some((role: string) => ['super_admin', 'admin', 'cashier', 'accounting'].includes(role));
+
+  const clampLauncherPosition = (position: { x: number; y: number }): { x: number; y: number } => ({
+    x: Math.max(AI_LAUNCHER_MARGIN, Math.min(position.x, window.innerWidth - AI_LAUNCHER_SIZE - AI_LAUNCHER_MARGIN)),
+    y: Math.max(AI_LAUNCHER_MARGIN, Math.min(position.y, window.innerHeight - AI_LAUNCHER_SIZE - AI_LAUNCHER_MARGIN)),
+  });
+
+  useEffect(() => {
+    const defaultPosition = { x: window.innerWidth - AI_LAUNCHER_SIZE - 20, y: window.innerHeight - AI_LAUNCHER_SIZE - 20 };
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(AI_LAUNCHER_POSITION_STORAGE_KEY) || 'null');
+      setLauncherPosition(clampLauncherPosition(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : defaultPosition));
+    } catch {
+      setLauncherPosition(clampLauncherPosition(defaultPosition));
+    }
+
+    const keepOnScreen = (): void => setLauncherPosition((current) => current ? clampLauncherPosition(current) : current);
+    window.addEventListener('resize', keepOnScreen);
+    return () => window.removeEventListener('resize', keepOnScreen);
+  }, []);
+
+  const startLauncherDrag = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    if (!launcherPosition) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    launcherDrag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: launcherPosition.x, originY: launcherPosition.y, moved: false };
+  };
+
+  const moveLauncher = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    const drag = launcherDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (Math.hypot(dx, dy) > 5) drag.moved = true;
+    if (drag.moved) setLauncherPosition(clampLauncherPosition({ x: drag.originX + dx, y: drag.originY + dy }));
+  };
+
+  const finishLauncherDrag = (event: React.PointerEvent<HTMLButtonElement>): void => {
+    const drag = launcherDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (drag.moved) {
+      const finalPosition = clampLauncherPosition({ x: drag.originX + event.clientX - drag.startX, y: drag.originY + event.clientY - drag.startY });
+      setLauncherPosition(finalPosition);
+      window.localStorage.setItem(AI_LAUNCHER_POSITION_STORAGE_KEY, JSON.stringify(finalPosition));
+    }
+  };
 
   useEffect(() => {
     if (!canSelectModel) return;
@@ -251,9 +301,22 @@ const FloatingAiAssistant: React.FC = () => {
       {!open && (
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          className="group fixed bottom-5 right-5 z-40 h-[4.5rem] w-[4.5rem] overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-all duration-300 hover:-translate-y-1 hover:scale-105 active:translate-y-0 active:scale-95 sm:bottom-6 sm:right-6"
-          aria-label="Open AI Assistant"
+          onPointerDown={startLauncherDrag}
+          onPointerMove={moveLauncher}
+          onPointerUp={finishLauncherDrag}
+          onPointerCancel={finishLauncherDrag}
+          onClick={() => {
+            if (launcherDrag.current?.moved) {
+              launcherDrag.current = null;
+              return;
+            }
+            launcherDrag.current = null;
+            setOpen(true);
+          }}
+          style={launcherPosition ? { left: launcherPosition.x, top: launcherPosition.y } : { visibility: 'hidden' }}
+          className="group fixed z-40 h-[4.5rem] w-[4.5rem] touch-none select-none overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-[transform,box-shadow] duration-200 hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing"
+          aria-label="Open or drag AI Assistant"
+          title="Tap to open · drag to move"
           data-testid="ai-assistant-open-btn"
         >
           <span className="absolute inset-0 overflow-hidden rounded-full"><img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" /></span>
