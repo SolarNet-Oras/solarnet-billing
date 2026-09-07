@@ -981,3 +981,38 @@ html.dark .border-violet-200 { border-color: rgba(96, 165, 250, 0.4); }
 html.dark table {
   color: hsl(var(--foreground));
 }
+
+/* Mobile data surfaces remain fully reachable instead of clipping their last
+   columns. Browser and installed-PWA pinch zoom stays available as a second
+   accessibility option. */
+html,
+body {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+@media (max-width: 767px) {
+  :where(main, [role='dialog']) {
+    max-width: 100%;
+  }
+
+  :where(main, [role='dialog']) :where(p, dd, li, pre, code, a) {
+    overflow-wrap: anywhere;
+  }
+
+  :where(main, [role='dialog']) :where(div, section, article):has(> table th:nth-child(4)) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y pinch-zoom;
+    scrollbar-gutter: stable;
+  }
+
+  :where(main, [role='dialog']) table:has(th:nth-child(4)) {
+    min-width: max(720px, 100%);
+  }
+
+  :where(main, [role='dialog']) :where(input, select, textarea, button) {
+    max-width: 100%;
+  }
+}

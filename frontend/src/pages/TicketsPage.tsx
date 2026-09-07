@@ -528,8 +528,8 @@ const TicketsPage: React.FC = () => {
         </section>}
 
         {/* Tickets Table */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
-          <table className="w-full">
+        <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-gray-200 bg-white shadow-sm [-webkit-overflow-scrolling:touch]" role="region" aria-label="Support tickets—swipe horizontally to view all columns" tabIndex={0}>
+          <table className="w-full min-w-[920px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -626,8 +626,8 @@ const TicketsPage: React.FC = () => {
 
         {/* Create Ticket Modal */}
         {canCreateTickets && showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-50 p-2 sm:p-4">
+            <div className="max-h-[96dvh] w-full max-w-2xl overflow-auto rounded-xl bg-white shadow-2xl sm:max-h-[90vh]">
               <div className="p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Create New Ticket</h2>
                 <form onSubmit={handleCreateTicket}>
@@ -859,8 +859,8 @@ const TicketsPage: React.FC = () => {
 
         {/* View Ticket Modal */}
         {showViewModal && selectedTicket && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black bg-opacity-50 p-2 sm:p-4">
+            <div className="max-h-[96dvh] w-full max-w-3xl overflow-auto rounded-xl bg-white shadow-2xl sm:max-h-[90vh]">
               <div className="p-6">
                 <div className="flex justify-between items-start mb-6">
                   <div>
