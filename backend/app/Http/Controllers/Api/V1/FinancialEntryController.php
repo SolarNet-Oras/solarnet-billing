@@ -160,8 +160,8 @@ class FinancialEntryController extends Controller
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
-        if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'bpi', 'landbank'], true)) {
-            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new funds to Cash, BPI, or Landbank.');
+        if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'gcash', 'bpi', 'landbank'], true)) {
+            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new funds to Cash, GCash, BPI, or Landbank.');
         }
 
         $entry = DB::transaction(function () use ($data, $definition, $request) {
@@ -186,7 +186,7 @@ class FinancialEntryController extends Controller
     {
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
-            'destination_wallet' => ['required', 'in:cash,bpi,landbank'],
+            'destination_wallet' => ['required', 'in:cash,gcash,bpi,landbank'],
             'entry_date' => ['required', 'date'],
             'reference' => ['required', 'string', 'max:100'],
             'notes' => ['required', 'string', 'min:3', 'max:1000'],
@@ -198,8 +198,8 @@ class FinancialEntryController extends Controller
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
 
-            $methods = ['cash' => 'add_to_cash', 'bpi' => 'deposit_to_bpi', 'landbank' => 'deposit_to_landbank'];
-            $labels = ['cash' => 'Cash', 'bpi' => 'BPI', 'landbank' => 'Landbank'];
+            $methods = ['cash' => 'add_to_cash', 'gcash' => 'add_to_gcash', 'bpi' => 'deposit_to_bpi', 'landbank' => 'deposit_to_landbank'];
+            $labels = ['cash' => 'Cash', 'gcash' => 'GCash', 'bpi' => 'BPI', 'landbank' => 'Landbank'];
             $wallet = $data['destination_wallet'];
 
             return FinancialEntry::create([
