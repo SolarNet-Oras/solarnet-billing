@@ -112,8 +112,9 @@ class FinancialEntryController extends Controller
     {
         $data = $request->validate([
             'count_date' => ['required', 'date'],
-            'breakdown' => ['required', 'array', 'size:9'],
-            'breakdown.*.denomination' => ['required', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'breakdown' => ['required', 'array', 'size:10'],
+            'breakdown.*.denomination' => ['required', 'integer', 'in:1000,500,200,100,50,20,10,5,1'],
+            'breakdown.*.kind' => ['required', 'in:bill,coin'],
             'breakdown.*.count' => ['required', 'integer', 'min:0', 'max:100000'],
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -208,8 +209,9 @@ class FinancialEntryController extends Controller
             'reference' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
             'idempotency_key' => 'required|uuid',
-            'cash_breakdown' => ['nullable', 'array', 'size:9'],
-            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown' => ['nullable', 'array', 'size:10'],
+            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown.*.kind' => ['required_with:cash_breakdown', 'in:bill,coin'],
             'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
@@ -254,8 +256,9 @@ class FinancialEntryController extends Controller
             'notes' => ['required', 'string', 'min:3', 'max:1000'],
             'idempotency_key' => ['required', 'uuid'],
             'confirmation' => ['required', 'in:ADD WALLET TOP UP'],
-            'cash_breakdown' => ['nullable', 'array', 'size:9'],
-            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown' => ['nullable', 'array', 'size:10'],
+            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown.*.kind' => ['required_with:cash_breakdown', 'in:bill,coin'],
             'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
         ]);
 

@@ -16,12 +16,14 @@ class CashDenominationServiceTest extends TestCase
             ['denomination' => 100, 'count' => 2],
             ['denomination' => 50, 'count' => 2],
             ['denomination' => 20, 'count' => 10],
+            ['denomination' => 20, 'kind' => 'coin', 'count' => 1],
             ['denomination' => 5, 'count' => 429],
             ['denomination' => 1, 'count' => 204],
         ]);
 
-        $this->assertSame(2849, collect($rows)->sum('amount'));
-        $this->assertSame('bill', collect($rows)->firstWhere('denomination', 20)['kind']);
+        $this->assertSame(2869, collect($rows)->sum('amount'));
+        $this->assertCount(2, collect($rows)->where('denomination', 20));
+        $this->assertSame(1, collect($rows)->first(fn (array $row) => $row['denomination'] === 20 && $row['kind'] === 'coin')['count']);
         $this->assertSame('coin', collect($rows)->firstWhere('denomination', 10)['kind']);
     }
 

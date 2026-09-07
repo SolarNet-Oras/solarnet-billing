@@ -10,17 +10,27 @@ use Illuminate\Validation\ValidationException;
 
 class CashDenominationService
 {
-    public const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
+    public const DENOMINATIONS = [
+        ['denomination' => 1000, 'kind' => 'bill'], ['denomination' => 500, 'kind' => 'bill'],
+        ['denomination' => 200, 'kind' => 'bill'], ['denomination' => 100, 'kind' => 'bill'],
+        ['denomination' => 50, 'kind' => 'bill'], ['denomination' => 20, 'kind' => 'bill'],
+        ['denomination' => 20, 'kind' => 'coin'], ['denomination' => 10, 'kind' => 'coin'],
+        ['denomination' => 5, 'kind' => 'coin'], ['denomination' => 1, 'kind' => 'coin'],
+    ];
 
     public function normalize(array $rows): array
     {
-        $counts = collect($rows)->mapWithKeys(fn (array $row) => [(int) ($row['denomination'] ?? 0) => max(0, (int) ($row['count'] ?? 0))]);
-        return collect(self::DENOMINATIONS)->map(fn (int $denomination) => [
-            'denomination' => $denomination,
-            'count' => (int) ($counts[$denomination] ?? 0),
-            'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
-            'kind' => $denomination >= 20 ? 'bill' : 'coin',
-        ])->all();
+        $counts = collect($rows)->mapWithKeys(function (array $row): array {
+            $denomination = (int) ($row['denomination'] ?? 0);
+            $kind = ($row['kind'] ?? null) === 'coin' ? 'coin' : ($denomination >= 20 ? 'bill' : 'coin');
+            return [$this->key($denomination, $kind) => max(0, (int) ($row['count'] ?? 0))];
+        });
+        return collect(self::DENOMINATIONS)->map(function (array $definition) use ($counts): array {
+            $denomination = $definition['denomination'];
+            $kind = $definition['kind'];
+            $count = (int) ($counts[$this->key($denomination, $kind)] ?? 0);
+            return ['denomination' => $denomination, 'count' => $count, 'amount' => $denomination * $count, 'kind' => $kind];
+        })->all();
     }
 
     public function assertEqualsAmount(array $breakdown, mixed $amount): void
@@ -34,10 +44,13 @@ class CashDenominationService
     {
         $through ??= now();
         $baseline = DailyCashCount::query()->where('created_at', '<=', $through)->latest('created_at')->first();
-        $pieces = collect(self::DENOMINATIONS)->mapWithKeys(fn (int $value) => [$value => 0])->all();
+        $pieces = collect(self::DENOMINATIONS)->mapWithKeys(fn (array $row) => [$this->key($row['denomination'], $row['kind']) => 0])->all();
         $from = null;
         if ($baseline) {
-            foreach ($baseline->breakdown ?? [] as $row) $pieces[(int) $row['denomination']] = (int) $row['count'];
+            foreach ($baseline->breakdown ?? [] as $row) {
+                $kind = ($row['kind'] ?? null) === 'coin' ? 'coin' : ((int) $row['denomination'] >= 20 ? 'bill' : 'coin');
+                $pieces[$this->key((int) $row['denomination'], $kind)] = (int) $row['count'];
+            }
             $from = $baseline->created_at;
         }
 
@@ -53,10 +66,10 @@ class CashDenominationService
                 if ($entry->source_wallet === 'cash') $this->apply($pieces, $entry->cash_breakdown ?? [], -1);
             });
 
-        $rows = collect(self::DENOMINATIONS)->map(fn (int $denomination) => [
-            'denomination' => $denomination, 'count' => $pieces[$denomination],
-            'amount' => $denomination * $pieces[$denomination], 'kind' => $denomination >= 20 ? 'bill' : 'coin',
-        ])->all();
+        $rows = collect(self::DENOMINATIONS)->map(function (array $row) use ($pieces): array {
+            $key = $this->key($row['denomination'], $row['kind']);
+            return ['denomination' => $row['denomination'], 'count' => $pieces[$key], 'amount' => $row['denomination'] * $pieces[$key], 'kind' => $row['kind']];
+        })->all();
         return ['breakdown' => $rows, 'amount' => collect($rows)->sum('amount'), 'baseline_at' => $baseline?->created_at];
     }
 
@@ -64,7 +77,14 @@ class CashDenominationService
     {
         foreach ($rows as $row) {
             $denomination = (int) ($row['denomination'] ?? 0);
-            if (array_key_exists($denomination, $pieces)) $pieces[$denomination] += $direction * (int) ($row['count'] ?? 0);
+            $kind = ($row['kind'] ?? null) === 'coin' ? 'coin' : ($denomination >= 20 ? 'bill' : 'coin');
+            $key = $this->key($denomination, $kind);
+            if (array_key_exists($key, $pieces)) $pieces[$key] += $direction * (int) ($row['count'] ?? 0);
         }
+    }
+
+    private function key(int $denomination, string $kind): string
+    {
+        return $denomination . '_' . $kind;
     }
 }
