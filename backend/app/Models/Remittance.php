@@ -11,8 +11,10 @@ class Remittance extends Model
 {
     use HasUuids;
 
-    protected $fillable = ['collector_id', 'liquidated_by', 'received_by', 'declared_amount', 'cash_counted_amount', 'cash_breakdown', 'received_amount', 'status', 'notes', 'submitted_at', 'liquidated_at', 'received_at'];
-    protected $casts = ['declared_amount' => 'float', 'cash_counted_amount' => 'float', 'cash_breakdown' => 'array', 'received_amount' => 'float', 'submitted_at' => 'datetime', 'liquidated_at' => 'datetime', 'received_at' => 'datetime'];
+    protected $hidden = ['expense_receipt_path'];
+
+    protected $fillable = ['collector_id', 'liquidated_by', 'received_by', 'declared_amount', 'cash_counted_amount', 'cash_breakdown', 'liquidation_variance', 'shortage_reason', 'expense_receipt_reference', 'expense_receipt_path', 'variance_financial_entry_id', 'received_amount', 'status', 'notes', 'submitted_at', 'liquidated_at', 'received_at'];
+    protected $casts = ['declared_amount' => 'float', 'cash_counted_amount' => 'float', 'cash_breakdown' => 'array', 'liquidation_variance' => 'float', 'received_amount' => 'float', 'submitted_at' => 'datetime', 'liquidated_at' => 'datetime', 'received_at' => 'datetime'];
 
     public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }
     public function liquidator(): BelongsTo { return $this->belongsTo(User::class, 'liquidated_by'); }

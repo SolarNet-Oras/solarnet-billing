@@ -11,11 +11,15 @@ use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\ServicePlan;
 use App\Models\User;
+use App\Models\FinancialEntry;
+use App\Services\CashDenominationService;
 use App\Services\InvoiceService;
 use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 
 class RemittanceController extends Controller
@@ -316,7 +320,7 @@ class RemittanceController extends Controller
     }
 
     /** Physical cash is counted by the receiving office, never by the collector. */
-    public function liquidate(Request $request, string $id): JsonResponse
+    private function liquidateExactLegacy(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
             'cash_breakdown' => 'required|array',
@@ -351,6 +355,81 @@ class RemittanceController extends Controller
         return response()->json(['message' => 'Cash liquidation matches the collector cash total. You may now validate this remittance.', 'remittance' => $remittance]);
     }
 
+    public function liquidate(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate([
+            'cash_breakdown' => 'required|array|size:10',
+            'cash_breakdown.*.denomination' => 'required|integer|in:1000,500,200,100,50,20,10,5,1',
+            'cash_breakdown.*.kind' => 'required|in:bill,coin',
+            'cash_breakdown.*.count' => 'required|integer|min:0|max:100000',
+            'shortage_reason' => 'nullable|in:travel_expense_gas',
+            'expense_receipt_reference' => 'nullable|string|max:100',
+            'expense_receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+        ]);
+        $receiptPath = $request->hasFile('expense_receipt')
+            ? $request->file('expense_receipt')->store('remittance-expense-receipts', 'local')
+            : null;
+
+        try {
+            $remittance = DB::transaction(function () use ($request, $id, $data, $receiptPath) {
+                $remittance = Remittance::with('payments')->lockForUpdate()->findOrFail($id);
+                abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been validated.');
+                abort_if($remittance->liquidated_at || $remittance->liquidated_by, 422, 'This remittance has already been liquidated.');
+                $breakdown = app(CashDenominationService::class)->normalize($data['cash_breakdown']);
+                $cashCounted = (float) collect($breakdown)->sum('amount');
+                $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
+                $variance = round($cashCounted - $cashExpected, 2);
+
+                if ($variance < 0) {
+                    abort_unless(($data['shortage_reason'] ?? null) === 'travel_expense_gas', 422, 'Cash below the remittance is allowed only for Travel Expense - Gas.');
+                    abort_unless(filled($data['expense_receipt_reference'] ?? null), 422, 'Official gas receipt number/reference is required.');
+                    abort_unless($receiptPath, 422, 'Upload the official gas receipt image or PDF.');
+                }
+
+                $entry = null;
+                if ($variance !== 0.0) {
+                    $entry = FinancialEntry::create([
+                        'type' => $variance > 0 ? 'sale' : 'expense',
+                        'category' => $variance > 0 ? 'Remittance Cash Overage' : 'Travel Expenses',
+                        'description' => $variance > 0 ? 'Cash above recorded collector payments' : 'Gas expense deducted from collector remittance',
+                        'amount' => number_format(abs($variance), 2, '.', ''),
+                        'entry_date' => now(config('app.timezone', 'Asia/Manila'))->toDateString(),
+                        'payment_method' => $variance > 0 ? 'add_to_cash' : 'cash',
+                        'effect_type' => $variance > 0 ? 'cash_in' : 'expense',
+                        'source_wallet' => $variance > 0 ? null : 'cash',
+                        'destination_wallet' => $variance > 0 ? 'cash' : null,
+                        'reference' => $variance > 0 ? 'OVERAGE-'.$remittance->id : trim((string) $data['expense_receipt_reference']),
+                        'notes' => $variance > 0 ? 'Automatically recorded during cash liquidation.' : 'Official fuel receipt stored privately for remittance '.$remittance->id,
+                        'idempotency_key' => Str::uuid(),
+                        'recorded_by' => $request->user()->id,
+                    ]);
+                }
+
+                $remittance->update([
+                    'liquidated_by' => $request->user()->id,
+                    'cash_counted_amount' => $cashCounted,
+                    'cash_breakdown' => $breakdown,
+                    'liquidation_variance' => $variance,
+                    'shortage_reason' => $variance < 0 ? 'travel_expense_gas' : null,
+                    'expense_receipt_reference' => $variance < 0 ? trim((string) $data['expense_receipt_reference']) : null,
+                    'expense_receipt_path' => $variance < 0 ? $receiptPath : null,
+                    'variance_financial_entry_id' => $entry?->id,
+                    'liquidated_at' => now(),
+                ]);
+                return $remittance->fresh(['collector', 'liquidator', 'payments']);
+            });
+        } catch (\Throwable $e) {
+            if ($receiptPath) Storage::disk('local')->delete($receiptPath);
+            throw $e;
+        }
+
+        return response()->json(['message' => $remittance->liquidation_variance > 0
+            ? 'Cash liquidation accepted. Excess cash was added to Daily Operations.'
+            : ($remittance->liquidation_variance < 0
+                ? 'Cash liquidation accepted. The documented gas expense was added to Daily Operations.'
+                : 'Cash liquidation matches the collector cash total. You may now validate this remittance.'), 'remittance' => $remittance]);
+    }
+
     public function index(): JsonResponse
     {
         return response()->json(Remittance::with(['collector:id,name,email', 'liquidator:id,name,email', 'receiver:id,name,email', 'payments:id,remittance_id,payment_method,amount,payment_number'])->latest('submitted_at')->paginate(50));
@@ -364,8 +443,10 @@ class RemittanceController extends Controller
             abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been verified.');
             abort_unless($remittance->liquidated_at && $remittance->liquidated_by, 422, 'Cash must be liquidated by an administrator or cashier before validation.');
             $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
-            abort_unless((int) round((float) $remittance->cash_counted_amount * 100) === (int) round($cashExpected * 100), 422, 'The stored cash liquidation does not match recorded cash payments.');
-            $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (float) $data['received_amount'] === (float) $remittance->declared_amount ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
+            $variance = round((float) $remittance->cash_counted_amount - $cashExpected, 2);
+            abort_unless((int) round($variance * 100) === (int) round((float) $remittance->liquidation_variance * 100), 422, 'The stored cash variance no longer reconciles with recorded payments.');
+            $reconciledExpected = round((float) $remittance->declared_amount + (float) $remittance->liquidation_variance, 2);
+            $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (int) round((float) $data['received_amount'] * 100) === (int) round($reconciledExpected * 100) ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
 
             return $remittance->fresh(['collector', 'liquidator', 'receiver', 'payments']);
         });
