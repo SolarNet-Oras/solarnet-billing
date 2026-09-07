@@ -162,9 +162,9 @@ class PaymongoService
         ];
     }
 
-    public function markPaidByCheckoutId(string $sessionId): void
+    public function markPaidByCheckoutId(string $sessionId, ?string $providerPaymentId = null, ?array $settlement = null): void
     {
-        DB::transaction(function () use ($sessionId) {
+        DB::transaction(function () use ($sessionId, $providerPaymentId, $settlement) {
             $checkout = PaymongoCheckout::with('invoice.customer')->where('checkout_session_id', $sessionId)->lockForUpdate()->first();
             if (!$checkout || $checkout->payment_id) return;
             $invoice = $checkout->invoice->fresh();
@@ -172,7 +172,7 @@ class PaymongoService
                 throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
             }
             $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo GCash checkout | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
-            $checkout->update(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id]);
+            $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
         });
     }
 
@@ -199,7 +199,7 @@ class PaymongoService
             return false;
         }
         $paymongoPaymentId = data_get($attributes, 'payments.0.id') ?: data_get($attributes, 'latest_payment.id') ?: $paymentIntentId;
-        return $this->markPaidByQrCheckout($checkout, $paymongoPaymentId, $eventId);
+        return $this->markPaidByQrCheckout($checkout, $paymongoPaymentId, $eventId, $this->retrieveSettlement((string) $paymongoPaymentId, $checkout));
     }
 
     /** Resolve webhook payloads that identify the PayMongo payment resource. */
@@ -218,9 +218,9 @@ class PaymongoService
         return $intentId ? $this->reconcileQrPhPayment((string) $intentId, $eventId) : false;
     }
 
-    private function markPaidByQrCheckout(PaymongoCheckout $checkout, string $paymongoPaymentId, ?string $eventId): bool
+    private function markPaidByQrCheckout(PaymongoCheckout $checkout, string $paymongoPaymentId, ?string $eventId, ?array $settlement = null): bool
     {
-        return DB::transaction(function () use ($checkout, $paymongoPaymentId, $eventId): bool {
+        return DB::transaction(function () use ($checkout, $paymongoPaymentId, $eventId, $settlement): bool {
             $locked = PaymongoCheckout::with('invoice.customer')->whereKey($checkout->id)->lockForUpdate()->first();
             if (!$locked) return false;
             if ($locked->payment_id || $locked->status === 'paid') return true;
@@ -241,6 +241,7 @@ class PaymongoService
             $locked->paymongo_payment_id = $paymongoPaymentId;
             $locked->webhook_event_id = $eventId ?: $locked->webhook_event_id;
             $locked->paid_at = now();
+            $locked->fill($this->settlementColumns($settlement));
             $locked->save();
             Log::info('PayMongo QR Ph payment confirmed', ['payment_intent_id' => $locked->payment_intent_id, 'payment_id' => $paymongoPaymentId, 'invoice_id' => $invoice->id, 'amount' => $locked->amount, 'webhook_event_id' => $eventId]);
             return true;
@@ -257,7 +258,12 @@ class PaymongoService
         $attributes = $response->json('data.attributes', []);
         $status = strtolower((string) ($attributes['payment_intent']['attributes']['status'] ?? $attributes['status'] ?? ''));
         if (!in_array($status, ['paid', 'succeeded'], true)) return false;
-        $this->markPaidByCheckoutId($sessionId);
+        $providerPaymentId = data_get($attributes, 'payment_intent.attributes.payments.0.id')
+            ?: data_get($attributes, 'payment_intent.attributes.latest_payment.id')
+            ?: data_get($attributes, 'payments.0.id');
+        $checkout = PaymongoCheckout::where('checkout_session_id', $sessionId)->first();
+        $settlement = $providerPaymentId && $checkout ? $this->retrieveSettlement((string) $providerPaymentId, $checkout) : null;
+        $this->markPaidByCheckoutId($sessionId, $providerPaymentId ? (string) $providerPaymentId : null, $settlement);
         return true;
     }
 
@@ -267,7 +273,7 @@ class PaymongoService
      */
     public function reconcilePendingCheckouts(): array
     {
-        $result = ['checked' => 0, 'paid' => 0, 'failed' => 0];
+        $result = ['checked' => 0, 'paid' => 0, 'failed' => 0, 'settlements_captured' => 0];
 
         PaymongoCheckout::query()
             ->whereIn('status', ['pending', 'processing'])
@@ -288,7 +294,62 @@ class PaymongoService
                 }
             });
 
+        PaymongoCheckout::query()
+            ->where('status', 'paid')
+            ->whereNotNull('paymongo_payment_id')
+            ->whereNull('settlement_captured_at')
+            ->where('paid_at', '>=', now()->subDays(30))
+            ->limit(100)
+            ->get()
+            ->each(function (PaymongoCheckout $checkout) use (&$result): void {
+                try {
+                    $settlement = $this->retrieveSettlement((string) $checkout->paymongo_payment_id, $checkout);
+                    if ($settlement) {
+                        $checkout->update($this->settlementColumns($settlement));
+                        $result['settlements_captured']++;
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            });
+
         return $result;
+    }
+
+    /** Retrieve authoritative amounts from PayMongo; never infer fees from a public rate table. */
+    private function retrieveSettlement(string $paymentId, PaymongoCheckout $checkout): ?array
+    {
+        if (!str_starts_with($paymentId, 'pay_')) return null;
+        $response = Http::withBasicAuth((string) config('services.paymongo.secret_key'), '')->acceptJson()->timeout(20)
+            ->get(rtrim(config('services.paymongo.base_url'), '/') . '/payments/' . $paymentId);
+        if (!$response->successful()) return null;
+        $attributes = $response->json('data.attributes', []);
+        if (strtoupper((string) ($attributes['currency'] ?? '')) !== 'PHP') return null;
+        $gross = $attributes['amount'] ?? null;
+        $fee = $attributes['fee'] ?? null;
+        $net = $attributes['net_amount'] ?? null;
+        if (!is_numeric($gross) || !is_numeric($fee) || !is_numeric($net) || (int) $gross !== (int) round($checkout->amount * 100)) return null;
+        return [
+            'gross' => ((int) $gross) / 100,
+            'fee' => ((int) $fee) / 100,
+            'net' => ((int) $net) / 100,
+            'method' => data_get($attributes, 'source.type') ?: data_get($attributes, 'payment_method.type') ?: $checkout->checkout_type,
+            'balance_transaction_id' => $attributes['balance_transaction_id'] ?? null,
+        ];
+    }
+
+    private function settlementColumns(?array $settlement): array
+    {
+        if (!$settlement) return ['settlement_status' => 'pending_provider'];
+        return [
+            'provider_gross_amount' => $settlement['gross'],
+            'provider_fee' => $settlement['fee'],
+            'provider_net_amount' => $settlement['net'],
+            'provider_payment_method' => $settlement['method'],
+            'provider_balance_transaction_id' => $settlement['balance_transaction_id'],
+            'settlement_status' => 'provider_confirmed',
+            'settlement_captured_at' => now(),
+        ];
     }
 
     /** Verify the authenticated customer's latest checkout after returning from PayMongo. */

@@ -13,9 +13,10 @@ type Wallet = {
   transfers_in: number;
   transfers_out: number;
   expenses: number;
+  processing_fees: number;
   balance: number;
 };
-type DailyMetric = { date: string; billed: number; collections: number; cash_in: number; expenses: number; net_operating_movement: number };
+type DailyMetric = { date: string; billed: number; collections: number; cash_in: number; expenses: number; processing_fees: number; net_operating_movement: number };
 type Allocation = { key: string; label: string; percent_of_planning_base: number; percent_of_collections: number; amount: number };
 type Anomaly = { type: string; severity: 'review' | 'monitor'; message: string; amount_total?: number; customer?: { account_number?: string | null; full_name?: string | null }; payment_numbers?: string[]; invoice_numbers?: string[]; payment_count?: number; invoice_count?: number; remittance_count?: number };
 type CollectorCashRow = {
@@ -27,7 +28,8 @@ type CollectorCashRow = {
 };
 type MonitoringData = {
   period: { month: string; start: string; end: string; timezone: string };
-  flow: { billed: number; collections: number; cash_in: number; expenses: number; net_operating_movement: number; collection_rate_percent: number | null; expense_ratio_percent: number | null };
+  flow: { billed: number; collections: number; cash_in: number; expenses: number; payment_processing_fees: number; net_collections_after_fees: number; net_operating_movement: number; collection_rate_percent: number | null; expense_ratio_percent: number | null };
+  paymongo_settlements: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; pending_count: number; overall: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; tracking_started_at: string | null }; transactions: Array<{ payment_number: string | null; invoice_number: string | null; customer_name: string | null; account_number: string | null; payment_method: string | null; gross_amount: number; fee_amount: number; net_amount: number; paid_at: string | null }> };
   wallets: Record<WalletName, Wallet>;
   daily_metrics: DailyMetric[];
   allocation_plan: { collection_base: number; planning_base: number; retained_operations: number; allocations: Allocation[]; note: string };
@@ -111,9 +113,16 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
 
         <section aria-live="polite" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard icon={<ReceiptText className="h-4 w-4" />} label="Collections received" value={formatPHP(data?.flow.collections)} detail="Recognized company collections" />
-          <MetricCard icon={<Banknote className="h-4 w-4" />} label="Operating expenses" value={formatPHP(data?.flow.expenses)} detail="Approved daily-operation expenses" />
+          <MetricCard icon={<Banknote className="h-4 w-4" />} label="PayMongo net received" value={formatPHP(data?.paymongo_settlements.net_amount)} detail={`${formatPHP(data?.paymongo_settlements.fee_amount)} actual provider fees`} />
           <MetricCard icon={<WalletCards className="h-4 w-4" />} label="Net operating movement" value={formatPHP(data?.flow.net_operating_movement)} detail="Collections + cash in − expenses" positive={(data?.flow.net_operating_movement ?? 0) >= 0} />
           <MetricCard icon={<Landmark className="h-4 w-4" />} label="Outstanding receivables" value={formatPHP(data?.accounts_receivable.outstanding_balance)} detail={`${data?.accounts_receivable.open_invoice_count ?? 0} open invoice${(data?.accounts_receivable.open_invoice_count ?? 0) === 1 ? '' : 's'}`} />
+        </section>
+
+        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-foreground">PayMongo settlement deductions</h2><p className="mt-1 text-sm text-muted-foreground">Actual provider-reported values only. Customer payments stay at their full gross amount; fees reduce operational cash, not invoice credit.</p></div><div className="text-right"><p className="text-lg font-bold text-foreground">Net {formatPHP(data?.paymongo_settlements.net_amount)}</p><p className="text-xs text-muted-foreground">{data?.paymongo_settlements.confirmed_count ?? 0} confirmed · {data?.paymongo_settlements.pending_count ?? 0} awaiting provider details</p></div></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3"><AllocationCard label="Gross customer payments" value={formatPHP(data?.paymongo_settlements.gross_amount)} detail="Full amount credited to invoices" /><AllocationCard label="PayMongo deductions" value={formatPHP(data?.paymongo_settlements.fee_amount)} detail="Actual transaction fees" accent="text-red-600 dark:text-red-400" /><AllocationCard label="Net settlement" value={formatPHP(data?.paymongo_settlements.net_amount)} detail="Gross less provider fee" accent="text-emerald-600 dark:text-emerald-400" /></div>
+          <p className="mt-3 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">Overall since actual-fee tracking began: <b className="text-foreground">{formatPHP(data?.paymongo_settlements.overall.gross_amount)}</b> gross − <b className="text-red-600 dark:text-red-400">{formatPHP(data?.paymongo_settlements.overall.fee_amount)}</b> fees = <b className="text-emerald-600 dark:text-emerald-400">{formatPHP(data?.paymongo_settlements.overall.net_amount)}</b> net across {data?.paymongo_settlements.overall.confirmed_count ?? 0} confirmed transaction(s).</p>
+          {!!data?.paymongo_settlements.transactions.length && <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-border"><table className="w-full min-w-[720px] text-left text-xs"><thead className="sticky top-0 bg-muted text-muted-foreground"><tr><th className="p-2">Payment / customer</th><th className="p-2">Method</th><th className="p-2 text-right">Gross</th><th className="p-2 text-right">Fee</th><th className="p-2 text-right">Net</th></tr></thead><tbody>{data.paymongo_settlements.transactions.map((row, index) => <tr key={`${row.payment_number}-${index}`} className="border-t border-border"><td className="p-2"><b className="text-foreground">{row.payment_number ?? row.invoice_number}</b><br /><span className="text-muted-foreground">{row.customer_name} · {row.account_number}</span></td><td className="p-2 uppercase text-muted-foreground">{row.payment_method ?? 'PayMongo'}</td><td className="p-2 text-right text-foreground">{formatPHP(row.gross_amount)}</td><td className="p-2 text-right text-red-600 dark:text-red-400">−{formatPHP(row.fee_amount)}</td><td className="p-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{formatPHP(row.net_amount)}</td></tr>)}</tbody></table></div>}
         </section>
 
         <section className="rounded-xl border border-border bg-card p-2.5 sm:p-3">
@@ -162,8 +171,8 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
             <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-foreground">Channel position</h2><p className="mt-1 text-sm text-muted-foreground">Separate operational movement for each money channel.</p></div><p className="text-sm font-semibold text-foreground">Total {formatPHP(totalWalletMovement)}</p></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {WALLET_DISPLAY.map(({ key, label, accent }) => {
-                const wallet = wallets?.[key] ?? { collections: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
-                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl></article>;
+                const wallet = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
+                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl></article>;
               })}
             </div>
           </article>

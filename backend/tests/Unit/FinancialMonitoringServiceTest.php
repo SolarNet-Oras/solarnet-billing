@@ -42,6 +42,18 @@ class FinancialMonitoringServiceTest extends TestCase
         $this->assertSame(0.0, $wallets['gcash']['collections']);
     }
 
+    public function test_it_deducts_only_confirmed_provider_fees_from_the_channel_balance(): void
+    {
+        $wallets = FinancialMonitoringService::calculateWallets([
+            ['payment_method' => 'mobile_money', 'amount' => 800, 'processing_fee' => 20],
+            ['payment_method' => 'mobile_money', 'amount' => 800],
+        ], []);
+
+        $this->assertSame(1600.0, $wallets['gcash']['collections']);
+        $this->assertSame(20.0, $wallets['gcash']['processing_fees']);
+        $this->assertSame(1580.0, $wallets['gcash']['balance']);
+    }
+
     public function test_it_calculates_the_requested_80_percent_collectibles_plan_without_moving_funds(): void
     {
         $plan = FinancialMonitoringService::allocationPlan(10000);

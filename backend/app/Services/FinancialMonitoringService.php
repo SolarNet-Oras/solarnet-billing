@@ -6,6 +6,7 @@ use App\Models\CustomerCredit;
 use App\Models\FinancialEntry;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\User;
 use Carbon\Carbon;
@@ -38,6 +39,7 @@ class FinancialMonitoringService
         // This is the same control used by Daily Operations and prevents the
         // monitor from overstating Cash before a collector turns it over.
         $regularCollections = Payment::query()
+            ->with('paymongoCheckout:id,payment_id,provider_fee,provider_net_amount,settlement_status')
             ->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])
             ->where(fn ($query) => $query->where('payment_method', '!=', 'cash')->orWhereNull('collector_id'))
             ->get(['id', 'amount', 'payment_date', 'payment_method']);
@@ -56,6 +58,7 @@ class FinancialMonitoringService
                 'id' => $payment->id,
                 'amount' => (float) $payment->amount,
                 'payment_method' => $payment->payment_method,
+                'processing_fee' => (float) ($payment->paymongoCheckout?->provider_fee ?? 0),
                 'recognized_date' => $payment->payment_date?->toDateString(),
             ])
             ->concat($liquidatedCollectorCash->map(fn (Payment $payment) => [
@@ -67,6 +70,44 @@ class FinancialMonitoringService
             ->filter(fn (array $payment) => !empty($payment['recognized_date']))
             ->values();
         $wallets = self::calculateWallets($collections, $entries);
+
+        $settlements = PaymongoCheckout::query()
+            ->with(['payment:id,payment_number', 'customer:id,full_name,account_number', 'invoice:id,invoice_number'])
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+            ->orderByDesc('paid_at')
+            ->get();
+        $confirmedSettlements = $settlements->where('settlement_status', 'provider_confirmed');
+        $processingFees = self::rounded((float) $confirmedSettlements->sum('provider_fee'));
+        $overallSettlement = PaymongoCheckout::query()
+            ->where('settlement_status', 'provider_confirmed')
+            ->selectRaw('COUNT(*) as count, COALESCE(SUM(provider_gross_amount), 0) as gross, COALESCE(SUM(provider_fee), 0) as fees, COALESCE(SUM(provider_net_amount), 0) as net, MIN(settlement_captured_at) as tracking_started_at')
+            ->first();
+        $paymongo = [
+            'gross_amount' => self::rounded((float) $confirmedSettlements->sum('provider_gross_amount')),
+            'fee_amount' => $processingFees,
+            'net_amount' => self::rounded((float) $confirmedSettlements->sum('provider_net_amount')),
+            'confirmed_count' => $confirmedSettlements->count(),
+            'pending_count' => $settlements->where('settlement_status', '!=', 'provider_confirmed')->count(),
+            'overall' => [
+                'gross_amount' => self::rounded((float) ($overallSettlement?->gross ?? 0)),
+                'fee_amount' => self::rounded((float) ($overallSettlement?->fees ?? 0)),
+                'net_amount' => self::rounded((float) ($overallSettlement?->net ?? 0)),
+                'confirmed_count' => (int) ($overallSettlement?->count ?? 0),
+                'tracking_started_at' => $overallSettlement?->tracking_started_at,
+            ],
+            'transactions' => $confirmedSettlements->take(100)->map(fn (PaymongoCheckout $checkout) => [
+                'payment_number' => $checkout->payment?->payment_number,
+                'invoice_number' => $checkout->invoice?->invoice_number,
+                'customer_name' => $checkout->customer?->full_name,
+                'account_number' => $checkout->customer?->account_number,
+                'payment_method' => $checkout->provider_payment_method,
+                'gross_amount' => (float) $checkout->provider_gross_amount,
+                'fee_amount' => (float) $checkout->provider_fee,
+                'net_amount' => (float) $checkout->provider_net_amount,
+                'paid_at' => $checkout->paid_at?->toIso8601String(),
+            ])->values()->all(),
+        ];
 
         $periodInvoices = Invoice::query()
             ->with('customer:id,full_name,account_number')
@@ -105,7 +146,7 @@ class FinancialMonitoringService
         $totalCollections = self::rounded(array_sum(array_column($wallets, 'collections')));
         $cashIn = self::rounded(array_sum(array_column($wallets, 'cash_in')));
         $expenses = self::rounded(array_sum(array_column($wallets, 'expenses')));
-        $netMovement = self::rounded($totalCollections + $cashIn - $expenses);
+        $netMovement = self::rounded($totalCollections + $cashIn - $expenses - $processingFees);
         $dailyMetrics = $this->dailyMetrics($period, $periodInvoices, $collections, $entries);
         $periodPayments = Payment::query()
             ->with(['customer:id,full_name,account_number', 'invoice:id,invoice_number'])
@@ -129,13 +170,16 @@ class FinancialMonitoringService
                 'collections' => $totalCollections,
                 'cash_in' => $cashIn,
                 'expenses' => $expenses,
+                'payment_processing_fees' => $processingFees,
+                'net_collections_after_fees' => self::rounded($totalCollections - $processingFees),
                 'net_operating_movement' => $netMovement,
                 'collection_rate_percent' => $collectionRate,
                 'expense_ratio_percent' => $expenseRatio,
             ],
             'wallets' => $wallets,
+            'paymongo_settlements' => $paymongo,
             'daily_metrics' => $dailyMetrics,
-            'allocation_plan' => self::allocationPlan($totalCollections),
+            'allocation_plan' => self::allocationPlan(self::rounded($totalCollections - $processingFees)),
             'accounts_receivable' => [
                 'open_invoice_count' => $openInvoices,
                 'outstanding_balance' => self::rounded($outstanding),
@@ -158,11 +202,13 @@ class FinancialMonitoringService
                 'Invoice issue-date totals for billed amount; invoices are not treated as collected cash.',
                 'Payments by payment date, with collector cash counted on remittance liquidation date.',
                 'Financial entries for approved cash-in, transfers, and expenses.',
+                'PayMongo payment resources for provider-confirmed gross, fee, and net settlement amounts.',
                 'Open invoice balances for live receivables and CustomerCredit for unspent advance credit.',
             ],
             'limitations' => [
                 'Wallet figures are operational movement for the selected month, not a bank statement or a formal opening/closing general-ledger balance.',
                 'Internal wallet transfers are excluded from net operating movement because they do not create or spend company funds.',
+                'A PayMongo fee is deducted only after PayMongo returns its actual fee and net amount; pending settlement records are never estimated.',
             ],
             'generated_at' => now(config('app.timezone', 'Asia/Manila'))->toIso8601String(),
         ];
@@ -258,12 +304,13 @@ class FinancialMonitoringService
      *
      * @param iterable<array|object> $collections
      * @param iterable<array|object> $entries
-     * @return array<string, array{collections: float, cash_in: float, transfers_in: float, transfers_out: float, expenses: float, balance: float}>
+     * @return array<string, array{collections: float, processing_fees: float, cash_in: float, transfers_in: float, transfers_out: float, expenses: float, balance: float}>
      */
     public static function calculateWallets(iterable $collections, iterable $entries): array
     {
         $wallets = collect(self::WALLETS)->mapWithKeys(fn (string $wallet) => [$wallet => [
             'collections' => 0.0,
+            'processing_fees' => 0.0,
             'cash_in' => 0.0,
             'transfers_in' => 0.0,
             'transfers_out' => 0.0,
@@ -275,6 +322,7 @@ class FinancialMonitoringService
             $wallet = self::walletFor(self::value($collection, 'payment_method'));
             if (isset($wallets[$wallet])) {
                 $wallets[$wallet]['collections'] += (float) self::value($collection, 'amount');
+                $wallets[$wallet]['processing_fees'] += (float) (self::value($collection, 'processing_fee') ?: 0);
             }
         }
 
@@ -302,11 +350,12 @@ class FinancialMonitoringService
 
         foreach ($wallets as &$wallet) {
             $wallet['collections'] = self::rounded($wallet['collections']);
+            $wallet['processing_fees'] = self::rounded($wallet['processing_fees']);
             $wallet['cash_in'] = self::rounded($wallet['cash_in']);
             $wallet['transfers_in'] = self::rounded($wallet['transfers_in']);
             $wallet['transfers_out'] = self::rounded($wallet['transfers_out']);
             $wallet['expenses'] = self::rounded($wallet['expenses']);
-            $wallet['balance'] = self::rounded($wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses']);
+            $wallet['balance'] = self::rounded($wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'] - $wallet['processing_fees']);
         }
 
         return $wallets;
@@ -352,7 +401,7 @@ class FinancialMonitoringService
         $metrics = [];
         for ($date = $period['start']->copy(); $date->lte($lastDate); $date->addDay()) {
             $key = $date->toDateString();
-            $metrics[$key] = ['date' => $key, 'billed' => 0.0, 'collections' => 0.0, 'cash_in' => 0.0, 'expenses' => 0.0, 'net_operating_movement' => 0.0];
+            $metrics[$key] = ['date' => $key, 'billed' => 0.0, 'collections' => 0.0, 'cash_in' => 0.0, 'expenses' => 0.0, 'processing_fees' => 0.0, 'net_operating_movement' => 0.0];
         }
 
         foreach ($invoices as $invoice) {
@@ -361,7 +410,10 @@ class FinancialMonitoringService
         }
         foreach ($collections as $collection) {
             $key = $collection['recognized_date'];
-            if (isset($metrics[$key])) $metrics[$key]['collections'] += (float) $collection['amount'];
+            if (isset($metrics[$key])) {
+                $metrics[$key]['collections'] += (float) $collection['amount'];
+                $metrics[$key]['processing_fees'] += (float) ($collection['processing_fee'] ?? 0);
+            }
         }
         foreach ($entries as $entry) {
             $key = $entry->entry_date?->toDateString();
@@ -376,7 +428,8 @@ class FinancialMonitoringService
             $metric['collections'] = self::rounded($metric['collections']);
             $metric['cash_in'] = self::rounded($metric['cash_in']);
             $metric['expenses'] = self::rounded($metric['expenses']);
-            $metric['net_operating_movement'] = self::rounded($metric['collections'] + $metric['cash_in'] - $metric['expenses']);
+            $metric['processing_fees'] = self::rounded($metric['processing_fees']);
+            $metric['net_operating_movement'] = self::rounded($metric['collections'] + $metric['cash_in'] - $metric['expenses'] - $metric['processing_fees']);
         }
 
         return array_values($metrics);

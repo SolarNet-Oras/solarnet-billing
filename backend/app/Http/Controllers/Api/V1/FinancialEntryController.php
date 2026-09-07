@@ -49,21 +49,26 @@ class FinancialEntryController extends Controller
         // selected detail period. Count all valid movements through today.
         $balanceDate = now()->toDateString();
         $balanceCutoff = now()->endOfDay();
-        $balanceCollections = Payment::query()
+        $balanceCollections = Payment::query()->with('paymongoCheckout:id,payment_id,provider_fee,settlement_status')
             ->whereDate('payment_date', '<=', $balanceDate)
             ->where(fn ($query) => $query->where('payment_method', '!=', 'cash')->orWhereNull('collector_id'))
             ->get()
-            ->concat(Payment::query()
+            ->concat(Payment::query()->with('paymongoCheckout:id,payment_id,provider_fee,settlement_status')
                 ->where('payment_method', 'cash')
                 ->whereNotNull('collector_id')
                 ->whereHas('remittance', fn ($query) => $query->whereNotNull('liquidated_at')->where('liquidated_at', '<=', $balanceCutoff))
                 ->get());
         $balanceEntries = FinancialEntry::query()->whereDate('entry_date', '<=', $balanceDate)->get();
-        $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
+        $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'processing_fees' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
 
         foreach ($balanceCollections as $collection) {
             $wallet = $this->walletFor($collection->payment_method);
-            if (isset($wallets[$wallet])) $wallets[$wallet]['collections'] += (float) $collection->amount;
+            if (isset($wallets[$wallet])) {
+                $wallets[$wallet]['collections'] += (float) $collection->amount;
+                if ($collection->paymongoCheckout?->settlement_status === 'provider_confirmed') {
+                    $wallets[$wallet]['processing_fees'] += (float) $collection->paymongoCheckout->provider_fee;
+                }
+            }
         }
         foreach ($balanceEntries as $entry) {
             $amount = (float) $entry->amount;
@@ -81,7 +86,7 @@ class FinancialEntryController extends Controller
                 if (isset($wallets[$wallet])) $wallets[$wallet]['cash_in'] += $amount;
             }
         }
-        foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'];
+        foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'] - $wallet['processing_fees'];
 
         return response()->json(['data' => [
             'period' => $period,
