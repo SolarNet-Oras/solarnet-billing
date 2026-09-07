@@ -69,7 +69,35 @@ class FinancialMonitoringService
             ]))
             ->filter(fn (array $payment) => !empty($payment['recognized_date']))
             ->values();
-        $wallets = self::calculateWallets($collections, $entries);
+        $periodWallets = self::calculateWallets($collections, $entries);
+
+        // Channel Position is a running operational balance through today,
+        // independent of the selected reporting month. Monthly flow, graph,
+        // ratios, and planning below continue to use only the selected period.
+        $balanceDate = now(config('app.timezone', 'Asia/Manila'))->toDateString();
+        $balanceCutoff = now(config('app.timezone', 'Asia/Manila'))->endOfDay();
+        $allRegularCollections = Payment::query()
+            ->with('paymongoCheckout:id,payment_id,provider_fee,settlement_status')
+            ->whereDate('payment_date', '<=', $balanceDate)
+            ->where(fn ($query) => $query->where('payment_method', '!=', 'cash')->orWhereNull('collector_id'))
+            ->get(['id', 'amount', 'payment_date', 'payment_method']);
+        $allLiquidatedCollectorCash = Payment::query()
+            ->with(['remittance:id,liquidated_at', 'paymongoCheckout:id,payment_id,provider_fee,settlement_status'])
+            ->where('payment_method', 'cash')
+            ->whereNotNull('collector_id')
+            ->whereHas('remittance', fn ($query) => $query->whereNotNull('liquidated_at')->where('liquidated_at', '<=', $balanceCutoff))
+            ->get(['id', 'remittance_id', 'amount', 'payment_date', 'payment_method']);
+        $allCollections = $allRegularCollections->concat($allLiquidatedCollectorCash)->map(fn (Payment $payment) => [
+            'amount' => (float) $payment->amount,
+            'payment_method' => $payment->payment_method,
+            'processing_fee' => $payment->paymongoCheckout?->settlement_status === 'provider_confirmed'
+                ? (float) $payment->paymongoCheckout->provider_fee
+                : 0.0,
+        ]);
+        $allEntries = FinancialEntry::query()
+            ->whereDate('entry_date', '<=', $balanceDate)
+            ->get(['type', 'amount', 'payment_method', 'effect_type', 'source_wallet', 'destination_wallet']);
+        $wallets = self::calculateWallets($allCollections, $allEntries);
 
         $settlements = PaymongoCheckout::query()
             ->with(['payment:id,payment_number', 'customer:id,full_name,account_number', 'invoice:id,invoice_number'])
@@ -143,9 +171,9 @@ class FinancialMonitoringService
             ->where('remaining_amount', '>', 0)
             ->sum('remaining_amount');
 
-        $totalCollections = self::rounded(array_sum(array_column($wallets, 'collections')));
-        $cashIn = self::rounded(array_sum(array_column($wallets, 'cash_in')));
-        $expenses = self::rounded(array_sum(array_column($wallets, 'expenses')));
+        $totalCollections = self::rounded(array_sum(array_column($periodWallets, 'collections')));
+        $cashIn = self::rounded(array_sum(array_column($periodWallets, 'cash_in')));
+        $expenses = self::rounded(array_sum(array_column($periodWallets, 'expenses')));
         $netMovement = self::rounded($totalCollections + $cashIn - $expenses - $processingFees);
         $dailyMetrics = $this->dailyMetrics($period, $periodInvoices, $collections, $entries);
         $periodPayments = Payment::query()
@@ -177,6 +205,7 @@ class FinancialMonitoringService
                 'expense_ratio_percent' => $expenseRatio,
             ],
             'wallets' => $wallets,
+            'wallet_balance_as_of' => $balanceDate,
             'paymongo_settlements' => $paymongo,
             'daily_metrics' => $dailyMetrics,
             'allocation_plan' => self::allocationPlan(self::rounded($totalCollections - $processingFees)),

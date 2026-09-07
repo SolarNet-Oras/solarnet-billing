@@ -31,6 +31,7 @@ type MonitoringData = {
   flow: { billed: number; collections: number; cash_in: number; expenses: number; payment_processing_fees: number; net_collections_after_fees: number; net_operating_movement: number; collection_rate_percent: number | null; expense_ratio_percent: number | null };
   paymongo_settlements: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; pending_count: number; overall: { gross_amount: number; fee_amount: number; net_amount: number; confirmed_count: number; tracking_started_at: string | null }; transactions: Array<{ payment_number: string | null; invoice_number: string | null; customer_name: string | null; account_number: string | null; payment_method: string | null; gross_amount: number; fee_amount: number; net_amount: number; paid_at: string | null }> };
   wallets: Record<WalletName, Wallet>;
+  wallet_balance_as_of: string;
   daily_metrics: DailyMetric[];
   allocation_plan: { collection_base: number; planning_base: number; retained_operations: number; allocations: Allocation[]; note: string };
   accounts_receivable: { open_invoice_count: number; outstanding_balance: number; overdue_balance: number; available_advance_credit: number };
@@ -168,7 +169,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
           <article className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-foreground">Channel position</h2><p className="mt-1 text-sm text-muted-foreground">Separate operational movement for each money channel.</p></div><p className="text-sm font-semibold text-foreground">Total {formatPHP(totalWalletMovement)}</p></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-foreground">Channel position</h2><p className="mt-1 text-sm text-muted-foreground">Running operational balances from all previous months through {data?.wallet_balance_as_of ?? 'today'}. The selected month does not limit these cards.</p></div><p className="text-sm font-semibold text-foreground">Overall total {formatPHP(totalWalletMovement)}</p></div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {WALLET_DISPLAY.map(({ key, label, accent }) => {
                 const wallet = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
