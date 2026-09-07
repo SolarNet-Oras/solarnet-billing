@@ -9,6 +9,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
+use App\Models\PaymentRefund;
 use App\Models\Setting;
 use App\Services\BillingSuspensionService;
 use Carbon\Carbon;
@@ -695,7 +696,7 @@ class InvoiceService
     }
 
     /** Materialize paid_amount, balance and status from the allocation ledger. */
-    private function reconcileInvoiceFromAllocations(Invoice $invoice): void
+    public function reconcileInvoiceFromAllocations(Invoice $invoice): void
     {
         $paidCents = $this->moneyToCents(PaymentAllocation::query()
             ->where('invoice_id', $invoice->id)
@@ -749,8 +750,10 @@ class InvoiceService
             ->where('payment_id', $payment->id)->sum('amount'));
         $credit = $this->moneyToCents(CustomerCredit::query()
             ->where('payment_id', $payment->id)->sum('remaining_amount'));
+        $refunded = $this->moneyToCents(PaymentRefund::query()
+            ->where('payment_id', $payment->id)->sum('amount'));
 
-        if ($received !== $allocated + $credit) {
+        if ($received !== $allocated + $credit + $refunded) {
             throw new \RuntimeException('Payment ownership invariant failed; no financial changes were committed.');
         }
     }

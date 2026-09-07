@@ -5,7 +5,10 @@ namespace Tests\Feature;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\PaymentAllocation;
+use App\Models\Remittance;
+use App\Models\User;
 use App\Services\InvoiceService;
+use App\Services\PaymentRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -79,6 +82,36 @@ class PaymentAllocationLedgerTest extends TestCase
         $this->assertSame('800.00', $cancelled->fresh()->balance);
         $this->assertSame('0.00', $current->fresh()->balance);
         $this->assertSame('200.00', $payment->fresh()->customer->credits()->sum('remaining_amount'));
+    }
+
+    public function test_refunded_cash_preserves_the_receipt_and_remittance_but_reopens_the_invoice(): void
+    {
+        $customer = $this->customer();
+        $invoice = $this->invoice($customer, '2026-09-01', '899.00', '899.00');
+        $actor = User::factory()->create();
+        $remittance = Remittance::create([
+            'collector_id' => $actor->id,
+            'received_by' => $actor->id,
+            'declared_amount' => '400.00',
+            'received_amount' => '400.00',
+            'status' => 'received',
+            'submitted_at' => now(),
+            'received_at' => now(),
+        ]);
+        $payment = app(InvoiceService::class)->recordPayment($invoice, [
+            'amount' => '400.00', 'payment_method' => 'cash', 'transaction_id' => 'cash-refund-test',
+        ]);
+        $payment->update(['remittance_id' => $remittance->id, 'collector_id' => $actor->id]);
+
+        $refund = app(PaymentRefundService::class)->refund($payment, 400, 'Cash returned to customer.', $actor);
+
+        $this->assertSame('400.00', $payment->fresh()->amount);
+        $this->assertSame('received', $remittance->fresh()->status);
+        $this->assertSame('400.00', $refund->amount);
+        $this->assertSame('400.00', number_format((float) $refund->financialEntry->amount, 2, '.', ''));
+        $this->assertSame('899.00', $invoice->fresh()->balance);
+        $this->assertSame('0.00', $invoice->fresh()->paid_amount);
+        $this->assertSame(0, $payment->allocations()->count());
     }
 
     private function customer(): Customer

@@ -63,4 +63,5 @@ class Payment extends Model
     public function remittance(): BelongsTo { return $this->belongsTo(Remittance::class); }
     public function paymongoCheckout(): HasOne { return $this->hasOne(PaymongoCheckout::class, 'payment_id'); }
     public function allocations(): HasMany { return $this->hasMany(PaymentAllocation::class); }
+    public function refunds(): HasMany { return $this->hasMany(PaymentRefund::class); }
 }
