@@ -145,6 +145,9 @@ class FinancialEntryController extends Controller
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
+        if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && $definition->destination_wallet === 'cash') {
+            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new cash to the company cash balance.');
+        }
 
         $entry = DB::transaction(function () use ($data, $definition, $request) {
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
@@ -162,6 +165,45 @@ class FinancialEntryController extends Controller
             ]);
         });
         return response()->json(['data' => $entry], $entry->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function cashTopUp(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
+            'entry_date' => ['required', 'date'],
+            'reference' => ['required', 'string', 'max:100'],
+            'notes' => ['required', 'string', 'min:3', 'max:1000'],
+            'idempotency_key' => ['required', 'uuid'],
+            'confirmation' => ['required', 'in:ADD CASH TOP UP'],
+        ]);
+
+        $entry = DB::transaction(function () use ($data, $request): FinancialEntry {
+            $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
+            if ($existing) return $existing;
+
+            return FinancialEntry::create([
+                'transaction_definition_id' => null,
+                'type' => 'sale',
+                'category' => 'Super Admin Cash Top-up',
+                'description' => trim($data['notes']),
+                'amount' => $data['amount'],
+                'entry_date' => $data['entry_date'],
+                'payment_method' => 'add_to_cash',
+                'effect_type' => 'cash_in',
+                'source_wallet' => null,
+                'destination_wallet' => 'cash',
+                'reference' => trim($data['reference']),
+                'notes' => trim($data['notes']),
+                'idempotency_key' => $data['idempotency_key'],
+                'recorded_by' => $request->user()->id,
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Cash top-up recorded in the Daily Operations ledger.',
+            'data' => $entry->load('recorder:id,name'),
+        ], $entry->wasRecentlyCreated ? 201 : 200);
     }
 
     private function walletFor(?string $method): string

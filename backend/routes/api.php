@@ -377,6 +377,7 @@ Route::prefix('v1')->group(function () {
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
         Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::post('financial-entries', [FinancialEntryController::class, 'store'])->middleware('permission:create-payments');
+        Route::post('financial-entries/cash-top-up', [FinancialEntryController::class, 'cashTopUp'])->middleware('role:super_admin');
         Route::post('transaction-definitions', [FinancialEntryController::class, 'createDefinition'])->middleware('permission:edit-settings');
         Route::delete('transaction-definitions/{transactionDefinition}', [FinancialEntryController::class, 'deactivateDefinition'])->middleware('permission:edit-settings');
 
