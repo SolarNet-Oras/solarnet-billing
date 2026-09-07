@@ -34,7 +34,7 @@ class RoleSeeder extends Seeder
                     'view-service-plans', 'create-service-plans', 'edit-service-plans',
                     'view-invoices', 'create-invoices', 'edit-invoices',
                     'view-payments', 'create-payments',
-                    'view-tickets', 'assign-tickets', 'close-tickets',
+                    'view-tickets', 'create-tickets', 'assign-tickets', 'close-tickets',
                     'view-inventory', 'create-inventory', 'edit-inventory',
                     'view-reports', 'export-reports',
                     'view-settings',

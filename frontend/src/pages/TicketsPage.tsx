@@ -42,16 +42,14 @@ const emptyInstallationApplication = {
 
 const TicketsPage: React.FC = () => {
   const { user } = useAuth();
-  const canApproveInstallations = ['admin', 'super_admin'].some((role) =>
-    user?.role === role || user?.roles?.some((item) => typeof item === 'string' ? item === role : item.name === role),
-  );
+  const roleNames = [user?.role, ...(user?.roles || []).map((item) => typeof item === 'string' ? item : item.name)].filter(Boolean);
+  const canManageNetworkTickets = roleNames.some((role) => ['admin', 'super_admin'].includes(String(role)));
+  const canApproveInstallations = canManageNetworkTickets;
   const canDeleteTickets = user?.permissions?.includes('delete-tickets')
     || user?.role === 'super_admin'
     || user?.roles?.some((item) => typeof item === 'string' ? item === 'super_admin' : item.name === 'super_admin');
   const canCreateTickets = user?.permissions?.includes('create-tickets')
-    || user?.role === 'admin'
-    || user?.role === 'super_admin'
-    || user?.roles?.some((item) => typeof item === 'string' ? ['admin', 'super_admin'].includes(item) : ['admin', 'super_admin'].includes(item.name))
+    || roleNames.some((role) => ['super_admin', 'admin', 'office_admin', 'technician', 'noc'].includes(String(role)))
     || false;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
@@ -651,8 +649,8 @@ const TicketsPage: React.FC = () => {
                       >
                         <option value="other">General / billing concern</option>
                         <option value="repair">Repair / no-internet concern</option>
-                        <option value="maintenance">Network Maintenance</option>
-                        <option value="expansion">Network Expansion</option>
+                        {canManageNetworkTickets && <option value="maintenance">Network Maintenance</option>}
+                        {canManageNetworkTickets && <option value="expansion">Network Expansion</option>}
                         <option value="installation">New Installation Application</option>
                       </select>
                       {formData.ticket_type === 'installation' && (
