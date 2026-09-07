@@ -7,6 +7,7 @@ use App\Models\FinancialEntry;
 use App\Models\DailyCashCount;
 use App\Models\Payment;
 use App\Models\TransactionDefinition;
+use App\Services\CashDenominationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -103,6 +104,7 @@ class FinancialEntryController extends Controller
             'expenses' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'expense')->values(),
             'wallets' => $wallets,
             'cash_count' => $cashCount,
+            'cash_denomination_position' => app(CashDenominationService::class)->livePosition(),
         ]]);
     }
 
@@ -116,14 +118,7 @@ class FinancialEntryController extends Controller
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $counts = collect($data['breakdown'])
-            ->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
-        $breakdown = collect([1000, 500, 200, 100, 50, 20, 10, 5, 1])->map(fn (int $denomination) => [
-            'denomination' => $denomination,
-            'count' => (int) ($counts[$denomination] ?? 0),
-            'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
-            'kind' => $denomination >= 20 ? 'bill' : 'coin',
-        ])->all();
+        $breakdown = app(CashDenominationService::class)->normalize($data['breakdown']);
         $counted = (float) collect($breakdown)->sum('amount');
 
         // Reuse the authoritative cumulative wallet calculation returned by
@@ -213,11 +208,22 @@ class FinancialEntryController extends Controller
             'reference' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
             'idempotency_key' => 'required|uuid',
+            'cash_breakdown' => ['nullable', 'array', 'size:9'],
+            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
         if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'gcash', 'bpi', 'landbank'], true)) {
             abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new funds to Cash, GCash, BPI, or Landbank.');
+        }
+        $touchesCash = $definition->source_wallet === 'cash' || $definition->destination_wallet === 'cash';
+        if ($touchesCash) {
+            if (! isset($data['cash_breakdown'])) return response()->json(['message' => 'Cash denominations are required for a cash disbursement, transfer, or addition.'], 422);
+            $data['cash_breakdown'] = app(CashDenominationService::class)->normalize($data['cash_breakdown']);
+            app(CashDenominationService::class)->assertEqualsAmount($data['cash_breakdown'], $data['amount']);
+        } else {
+            $data['cash_breakdown'] = null;
         }
 
         $entry = DB::transaction(function () use ($data, $definition, $request) {
@@ -248,7 +254,17 @@ class FinancialEntryController extends Controller
             'notes' => ['required', 'string', 'min:3', 'max:1000'],
             'idempotency_key' => ['required', 'uuid'],
             'confirmation' => ['required', 'in:ADD WALLET TOP UP'],
+            'cash_breakdown' => ['nullable', 'array', 'size:9'],
+            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
         ]);
+
+        if ($data['destination_wallet'] === 'cash' && isset($data['cash_breakdown'])) {
+            $data['cash_breakdown'] = app(CashDenominationService::class)->normalize($data['cash_breakdown']);
+            app(CashDenominationService::class)->assertEqualsAmount($data['cash_breakdown'], $data['amount']);
+        } else {
+            $data['cash_breakdown'] = null;
+        }
 
         $entry = DB::transaction(function () use ($data, $request): FinancialEntry {
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
@@ -264,6 +280,7 @@ class FinancialEntryController extends Controller
                 'category' => 'Super Admin '.$labels[$wallet].' Top-up',
                 'description' => trim($data['notes']),
                 'amount' => $data['amount'],
+                'cash_breakdown' => $data['cash_breakdown'],
                 'entry_date' => $data['entry_date'],
                 'payment_method' => $methods[$wallet],
                 'effect_type' => 'cash_in',
