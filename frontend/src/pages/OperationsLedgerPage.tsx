@@ -97,6 +97,7 @@ export default function OperationsLedgerPage(): React.JSX.Element {
     setError(''); setIsSavingTopUp(true);
     try {
       const response = await api.post('/financial-entries/cash-top-up', {
+        destination_wallet: topUp.destination_wallet,
         amount: Number(topUp.amount), entry_date: date, reference: topUp.reference.trim(), notes: topUp.notes.trim(),
         confirmation: topUp.confirmation, idempotency_key: crypto.randomUUID(),
       });
