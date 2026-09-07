@@ -125,6 +125,8 @@ const FloatingAiAssistant: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>(ADMIN_CHAT_MODELS[0]);
   const [launcherPosition, setLauncherPosition] = useState<{ x: number; y: number } | null>(null);
   const launcherDrag = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const launcherPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressLauncherClick = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const roleNames = [(user as any)?.role, ...(((user as any)?.roles || []).map((role: any) => typeof role === 'string' ? role : role?.name))].filter(Boolean);
@@ -136,6 +138,10 @@ const FloatingAiAssistant: React.FC = () => {
     x: Math.max(AI_LAUNCHER_MARGIN, Math.min(position.x, window.innerWidth - AI_LAUNCHER_SIZE - AI_LAUNCHER_MARGIN)),
     y: Math.max(AI_LAUNCHER_MARGIN, Math.min(position.y, window.innerHeight - AI_LAUNCHER_SIZE - AI_LAUNCHER_MARGIN)),
   });
+
+  useEffect(() => {
+    launcherPositionRef.current = launcherPosition;
+  }, [launcherPosition]);
 
   useEffect(() => {
     const defaultPosition = { x: window.innerWidth - AI_LAUNCHER_SIZE - 20, y: window.innerHeight - AI_LAUNCHER_SIZE - 20 };
@@ -163,18 +169,29 @@ const FloatingAiAssistant: React.FC = () => {
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     if (Math.hypot(dx, dy) > 5) drag.moved = true;
-    if (drag.moved) setLauncherPosition(clampLauncherPosition({ x: drag.originX + dx, y: drag.originY + dy }));
+    if (drag.moved) {
+      const nextPosition = clampLauncherPosition({ x: drag.originX + dx, y: drag.originY + dy });
+      launcherPositionRef.current = nextPosition;
+      setLauncherPosition(nextPosition);
+    }
   };
 
   const finishLauncherDrag = (event: React.PointerEvent<HTMLButtonElement>): void => {
     const drag = launcherDrag.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (drag.moved) {
-      const finalPosition = clampLauncherPosition({ x: drag.originX + event.clientX - drag.startX, y: drag.originY + event.clientY - drag.startY });
+    const wasMoved = drag.moved;
+    if (wasMoved) {
+      const finalPosition = event.type === 'pointercancel' && launcherPositionRef.current
+        ? clampLauncherPosition(launcherPositionRef.current)
+        : clampLauncherPosition({ x: drag.originX + event.clientX - drag.startX, y: drag.originY + event.clientY - drag.startY });
+      launcherPositionRef.current = finalPosition;
       setLauncherPosition(finalPosition);
       window.localStorage.setItem(AI_LAUNCHER_POSITION_STORAGE_KEY, JSON.stringify(finalPosition));
     }
+    launcherDrag.current = null;
+    suppressLauncherClick.current = wasMoved;
+    if (wasMoved) window.setTimeout(() => { suppressLauncherClick.current = false; }, 300);
   };
 
   useEffect(() => {
@@ -306,15 +323,11 @@ const FloatingAiAssistant: React.FC = () => {
           onPointerUp={finishLauncherDrag}
           onPointerCancel={finishLauncherDrag}
           onClick={() => {
-            if (launcherDrag.current?.moved) {
-              launcherDrag.current = null;
-              return;
-            }
-            launcherDrag.current = null;
+            if (suppressLauncherClick.current) return;
             setOpen(true);
           }}
           style={launcherPosition ? { left: launcherPosition.x, top: launcherPosition.y } : { visibility: 'hidden' }}
-          className="group fixed z-40 h-[4.5rem] w-[4.5rem] touch-none select-none overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-[transform,box-shadow] duration-200 hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing"
+          className="group fixed z-[80] h-[4.5rem] w-[4.5rem] touch-none select-none overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-[transform,box-shadow] duration-200 hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing"
           aria-label="Open or drag AI Assistant"
           title="Tap to open · drag to move"
           data-testid="ai-assistant-open-btn"
