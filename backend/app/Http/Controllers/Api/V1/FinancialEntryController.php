@@ -59,10 +59,10 @@ class FinancialEntryController extends Controller
                 ->whereHas('remittance', fn ($query) => $query->whereNotNull('liquidated_at')->where('liquidated_at', '<=', $balanceCutoff))
                 ->get());
         $balanceEntries = FinancialEntry::query()->whereDate('entry_date', '<=', $balanceDate)->get();
-        $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'processing_fees' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
+        $wallets = collect(['cash', 'gcash', 'paymongo', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'processing_fees' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
 
         foreach ($balanceCollections as $collection) {
-            $wallet = $this->walletFor($collection->payment_method);
+            $wallet = $collection->paymongoCheckout ? 'paymongo' : $this->walletFor($collection->payment_method);
             if (isset($wallets[$wallet])) {
                 $wallets[$wallet]['collections'] += (float) $collection->amount;
                 if ($collection->paymongoCheckout?->settlement_status === 'provider_confirmed') {

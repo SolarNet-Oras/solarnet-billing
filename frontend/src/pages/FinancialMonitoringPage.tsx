@@ -6,7 +6,7 @@ import { formatPHP } from '@/lib/currency';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
 
-type WalletName = 'cash' | 'gcash' | 'bpi' | 'landbank' | 'online';
+type WalletName = 'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank' | 'online';
 type Wallet = {
   collections: number;
   cash_in: number;
@@ -56,6 +56,7 @@ type MonitoringData = {
 const WALLET_DISPLAY: Array<{ key: WalletName; label: string; accent: string }> = [
   { key: 'cash', label: 'Cash', accent: 'text-emerald-600 dark:text-emerald-400' },
   { key: 'gcash', label: 'GCash', accent: 'text-violet-600 dark:text-violet-400' },
+  { key: 'paymongo', label: 'PayMongo · GCash + QR Ph', accent: 'text-fuchsia-600 dark:text-fuchsia-400' },
   { key: 'bpi', label: 'BPI', accent: 'text-blue-600 dark:text-blue-400' },
   { key: 'landbank', label: 'Landbank', accent: 'text-cyan-600 dark:text-cyan-400' },
   { key: 'online', label: 'Online', accent: 'text-amber-600 dark:text-amber-400' },
@@ -174,7 +175,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {WALLET_DISPLAY.map(({ key, label, accent }) => {
                 const wallet = wallets?.[key] ?? { collections: 0, processing_fees: 0, cash_in: 0, transfers_in: 0, transfers_out: 0, expenses: 0, balance: 0 };
-                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'gcash' && <PaymongoPosition position={data?.paymongo_account_position} />}</article>;
+                return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(wallet.balance)}</p><dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'paymongo' && <PaymongoPosition position={data?.paymongo_account_position} />}</article>;
               })}
             </div>
           </article>

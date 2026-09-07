@@ -54,6 +54,20 @@ class FinancialMonitoringServiceTest extends TestCase
         $this->assertSame(1580.0, $wallets['gcash']['balance']);
     }
 
+    public function test_it_consolidates_authenticated_paymongo_methods_into_one_wallet(): void
+    {
+        $wallets = FinancialMonitoringService::calculateWallets([
+            ['payment_method' => 'mobile_money', 'wallet' => 'paymongo', 'amount' => 800, 'processing_fee' => 20],
+            ['payment_method' => 'mobile_money', 'wallet' => 'paymongo', 'amount' => 999, 'processing_fee' => 15],
+            ['payment_method' => 'gcash', 'amount' => 500],
+        ], []);
+
+        $this->assertSame(1799.0, $wallets['paymongo']['collections']);
+        $this->assertSame(35.0, $wallets['paymongo']['processing_fees']);
+        $this->assertSame(1764.0, $wallets['paymongo']['balance']);
+        $this->assertSame(500.0, $wallets['gcash']['balance']);
+    }
+
     public function test_it_calculates_the_requested_80_percent_collectibles_plan_without_moving_funds(): void
     {
         $plan = FinancialMonitoringService::allocationPlan(10000);

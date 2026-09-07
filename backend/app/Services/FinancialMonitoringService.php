@@ -20,7 +20,7 @@ use Carbon\Carbon;
  */
 class FinancialMonitoringService
 {
-    private const WALLETS = ['cash', 'gcash', 'bpi', 'landbank', 'online'];
+    private const WALLETS = ['cash', 'gcash', 'paymongo', 'bpi', 'landbank', 'online'];
 
     /**
      * @return array<string, mixed>
@@ -58,6 +58,7 @@ class FinancialMonitoringService
                 'id' => $payment->id,
                 'amount' => (float) $payment->amount,
                 'payment_method' => $payment->payment_method,
+                'wallet' => $payment->paymongoCheckout ? 'paymongo' : null,
                 'processing_fee' => (float) ($payment->paymongoCheckout?->provider_fee ?? 0),
                 'recognized_date' => $payment->payment_date?->toDateString(),
             ])
@@ -90,6 +91,7 @@ class FinancialMonitoringService
         $allCollections = $allRegularCollections->concat($allLiquidatedCollectorCash)->map(fn (Payment $payment) => [
             'amount' => (float) $payment->amount,
             'payment_method' => $payment->payment_method,
+            'wallet' => $payment->paymongoCheckout ? 'paymongo' : null,
             'processing_fee' => $payment->paymongoCheckout?->settlement_status === 'provider_confirmed'
                 ? (float) $payment->paymongoCheckout->provider_fee
                 : 0.0,
@@ -349,7 +351,7 @@ class FinancialMonitoringService
         ]])->all();
 
         foreach ($collections as $collection) {
-            $wallet = self::walletFor(self::value($collection, 'payment_method'));
+            $wallet = self::value($collection, 'wallet') ?: self::walletFor(self::value($collection, 'payment_method'));
             if (isset($wallets[$wallet])) {
                 $wallets[$wallet]['collections'] += (float) self::value($collection, 'amount');
                 $wallets[$wallet]['processing_fees'] += (float) (self::value($collection, 'processing_fee') ?: 0);
