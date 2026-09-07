@@ -42,7 +42,7 @@ const ADMIN_CHAT_MODELS = [
 
 const ADMIN_CHAT_MODEL_STORAGE_KEY = 'solarnet-ai-admin-chat-model';
 const AI_LAUNCHER_POSITION_STORAGE_KEY = 'solarnet-ai-launcher-position';
-const AI_LAUNCHER_SIZE = 72;
+const AI_LAUNCHER_SIZE = 84;
 const AI_LAUNCHER_MARGIN = 12;
 
 /**
@@ -168,7 +168,7 @@ const FloatingAiAssistant: React.FC = () => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    if (Math.hypot(dx, dy) > 5) drag.moved = true;
+    if (Math.hypot(dx, dy) > 2) drag.moved = true;
     if (drag.moved) {
       const nextPosition = clampLauncherPosition({ x: drag.originX + dx, y: drag.originY + dy });
       launcherPositionRef.current = nextPosition;
@@ -322,18 +322,19 @@ const FloatingAiAssistant: React.FC = () => {
           onPointerMove={moveLauncher}
           onPointerUp={finishLauncherDrag}
           onPointerCancel={finishLauncherDrag}
+          onDragStart={(event) => event.preventDefault()}
           onClick={() => {
             if (suppressLauncherClick.current) return;
             setOpen(true);
           }}
           style={launcherPosition ? { left: launcherPosition.x, top: launcherPosition.y } : { visibility: 'hidden' }}
-          className="group fixed z-[80] h-[4.5rem] w-[4.5rem] touch-none select-none overflow-visible rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-[transform,box-shadow] duration-200 hover:scale-105 active:scale-95 cursor-grab active:cursor-grabbing"
+          className="group fixed z-[80] h-[5.25rem] w-[5.25rem] touch-none select-none rounded-full border border-transparent bg-transparent p-1.5 cursor-grab active:cursor-grabbing"
           aria-label="Open or drag AI Assistant"
           title="Tap to open · drag to move"
           data-testid="ai-assistant-open-btn"
         >
-          <span className="absolute inset-0 overflow-hidden rounded-full"><img src="/solarnet-ai-chat.png" alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" /></span>
-          <span className="absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full border-[3px] border-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,.9)]" />
+          <span className="pointer-events-none absolute inset-1.5 overflow-hidden rounded-full border-2 border-cyan-300 bg-slate-950 shadow-[0_0_0_5px_rgba(14,165,233,.12),0_16px_45px_rgba(2,132,199,.45)] transition-[transform,box-shadow] duration-200 group-hover:scale-105 group-active:scale-95"><img draggable={false} src="/solarnet-ai-chat.png" alt="" className="pointer-events-none h-full w-full select-none object-cover transition-transform duration-500 group-hover:scale-110" /></span>
+          <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 rounded-full border-[3px] border-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,.9)]" />
         </button>
       )}
 
