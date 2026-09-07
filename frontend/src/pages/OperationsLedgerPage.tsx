@@ -13,8 +13,11 @@ type Entry = {
   remittance?: { liquidated_at?: string | null; liquidator?: { name: string } };
 };
 type Wallet = { collections: number; processing_fees: number; cash_in: number; transfers_in: number; transfers_out: number; expenses: number; balance: number };
-type Data = { collections: Entry[]; cash_in: Entry[]; transfers: Entry[]; expenses: Entry[]; wallets: Record<'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank', Wallet>; wallet_balance_as_of?: string };
+type CashCount = { id: string; counted_amount: number; expected_cash_balance: number; variance: number; breakdown: Array<{ denomination: number; count: number; amount: number; kind: 'bill' | 'coin' }>; notes?: string | null; created_at: string; counter?: { name: string } };
+type Data = { collections: Entry[]; cash_in: Entry[]; transfers: Entry[]; expenses: Entry[]; wallets: Record<'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank', Wallet>; wallet_balance_as_of?: string; cash_count?: CashCount | null };
 type Definition = { id: string; type: string; description: string; payment_method: string; effect_type?: string | null; source_wallet?: string | null; destination_wallet?: string | null; active?: boolean };
+
+const CASH_DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1] as const;
 
 const METHOD_LABELS: Record<string, string> = {
   cash: 'Cash', gcash: 'GCash', bank_bpi: 'BPI', bank_landbank: 'Landbank',
@@ -44,11 +47,16 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const [showCashTopUp, setShowCashTopUp] = useState(false);
   const [topUp, setTopUp] = useState({ destination_wallet: 'cash', amount: '', reference: '', notes: '', confirmation: '' });
   const [isSavingTopUp, setIsSavingTopUp] = useState(false);
+  const [cashCounts, setCashCounts] = useState<Record<number, number>>({});
+  const [cashCountNotes, setCashCountNotes] = useState('');
+  const [isSavingCashCount, setIsSavingCashCount] = useState(false);
 
   const activeDefinitions = useMemo(() => definitions.filter((definition) => definition.active !== false && (canTopUpCash || !(definition.effect_type === 'cash_in' && !definition.source_wallet && ['cash', 'gcash', 'bpi', 'landbank'].includes(String(definition.destination_wallet))))), [definitions, canTopUpCash]);
   const types = useMemo(() => [...new Set(activeDefinitions.map((definition) => definition.type))], [activeDefinitions]);
   const descriptions = useMemo(() => [...new Set(activeDefinitions.filter((definition) => definition.type === type).map((definition) => definition.description))], [activeDefinitions, type]);
   const paymentOptions = useMemo(() => activeDefinitions.filter((definition) => definition.type === type && definition.description === description), [activeDefinitions, type, description]);
+  const cashBreakdown = useMemo(() => CASH_DENOMINATIONS.map((denomination) => ({ denomination, count: Math.max(0, Number(cashCounts[denomination] || 0)), amount: denomination * Math.max(0, Number(cashCounts[denomination] || 0)) })), [cashCounts]);
+  const cashCountedTotal = useMemo(() => cashBreakdown.reduce((total, row) => total + row.amount, 0), [cashBreakdown]);
 
   const load = async (): Promise<void> => {
     try {
@@ -109,6 +117,23 @@ export default function OperationsLedgerPage(): React.JSX.Element {
     finally { setIsSavingTopUp(false); }
   };
 
+  const saveCashCount = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (isSavingCashCount || periodMode !== 'day') return;
+    setError(''); setIsSavingCashCount(true);
+    try {
+      const response = await api.post('/financial-entries/cash-count', {
+        count_date: date,
+        breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })),
+        notes: cashCountNotes.trim() || null,
+      });
+      setCashCounts({}); setCashCountNotes('');
+      await load();
+      window.alert(response.data?.message || 'Physical cash count saved.');
+    } catch (requestError: any) { setError(requestError.response?.data?.message || 'Could not save the physical cash count.'); }
+    finally { setIsSavingCashCount(false); }
+  };
+
   const list = (items: Entry[], empty: string) => <div className="mt-3 divide-y divide-border text-sm">{items.length ? items.map((item) => {
     const actor = item.remittance?.liquidator?.name
       ? `Liquidated by ${item.remittance.liquidator.name}`
@@ -123,7 +148,17 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   }) : <p className="py-3 text-muted-foreground">{empty}</p>}</div>;
   const wallets: Array<['cash' | 'gcash' | 'bpi' | 'landbank', string, string]> = [['cash', 'Cash', 'text-emerald-600'], ['gcash', 'GCash + PayMongo', 'text-violet-600'], ['bpi', 'BPI', 'text-blue-600'], ['landbank', 'Landbank', 'text-cyan-600']];
 
-  return <DashboardLayout><main className="mx-auto max-w-6xl space-y-6">
+  const cashReconciliation = <section className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,.8fr)]">
+    <form onSubmit={saveCashCount} className="rounded-2xl border border-emerald-300 bg-card p-5 shadow-sm dark:border-emerald-800">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold text-foreground">Cash breakdown</h2><p className="mt-1 text-sm text-muted-foreground">Count physical cash for {date}. This reconciles the Cash wallet and does not create income.</p></div><div className="rounded-xl bg-emerald-50 px-4 py-2 text-right dark:bg-emerald-950/40"><p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">Physical total</p><p className="text-xl font-black text-emerald-700 dark:text-emerald-300">{formatPHP(cashCountedTotal)}</p></div></div>
+      <div className="mt-4 overflow-hidden rounded-xl border border-border"><table className="w-full text-sm"><thead className="bg-muted/70 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-3">No. of pcs</th><th className="p-3">Denomination</th><th className="p-3">Type</th><th className="p-3 text-right">Amount</th></tr></thead><tbody>{cashBreakdown.map((row) => <tr key={row.denomination} className="border-t border-border"><td className="p-2"><input aria-label={`Pieces of ${row.denomination}`} min="0" max="100000" inputMode="numeric" type="number" value={cashCounts[row.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [row.denomination]: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))} className="w-24 rounded-lg border border-input bg-background px-3 py-2 text-foreground" /></td><td className="p-3 font-bold text-foreground">₱{row.denomination.toLocaleString('en-PH')}</td><td className="p-3 text-xs font-semibold uppercase text-muted-foreground">{row.denomination >= 20 ? 'Bills' : 'Coins'}</td><td className="p-3 text-right font-bold text-foreground">{formatPHP(row.amount)}</td></tr>)}</tbody></table></div>
+      <textarea value={cashCountNotes} onChange={(event) => setCashCountNotes(event.target.value)} rows={2} maxLength={1000} placeholder="Count notes (optional)" className="mt-3 w-full rounded-lg border border-input bg-background p-3 text-sm text-foreground" />
+      <button disabled={isSavingCashCount || periodMode !== 'day'} className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{isSavingCashCount ? 'Saving cash count…' : periodMode === 'month' ? 'Choose a specific date to save' : 'Save daily cash count'}</button>
+    </form>
+    <article className="rounded-2xl border border-border bg-card p-5"><h2 className="font-bold text-foreground">Latest reconciliation</h2>{data?.cash_count ? <div className="mt-4 space-y-3"><div><p className="text-xs text-muted-foreground">Physical cash counted</p><p className="text-2xl font-black text-foreground">{formatPHP(Number(data.cash_count.counted_amount))}</p></div><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Ledger cash</p><p className="font-bold text-foreground">{formatPHP(Number(data.cash_count.expected_cash_balance))}</p></div><div className={`rounded-xl p-3 ${Number(data.cash_count.variance) === 0 ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200'}`}><p className="text-xs">Variance</p><p className="font-bold">{formatPHP(Number(data.cash_count.variance))}</p></div></div><div className="flex flex-wrap gap-2">{data.cash_count.breakdown.filter((row) => row.count > 0).map((row) => <span key={row.denomination} className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-foreground">{row.count} × ₱{row.denomination.toLocaleString('en-PH')} = {formatPHP(row.amount)}</span>)}</div><p className="text-xs text-muted-foreground">Counted by {data.cash_count.counter?.name || 'authorized staff'} · {new Date(data.cash_count.created_at).toLocaleString('en-PH')}</p>{data.cash_count.notes && <p className="rounded-lg bg-muted p-3 text-sm text-foreground">{data.cash_count.notes}</p>}</div> : <p className="mt-4 text-sm text-muted-foreground">No physical cash count has been saved for this date.</p>}</article>
+  </section>;
+
+  return <DashboardLayout><main className="mx-auto max-w-6xl space-y-6">{cashReconciliation}
     <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-3xl font-bold text-foreground">Daily Operations</h1><p className="mt-1 text-muted-foreground">{periodMode === 'month' ? `Viewing all transactions for ${month}.` : `Viewing transactions for ${date}.`} New records use the selected date.</p></div><div className="flex flex-wrap gap-2">{canTopUpCash && <button type="button" onClick={() => setShowCashTopUp((open) => !open)} className="self-end rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-amber-400">{showCashTopUp ? 'Cancel wallet top-up' : 'Top up Cash / GCash / Banks'}</button>}<button type="button" onClick={() => setMasterOpen((open) => !open)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium text-foreground">{masterOpen ? 'Close dropdown settings' : 'Manage dropdowns'}</button><label className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm">Specific date<input type="date" value={date} onChange={(event) => { setDate(event.target.value); setPeriodMode('day'); }} className="mt-1 block w-full cursor-pointer rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm font-semibold text-blue-950 [color-scheme:light]" /></label><label className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm">Month<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setPeriodMode('month'); }} className="mt-1 block w-full cursor-pointer rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-sm font-semibold text-emerald-950 [color-scheme:light]" /></label><button type="button" onClick={() => { setDate(new Date().toISOString().slice(0, 10)); setPeriodMode('day'); }} className="self-end rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">Today</button></div></div>
     {error && <p className="rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}
     {canTopUpCash && showCashTopUp && <form onSubmit={saveCashTopUp} className="rounded-2xl border border-amber-300 bg-amber-50 p-5 dark:border-amber-700 dark:bg-amber-950/30"><h2 className="font-bold text-amber-950 dark:text-amber-100">Super Administrator wallet top-up</h2><p className="mt-1 text-sm text-amber-900 dark:text-amber-200">Adds new funds to Cash, GCash, BPI, or Landbank as a permanent, attributed ledger entry. This is not a customer collection or internal transfer.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Destination wallet *<select required value={topUp.destination_wallet} onChange={(e) => setTopUp({ ...topUp, destination_wallet: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white p-2 text-gray-950"><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bpi">BPI</option><option value="landbank">Landbank</option></select></label><label className="text-xs font-semibold">Amount<input required min="0.01" step="0.01" type="number" value={topUp.amount} onChange={(e) => setTopUp({ ...topUp, amount: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white p-2 text-gray-950" /></label><label className="text-xs font-semibold sm:col-span-2">Source reference / receipt *<input required value={topUp.reference} onChange={(e) => setTopUp({ ...topUp, reference: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white p-2 text-gray-950" placeholder="Owner funding receipt, GCash reference, deposit slip, or bank reference" /></label><label className="text-xs font-semibold sm:col-span-2">Reason / source of funds *<textarea required minLength={3} value={topUp.notes} onChange={(e) => setTopUp({ ...topUp, notes: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white p-2 text-gray-950" rows={2} /></label><label className="text-xs font-semibold sm:col-span-2">Type ADD WALLET TOP UP to confirm<input required value={topUp.confirmation} onChange={(e) => setTopUp({ ...topUp, confirmation: e.target.value })} className="mt-1 w-full rounded-lg border border-amber-300 bg-white p-2 text-gray-950" /></label><button disabled={isSavingTopUp || topUp.confirmation !== 'ADD WALLET TOP UP'} className="rounded-lg bg-amber-500 p-2 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2">{isSavingTopUp ? 'Recording…' : 'Record wallet top-up'}</button></div></form>}

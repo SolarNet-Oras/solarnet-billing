@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\FinancialEntry;
+use App\Models\DailyCashCount;
 use App\Models\Payment;
 use App\Models\TransactionDefinition;
 use Illuminate\Http\JsonResponse;
@@ -88,6 +89,11 @@ class FinancialEntryController extends Controller
         }
         foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'] - $wallet['processing_fees'];
 
+        $cashCount = DailyCashCount::with('counter:id,name')
+            ->whereDate('count_date', $end)
+            ->latest('created_at')
+            ->first();
+
         return response()->json(['data' => [
             'period' => $period,
             'wallet_balance_as_of' => $balanceDate,
@@ -96,7 +102,52 @@ class FinancialEntryController extends Controller
             'transfers' => $entries->where('effect_type', 'transfer')->values(),
             'expenses' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'expense')->values(),
             'wallets' => $wallets,
+            'cash_count' => $cashCount,
         ]]);
+    }
+
+    public function storeCashCount(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'count_date' => ['required', 'date'],
+            'breakdown' => ['required', 'array', 'size:9'],
+            'breakdown.*.denomination' => ['required', 'integer', 'distinct', 'in:1000,500,200,100,50,20,10,5,1'],
+            'breakdown.*.count' => ['required', 'integer', 'min:0', 'max:100000'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $counts = collect($data['breakdown'])
+            ->mapWithKeys(fn (array $row) => [(int) $row['denomination'] => (int) $row['count']]);
+        $breakdown = collect([1000, 500, 200, 100, 50, 20, 10, 5, 1])->map(fn (int $denomination) => [
+            'denomination' => $denomination,
+            'count' => (int) ($counts[$denomination] ?? 0),
+            'amount' => $denomination * (int) ($counts[$denomination] ?? 0),
+            'kind' => $denomination >= 20 ? 'bill' : 'coin',
+        ])->all();
+        $counted = (float) collect($breakdown)->sum('amount');
+
+        // Reuse the authoritative cumulative wallet calculation returned by
+        // this controller. A cash count reconciles the ledger; it never adds
+        // income or silently changes the cash position.
+        $ledgerRequest = Request::create('', 'GET', ['date' => $data['count_date']]);
+        $ledgerRequest->setUserResolver(fn () => $request->user());
+        $ledger = $this->index($ledgerRequest)->getData(true)['data'];
+        $expected = round((float) ($ledger['wallets']['cash']['balance'] ?? 0), 2);
+
+        $cashCount = DailyCashCount::create([
+            'count_date' => $data['count_date'],
+            'breakdown' => $breakdown,
+            'counted_amount' => number_format($counted, 2, '.', ''),
+            'expected_cash_balance' => number_format($expected, 2, '.', ''),
+            'variance' => number_format($counted - $expected, 2, '.', ''),
+            'counted_by' => $request->user()?->id,
+            'notes' => isset($data['notes']) ? trim($data['notes']) : null,
+        ]);
+
+        return response()->json([
+            'message' => 'Physical cash count saved for reconciliation. No wallet transaction was created.',
+            'data' => $cashCount->load('counter:id,name'),
+        ], 201);
     }
 
     public function definitions(Request $request): JsonResponse
