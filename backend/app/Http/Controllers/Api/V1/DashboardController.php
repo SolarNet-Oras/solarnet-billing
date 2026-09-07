@@ -391,6 +391,8 @@ class DashboardController extends Controller
                 ($rate[0] ?? 0) > 0 ? $rate[0] : $derivedRate[0],
                 ($rate[1] ?? 0) > 0 ? $rate[1] : $derivedRate[1],
             ];
+            $customerRate = $this->customerTrafficPair($displayRate);
+            $customerBytes = $this->customerTrafficPair($bytes);
 
             $monitor[] = [
                 'customer_id' => $customer->id,
@@ -405,11 +407,13 @@ class DashboardController extends Controller
                 'queue_snapshot_at' => $snapshot['captured_at'] ?? null,
                 'traffic' => [
                     // RouterOS may provide live rate; counters are retained
-                    // even on RouterOS versions that omit that field.
-                    'download_bps' => $displayRate[0],
-                    'upload_bps' => $displayRate[1],
-                    'download_bytes' => $bytes[0],
-                    'upload_bytes' => $bytes[1],
+                    // even on RouterOS versions that omit that field. Simple
+                    // Queue pairs are target upload/download, so expose them
+                    // in the customer-facing download/upload order.
+                    'download_bps' => $customerRate[0],
+                    'upload_bps' => $customerRate[1],
+                    'download_bytes' => $customerBytes[0],
+                    'upload_bytes' => $customerBytes[1],
                 ],
                 'service_plan' => $customer->servicePlan ? [
                     'name' => $customer->servicePlan->name,
@@ -457,6 +461,12 @@ class DashboardController extends Controller
             is_numeric($first) ? (int) $first : null,
             is_numeric($second) ? (int) $second : null,
         ];
+    }
+
+    /** Convert a RouterOS target upload/download pair for customer-facing UI. */
+    protected function customerTrafficPair(array $routerPair): array
+    {
+        return [$routerPair[1] ?? null, $routerPair[0] ?? null];
     }
 
     /** Derive bits/sec from monotonic RouterOS byte counters. */
