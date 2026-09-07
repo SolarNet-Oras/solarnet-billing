@@ -58,7 +58,6 @@ const WALLET_DISPLAY: Array<{ key: WalletName; label: string; accent: string }> 
   { key: 'gcash', label: 'GCash + PayMongo', accent: 'text-violet-600 dark:text-violet-400' },
   { key: 'bpi', label: 'BPI', accent: 'text-blue-600 dark:text-blue-400' },
   { key: 'landbank', label: 'Landbank', accent: 'text-cyan-600 dark:text-cyan-400' },
-  { key: 'online', label: 'Online', accent: 'text-amber-600 dark:text-amber-400' },
 ];
 
 const currentMonth = (): string => new Date().toISOString().slice(0, 7);
@@ -87,7 +86,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
 
   const wallets = data?.wallets;
   const anomalies = data?.anomalies.items ?? [];
-  const totalWalletMovement = Object.values(wallets ?? {}).reduce((total, wallet) => total + wallet.balance, 0);
+  const totalWalletMovement = (wallets?.cash.balance ?? 0) + (wallets?.gcash.balance ?? 0) + (wallets?.paymongo.balance ?? 0) + (wallets?.bpi.balance ?? 0) + (wallets?.landbank.balance ?? 0);
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
   const roleNames = [user?.role, ...(user?.roles ?? []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canReviewRemittances = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(role as string));
