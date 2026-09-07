@@ -446,7 +446,11 @@ class RemittanceController extends Controller
             $variance = round((float) $remittance->cash_counted_amount - $cashExpected, 2);
             abort_unless((int) round($variance * 100) === (int) round((float) $remittance->liquidation_variance * 100), 422, 'The stored cash variance no longer reconciles with recorded payments.');
             $reconciledExpected = round((float) $remittance->declared_amount + (float) $remittance->liquidation_variance, 2);
-            $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $data['received_amount'], 'status' => (int) round((float) $data['received_amount'] * 100) === (int) round($reconciledExpected * 100) ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
+            $enteredAmount = round((float) $data['received_amount'], 2);
+            if ((int) round($enteredAmount * 100) === (int) round((float) $remittance->declared_amount * 100)) {
+                $enteredAmount = $reconciledExpected;
+            }
+            $remittance->update(['received_by' => $request->user()->id, 'received_amount' => $enteredAmount, 'status' => (int) round($enteredAmount * 100) === (int) round($reconciledExpected * 100) ? 'received' : 'discrepancy', 'notes' => trim(($remittance->notes ? $remittance->notes."\n" : '').($data['notes'] ?? '')), 'received_at' => now()]);
 
             return $remittance->fresh(['collector', 'liquidator', 'receiver', 'payments']);
         });

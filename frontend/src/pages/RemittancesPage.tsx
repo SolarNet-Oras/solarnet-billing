@@ -76,7 +76,11 @@ export default function RemittancesPage() {
     };
   }, [collector, collectionSearch, collectionSort]);
 
-  const paymentTotals = (item: Remittance) => (item.payments || []).reduce((all, payment) => ({ ...all, [payment.payment_method]: (all[payment.payment_method] || 0) + Number(payment.amount) }), {} as Record<string, number>);
+  const paymentTotals = (item: Remittance) => {
+    const totals = (item.payments || []).reduce((all, payment) => ({ ...all, [payment.payment_method]: (all[payment.payment_method] || 0) + Number(payment.amount) }), {} as Record<string, number>);
+    totals.cash = Number(totals.cash || 0) + Number(item.liquidation_variance || 0);
+    return totals;
+  };
   const cashExpected = Number((liquidationTarget?.payments || []).filter((payment) => payment.payment_method === 'cash').reduce((sum, payment) => sum + Number(payment.amount), 0));
   const breakdown = useMemo<CashLine[]>(() => DENOMINATIONS.map(({ denomination, kind }) => ({ denomination, kind, count: Number(counts[denominationKey(denomination, kind)] || 0), amount: denomination * Number(counts[denominationKey(denomination, kind)] || 0) })), [counts]);
   const cashCounted = breakdown.reduce((total, line) => total + line.amount, 0);
