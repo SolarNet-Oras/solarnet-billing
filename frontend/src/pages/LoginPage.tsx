@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import customerPortalService from '@/services/customerPortalService';
 
+const REMEMBERED_STAFF_EMAIL_KEY = 'solarnet-remembered-staff-email';
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -14,8 +16,16 @@ const LoginPage: React.FC = () => {
   });
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [rememberSignIn, setRememberSignIn] = useState<boolean>(false);
 
-  useEffect(() => { void customerPortalService.getBranding().then(setBranding).catch(() => undefined); }, []);
+  useEffect(() => {
+    void customerPortalService.getBranding().then(setBranding).catch(() => undefined);
+    const rememberedEmail = window.localStorage.getItem(REMEMBERED_STAFF_EMAIL_KEY);
+    if (rememberedEmail) {
+      setFormData((current) => ({ ...current, email: rememberedEmail }));
+      setRememberSignIn(true);
+    }
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setFormData({
@@ -32,6 +42,8 @@ const LoginPage: React.FC = () => {
 
     try {
       const signedInUser = await login(formData);
+      if (rememberSignIn) window.localStorage.setItem(REMEMBERED_STAFF_EMAIL_KEY, formData.email.trim().toLowerCase());
+      else window.localStorage.removeItem(REMEMBERED_STAFF_EMAIL_KEY);
       const isCollector = signedInUser.role === 'collector' || signedInUser.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
       navigate(isCollector ? '/remittances' : '/dashboard');
     } catch (err) {
@@ -77,7 +89,7 @@ const LoginPage: React.FC = () => {
                 required
                 className="w-full px-4 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="you@company.com"
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
 
@@ -98,6 +110,20 @@ const LoginPage: React.FC = () => {
                 autoComplete="current-password"
               />
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/35 p-3 text-sm text-foreground">
+              <input
+                type="checkbox"
+                name="remember"
+                checked={rememberSignIn}
+                onChange={(event) => setRememberSignIn(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
+              />
+              <span>
+                <span className="block font-medium">Remember sign-in details on this device</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">SolarNet remembers your email. Your browser or device password manager securely handles the password.</span>
+              </span>
+            </label>
 
             {/* Submit Button */}
             <button
