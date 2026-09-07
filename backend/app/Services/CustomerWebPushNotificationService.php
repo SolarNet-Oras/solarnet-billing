@@ -8,7 +8,6 @@ use App\Models\CustomerNotificationLog;
 use App\Models\CustomerWebPushSubscription;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Setting;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -21,6 +20,8 @@ use Throwable;
  */
 class CustomerWebPushNotificationService
 {
+    private const OFFICIAL_NOTIFICATION_LOGO = '/solarnet-company-logo-192.png?v=20260907-official';
+
     public const BILLING_REMINDER_7_DAYS = 'BILLING_REMINDER_7_DAYS';
     public const BILLING_REMINDER_3_DAYS = 'BILLING_REMINDER_3_DAYS';
     public const BILLING_REMINDER_1_DAY = 'BILLING_REMINDER_1_DAY';
@@ -261,7 +262,7 @@ class CustomerWebPushNotificationService
                         'body' => $body,
                         'url' => $this->routeForNotification($route, $log),
                         'tag' => 'solarnet-' . strtolower(str_replace('_', '-', $type)),
-                        'icon' => $this->companyLogoPath(),
+                        'icon' => self::OFFICIAL_NOTIFICATION_LOGO,
                     ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
                     $webPush->queueNotification($pushSubscription, $payload, ['topic' => substr($log->dispatch_key, 0, 32)]);
                     $queued[$stored->endpoint] = $item;
@@ -348,18 +349,6 @@ class CustomerWebPushNotificationService
             'SolarNet final billing warning',
             'Your PHP ' . number_format($outstanding, 2) . ' outstanding balance reaches its final grace day today. Settle now to avoid service suspension.',
         ];
-    }
-
-    /**
-     * Notifications accept only a same-origin logo path. The uploaded company
-     * image is stored below /storage/company-branding; refusing any other value
-     * keeps a setting from becoming an external tracking request on a handset.
-     */
-    private function companyLogoPath(): ?string
-    {
-        $path = trim((string) Setting::get('company.logo_url', ''));
-
-        return str_starts_with($path, '/storage/company-branding/') ? $path : null;
     }
 
     private function dispatchKey(Customer $customer, string $type, ?Invoice $invoice, ?Payment $payment, CustomerWebPushSubscription $subscription, ?string $eventSuffix): string

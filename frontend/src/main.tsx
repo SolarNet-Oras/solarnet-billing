@@ -5,7 +5,7 @@ import App from './App.tsx'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/solarnet-sw.js');
+    void navigator.serviceWorker.register('/solarnet-sw.js', { updateViaCache: 'none' }).then((registration) => registration.update());
   });
 }
 

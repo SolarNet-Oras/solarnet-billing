@@ -242,8 +242,8 @@ class SettingsController extends Controller
     private function applicationIcons(): array
     {
         return [
-            ['src' => '/solarnet-company-logo-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
-            ['src' => '/solarnet-company-logo-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/solarnet-company-logo-192.png?v=20260907-official', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/solarnet-company-logo-512.png?v=20260907-official', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
         ];
     }
 

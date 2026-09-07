@@ -37,7 +37,7 @@ const applyBranding = (branding: CompanyBranding): void => {
   // Installation icons are locked to the approved square company-logo asset;
   // ordinary in-app branding can still use the uploaded logo URL above.
   const appleTouchIcon = document.querySelector<HTMLLinkElement>('#company-apple-touch-icon');
-  if (appleTouchIcon) appleTouchIcon.href = '/solarnet-company-logo-192.png';
+  if (appleTouchIcon) appleTouchIcon.href = '/solarnet-company-logo-192.png?v=20260907-official';
   document.title = branding.name || 'SolarNet';
   window.dispatchEvent(new CustomEvent<CompanyBranding>('solarnet:branding-changed', { detail: branding }));
 };

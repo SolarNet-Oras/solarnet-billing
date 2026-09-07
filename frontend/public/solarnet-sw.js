@@ -1,11 +1,11 @@
-const CACHE_NAME = 'solarnet-application-shell-v5';
+const CACHE_NAME = 'solarnet-application-shell-v6-official-logo';
+const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
 const APP_SHELL = [
   '/',
   '/login',
   '/customer/login',
-  '/solarnet-mark.svg',
-  '/solarnet-company-logo-192.png',
-  '/solarnet-company-logo-512.png',
+  OFFICIAL_NOTIFICATION_ICON,
+  '/solarnet-company-logo-512.png?v=20260907-official',
 ];
 
 self.addEventListener('install', (event) => {
@@ -58,8 +58,8 @@ self.addEventListener('push', (event) => {
   const isRestored = payload.type === 'SERVICE_RESTORED';
   const notification = self.registration.showNotification(payload.title, {
     body: payload.body,
-    icon: typeof payload.icon === 'string' && payload.icon.startsWith('/') ? payload.icon : '/solarnet-mark.svg',
-    badge: '/solarnet-company-logo-192.png',
+    icon: OFFICIAL_NOTIFICATION_ICON,
+    badge: OFFICIAL_NOTIFICATION_ICON,
     tag: payload.tag,
     renotify: true,
     requireInteraction: isSuspension,
