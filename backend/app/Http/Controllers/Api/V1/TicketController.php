@@ -64,8 +64,11 @@ class TicketController extends Controller
         $networkWide = in_array($data['ticket_type'] ?? null, ['maintenance', 'expansion'], true);
         if ($networkWide) {
             abort_unless($request->user()?->hasAnyRole(['super_admin', 'admin']), 403, 'Only an Administrator or Super Administrator can create network-wide tickets.');
-            if (blank($data['router_id'] ?? null) || blank($data['scheduled_start_at'] ?? null)) {
-                return response()->json(['message' => 'Select a router and scheduled start for this network-wide ticket.'], 422);
+            if (blank($data['scheduled_start_at'] ?? null)) {
+                return response()->json(['message' => 'Select a scheduled start for this network-wide ticket.'], 422);
+            }
+            if ($data['ticket_type'] === 'maintenance' && blank($data['router_id'] ?? null)) {
+                return response()->json(['message' => 'Select the affected router for this maintenance ticket.'], 422);
             }
             if ($data['ticket_type'] === 'maintenance' && (! $request->boolean('maintenance_sms_authorized') || ($data['maintenance_sms_confirmation'] ?? '') !== 'NOTIFY ROUTER CUSTOMERS')) {
                 return response()->json(['message' => 'Confirm the maintenance SMS advisory before creating this ticket.'], 422);

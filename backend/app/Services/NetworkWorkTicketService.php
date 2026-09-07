@@ -21,9 +21,10 @@ class NetworkWorkTicketService
 
     public function create(array $data, User $actor): Ticket
     {
-        $router = Router::findOrFail($data['router_id']);
+        $router = filled($data['router_id'] ?? null) ? Router::findOrFail($data['router_id']) : null;
         $recipients = collect();
         if ($data['ticket_type'] === 'maintenance') {
+            abort_unless($router, 422, 'Select the affected router for this maintenance ticket.');
             abort_unless($this->sms->isConfigured(), 422, 'PhilSMS is not configured. No maintenance ticket or advisory was created.');
             $recipients = Customer::where('router_id', $router->id)
                 ->get(['id', 'contact_number'])
@@ -62,7 +63,7 @@ class NetworkWorkTicketService
             $ticket = Ticket::create([
                 'ticket_number' => $this->tickets->generateTicketNumber(),
                 'customer_id' => null,
-                'router_id' => $router->id,
+                'router_id' => $router?->id,
                 'sms_advisory_campaign_id' => $campaign?->id,
                 'subject' => $data['subject'],
                 'description' => $data['description'],
@@ -75,7 +76,7 @@ class NetworkWorkTicketService
                 'workflow_status' => 'open',
             ]);
             $this->workflow->history($ticket, $actor, 'ticket_created', null, 'open', null, [
-                'router_id' => $router->id,
+                'router_id' => $router?->id,
                 'sms_advisory_campaign_id' => $campaign?->id,
                 'sms_recipient_count' => $campaign?->recipient_count ?? 0,
             ]);

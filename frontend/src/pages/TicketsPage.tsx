@@ -192,8 +192,12 @@ const TicketsPage: React.FC = () => {
       return;
     }
     const networkWide = ['maintenance', 'expansion'].includes(formData.ticket_type);
-    if (networkWide && (!formData.router_id || !formData.scheduled_start_at)) {
-      window.alert('Select a router and scheduled start.');
+    if (networkWide && !formData.scheduled_start_at) {
+      window.alert('Select a scheduled start.');
+      return;
+    }
+    if (formData.ticket_type === 'maintenance' && !formData.router_id) {
+      window.alert('Select the affected router for maintenance.');
       return;
     }
     if (formData.ticket_type === 'maintenance' && (!formData.maintenance_sms_authorized || formData.maintenance_sms_confirmation !== 'NOTIFY ROUTER CUSTOMERS')) {
@@ -696,12 +700,15 @@ const TicketsPage: React.FC = () => {
                       </div>
                     ) : ['maintenance', 'expansion'].includes(formData.ticket_type) ? (<>
                     <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-800 dark:bg-slate-900/70">
-                      <label className="block text-sm font-medium text-gray-800 dark:text-slate-100">Affected router / service area *</label>
-                      <select required value={formData.router_id} onChange={(e) => setFormData({ ...formData, router_id: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                        <option value="">Select router</option>
-                        {routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.location ? ` - ${router.location}` : ''}{router.is_active ? '' : ' (inactive)'}</option>)}
-                      </select>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-slate-300">This list comes from Network Devices, so newly added routers appear automatically.</p>
+                      {formData.ticket_type === 'maintenance' && <>
+                        <label className="block text-sm font-medium text-gray-800 dark:text-slate-100">Affected router / service area *</label>
+                        <select required value={formData.router_id} onChange={(e) => setFormData({ ...formData, router_id: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                          <option value="">Select router</option>
+                          {routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.location ? ` - ${router.location}` : ''}{router.is_active ? '' : ' (inactive)'}</option>)}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-600 dark:text-slate-300">This list comes from Network Devices, so newly added routers appear automatically.</p>
+                      </>}
+                      {formData.ticket_type === 'expansion' && <p className="text-sm text-gray-700 dark:text-slate-200">Network expansion is recorded as a company-wide project. No existing router selection or customer SMS is required.</p>}
                       <div className="mt-4 grid gap-4 sm:grid-cols-2">
                         <label className="text-sm font-medium text-gray-800 dark:text-slate-100">Scheduled start *<input required type="datetime-local" value={formData.scheduled_start_at} onChange={(e) => setFormData({ ...formData, scheduled_start_at: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800" /></label>
                         <label className="text-sm font-medium text-gray-800 dark:text-slate-100">Expected completion<input type="datetime-local" min={formData.scheduled_start_at || undefined} value={formData.scheduled_end_at} onChange={(e) => setFormData({ ...formData, scheduled_end_at: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800" /></label>
@@ -837,7 +844,7 @@ const TicketsPage: React.FC = () => {
                       disabled={formData.ticket_type === 'installation'
                         ? !installationForm.full_name.trim() || !installationForm.email.trim() || !installationForm.contact_number.trim() || !installationForm.address.trim() || !installationForm.service_plan_id
                         : ['maintenance', 'expansion'].includes(formData.ticket_type)
-                          ? !formData.router_id || !formData.scheduled_start_at || !formData.subject.trim() || !formData.description.trim() || (formData.ticket_type === 'maintenance' && (!formData.maintenance_sms_authorized || formData.maintenance_sms_confirmation !== 'NOTIFY ROUTER CUSTOMERS'))
+                          ? !formData.scheduled_start_at || !formData.subject.trim() || !formData.description.trim() || (formData.ticket_type === 'maintenance' && (!formData.router_id || !formData.maintenance_sms_authorized || formData.maintenance_sms_confirmation !== 'NOTIFY ROUTER CUSTOMERS'))
                           : !formData.customer_id}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
