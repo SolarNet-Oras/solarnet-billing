@@ -56,8 +56,8 @@ class TicketController extends Controller
             'router_id' => 'nullable|uuid|exists:routers,id',
             'scheduled_start_at' => 'nullable|date',
             'scheduled_end_at' => 'nullable|date|after:scheduled_start_at',
-            'maintenance_sms_authorized' => 'nullable|accepted',
-            'maintenance_sms_confirmation' => 'nullable|string',
+            'maintenance_sms_authorized' => 'exclude_unless:ticket_type,maintenance|required|accepted',
+            'maintenance_sms_confirmation' => 'exclude_unless:ticket_type,maintenance|required|string|in:NOTIFY ROUTER CUSTOMERS',
         ]);
         if ($validator->fails()) return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
         $data = $validator->validated();

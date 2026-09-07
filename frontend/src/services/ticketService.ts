@@ -22,7 +22,12 @@ export const ticketService = {
   },
 
   createTicket: async (data: CreateTicketRequest): Promise<{ message: string; ticket: Ticket }> => {
-    const response = await api.post('/tickets', data);
+    const payload = { ...data };
+    if (payload.ticket_type !== 'maintenance') {
+      delete payload.maintenance_sms_authorized;
+      delete payload.maintenance_sms_confirmation;
+    }
+    const response = await api.post('/tickets', payload);
     return response.data;
   },
 
