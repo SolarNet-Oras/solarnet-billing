@@ -45,13 +45,27 @@ class FinancialEntryController extends Controller
         $collections = $regularCollections->concat($liquidatedCollectorCash)
             ->sortByDesc(fn (Payment $payment) => $payment->remittance?->liquidated_at ?? $payment->payment_date)
             ->values();
+        // Wallet cards represent total company funds, independent of the
+        // selected detail period. Count all valid movements through today.
+        $balanceDate = now()->toDateString();
+        $balanceCutoff = now()->endOfDay();
+        $balanceCollections = Payment::query()
+            ->whereDate('payment_date', '<=', $balanceDate)
+            ->where(fn ($query) => $query->where('payment_method', '!=', 'cash')->orWhereNull('collector_id'))
+            ->get()
+            ->concat(Payment::query()
+                ->where('payment_method', 'cash')
+                ->whereNotNull('collector_id')
+                ->whereHas('remittance', fn ($query) => $query->whereNotNull('liquidated_at')->where('liquidated_at', '<=', $balanceCutoff))
+                ->get());
+        $balanceEntries = FinancialEntry::query()->whereDate('entry_date', '<=', $balanceDate)->get();
         $wallets = collect(['cash', 'gcash', 'bpi', 'landbank'])->mapWithKeys(fn (string $wallet) => [$wallet => ['collections' => 0.0, 'cash_in' => 0.0, 'transfers_in' => 0.0, 'transfers_out' => 0.0, 'expenses' => 0.0, 'balance' => 0.0]])->all();
 
-        foreach ($collections as $collection) {
+        foreach ($balanceCollections as $collection) {
             $wallet = $this->walletFor($collection->payment_method);
             if (isset($wallets[$wallet])) $wallets[$wallet]['collections'] += (float) $collection->amount;
         }
-        foreach ($entries as $entry) {
+        foreach ($balanceEntries as $entry) {
             $amount = (float) $entry->amount;
             $effect = $entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in');
             if ($effect === 'expense') {
@@ -71,6 +85,7 @@ class FinancialEntryController extends Controller
 
         return response()->json(['data' => [
             'period' => $period,
+            'wallet_balance_as_of' => $balanceDate,
             'collections' => $collections,
             'cash_in' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'cash_in')->values(),
             'transfers' => $entries->where('effect_type', 'transfer')->values(),
