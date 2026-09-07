@@ -145,8 +145,8 @@ class FinancialEntryController extends Controller
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
-        if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && $definition->destination_wallet === 'cash') {
-            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new cash to the company cash balance.');
+        if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'bpi', 'landbank'], true)) {
+            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new funds to Cash, BPI, or Landbank.');
         }
 
         $entry = DB::transaction(function () use ($data, $definition, $request) {
@@ -171,28 +171,33 @@ class FinancialEntryController extends Controller
     {
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
+            'destination_wallet' => ['required', 'in:cash,bpi,landbank'],
             'entry_date' => ['required', 'date'],
             'reference' => ['required', 'string', 'max:100'],
             'notes' => ['required', 'string', 'min:3', 'max:1000'],
             'idempotency_key' => ['required', 'uuid'],
-            'confirmation' => ['required', 'in:ADD CASH TOP UP'],
+            'confirmation' => ['required', 'in:ADD WALLET TOP UP'],
         ]);
 
         $entry = DB::transaction(function () use ($data, $request): FinancialEntry {
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
 
+            $methods = ['cash' => 'add_to_cash', 'bpi' => 'deposit_to_bpi', 'landbank' => 'deposit_to_landbank'];
+            $labels = ['cash' => 'Cash', 'bpi' => 'BPI', 'landbank' => 'Landbank'];
+            $wallet = $data['destination_wallet'];
+
             return FinancialEntry::create([
                 'transaction_definition_id' => null,
                 'type' => 'sale',
-                'category' => 'Super Admin Cash Top-up',
+                'category' => 'Super Admin '.$labels[$wallet].' Top-up',
                 'description' => trim($data['notes']),
                 'amount' => $data['amount'],
                 'entry_date' => $data['entry_date'],
-                'payment_method' => 'add_to_cash',
+                'payment_method' => $methods[$wallet],
                 'effect_type' => 'cash_in',
                 'source_wallet' => null,
-                'destination_wallet' => 'cash',
+                'destination_wallet' => $wallet,
                 'reference' => trim($data['reference']),
                 'notes' => trim($data['notes']),
                 'idempotency_key' => $data['idempotency_key'],
@@ -201,7 +206,7 @@ class FinancialEntryController extends Controller
         });
 
         return response()->json([
-            'message' => 'Cash top-up recorded in the Daily Operations ledger.',
+            'message' => 'Wallet top-up recorded in the Daily Operations ledger.',
             'data' => $entry->load('recorder:id,name'),
         ], $entry->wasRecentlyCreated ? 201 : 200);
     }
