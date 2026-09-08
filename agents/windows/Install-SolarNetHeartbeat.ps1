@@ -17,7 +17,7 @@ try{$protected=[Security.Cryptography.ProtectedData]::Protect($plain,$null,[Secu
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SolarNetHeartbeatService.ps1') -Destination (Join-Path $target 'SolarNetHeartbeatService.ps1') -Force
 $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\ProgramData\SolarNetDeviceAgent\SolarNetHeartbeatService.ps1"'
 $trigger=New-ScheduledTaskTrigger -AtStartup
-$settings=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+$settings=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $task=New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest)
 Register-ScheduledTask -TaskName 'SolarNet Device Heartbeat' -InputObject $task -Force|Out-Null
 Start-ScheduledTask -TaskName 'SolarNet Device Heartbeat'
