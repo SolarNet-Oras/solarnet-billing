@@ -1,4 +1,4 @@
-SolarNet Employee Device Agent 1.4
+SolarNet Employee Device Agent 1.4.1
 
 Before extracting, right-click the downloaded ZIP, choose Properties, select
 Unblock if that option appears, and click Apply. Then extract every file into

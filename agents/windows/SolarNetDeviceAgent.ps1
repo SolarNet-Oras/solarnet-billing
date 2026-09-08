@@ -1,7 +1,7 @@
 param([switch]$Background)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$ErrorActionPreference='Stop'; $AgentVersion='1.4.0'; $ApiBase='https://billing.solarnetportal.com/api/v1'
+$ErrorActionPreference='Stop'; $AgentVersion='1.4.1'; $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'; $IdentityFile=Join-Path $DataDir 'installation-id.txt'; $TokenFile=Join-Path $DataDir 'device-token.dat'
 New-Item -ItemType Directory -Path $DataDir -Force|Out-Null
 if(-not(Test-Path $IdentityFile)){[guid]::NewGuid().ToString()|Set-Content $IdentityFile -Encoding ASCII}
@@ -14,7 +14,9 @@ function Get-SecurityPosture{
  try{$profiles=@(Get-NetFirewallProfile -ErrorAction Stop);$result.firewall_enabled=($profiles.Count -gt 0 -and @($profiles|Where-Object{-not $_.Enabled}).Count -eq 0)}catch{}
  try{$mp=Get-MpComputerStatus -ErrorAction Stop;$result.defender_enabled=[bool]$mp.AntivirusEnabled;$result.realtime_protection_enabled=[bool]$mp.RealTimeProtectionEnabled;if($mp.AntivirusSignatureLastUpdated){$result.antivirus_signature_updated_at=$mp.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')}}catch{}
  try{$volume=Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop;$result.bitlocker_enabled=($volume.ProtectionStatus -eq 'On')}catch{}
- try{$result.secure_boot_enabled=[bool](Confirm-SecureBootUEFI -ErrorAction Stop)}catch{}
+ try{$result.secure_boot_enabled=[bool](Confirm-SecureBootUEFI -ErrorAction Stop)}catch{
+  try{$secureBootState=Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State' -Name 'UEFISecureBootEnabled' -ErrorAction Stop;$result.secure_boot_enabled=([int]$secureBootState -eq 1)}catch{}
+ }
  try{$result.pending_reboot=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')}catch{}
  return $result
 }
