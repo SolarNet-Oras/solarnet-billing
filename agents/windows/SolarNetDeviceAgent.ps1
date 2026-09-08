@@ -1,14 +1,27 @@
 param([switch]$Background)
+$createdNew=$false;$agentMutex=New-Object Threading.Mutex($true,'Local\SolarNetDeviceAgent',[ref]$createdNew);if(-not $createdNew){exit 0}
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$ErrorActionPreference='Stop'; $AgentVersion='1.4.3'; $ApiBase='https://billing.solarnetportal.com/api/v1'
+$ErrorActionPreference='Stop'; $AgentVersion='1.4.4'; $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'; $IdentityFile=Join-Path $DataDir 'installation-id.txt'; $TokenFile=Join-Path $DataDir 'device-token.dat'; $ScreenLockFile=Join-Path $DataDir 'screen-lock.json'
 New-Item -ItemType Directory -Path $DataDir -Force|Out-Null
 if(-not(Test-Path $IdentityFile)){[guid]::NewGuid().ToString()|Set-Content $IdentityFile -Encoding ASCII}
 function Save-Token([string]$value){ConvertTo-SecureString $value -AsPlainText -Force|ConvertFrom-SecureString|Set-Content $TokenFile -Encoding ASCII}
 function Read-Token{if(-not(Test-Path $TokenFile)){return $null};$s=Get-Content $TokenFile|ConvertTo-SecureString;$p=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s);try{[Runtime.InteropServices.Marshal]::PtrToStringBSTR($p)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p)}}
 function Install-AgentCopy{$installed=Join-Path $DataDir 'SolarNetDeviceAgent.ps1';if([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath($installed)){Copy-Item -LiteralPath $PSCommandPath -Destination $installed -Force};return $installed}
-function Enable-Autostart{$installed=Install-AgentCopy;$command='powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File "'+$installed+'" -Background';New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'SolarNetDeviceAgent' -Value $command -PropertyType String -Force|Out-Null}
+function Enable-Autostart{
+ $installed=Install-AgentCopy;$arguments='-NoLogo -NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File "'+$installed+'" -Background';$command='powershell.exe '+$arguments
+ New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'SolarNetDeviceAgent' -Value $command -PropertyType String -Force|Out-Null
+ try{
+  $taskName='SolarNet Device Tray Agent';$account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
+  $logon=New-ScheduledTaskTrigger -AtLogOn -User $account
+  $watchdog=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)
+  $settings=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+  $principal=New-ScheduledTaskPrincipal -UserId $account -LogonType Interactive -RunLevel Limited
+  if(-not(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)){Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($logon,$watchdog) -Settings $settings -Principal $principal -Force|Out-Null}
+ }catch{New-ItemProperty -Path 'HKCU:\Software\SolarNetDeviceAgent' -Name 'ScheduledTaskError' -Value $_.Exception.Message -PropertyType String -Force|Out-Null}
+}
 function Get-SecurityPosture{
  $result=[ordered]@{firewall_enabled=$null;defender_enabled=$null;realtime_protection_enabled=$null;bitlocker_enabled=$null;secure_boot_enabled=$null;pending_reboot=$false;antivirus_signature_updated_at=$null}
  try{$profiles=@(Get-NetFirewallProfile -ErrorAction Stop);$result.firewall_enabled=($profiles.Count -gt 0 -and @($profiles|Where-Object{-not $_.Enabled}).Count -eq 0)}catch{}
@@ -65,4 +78,4 @@ $timer.Add_Tick($heartbeat)
 $enroll.Add_Click({if(-not $consent.Checked){[Windows.Forms.MessageBox]::Show('Review and accept the disclosed heartbeat data first.','Consent required')|Out-Null;return};if([string]::IsNullOrWhiteSpace($employee.Text)-or[string]::IsNullOrWhiteSpace($code.Text)){[Windows.Forms.MessageBox]::Show('Enter the employee name and one-time code.','Missing information')|Out-Null;return};$enroll.Enabled=$false;$status.Text='Status: Enrolling...';try{$r=Invoke-Api 'employee-device-agent/enroll' @{code=$code.Text.Trim();name=$env:COMPUTERNAME;employee_name=$employee.Text.Trim();platform='windows';os_version=[Environment]::OSVersion.VersionString;agent_version=$AgentVersion;device_fingerprint=(Get-Content $IdentityFile -Raw).Trim();consent_accepted=$true;consent_accepted_at=(Get-Date).ToUniversalTime().ToString('o')};Save-Token $r.data.device_token;Enable-Autostart;$code.Clear();$employee.Enabled=$false;$consent.Enabled=$false;$enroll.Text='Enrolled';&$heartbeat;$timer.Start()}catch{$status.Text='Status: Enrollment failed';[Windows.Forms.MessageBox]::Show($_.Exception.Message,'Enrollment failed')|Out-Null;$enroll.Enabled=$true}})
 if(Read-Token){Enable-Autostart;$employee.Enabled=$false;$code.Enabled=$false;$consent.Checked=$true;$consent.Enabled=$false;$enroll.Text='Enrolled';$enroll.Enabled=$false;if(Test-Path $ScreenLockFile){Show-SolarNetLock (Read-Token) ((Get-Content -LiteralPath $ScreenLockFile -Raw)|ConvertFrom-Json)};&$heartbeat;$timer.Start()}
 if($Background){$form.Add_Shown({$form.Hide();$tray.ShowBalloonTip(2000,'SolarNet Agent','Background heartbeat is active.',[Windows.Forms.ToolTipIcon]::Info)})}
-[void]$form.ShowDialog();$tray.Dispose()
+[void]$form.ShowDialog();$tray.Dispose();$agentMutex.ReleaseMutex();$agentMutex.Dispose()

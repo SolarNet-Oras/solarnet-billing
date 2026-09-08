@@ -10,7 +10,8 @@ code. After enrollment it starts automatically with Windows. Closing the window
 keeps the agent in the Windows notification area and sends one heartbeat per
 minute. Double-click its shield icon to reopen it, or use Exit from its tray menu.
 The enrolled agent copies itself into the current employee's local application
-data so moving or deleting the downloaded ZIP does not break Windows startup.
+data and registers both a logon task and two-minute watchdog. Windows prevents
+duplicate instances. Moving or deleting the downloaded ZIP does not break it.
 
 This portable release does not capture the screen, inspect files, record input,
 or execute arbitrary commands. Its notification-area icon remains available.
