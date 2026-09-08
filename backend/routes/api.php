@@ -373,6 +373,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [RemittanceController::class, 'index']);
             Route::post('{id}/liquidate', [RemittanceController::class, 'liquidate']);
             Route::post('{id}/receive', [RemittanceController::class, 'receive']);
+            Route::delete('{id}', [RemittanceController::class, 'cancelWrongSubmission'])->middleware('role:super_admin');
         });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
         Route::post('financial-entries/cash-count', [FinancialEntryController::class, 'storeCashCount'])->middleware('permission:create-payments');

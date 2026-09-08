@@ -440,7 +440,7 @@ class RemittanceController extends Controller
             'date_order' => ['nullable', 'in:newest,oldest'],
         ]);
 
-        $query = Remittance::with([
+        $query = Remittance::query()->whereNull('cancelled_at')->with([
             'collector:id,name,email',
             'liquidator:id,name,email',
             'receiver:id,name,email',
@@ -449,6 +449,7 @@ class RemittanceController extends Controller
             'payments.invoice:id,invoice_number',
             'payments.allocations:id,payment_id,invoice_id,amount',
             'payments.allocations.invoice:id,invoice_number',
+            'payments.refunds:id,payment_id,amount',
         ]);
 
         if (! empty($data['month'])) {
@@ -462,6 +463,31 @@ class RemittanceController extends Controller
         $query->orderBy('submitted_at', ($data['date_order'] ?? 'newest') === 'oldest' ? 'asc' : 'desc');
 
         return response()->json($query->paginate(50)->withQueryString());
+    }
+
+    public function cancelWrongSubmission(Request $request, string $id): JsonResponse
+    {
+        $remittance = DB::transaction(function () use ($request, $id) {
+            $remittance = Remittance::with('payments.refunds')->lockForUpdate()->findOrFail($id);
+            abort_if($remittance->cancelled_at, 422, 'This remittance submission is already cancelled.');
+            abort_if($remittance->status !== 'submitted' || $remittance->liquidated_at || $remittance->liquidated_by, 422, 'Only an unliquidated submitted remittance can be cancelled.');
+            abort_if($remittance->payments->isEmpty(), 422, 'This remittance has no attached payment audit record.');
+
+            $notFullyRefunded = $remittance->payments->first(fn (Payment $payment) =>
+                (int) round($payment->refunds->sum('amount') * 100) < (int) round((float) $payment->amount * 100)
+            );
+            abort_if($notFullyRefunded, 422, 'This submission still contains money that has not been fully refunded and cannot be removed from liquidation.');
+
+            $remittance->update([
+                'cancelled_by' => $request->user()->id,
+                'cancelled_at' => now(),
+                'cancellation_reason' => 'Wrong submission; every attached customer payment was fully refunded.',
+            ]);
+
+            return $remittance;
+        });
+
+        return response()->json(['message' => 'Wrong remittance submission removed from the liquidation queue. Its payment and refund audit records were preserved.', 'remittance' => $remittance]);
     }
 
     public function receive(Request $request, string $id): JsonResponse
