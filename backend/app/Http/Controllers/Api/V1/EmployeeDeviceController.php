@@ -69,7 +69,7 @@ class EmployeeDeviceController extends Controller
         abort_unless($device, 401, 'Device token is invalid or revoked.');
         $data = $request->validate([
             'agent_version'=>'required|string|max:40','agent_component'=>'nullable|in:tray,machine_service','os_version'=>'nullable|string|max:120','security_posture'=>'nullable|array','accept_commands'=>'nullable|boolean',
-            'command_capabilities'=>'nullable|array|max:3','command_capabilities.*'=>'string|in:message,lock,restart',
+            'command_capabilities'=>'nullable|array|max:4','command_capabilities.*'=>'string|in:message,lock,restart,screen_lock',
             'security_posture.firewall_enabled'=>'nullable|boolean','security_posture.defender_enabled'=>'nullable|boolean',
             'security_posture.realtime_protection_enabled'=>'nullable|boolean','security_posture.bitlocker_enabled'=>'nullable|boolean',
             'security_posture.secure_boot_enabled'=>'nullable|boolean','security_posture.pending_reboot'=>'nullable|boolean',
@@ -110,10 +110,14 @@ class EmployeeDeviceController extends Controller
     public function requestCommand(Request $request, EmployeeDevice $device): JsonResponse
     {
         abort_if($device->status!=='active',422,'Only an active enrolled device can receive a request.');
-        $data=$request->validate(['command'=>'required|in:message,lock,restart','message'=>'nullable|string|max:500','reason'=>'required|string|min:5|max:255','password'=>'required|string|max:255','device_confirmation'=>'required|string|max:120']);
+        $data=$request->validate(['command'=>'required|in:message,lock,restart,screen_lock','message'=>'nullable|string|max:500','reason'=>'required|string|min:5|max:255','password'=>'required|string|max:255','device_confirmation'=>'required|string|max:120','unlock_code'=>'nullable|required_if:command,screen_lock|string|min:8|max:128']);
         abort_unless(Hash::check($data['password'],(string)$request->user()->password),422,'Your SolarNet password is incorrect.');
         abort_unless(hash_equals($device->name,$data['device_confirmation']),422,'Type the exact device name to confirm this action.');
         if($data['command']==='message' && blank($data['message']??null)) return response()->json(['message'=>'Enter the message to show on the employee device.'],422);
+        if($data['command']==='screen_lock') {
+            $salt=bin2hex(random_bytes(16));
+            $data['message']=json_encode(['salt'=>$salt,'digest'=>hash('sha256',$salt.$data['unlock_code'])],JSON_THROW_ON_ERROR);
+        }
         $command=EmployeeDeviceCommand::create(['device_id'=>$device->id,'requested_by'=>$request->user()->id,'command'=>$data['command'],'message'=>$data['message']??null,'reason'=>$data['reason'],'status'=>'queued']);
         EmployeeDeviceAudit::create(['device_id'=>$device->id,'actor_id'=>$request->user()->id,'event'=>'command_requested','metadata'=>['command_id'=>$command->id,'command'=>$command->command,'reason'=>$command->reason]]);
         return response()->json(['success'=>true,'message'=>$data['command']==='message'?'Message queued.':'Device action authorized and queued for the privileged agent.','data'=>$command],201);
