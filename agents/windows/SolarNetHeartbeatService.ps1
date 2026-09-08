@@ -1,4 +1,5 @@
 $ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Security
 $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:ProgramData 'SolarNetDeviceAgent'
 $TokenFile=Join-Path $DataDir 'machine-token.dat'
