@@ -1,4 +1,4 @@
-SolarNet Employee Device Agent 1.0
+SolarNet Employee Device Agent 1.2
 
 Before extracting, right-click the downloaded ZIP, choose Properties, select
 Unblock if that option appears, and click Apply. Then extract every file into
@@ -6,7 +6,11 @@ one folder. Do not run the launcher from inside the ZIP preview.
 
 Create a one-time code in Device Controller, open Start SolarNet Agent.cmd on
 the selected company laptop, review the disclosure, give consent, and enter the
-code. Keep the visible application open to send one heartbeat per minute.
+code. After enrollment it starts automatically with Windows. Closing the window
+keeps the agent in the Windows notification area and sends one heartbeat per
+minute. Double-click its shield icon to reopen it, or use Exit from its tray menu.
 
-This portable release does not run invisibly, install a service, capture the
-screen, inspect files, record input, or execute commands. Source is included.
+This portable release does not install a system service, capture the screen,
+inspect files, record input, or execute arbitrary commands. Its notification-area
+icon remains available. Lock and restart requests require employee approval.
+Source is included.

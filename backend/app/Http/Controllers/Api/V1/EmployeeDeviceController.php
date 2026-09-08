@@ -10,6 +10,7 @@ use App\Models\EmployeeDeviceCommand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class EmployeeDeviceController extends Controller
@@ -27,7 +28,10 @@ class EmployeeDeviceController extends Controller
             $device->online = $device->status === 'active' && $device->last_seen_at?->gt(now()->subMinutes(3));
             return $device;
         });
-        return response()->json(['success'=>true,'data'=>['devices'=>$devices,'audits'=>EmployeeDeviceAudit::latest()->limit(50)->get(),'commands'=>EmployeeDeviceCommand::latest()->limit(50)->get()]]);
+        $commands = Schema::hasTable('employee_device_commands')
+            ? EmployeeDeviceCommand::latest()->limit(50)->get()
+            : collect();
+        return response()->json(['success'=>true,'data'=>['devices'=>$devices,'audits'=>EmployeeDeviceAudit::latest()->limit(50)->get(),'commands'=>$commands]]);
     }
 
     public function createEnrollment(Request $request): JsonResponse
@@ -62,11 +66,11 @@ class EmployeeDeviceController extends Controller
         abort_unless($device, 401, 'Device token is invalid or revoked.');
         $data = $request->validate(['agent_version'=>'required|string|max:40','os_version'=>'nullable|string|max:120']);
         $device->update(['agent_version'=>$data['agent_version'],'os_version'=>$data['os_version'] ?? $device->os_version,'last_seen_at'=>now(),'last_ip_hash'=>hash('sha256',(string)$request->ip())]);
-        $commands = DB::transaction(function () use ($device) {
+        $commands = Schema::hasTable('employee_device_commands') ? DB::transaction(function () use ($device) {
             $rows = EmployeeDeviceCommand::where('device_id',$device->id)->where('status','queued')->lockForUpdate()->limit(5)->get();
             foreach ($rows as $row) $row->update(['status'=>'delivered','delivered_at'=>now()]);
             return $rows->map(fn ($row) => $row->only(['id','command','message','reason']))->values();
-        });
+        }) : collect();
         return response()->json(['success'=>true,'data'=>['server_time'=>now()->toIso8601String(),'commands'=>$commands]]);
     }
 
