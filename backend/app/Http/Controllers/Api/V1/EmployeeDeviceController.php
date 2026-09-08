@@ -25,7 +25,9 @@ class EmployeeDeviceController extends Controller
     public function index(): JsonResponse
     {
         $devices = EmployeeDevice::latest('last_seen_at')->get()->map(function ($device) {
-            $device->online = $device->status === 'active' && $device->last_seen_at?->gt(now()->subMinutes(3));
+            // A one-minute agent heartbeat may occasionally miss a few attempts
+            // during Wi-Fi roaming or a backend restart. Avoid false offline flicker.
+            $device->online = $device->status === 'active' && $device->last_seen_at?->gt(now()->subMinutes(10));
             return $device;
         });
         $commands = Schema::hasTable('employee_device_commands')

@@ -1,4 +1,4 @@
-SolarNet Employee Device Agent 1.3
+SolarNet Employee Device Agent 1.4
 
 Before extracting, right-click the downloaded ZIP, choose Properties, select
 Unblock if that option appears, and click Apply. Then extract every file into
@@ -9,6 +9,8 @@ the selected company laptop, review the disclosure, give consent, and enter the
 code. After enrollment it starts automatically with Windows. Closing the window
 keeps the agent in the Windows notification area and sends one heartbeat per
 minute. Double-click its shield icon to reopen it, or use Exit from its tray menu.
+The enrolled agent copies itself into the current employee's local application
+data so moving or deleting the downloaded ZIP does not break Windows startup.
 
 This portable release does not install a system service, capture the screen,
 inspect files, record input, or execute arbitrary commands. Its notification-area
