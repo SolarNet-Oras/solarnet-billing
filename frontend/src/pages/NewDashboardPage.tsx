@@ -16,7 +16,9 @@ import {
   Search,
   ShieldCheck,
   Users,
+  UserPlus,
   Wifi,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -90,6 +92,8 @@ interface CollectorClient {
 }
 
 interface PlanOption { id: string; name: string; price: number; download_speed: number; upload_speed: number }
+
+const emptyCollectorApplication = { full_name: '', email: '', contact_number: '', address: '', service_plan_id: '', notes: '' };
 
 const peso = (value: number): string =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value);
@@ -239,6 +243,9 @@ const NewDashboardPageContent: React.FC = () => {
   const [selectedPlans, setSelectedPlans] = useState<Record<string, string>>({});
   const [collectorActionBusy, setCollectorActionBusy] = useState<string | null>(null);
   const [locationCaptureTarget, setLocationCaptureTarget] = useState<CollectorClient | null>(null);
+  const [showNewClientApplication, setShowNewClientApplication] = useState(false);
+  const [newClientApplication, setNewClientApplication] = useState(emptyCollectorApplication);
+  const [applicationBusy, setApplicationBusy] = useState(false);
   const monitorRequestInFlight = useRef(false);
 
   const fetchMetrics = useCallback(async (manual = false): Promise<void> => {
@@ -409,6 +416,21 @@ const NewDashboardPageContent: React.FC = () => {
     catch (error: any) { window.alert(error.response?.data?.message || 'Could not create the early invoice.'); }
     finally { setCollectorActionBusy(null); }
   };
+  const submitNewClientApplication = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    setApplicationBusy(true);
+    try {
+      const response = await api.post('/customer-portal/signup', newClientApplication);
+      const application = response.data?.data;
+      window.alert(`New client application submitted.\n\nAccount: ${application?.account_number || 'Pending review'}\nTicket: ${application?.ticket_number || 'Installation application created'}`);
+      setNewClientApplication(emptyCollectorApplication);
+      setShowNewClientApplication(false);
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const firstError = errors ? Object.values(errors).flat()[0] : null;
+      window.alert(String(firstError || error.response?.data?.message || 'Could not submit the new client application.'));
+    } finally { setApplicationBusy(false); }
+  };
 
   return (
     <DashboardLayout headerTitle="Client & billing overview" headerSubtitle="A real-time view of your subscribers, collections, and network readiness.">
@@ -471,8 +493,8 @@ const NewDashboardPageContent: React.FC = () => {
 
         {collector && <section className="order-last overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
           <div className="flex flex-col gap-3 border-b border-border/70 p-4 md:flex-row md:items-center md:justify-between">
-            <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Collection workspace</p><h2 className="mt-1 text-lg font-semibold text-foreground">Search client & status</h2><p className="mt-1 text-sm text-muted-foreground">View account status, capture an installation point, request a speed change, or create an early payment invoice. Status changes remain administrator-only.</p></div>
-            <form onSubmit={(event) => { event.preventDefault(); void fetchCollectorClients(collectorSearch); }} className="relative w-full md:w-80"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={collectorSearch} onChange={(event) => setCollectorSearch(event.target.value)} placeholder="Client name, account, address" className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-16 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /><button className="absolute right-1 top-1 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground">Find</button></form>
+            <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Collection workspace</p><h2 className="mt-1 text-lg font-semibold text-foreground">Search client & status</h2><p className="mt-1 text-sm text-muted-foreground">View accounts or submit a new installation application. Customer activation remains administrator-only.</p></div>
+            <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row"><button type="button" onClick={() => setShowNewClientApplication(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700"><UserPlus className="h-4 w-4"/>New Client Application</button><form onSubmit={(event) => { event.preventDefault(); void fetchCollectorClients(collectorSearch); }} className="relative w-full md:w-80"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={collectorSearch} onChange={(event) => setCollectorSearch(event.target.value)} placeholder="Client name, account, address" className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-16 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /><button className="absolute right-1 top-1 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground">Find</button></form></div>
           </div>
           <div className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="bg-muted/45 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">Address</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Current plan</th><th className="px-4 py-3">Collector actions</th></tr></thead><tbody className="divide-y divide-border/70">{collectorClients.map((client) => <tr key={client.id}><td className="px-4 py-3"><p className="font-semibold text-foreground">{client.full_name}</p><p className="text-xs text-muted-foreground">{client.account_number} · {client.contact_number || 'No contact'}</p></td><td className="px-4 py-3 text-xs text-muted-foreground">{client.address || 'Not recorded'}<button type="button" disabled={collectorActionBusy === client.id} onClick={() => void updateCollectorLocation(client)} className="mt-1 block text-primary hover:underline">{client.gps_coordinates ? 'Capture exact location' : 'Capture current location'}</button></td><td className="px-4 py-3"><span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs font-semibold capitalize text-foreground">{client.status}</span><p className="mt-1 text-[10px] text-muted-foreground">View only</p></td><td className="px-4 py-3 text-xs"><p className="font-medium text-foreground">{client.service_plan?.name || 'No plan'}</p><p className="text-muted-foreground">{client.service_plan ? `${client.service_plan.download_speed}/${client.service_plan.upload_speed} Mbps · ${peso(client.service_plan.price)}` : '—'}</p></td><td className="px-4 py-3"><div className="flex min-w-[250px] flex-wrap gap-2"><button type="button" disabled={collectorActionBusy === client.id} onClick={() => void createEarlyInvoice(client)} className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60">Create early invoice</button><select value={selectedPlans[client.id] || ''} onChange={(event) => setSelectedPlans((current) => ({ ...current, [client.id]: event.target.value }))} className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs"><option value="">Request plan…</option>{planOptions.filter((plan) => plan.id !== client.service_plan?.id && !/company\s*owned/i.test(plan.name)).map((plan) => <option value={plan.id} key={plan.id}>{plan.name} · {peso(plan.price)}</option>)}</select><button type="button" disabled={collectorActionBusy === client.id} onClick={() => void requestPlanChange(client)} className="rounded-lg border border-primary/30 px-2.5 py-1.5 text-xs font-semibold text-primary disabled:opacity-60">Send request</button></div></td></tr>)}{collectorClients.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-muted-foreground">No matching clients found.</td></tr>}</tbody></table></div>
         </section>}
@@ -562,6 +584,7 @@ const NewDashboardPageContent: React.FC = () => {
             <div className="space-y-4 p-6"><div className="rounded-2xl border border-border bg-muted/40 p-4"><p className="font-semibold text-foreground">{locationCaptureTarget.full_name}</p><p className="mt-1 text-sm text-muted-foreground">{locationCaptureTarget.account_number} · {locationCaptureTarget.address || 'Address not recorded'}</p></div><div className="flex gap-3 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-200"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" /><p>SolarNet saves one GPS coordinate and its accuracy for this client. It does not track the collector continuously.</p></div><p className="text-sm leading-6 text-muted-foreground">Confirm only after you have arrived at the client’s exact location. Your browser will ask for location permission if it has not been granted.</p><div className="flex gap-3 pt-1"><button type="button" disabled={collectorActionBusy === locationCaptureTarget.id} onClick={() => setLocationCaptureTarget(null)} className="flex-1 rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">Cancel</button><button type="button" disabled={collectorActionBusy === locationCaptureTarget.id} onClick={() => void captureCollectorLocation()} className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/25 disabled:opacity-60">{collectorActionBusy === locationCaptureTarget.id ? 'Getting GPS…' : 'Proceed & capture'}</button></div></div>
           </section>
         </div>}
+        {collector && showNewClientApplication && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:justify-center"><section className="max-h-[94dvh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl"><div className="flex items-start justify-between border-b border-border p-5"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-emerald-600">Installation application</p><h2 className="mt-1 text-xl font-bold text-foreground">Register a prospective client</h2><p className="mt-1 text-sm text-muted-foreground">This creates a pending application and technician ticket. It does not activate service.</p></div><button type="button" onClick={() => setShowNewClientApplication(false)} aria-label="Close"><X className="h-5 w-5"/></button></div><form onSubmit={submitNewClientApplication} className="space-y-4 p-5"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-foreground">Full name *<input required value={newClientApplication.full_name} onChange={e=>setNewClientApplication({...newClientApplication,full_name:e.target.value})} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"/></label><label className="text-sm font-medium text-foreground">Phone number *<input required value={newClientApplication.contact_number} onChange={e=>setNewClientApplication({...newClientApplication,contact_number:e.target.value})} placeholder="09XXXXXXXXX" className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"/></label><label className="text-sm font-medium text-foreground">Email address *<input required type="email" value={newClientApplication.email} onChange={e=>setNewClientApplication({...newClientApplication,email:e.target.value})} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"/></label><label className="text-sm font-medium text-foreground">Preferred plan *<select required value={newClientApplication.service_plan_id} onChange={e=>setNewClientApplication({...newClientApplication,service_plan_id:e.target.value})} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"><option value="">Select plan</option>{planOptions.filter(p=>!/company\s*owned/i.test(p.name)).map(p=><option key={p.id} value={p.id}>{p.name} · {peso(p.price)}/month</option>)}</select></label></div><label className="block text-sm font-medium text-foreground">Installation address *<textarea required rows={3} value={newClientApplication.address} onChange={e=>setNewClientApplication({...newClientApplication,address:e.target.value})} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"/></label><label className="block text-sm font-medium text-foreground">Landmark or notes<textarea rows={3} value={newClientApplication.notes} onChange={e=>setNewClientApplication({...newClientApplication,notes:e.target.value})} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2.5"/></label><div className="rounded-xl bg-muted p-3 text-xs leading-5 text-muted-foreground">SolarNet checks duplicate names, email addresses, and phone numbers through the existing application workflow. Final approval and MikroTik binding remain with authorized staff.</div><div className="flex gap-3"><button type="button" disabled={applicationBusy} onClick={()=>setShowNewClientApplication(false)} className="flex-1 rounded-xl border border-border px-4 py-3 text-sm font-semibold">Cancel</button><button disabled={applicationBusy} className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{applicationBusy?'Submitting…':'Submit Application'}</button></div></form></section></div>}
       </div>
     </DashboardLayout>
   );
