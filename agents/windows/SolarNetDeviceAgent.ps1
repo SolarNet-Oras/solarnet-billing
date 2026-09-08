@@ -1,7 +1,7 @@
 param([switch]$Background)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$ErrorActionPreference='Stop'; $AgentVersion='1.4.1'; $ApiBase='https://billing.solarnetportal.com/api/v1'
+$ErrorActionPreference='Stop'; $AgentVersion='1.4.2'; $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'; $IdentityFile=Join-Path $DataDir 'installation-id.txt'; $TokenFile=Join-Path $DataDir 'device-token.dat'
 New-Item -ItemType Directory -Path $DataDir -Force|Out-Null
 if(-not(Test-Path $IdentityFile)){[guid]::NewGuid().ToString()|Set-Content $IdentityFile -Encoding ASCII}
@@ -13,7 +13,8 @@ function Get-SecurityPosture{
  $result=[ordered]@{firewall_enabled=$null;defender_enabled=$null;realtime_protection_enabled=$null;bitlocker_enabled=$null;secure_boot_enabled=$null;pending_reboot=$false;antivirus_signature_updated_at=$null}
  try{$profiles=@(Get-NetFirewallProfile -ErrorAction Stop);$result.firewall_enabled=($profiles.Count -gt 0 -and @($profiles|Where-Object{-not $_.Enabled}).Count -eq 0)}catch{}
  try{$mp=Get-MpComputerStatus -ErrorAction Stop;$result.defender_enabled=[bool]$mp.AntivirusEnabled;$result.realtime_protection_enabled=[bool]$mp.RealTimeProtectionEnabled;if($mp.AntivirusSignatureLastUpdated){$result.antivirus_signature_updated_at=$mp.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')}}catch{}
- try{$volume=Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop;$result.bitlocker_enabled=($volume.ProtectionStatus -eq 'On')}catch{}
+ try{$volume=Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop;$protection=[string]$volume.ProtectionStatus;if($protection -in @('On','1')){$result.bitlocker_enabled=$true}elseif($protection -in @('Off','0')){$result.bitlocker_enabled=$false}}catch{}
+ if($null -eq $result.bitlocker_enabled){try{$manageBde=(& "$env:SystemRoot\System32\manage-bde.exe" -status $env:SystemDrive 2>$null|Out-String);if($manageBde -match '(?im)^\s*Protection Status:\s*Protection On\s*$'){$result.bitlocker_enabled=$true}elseif($manageBde -match '(?im)^\s*Protection Status:\s*Protection Off\s*$'){$result.bitlocker_enabled=$false}}catch{}}
  try{$result.secure_boot_enabled=[bool](Confirm-SecureBootUEFI -ErrorAction Stop)}catch{
   try{$secureBootState=Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State' -Name 'UEFISecureBootEnabled' -ErrorAction Stop;$result.secure_boot_enabled=([int]$secureBootState -eq 1)}catch{}
  }
