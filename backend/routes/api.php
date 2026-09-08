@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\V1\TicketController;
 use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WireguardController;
+use App\Http\Controllers\Api\V1\EmployeeDeviceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -63,6 +64,8 @@ Route::prefix('v1')->group(function () {
     Route::get('integrations/facebook/webhook', [FacebookAutomationController::class, 'verifyWebhook']);
     Route::post('integrations/facebook/webhook', [FacebookAutomationController::class, 'receiveWebhook']);
     Route::get('integrations/facebook/callback', [FacebookAutomationController::class, 'oauthCallback']);
+    Route::post('employee-device-agent/enroll', [EmployeeDeviceController::class, 'enroll'])->middleware('throttle:10,1');
+    Route::post('employee-device-agent/heartbeat', [EmployeeDeviceController::class, 'heartbeat'])->middleware('throttle:120,1');
 
     // Authentication routes (public)
     Route::prefix('auth')->group(function () {
@@ -104,6 +107,9 @@ Route::prefix('v1')->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::apiResource('users', UserController::class);
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
+            Route::get('employee-devices', [EmployeeDeviceController::class, 'index']);
+            Route::post('employee-devices/enrollment', [EmployeeDeviceController::class, 'createEnrollment'])->middleware('throttle:10,1');
+            Route::post('employee-devices/{device}/revoke', [EmployeeDeviceController::class, 'revoke']);
         });
         Route::middleware(['role:admin|super_admin'])->group(function () {
             Route::get('customer-portal-accounts', [CustomerController::class, 'portalAccounts']);
