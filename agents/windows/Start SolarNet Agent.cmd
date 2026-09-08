@@ -4,8 +4,22 @@ title SolarNet Employee Device Agent Launcher
 set "AGENT_SCRIPT=%~dp0SolarNetDeviceAgent.ps1"
 
 if not exist "%AGENT_SCRIPT%" (
-  echo ERROR: SolarNetDeviceAgent.ps1 was not found.
-  echo Extract every file from the ZIP into one folder before opening this launcher.
+  for /r "%~dp0" %%F in (SolarNetDeviceAgent.ps1) do set "AGENT_SCRIPT=%%~fF"
+)
+
+if not exist "%AGENT_SCRIPT%" (
+  echo ERROR: SolarNetDeviceAgent.ps1 was not found anywhere in this folder.
+  echo.
+  echo The ZIP contains three files:
+  echo   README.txt
+  echo   SolarNetDeviceAgent.ps1
+  echo   Start SolarNet Agent.cmd
+  echo.
+  echo Right-click the ZIP, choose Extract All, and run this launcher from the
+  echo extracted folder. Do not copy or run only the CMD file.
+  echo.
+  echo If SolarNetDeviceAgent.ps1 disappears after extraction, open Windows
+  echo Security, Protection history, and check whether it was quarantined.
   pause
   exit /b 1
 )
