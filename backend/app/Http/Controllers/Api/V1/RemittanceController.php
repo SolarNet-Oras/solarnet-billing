@@ -433,9 +433,14 @@ class RemittanceController extends Controller
                 : 'Cash liquidation matches the collector cash total. You may now validate this remittance.'), 'remittance' => $remittance]);
     }
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(Remittance::with([
+        $data = $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+            'date_order' => ['nullable', 'in:newest,oldest'],
+        ]);
+
+        $query = Remittance::with([
             'collector:id,name,email',
             'liquidator:id,name,email',
             'receiver:id,name,email',
@@ -444,7 +449,19 @@ class RemittanceController extends Controller
             'payments.invoice:id,invoice_number',
             'payments.allocations:id,payment_id,invoice_id,amount',
             'payments.allocations.invoice:id,invoice_number',
-        ])->latest('submitted_at')->paginate(50));
+        ]);
+
+        if (! empty($data['month'])) {
+            $month = Carbon::createFromFormat('Y-m', $data['month'], config('app.timezone', 'Asia/Manila'));
+            $query->whereBetween('submitted_at', [
+                $month->copy()->startOfMonth()->utc(),
+                $month->copy()->endOfMonth()->utc(),
+            ]);
+        }
+
+        $query->orderBy('submitted_at', ($data['date_order'] ?? 'newest') === 'oldest' ? 'asc' : 'desc');
+
+        return response()->json($query->paginate(50)->withQueryString());
     }
 
     public function receive(Request $request, string $id): JsonResponse
