@@ -200,7 +200,7 @@ class RemittanceController extends Controller
             'payer_signature' => 'required_if:payment_method,cash|string|starts_with:data:image/png;base64,|max:500000',
             'payer_signature_fingerprint' => 'required_if:payment_method,cash|string|regex:/^[01]{32}$/',
             'signature_signer_type' => 'required_if:payment_method,cash|in:client,family',
-            'signature_signer_name' => 'required_if:signature_signer_type,family|nullable|string|max:120',
+            'signature_signer_name' => 'nullable|string|max:120',
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
         abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may record payment only for a due invoice.');
