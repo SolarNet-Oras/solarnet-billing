@@ -1,6 +1,10 @@
 $ErrorActionPreference='Stop'
 $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Administrator approval is required.'}
+if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+    $arguments=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$PSCommandPath+'"'))
+    $process=Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments -Wait -PassThru
+    exit $process.ExitCode
+}
 $userDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'
 $userToken=Join-Path $userDir 'device-token.dat'
 if(-not(Test-Path $userToken)){throw 'Enroll this Windows account in the SolarNet agent before installing the heartbeat service.'}
@@ -18,3 +22,5 @@ $task=New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -P
 Register-ScheduledTask -TaskName 'SolarNet Device Heartbeat' -InputObject $task -Force|Out-Null
 Start-ScheduledTask -TaskName 'SolarNet Device Heartbeat'
 Write-Host 'SolarNet machine heartbeat installed and started.' -ForegroundColor Green
+Write-Host 'You may close this window. Press Enter to finish.'
+[void](Read-Host)
