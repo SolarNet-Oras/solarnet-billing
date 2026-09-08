@@ -13,7 +13,7 @@ export const employeeDeviceService = {
   async index(): Promise<{devices:EmployeeDevice[]; audits:DeviceAudit[]; commands:DeviceCommand[]}> { return (await api.get('/employee-devices')).data.data; },
   async createEnrollment(): Promise<{code:string; expires_at:string}> { return (await api.post('/employee-devices/enrollment')).data.data; },
   async revoke(id:string): Promise<void> { await api.post(`/employee-devices/${id}/revoke`); },
-  async requestCommand(id:string, input:{command:'message'|'lock'|'restart';message?:string;reason:string;confirmation:string}): Promise<void> { await api.post(`/employee-devices/${id}/commands`,input); },
+  async requestCommand(id:string, input:{command:'message'|'lock'|'restart';message?:string;reason:string;password:string;device_confirmation:string}): Promise<void> { await api.post(`/employee-devices/${id}/commands`,input); },
   async downloadWindowsAgent(): Promise<void> {
     const response = await api.get('/employee-devices/agent/windows', { responseType: 'blob' });
     const url = URL.createObjectURL(response.data); const link = document.createElement('a');
