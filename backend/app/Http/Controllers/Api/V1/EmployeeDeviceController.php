@@ -13,6 +13,13 @@ use Illuminate\Support\Str;
 
 class EmployeeDeviceController extends Controller
 {
+    public function downloadWindowsAgent()
+    {
+        $path = base_path('resources/agents/SolarNet-Windows-Agent.zip');
+        abort_unless(is_file($path), 404, 'Windows agent package is not available in this deployment.');
+        return response()->download($path, 'SolarNet-Windows-Agent.zip', ['Content-Type'=>'application/zip','Cache-Control'=>'private, no-store']);
+    }
+
     public function index(): JsonResponse
     {
         $devices = EmployeeDevice::latest('last_seen_at')->get()->map(function ($device) {

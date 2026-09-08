@@ -108,6 +108,7 @@ Route::prefix('v1')->group(function () {
             Route::apiResource('users', UserController::class);
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
             Route::get('employee-devices', [EmployeeDeviceController::class, 'index']);
+            Route::get('employee-devices/agent/windows', [EmployeeDeviceController::class, 'downloadWindowsAgent'])->middleware('throttle:10,1');
             Route::post('employee-devices/enrollment', [EmployeeDeviceController::class, 'createEnrollment'])->middleware('throttle:10,1');
             Route::post('employee-devices/{device}/revoke', [EmployeeDeviceController::class, 'revoke']);
         });

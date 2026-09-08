@@ -11,4 +11,9 @@ export const employeeDeviceService = {
   async index(): Promise<{devices:EmployeeDevice[]; audits:DeviceAudit[]}> { return (await api.get('/employee-devices')).data.data; },
   async createEnrollment(): Promise<{code:string; expires_at:string}> { return (await api.post('/employee-devices/enrollment')).data.data; },
   async revoke(id:string): Promise<void> { await api.post(`/employee-devices/${id}/revoke`); },
+  async downloadWindowsAgent(): Promise<void> {
+    const response = await api.get('/employee-devices/agent/windows', { responseType: 'blob' });
+    const url = URL.createObjectURL(response.data); const link = document.createElement('a');
+    link.href=url; link.download='SolarNet-Windows-Agent.zip'; link.click(); URL.revokeObjectURL(url);
+  },
 };
