@@ -1,0 +1,20 @@
+$ErrorActionPreference='Stop'
+$principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Administrator approval is required.'}
+$userDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'
+$userToken=Join-Path $userDir 'device-token.dat'
+if(-not(Test-Path $userToken)){throw 'Enroll this Windows account in the SolarNet agent before installing the heartbeat service.'}
+$secure=Get-Content -LiteralPath $userToken|ConvertTo-SecureString
+$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try{$token=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)}
+$target=Join-Path $env:ProgramData 'SolarNetDeviceAgent';New-Item -ItemType Directory -Path $target -Force|Out-Null
+$plain=[Text.Encoding]::UTF8.GetBytes($token)
+try{$protected=[Security.Cryptography.ProtectedData]::Protect($plain,$null,[Security.Cryptography.DataProtectionScope]::LocalMachine);[Convert]::ToBase64String($protected)|Set-Content -LiteralPath (Join-Path $target 'machine-token.dat') -Encoding ASCII}finally{[Array]::Clear($plain,0,$plain.Length);$token=$null}
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SolarNetHeartbeatService.ps1') -Destination (Join-Path $target 'SolarNetHeartbeatService.ps1') -Force
+$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\ProgramData\SolarNetDeviceAgent\SolarNetHeartbeatService.ps1"'
+$trigger=New-ScheduledTaskTrigger -AtStartup
+$settings=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
+$task=New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest)
+Register-ScheduledTask -TaskName 'SolarNet Device Heartbeat' -InputObject $task -Force|Out-Null
+Start-ScheduledTask -TaskName 'SolarNet Device Heartbeat'
+Write-Host 'SolarNet machine heartbeat installed and started.' -ForegroundColor Green

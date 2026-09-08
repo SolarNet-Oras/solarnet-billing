@@ -17,6 +17,11 @@ inspect files, record input, or execute arbitrary commands. Its notification-are
 icon remains available. Lock and restart requests require employee approval.
 Source is included.
 
+For heartbeat whenever Windows is powered on, first enroll the visible agent,
+then run "Install Background Heartbeat.cmd" once and approve Administrator access.
+It installs a read-only startup task under Windows SYSTEM. This component reports
+heartbeat and posture only and explicitly cannot receive control commands.
+
 The agent reports Windows Defender, real-time protection, firewall, BitLocker,
 Secure Boot, pending-restart, and antivirus-signature posture when Windows makes
 those values available. It does not send browsing history or document contents.

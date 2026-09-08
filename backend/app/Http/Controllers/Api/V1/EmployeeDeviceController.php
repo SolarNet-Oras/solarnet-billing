@@ -67,13 +67,14 @@ class EmployeeDeviceController extends Controller
         $device = EmployeeDevice::where('token_hash',hash('sha256',$token))->where('status','active')->first();
         abort_unless($device, 401, 'Device token is invalid or revoked.');
         $data = $request->validate([
-            'agent_version'=>'required|string|max:40','os_version'=>'nullable|string|max:120','security_posture'=>'nullable|array',
+            'agent_version'=>'required|string|max:40','os_version'=>'nullable|string|max:120','security_posture'=>'nullable|array','accept_commands'=>'nullable|boolean',
             'security_posture.firewall_enabled'=>'nullable|boolean','security_posture.defender_enabled'=>'nullable|boolean',
             'security_posture.realtime_protection_enabled'=>'nullable|boolean','security_posture.bitlocker_enabled'=>'nullable|boolean',
             'security_posture.secure_boot_enabled'=>'nullable|boolean','security_posture.pending_reboot'=>'nullable|boolean',
             'security_posture.antivirus_signature_updated_at'=>'nullable|string|max:64',
         ]);
-        $update=['agent_version'=>$data['agent_version'],'os_version'=>$data['os_version'] ?? $device->os_version,'last_seen_at'=>now(),'last_ip_hash'=>hash('sha256',(string)$request->ip())];
+        $update=['os_version'=>$data['os_version'] ?? $device->os_version,'last_seen_at'=>now(),'last_ip_hash'=>hash('sha256',(string)$request->ip())];
+        if ($request->boolean('accept_commands', true)) $update['agent_version']=$data['agent_version'];
         if (Schema::hasColumn('employee_devices','security_posture') && isset($data['security_posture'])) {
             // A normal Windows session cannot read every privileged control.
             // Preserve the latest verified value instead of replacing it with null.
@@ -82,7 +83,7 @@ class EmployeeDeviceController extends Controller
             $update['posture_checked_at']=now();
         }
         $device->update($update);
-        $commands = Schema::hasTable('employee_device_commands') ? DB::transaction(function () use ($device) {
+        $commands = $request->boolean('accept_commands', true) && Schema::hasTable('employee_device_commands') ? DB::transaction(function () use ($device) {
             $rows = EmployeeDeviceCommand::where('device_id',$device->id)->where('status','queued')->lockForUpdate()->limit(5)->get();
             foreach ($rows as $row) $row->update(['status'=>'delivered','delivered_at'=>now()]);
             return $rows->map(fn ($row) => $row->only(['id','command','message','reason']))->values();
