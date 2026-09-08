@@ -435,7 +435,16 @@ class RemittanceController extends Controller
 
     public function index(): JsonResponse
     {
-        return response()->json(Remittance::with(['collector:id,name,email', 'liquidator:id,name,email', 'receiver:id,name,email', 'payments:id,remittance_id,payment_method,amount,payment_number'])->latest('submitted_at')->paginate(50));
+        return response()->json(Remittance::with([
+            'collector:id,name,email',
+            'liquidator:id,name,email',
+            'receiver:id,name,email',
+            'payments:id,remittance_id,customer_id,invoice_id,payment_method,amount,payment_number,payment_date,reference',
+            'payments.customer:id,account_number,full_name,address',
+            'payments.invoice:id,invoice_number',
+            'payments.allocations:id,payment_id,invoice_id,amount',
+            'payments.allocations.invoice:id,invoice_number',
+        ])->latest('submitted_at')->paginate(50));
     }
 
     public function receive(Request $request, string $id): JsonResponse
