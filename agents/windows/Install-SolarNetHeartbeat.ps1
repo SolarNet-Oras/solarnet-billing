@@ -9,6 +9,18 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
 $userDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'
 $userToken=Join-Path $userDir 'device-token.dat'
 if(-not(Test-Path $userToken)){throw 'Enroll this Windows account in the SolarNet agent before installing the heartbeat service.'}
+$taskName='SolarNet Device Heartbeat'
+# Register-ScheduledTask -Force does not reliably replace a script that is
+# already running. Stop the old instance first so upgrades take effect now.
+if(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue){
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $deadline=(Get-Date).AddSeconds(15)
+    do {
+        Start-Sleep -Milliseconds 250
+        $state=(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
+    } while($state -eq 'Running' -and (Get-Date) -lt $deadline)
+    if($state -eq 'Running'){throw 'The previous SolarNet heartbeat did not stop. Restart Windows, then run this installer again.'}
+}
 $secure=Get-Content -LiteralPath $userToken|ConvertTo-SecureString
 $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try{$token=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)}
@@ -20,8 +32,8 @@ $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoLogo -No
 $trigger=New-ScheduledTaskTrigger -AtStartup
 $settings=New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $task=New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest)
-Register-ScheduledTask -TaskName 'SolarNet Device Heartbeat' -InputObject $task -Force|Out-Null
-Start-ScheduledTask -TaskName 'SolarNet Device Heartbeat'
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force|Out-Null
+Start-ScheduledTask -TaskName $taskName
 Write-Host 'SolarNet machine heartbeat installed and started.' -ForegroundColor Green
 Write-Host 'You may close this window. Press Enter to finish.'
 [void](Read-Host)

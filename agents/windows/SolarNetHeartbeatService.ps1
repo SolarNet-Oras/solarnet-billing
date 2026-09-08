@@ -51,7 +51,7 @@ while($true){
     try{
         $token=Read-MachineToken
         $headers=@{Accept='application/json';Authorization="Bearer $token"}
-        $body=@{agent_version='1.5.0-service';agent_component='machine_service';command_capabilities=@('lock','restart');os_version=[Environment]::OSVersion.VersionString;security_posture=(Get-Posture)}|ConvertTo-Json -Depth 4
+        $body=@{agent_version='1.5.1-service';agent_component='machine_service';command_capabilities=@('lock','restart');os_version=[Environment]::OSVersion.VersionString;security_posture=(Get-Posture)}|ConvertTo-Json -Depth 4
         $response=Invoke-RestMethod -Method Post -Uri "$ApiBase/employee-device-agent/heartbeat" -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 20
         foreach($command in @($response.data.commands)){Invoke-SystemCommand $headers $command}
         Write-Health 'SUCCESS' 'Machine heartbeat and privileged posture accepted by SolarNet.'
