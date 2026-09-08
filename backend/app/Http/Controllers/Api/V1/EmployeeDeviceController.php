@@ -75,7 +75,10 @@ class EmployeeDeviceController extends Controller
         ]);
         $update=['agent_version'=>$data['agent_version'],'os_version'=>$data['os_version'] ?? $device->os_version,'last_seen_at'=>now(),'last_ip_hash'=>hash('sha256',(string)$request->ip())];
         if (Schema::hasColumn('employee_devices','security_posture') && isset($data['security_posture'])) {
-            $update['security_posture']=$data['security_posture'];
+            // A normal Windows session cannot read every privileged control.
+            // Preserve the latest verified value instead of replacing it with null.
+            $observed = array_filter($data['security_posture'], fn ($value) => $value !== null);
+            $update['security_posture']=array_merge($device->security_posture ?? [], $observed);
             $update['posture_checked_at']=now();
         }
         $device->update($update);
