@@ -21,6 +21,8 @@ For heartbeat whenever Windows is powered on, first enroll the visible agent,
 then run "Install Background Heartbeat.cmd" once and approve Administrator access.
 It installs a read-only startup task under Windows SYSTEM. This component reports
 heartbeat and posture only and explicitly cannot receive control commands.
+Its latest secret-free health result is stored at
+C:\ProgramData\SolarNetDeviceAgent\heartbeat-health.log for troubleshooting.
 
 The agent reports Windows Defender, real-time protection, firewall, BitLocker,
 Secure Boot, pending-restart, and antivirus-signature posture when Windows makes

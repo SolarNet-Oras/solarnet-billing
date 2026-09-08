@@ -2,6 +2,8 @@ $ErrorActionPreference='Stop'
 $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:ProgramData 'SolarNetDeviceAgent'
 $TokenFile=Join-Path $DataDir 'machine-token.dat'
+$HealthFile=Join-Path $DataDir 'heartbeat-health.log'
+function Write-Health([string]$state,[string]$detail){$safe=($detail -replace '[\r\n]+',' ');if($safe.Length -gt 300){$safe=$safe.Substring(0,300)};Set-Content -LiteralPath $HealthFile -Value ("{0} | {1} | {2}" -f (Get-Date).ToString('o'),$state,$safe) -Encoding UTF8}
 
 function Read-MachineToken {
     $encrypted=[Convert]::FromBase64String((Get-Content -LiteralPath $TokenFile -Raw).Trim())
@@ -24,6 +26,7 @@ while($true){
         $headers=@{Accept='application/json';Authorization="Bearer $token"}
         $body=@{agent_version='1.5.0-service';os_version=[Environment]::OSVersion.VersionString;accept_commands=$false;security_posture=(Get-Posture)}|ConvertTo-Json -Depth 4
         Invoke-RestMethod -Method Post -Uri "$ApiBase/employee-device-agent/heartbeat" -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 20|Out-Null
+        Write-Health 'SUCCESS' 'Machine heartbeat and privileged posture accepted by SolarNet.'
         Start-Sleep -Seconds 60
-    }catch{Start-Sleep -Seconds 15}
+    }catch{Write-Health 'FAILED' $_.Exception.Message;Start-Sleep -Seconds 15}
 }
