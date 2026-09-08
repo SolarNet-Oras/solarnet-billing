@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\Invoice;
 use App\Models\PaymentAllocation;
 use App\Models\Remittance;
@@ -112,6 +113,37 @@ class PaymentAllocationLedgerTest extends TestCase
         $this->assertSame('899.00', $invoice->fresh()->balance);
         $this->assertSame('0.00', $invoice->fresh()->paid_amount);
         $this->assertSame(0, $payment->allocations()->count());
+    }
+
+    public function test_refunding_unused_cash_advance_does_not_reopen_a_paid_invoice(): void
+    {
+        $customer = $this->customer();
+        $invoice = $this->invoice($customer, '2026-09-01', '800.00', '0.00', '800.00', 'paid');
+        $actor = User::factory()->create();
+        $remittance = Remittance::create([
+            'collector_id' => $actor->id, 'received_by' => $actor->id,
+            'declared_amount' => '200.00', 'received_amount' => '200.00',
+            'status' => 'received', 'submitted_at' => now(), 'received_at' => now(),
+        ]);
+        $payment = \App\Models\Payment::create([
+            'customer_id' => $customer->id, 'payment_number' => 'PAY-ADVANCE-REFUND',
+            'amount' => '200.00', 'payment_method' => 'cash', 'payment_date' => now(),
+            'remittance_id' => $remittance->id, 'collector_id' => $actor->id,
+        ]);
+        $credit = CustomerCredit::create([
+            'customer_id' => $customer->id, 'payment_id' => $payment->id,
+            'original_amount' => '200.00', 'remaining_amount' => '200.00', 'status' => 'advance',
+        ]);
+
+        $refund = app(PaymentRefundService::class)->refund($payment, 200, 'Retained change returned.', $actor);
+
+        $this->assertSame('200.00', $refund->amount);
+        $this->assertSame('0.00', $credit->fresh()->remaining_amount);
+        $this->assertSame('refunded', $credit->fresh()->status);
+        $this->assertSame('0.00', $invoice->fresh()->balance);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame('200.00', $payment->fresh()->amount);
+        $this->assertSame('received', $remittance->fresh()->status);
     }
 
     private function customer(): Customer

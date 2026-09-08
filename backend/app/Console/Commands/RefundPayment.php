@@ -39,8 +39,12 @@ class RefundPayment extends Command
         }
 
         $refund = $refunds->refund($payment, $amount, $reason);
-        $invoice = $refund->payment->invoice->fresh();
-        $this->info("Refund recorded. {$invoice->invoice_number} now has paid {$invoice->paid_amount}, balance {$invoice->balance}, status {$invoice->status}.");
+        $invoice = $refund->payment->invoice?->fresh();
+        if ($invoice) {
+            $this->info("Refund recorded. {$invoice->invoice_number} now has paid {$invoice->paid_amount}, balance {$invoice->balance}, status {$invoice->status}.");
+        } else {
+            $this->info('Refund recorded against unused customer advance credit; no invoice charge or paid invoice was changed.');
+        }
         $this->info('The original payment and received remittance were preserved for audit.');
         return self::SUCCESS;
     }

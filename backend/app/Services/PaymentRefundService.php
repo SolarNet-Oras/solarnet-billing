@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\FinancialEntry;
+use App\Models\CustomerCredit;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentRefund;
@@ -29,6 +30,28 @@ class PaymentRefundService
 
             $remaining = $refundCents;
             $invoiceIds = [];
+
+            // Refund unused advance credit before touching invoice allocations.
+            // This keeps the invoice payment intact when only retained change is returned.
+            $credits = CustomerCredit::query()
+                ->where('payment_id', $payment->id)
+                ->where('remaining_amount', '>', 0)
+                ->latest('created_at')->latest('id')->lockForUpdate()->get();
+
+            foreach ($credits as $credit) {
+                if ($remaining <= 0) break;
+                $available = $this->cents($credit->remaining_amount);
+                $reversed = min($remaining, $available);
+                $newRemaining = $available - $reversed;
+                $credit->update([
+                    'remaining_amount' => $this->money($newRemaining),
+                    'status' => $newRemaining === 0 ? 'refunded' : $credit->status,
+                    'applied_at' => $newRemaining === 0 ? now() : $credit->applied_at,
+                    'notes' => trim(($credit->notes ? $credit->notes.' ' : '').'Refunded '.$this->money($reversed).' from '.$payment->payment_number.'.'),
+                ]);
+                $remaining -= $reversed;
+            }
+
             $allocations = PaymentAllocation::query()
                 ->where('payment_id', $payment->id)
                 ->latest('created_at')->latest('id')->lockForUpdate()->get();
@@ -47,7 +70,7 @@ class PaymentRefundService
             }
 
             if ($remaining > 0) {
-                throw ValidationException::withMessages(['amount' => 'This payment does not have enough invoice allocation to reverse safely.']);
+                throw ValidationException::withMessages(['amount' => 'This payment does not have enough unused credit or invoice allocation to reverse safely.']);
             }
 
             $entry = FinancialEntry::create([
