@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\EmployeeDevice;
 use App\Models\EmployeeDeviceAudit;
 use App\Models\EmployeeDeviceEnrollment;
+use App\Models\EmployeeDeviceCommand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ class EmployeeDeviceController extends Controller
             $device->online = $device->status === 'active' && $device->last_seen_at?->gt(now()->subMinutes(3));
             return $device;
         });
-        return response()->json(['success'=>true,'data'=>['devices'=>$devices,'audits'=>EmployeeDeviceAudit::latest()->limit(50)->get()]]);
+        return response()->json(['success'=>true,'data'=>['devices'=>$devices,'audits'=>EmployeeDeviceAudit::latest()->limit(50)->get(),'commands'=>EmployeeDeviceCommand::latest()->limit(50)->get()]]);
     }
 
     public function createEnrollment(Request $request): JsonResponse
@@ -61,7 +62,33 @@ class EmployeeDeviceController extends Controller
         abort_unless($device, 401, 'Device token is invalid or revoked.');
         $data = $request->validate(['agent_version'=>'required|string|max:40','os_version'=>'nullable|string|max:120']);
         $device->update(['agent_version'=>$data['agent_version'],'os_version'=>$data['os_version'] ?? $device->os_version,'last_seen_at'=>now(),'last_ip_hash'=>hash('sha256',(string)$request->ip())]);
-        return response()->json(['success'=>true,'data'=>['server_time'=>now()->toIso8601String(),'commands'=>[]]]);
+        $commands = DB::transaction(function () use ($device) {
+            $rows = EmployeeDeviceCommand::where('device_id',$device->id)->where('status','queued')->lockForUpdate()->limit(5)->get();
+            foreach ($rows as $row) $row->update(['status'=>'delivered','delivered_at'=>now()]);
+            return $rows->map(fn ($row) => $row->only(['id','command','message','reason']))->values();
+        });
+        return response()->json(['success'=>true,'data'=>['server_time'=>now()->toIso8601String(),'commands'=>$commands]]);
+    }
+
+    public function commandResult(Request $request): JsonResponse
+    {
+        $token = $request->bearerToken(); abort_unless($token,401,'Device token required.');
+        $device = EmployeeDevice::where('token_hash',hash('sha256',$token))->where('status','active')->first(); abort_unless($device,401,'Device token is invalid or revoked.');
+        $data=$request->validate(['command_id'=>'required|uuid','status'=>'required|in:accepted,declined,completed,failed','result_message'=>'nullable|string|max:1000']);
+        $command=EmployeeDeviceCommand::where('id',$data['command_id'])->where('device_id',$device->id)->where('status','delivered')->firstOrFail();
+        $command->update(['status'=>$data['status'],'responded_at'=>now(),'result_message'=>$data['result_message']??null]);
+        EmployeeDeviceAudit::create(['device_id'=>$device->id,'event'=>'command_'.$data['status'],'metadata'=>['command_id'=>$command->id,'command'=>$command->command]]);
+        return response()->json(['success'=>true]);
+    }
+
+    public function requestCommand(Request $request, EmployeeDevice $device): JsonResponse
+    {
+        abort_if($device->status!=='active',422,'Only an active enrolled device can receive a request.');
+        $data=$request->validate(['command'=>'required|in:message,lock,restart','message'=>'nullable|string|max:500','reason'=>'required|string|min:5|max:255','confirmation'=>'required|string|in:REQUEST DEVICE ACTION']);
+        if($data['command']==='message' && blank($data['message']??null)) return response()->json(['message'=>'Enter the message to show on the employee device.'],422);
+        $command=EmployeeDeviceCommand::create(['device_id'=>$device->id,'requested_by'=>$request->user()->id,'command'=>$data['command'],'message'=>$data['message']??null,'reason'=>$data['reason'],'status'=>'queued']);
+        EmployeeDeviceAudit::create(['device_id'=>$device->id,'actor_id'=>$request->user()->id,'event'=>'command_requested','metadata'=>['command_id'=>$command->id,'command'=>$command->command,'reason'=>$command->reason]]);
+        return response()->json(['success'=>true,'message'=>'Request queued. The employee device must be online and confirm guarded actions.','data'=>$command],201);
     }
 
     public function revoke(Request $request, EmployeeDevice $device): JsonResponse

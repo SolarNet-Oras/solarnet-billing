@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function () {
     Route::get('integrations/facebook/callback', [FacebookAutomationController::class, 'oauthCallback']);
     Route::post('employee-device-agent/enroll', [EmployeeDeviceController::class, 'enroll'])->middleware('throttle:10,1');
     Route::post('employee-device-agent/heartbeat', [EmployeeDeviceController::class, 'heartbeat'])->middleware('throttle:120,1');
+    Route::post('employee-device-agent/command-result', [EmployeeDeviceController::class, 'commandResult'])->middleware('throttle:120,1');
 
     // Authentication routes (public)
     Route::prefix('auth')->group(function () {
@@ -111,6 +112,7 @@ Route::prefix('v1')->group(function () {
             Route::get('employee-devices/agent/windows', [EmployeeDeviceController::class, 'downloadWindowsAgent'])->middleware('throttle:10,1');
             Route::post('employee-devices/enrollment', [EmployeeDeviceController::class, 'createEnrollment'])->middleware('throttle:10,1');
             Route::post('employee-devices/{device}/revoke', [EmployeeDeviceController::class, 'revoke']);
+            Route::post('employee-devices/{device}/commands', [EmployeeDeviceController::class, 'requestCommand'])->middleware('throttle:30,1');
         });
         Route::middleware(['role:admin|super_admin'])->group(function () {
             Route::get('customer-portal-accounts', [CustomerController::class, 'portalAccounts']);
