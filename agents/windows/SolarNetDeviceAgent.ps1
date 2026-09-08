@@ -1,13 +1,22 @@
 param([switch]$Background)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-$ErrorActionPreference='Stop'; $AgentVersion='1.2.0'; $ApiBase='https://billing.solarnetportal.com/api/v1'
+$ErrorActionPreference='Stop'; $AgentVersion='1.3.0'; $ApiBase='https://billing.solarnetportal.com/api/v1'
 $DataDir=Join-Path $env:LOCALAPPDATA 'SolarNetDeviceAgent'; $IdentityFile=Join-Path $DataDir 'installation-id.txt'; $TokenFile=Join-Path $DataDir 'device-token.dat'
 New-Item -ItemType Directory -Path $DataDir -Force|Out-Null
 if(-not(Test-Path $IdentityFile)){[guid]::NewGuid().ToString()|Set-Content $IdentityFile -Encoding ASCII}
 function Save-Token([string]$value){ConvertTo-SecureString $value -AsPlainText -Force|ConvertFrom-SecureString|Set-Content $TokenFile -Encoding ASCII}
 function Read-Token{if(-not(Test-Path $TokenFile)){return $null};$s=Get-Content $TokenFile|ConvertTo-SecureString;$p=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s);try{[Runtime.InteropServices.Marshal]::PtrToStringBSTR($p)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p)}}
 function Enable-Autostart{$command='powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File "'+$PSCommandPath+'" -Background';New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'SolarNetDeviceAgent' -Value $command -PropertyType String -Force|Out-Null}
+function Get-SecurityPosture{
+ $result=[ordered]@{firewall_enabled=$null;defender_enabled=$null;realtime_protection_enabled=$null;bitlocker_enabled=$null;secure_boot_enabled=$null;pending_reboot=$false;antivirus_signature_updated_at=$null}
+ try{$profiles=@(Get-NetFirewallProfile -ErrorAction Stop);$result.firewall_enabled=($profiles.Count -gt 0 -and @($profiles|Where-Object{-not $_.Enabled}).Count -eq 0)}catch{}
+ try{$mp=Get-MpComputerStatus -ErrorAction Stop;$result.defender_enabled=[bool]$mp.AntivirusEnabled;$result.realtime_protection_enabled=[bool]$mp.RealTimeProtectionEnabled;if($mp.AntivirusSignatureLastUpdated){$result.antivirus_signature_updated_at=$mp.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')}}catch{}
+ try{$volume=Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop;$result.bitlocker_enabled=($volume.ProtectionStatus -eq 'On')}catch{}
+ try{$result.secure_boot_enabled=[bool](Confirm-SecureBootUEFI -ErrorAction Stop)}catch{}
+ try{$result.pending_reboot=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')}catch{}
+ return $result
+}
 function Invoke-Api($path,$body,$token=''){$headers=@{Accept='application/json'};if($token){$headers.Authorization="Bearer $token"};Invoke-RestMethod -Method Post -Uri "$ApiBase/$path" -Headers $headers -ContentType 'application/json' -Body($body|ConvertTo-Json -Depth 4)-TimeoutSec 15}
 function Send-CommandResult($token,$commandId,$result,$message){Invoke-Api 'employee-device-agent/command-result' @{command_id=$commandId;status=$result;result_message=$message} $token|Out-Null}
 function Invoke-DeviceCommand($token,$command){
@@ -32,7 +41,8 @@ $consent=New-Object Windows.Forms.CheckBox;$consent.Location=New-Object Drawing.
 $enroll=New-Object Windows.Forms.Button;$enroll.Text='Enroll this device';$enroll.Location=New-Object Drawing.Point(28,307);$enroll.Size=New-Object Drawing.Size(445,40);$enroll.BackColor=[Drawing.Color]::FromArgb(24,169,153);$enroll.FlatStyle='Flat';$form.Controls.Add($enroll)
 $status=Label 'Status: Not enrolled' 28 369 445 28 $true;Label 'The application stays visible. No screen, file, keyboard, camera, microphone, or location data is collected.' 28 404 445 50|Out-Null
 $timer=New-Object Windows.Forms.Timer;$timer.Interval=60000
-$heartbeat={ $token=Read-Token;if(-not $token){$status.Text='Status: Not enrolled';return};try{$response=Invoke-Api 'employee-device-agent/heartbeat' @{agent_version=$AgentVersion;os_version=[Environment]::OSVersion.VersionString} $token;foreach($command in @($response.data.commands)){Invoke-DeviceCommand $token $command};$status.Text="Status: Online - heartbeat $(Get-Date -Format 'h:mm:ss tt')";$status.ForeColor=[Drawing.Color]::LightGreen}catch{$status.Text='Status: Server connection needs attention';$status.ForeColor=[Drawing.Color]::Orange}}
+$postureCache=$null;$lastPostureAt=[datetime]::MinValue
+$heartbeat={ $token=Read-Token;if(-not $token){$status.Text='Status: Not enrolled';return};try{if(-not $script:postureCache -or ((Get-Date)-$script:lastPostureAt).TotalMinutes -ge 5){$script:postureCache=Get-SecurityPosture;$script:lastPostureAt=Get-Date};$response=Invoke-Api 'employee-device-agent/heartbeat' @{agent_version=$AgentVersion;os_version=[Environment]::OSVersion.VersionString;security_posture=$script:postureCache} $token;foreach($command in @($response.data.commands)){Invoke-DeviceCommand $token $command};$status.Text="Status: Online - heartbeat $(Get-Date -Format 'h:mm:ss tt')";$status.ForeColor=[Drawing.Color]::LightGreen}catch{$status.Text='Status: Server connection needs attention';$status.ForeColor=[Drawing.Color]::Orange}}
 $timer.Add_Tick($heartbeat)
 $enroll.Add_Click({if(-not $consent.Checked){[Windows.Forms.MessageBox]::Show('Review and accept the disclosed heartbeat data first.','Consent required')|Out-Null;return};if([string]::IsNullOrWhiteSpace($employee.Text)-or[string]::IsNullOrWhiteSpace($code.Text)){[Windows.Forms.MessageBox]::Show('Enter the employee name and one-time code.','Missing information')|Out-Null;return};$enroll.Enabled=$false;$status.Text='Status: Enrolling...';try{$r=Invoke-Api 'employee-device-agent/enroll' @{code=$code.Text.Trim();name=$env:COMPUTERNAME;employee_name=$employee.Text.Trim();platform='windows';os_version=[Environment]::OSVersion.VersionString;agent_version=$AgentVersion;device_fingerprint=(Get-Content $IdentityFile -Raw).Trim();consent_accepted=$true;consent_accepted_at=(Get-Date).ToUniversalTime().ToString('o')};Save-Token $r.data.device_token;Enable-Autostart;$code.Clear();$employee.Enabled=$false;$consent.Enabled=$false;$enroll.Text='Enrolled';&$heartbeat;$timer.Start()}catch{$status.Text='Status: Enrollment failed';[Windows.Forms.MessageBox]::Show($_.Exception.Message,'Enrollment failed')|Out-Null;$enroll.Enabled=$true}})
 if(Read-Token){Enable-Autostart;$employee.Enabled=$false;$code.Enabled=$false;$consent.Checked=$true;$consent.Enabled=$false;$enroll.Text='Enrolled';$enroll.Enabled=$false;&$heartbeat;$timer.Start()}
