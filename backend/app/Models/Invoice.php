@@ -98,7 +98,7 @@ class Invoice extends Model
 
     public function isOverdue(): bool
     {
-        return $this->due_date->lt(now(config('app.timezone', 'Asia/Manila'))->startOfDay()) && $this->balance > 0;
+        return $this->due_date->lte(now(config('app.timezone', 'Asia/Manila'))->startOfDay()) && $this->balance > 0;
     }
 
     public function isPaid(): bool
@@ -118,7 +118,7 @@ class Invoice extends Model
 
     public function scopeOverdue($query)
     {
-        return $query->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
+        return $query->where('due_date', '<=', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
                     ->where('balance', '>', 0)
                     ->whereIn('status', ['sent', 'partial', 'overdue']);
     }

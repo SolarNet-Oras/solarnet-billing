@@ -153,7 +153,7 @@ class FinancialMonitoringService
 
         $outstanding = (float) (clone $liveReceivables)->sum('balance');
         $overdue = (float) (clone $liveReceivables)
-            ->whereDate('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
+            ->whereDate('due_date', '<=', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->sum('balance');
         $openInvoices = (int) (clone $liveReceivables)->count();
         $archivedCustomerReceivables = Invoice::query()
@@ -540,7 +540,7 @@ class FinancialMonitoringService
             $items[] = [
                 'type' => 'overdue_receivables',
                 'severity' => 'monitor',
-                'message' => 'Open receivables include amounts past their invoice due date. Review collection follow-up and suspension policy separately.',
+                'message' => 'Open receivables include amounts due today or earlier under SolarNet billing policy. Review collection follow-up and suspension policy separately.',
                 'amount_total' => self::rounded($overdue),
                 'outstanding_total' => self::rounded($outstanding),
             ];

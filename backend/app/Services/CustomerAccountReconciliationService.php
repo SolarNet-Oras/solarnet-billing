@@ -36,7 +36,7 @@ class CustomerAccountReconciliationService
         $confirmed = round((float) $payments->sum('amount'), 2);
         $availableCredit = round((float) $credits->sum('remaining_amount'), 2);
         $hasOverdue = $openInvoices->contains(fn (Invoice $invoice) => $invoice->status === 'overdue'
-            || $invoice->due_date?->lt(now(config('app.timezone', 'Asia/Manila'))->startOfDay()));
+            || $invoice->due_date?->lte(now(config('app.timezone', 'Asia/Manila'))->startOfDay()));
         $hasPartialOpenInvoice = $openInvoices->contains(fn (Invoice $invoice) => (float) $invoice->paid_amount > 0);
 
         $financialStatus = $outstanding <= 0

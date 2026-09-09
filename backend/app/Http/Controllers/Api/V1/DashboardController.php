@@ -126,7 +126,7 @@ class DashboardController extends Controller
         // ---- Invoices ----
         $invoiceTotals = Invoice::query()->selectRaw(
             'SUM(CASE WHEN status IN (?, ?) AND balance > 0 THEN 1 ELSE 0 END) AS pending_count,
-             SUM(CASE WHEN due_date < ? AND balance > 0 AND status IN (?, ?, ?) THEN 1 ELSE 0 END) AS overdue_count,
+             SUM(CASE WHEN due_date <= ? AND balance > 0 AND status IN (?, ?, ?) THEN 1 ELSE 0 END) AS overdue_count,
              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS paid_count,
              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS partial_count,
              SUM(CASE WHEN status IN (?, ?) AND balance > 0 THEN 1 ELSE 0 END) AS unpaid_count,

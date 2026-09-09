@@ -453,7 +453,7 @@ class InvoiceService
     public function updateOverdueInvoices(): int
     {
         return Invoice::whereIn('status', ['sent', 'partial'])
-            ->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
+            ->where('due_date', '<=', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->where('balance', '>', 0)
             ->where(function ($query) {
                 $query
@@ -718,7 +718,7 @@ class InvoiceService
         } elseif ($paidCents > 0) {
             $invoice->status = 'partial';
             $invoice->paid_at = null;
-        } elseif ($invoice->due_date?->lt(now(config('app.timezone', 'Asia/Manila'))->startOfDay())) {
+        } elseif ($invoice->due_date?->lte(now(config('app.timezone', 'Asia/Manila'))->startOfDay())) {
             $invoice->status = 'overdue';
             $invoice->paid_at = null;
         } else {

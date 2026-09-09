@@ -84,7 +84,7 @@ class RepairOpenInvoiceDueDates extends Command
                 $oldDue = $locked->due_date?->toDateString();
                 $status = $locked->status;
                 if ($status !== 'partial') {
-                    $status = $expected->lt(now($timezone)->startOfDay()) ? 'overdue' : 'sent';
+                    $status = $expected->lte(now($timezone)->startOfDay()) ? 'overdue' : 'sent';
                 }
                 $locked->forceFill(['due_date' => $expected, 'status' => $status])->save();
 
