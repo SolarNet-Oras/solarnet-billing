@@ -458,6 +458,7 @@ class RemittanceController extends Controller
         $data = $request->validate([
             'month' => ['nullable', 'date_format:Y-m'],
             'date_order' => ['nullable', 'in:newest,oldest'],
+            'needs_review' => ['nullable', 'boolean'],
         ]);
 
         $query = Remittance::query()->whereNull('cancelled_at')->with([
@@ -471,6 +472,10 @@ class RemittanceController extends Controller
             'payments.allocations.invoice:id,invoice_number',
             'payments.refunds:id,payment_id,amount',
         ]);
+
+        if ($request->boolean('needs_review')) {
+            $query->whereIn('status', ['submitted', 'discrepancy']);
+        }
 
         if (! empty($data['month'])) {
             $month = Carbon::createFromFormat('Y-m', $data['month'], config('app.timezone', 'Asia/Manila'));

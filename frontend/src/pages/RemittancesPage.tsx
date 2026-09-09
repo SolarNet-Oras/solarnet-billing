@@ -4,6 +4,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
+import { useSearchParams } from 'react-router-dom';
 
 type Invoice = { id: string; invoice_number: string; due_date: string; due_date_local?: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { account_number: string; full_name: string; address?: string } };
 type CashLine = { denomination: number; kind: 'bill' | 'coin'; count: number; amount: number };
@@ -18,6 +19,8 @@ const peso = (amount: number) => `₱${Number(amount || 0).toLocaleString('en-PH
 const dateTime = (value?: string | null) => value ? new Date(value).toLocaleString('en-PH') : '—';
 
 export default function RemittancesPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const needsReview = searchParams.get('needs_review') === '1';
   const { user } = useAuth();
   const collector = user?.role === 'collector' || user?.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
   const superAdmin = user?.role === 'super_admin' || user?.roles?.some((role) => typeof role === 'string' ? role === 'super_admin' : role.name === 'super_admin');
@@ -60,7 +63,7 @@ export default function RemittancesPage() {
   const load = async (search = collectionSearch, sort = collectionSort, month = remittanceMonth, dateOrder = remittanceDateOrder) => {
     const response = collector
       ? await api.get('/collector/dashboard', { params: { per_page: 200, q: search.trim() || undefined, sort } })
-      : await api.get('/remittances', { params: { month: month || undefined, date_order: dateOrder } });
+      : await api.get('/remittances', { params: { month: month || undefined, date_order: dateOrder, needs_review: needsReview ? 1 : undefined } });
     if (collector) {
       setInvoices((response.data?.invoices?.data || []).map((invoice: Invoice) => ({
         ...invoice,
@@ -69,7 +72,7 @@ export default function RemittancesPage() {
       setUnremitted(Number(response.data?.unremitted_amount || 0));
     } else setRemittances(response.data?.data || []);
   };
-  useEffect(() => { void load(collectionSearch, collectionSort, remittanceMonth, remittanceDateOrder); }, [collector, collectionSort, remittanceMonth, remittanceDateOrder]);
+  useEffect(() => { void load(collectionSearch, collectionSort, remittanceMonth, remittanceDateOrder); }, [collector, collectionSort, remittanceMonth, remittanceDateOrder, needsReview]);
   useEffect(() => { setReturnCounts({}); setExcessAction(''); setShowExcessDialog(false); }, [liquidationTarget?.id]);
   useEffect(() => {
     if (!collector) return;
@@ -277,6 +280,7 @@ export default function RemittancesPage() {
   return <DashboardLayout><main className="space-y-6 p-4 md:p-6">
     {detailsTarget && <RemittanceDetailsModal remittance={detailsTarget} onClose={() => setDetailsTarget(null)} />}
     <header><h1 className="flex items-center gap-2 text-2xl font-bold"><Banknote className="text-primary" />{collector ? 'Collection Desk' : 'Remittances'}</h1><p className="mt-1 text-sm text-muted-foreground">{collector ? 'Cash collections are liquidated by the cashier. GCash is confirmed directly by PayMongo.' : 'Count physical cash, then validate the submitted remittance.'}</p></header>
+    {!collector && needsReview && <div className="flex flex-col justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center"><div><p className="font-semibold">Showing remittances that need review</p><p className="mt-1 text-xs">Only submitted remittances awaiting liquidation or validation, and discrepancy records, are displayed.</p></div><button type="button" onClick={() => { setSearchParams({}); setRemittanceMonth(''); }} className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 text-xs font-semibold">Show all remittances</button></div>}
     {collector ? <>
       <form onSubmit={(event) => { event.preventDefault(); void load(collectionSearch, collectionSort); }} className="grid gap-3 rounded-2xl border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-end">
         <label className="text-sm font-medium">Search collections<input value={collectionSearch} onChange={(event) => setCollectionSearch(event.target.value)} placeholder="Client, account, address, or invoice" className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
