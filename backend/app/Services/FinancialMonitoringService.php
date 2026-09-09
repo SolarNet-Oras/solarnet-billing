@@ -157,6 +157,7 @@ class FinancialMonitoringService
         $openInvoices = (int) (clone $liveReceivables)->count();
 
         $pendingRemittances = Remittance::query()
+            ->whereNull('cancelled_at')
             ->whereIn('status', ['submitted', 'discrepancy'])
             ->selectRaw(implode(', ', [
                 'COUNT(*) as count',
@@ -276,7 +277,7 @@ class FinancialMonitoringService
                 'COUNT(CASE WHEN payments.remittance_id IS NULL THEN 1 END) as unremitted_count',
                 'COALESCE(SUM(CASE WHEN payments.remittance_id IS NULL THEN payments.amount ELSE 0 END), 0) as unremitted_amount',
                 'MIN(CASE WHEN payments.remittance_id IS NULL THEN payments.payment_date END) as oldest_unremitted_date',
-                "COALESCE(SUM(CASE WHEN remittances.status = 'submitted' THEN payments.amount ELSE 0 END), 0) as awaiting_review_amount",
+                "COALESCE(SUM(CASE WHEN remittances.status = 'submitted' AND remittances.cancelled_at IS NULL THEN payments.amount ELSE 0 END), 0) as awaiting_review_amount",
                 "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? THEN payments.amount ELSE 0 END), 0) as period_collected",
                 "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND payments.remittance_id IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_submitted",
                 "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.liquidated_at IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_liquidated",
@@ -288,6 +289,7 @@ class FinancialMonitoringService
 
         $discrepancies = Remittance::query()
             ->whereIn('collector_id', $collectors->pluck('id'))
+            ->whereNull('cancelled_at')
             ->where('status', 'discrepancy')
             ->selectRaw('collector_id, COUNT(*) as discrepancy_count, COALESCE(SUM(ABS(declared_amount - COALESCE(received_amount, 0))), 0) as discrepancy_variance')
             ->groupBy('collector_id')
