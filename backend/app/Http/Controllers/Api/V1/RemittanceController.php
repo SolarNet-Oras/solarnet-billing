@@ -208,7 +208,8 @@ class RemittanceController extends Controller
             ->where('customer_id', $invoice->customer_id)
             ->unpaid()
             ->sum('balance');
-        abort_if((float) $data['amount'] > $customerOutstanding, 422, 'The amount exceeds this customer\'s total outstanding invoice balance.');
+        $excess = round((float) $data['amount'] - $customerOutstanding, 2);
+        abort_if($excess > 0 && $excess <= 1.00, 422, 'An excess of PHP 1.00 or less must be returned as change. Excess above PHP 1.00 is saved as customer advance credit.');
         $data['collector_id'] = $request->user()->id;
         $data['payment_date'] = now()->toDateString();
 

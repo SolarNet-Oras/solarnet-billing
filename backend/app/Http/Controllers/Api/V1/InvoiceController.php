@@ -279,9 +279,19 @@ class InvoiceController extends Controller
                 return response()->json(['message' => 'Cash received must cover the payment amount before it can be recorded.'], 422);
             }
             $cashChange = $this->cashTender->change((float) $paymentData['cash_counted_amount'], (float) $request->amount);
-            $applyChangeAsAdvance = $request->boolean('cash_change_to_advance') && $cashChange > 0;
-            $paymentData['cash_change_amount'] = $applyChangeAsAdvance ? 0 : $cashChange;
-            $paymentData['cash_change_advance_amount'] = $applyChangeAsAdvance ? $cashChange : 0;
+            // Cash retained above PHP 1 is money received, not change. Include
+            // it in this receipt so InvoiceService can settle every other open
+            // invoice oldest-first and keep only the true remainder as credit.
+            $retainExcess = $cashChange > 1.00;
+            if ($retainExcess) {
+                $paymentData['amount'] = $paymentData['cash_counted_amount'];
+                $paymentData['cash_change_amount'] = 0;
+                $paymentData['cash_change_advance_amount'] = 0;
+                $paymentData['notes'] = trim(($paymentData['notes'] ?? '')."\nCash above the selected invoice amount was automatically allocated to other open invoices; any remainder is customer advance credit.");
+            } else {
+                $paymentData['cash_change_amount'] = $cashChange;
+                $paymentData['cash_change_advance_amount'] = 0;
+            }
         }
         $paymentData['received_by'] = $request->user()->id;
         [$payment, $remittance] = DB::transaction(function () use ($invoice, $paymentData, $request) {
