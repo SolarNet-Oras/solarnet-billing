@@ -44,6 +44,7 @@ import StaffSignupPage from '@/pages/StaffSignupPage';
 import StaffProfilePage from '@/pages/StaffProfilePage';
 import EmployeeDeviceControllerPage from '@/pages/EmployeeDeviceControllerPage';
 import PublicServiceMapPage from '@/pages/PublicServiceMapPage';
+import CustomerAboutPage from '@/pages/CustomerAboutPage';
 
 // ============================================================================
 // Main App Component
@@ -206,6 +207,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/customer/billing" element={<CustomerBillingPage />} />
               <Route path="/customer/change-password" element={<CustomerChangePasswordPage />} />
               <Route path="/customer/profile" element={<CustomerProfilePage />} />
+              <Route path="/customer/about" element={<CustomerAboutPage />} />
               <Route path="/payment-required/:customerId" element={<PaymentRequiredPage />} />
               <Route path="/signup" element={<SignupPage />} />
 

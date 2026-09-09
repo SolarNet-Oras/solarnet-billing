@@ -11,6 +11,7 @@ import {
   Wifi,
   MapPin,
   LocateFixed,
+  Info,
 } from 'lucide-react';
 import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
@@ -399,7 +400,7 @@ const CustomerDashboardPage: React.FC = () => {
         {/* Quick Actions */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <button
               onClick={() => navigate('/customer/billing')}
               className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
@@ -430,6 +431,17 @@ const CustomerDashboardPage: React.FC = () => {
               <div className="text-left">
                 <p className="font-medium text-gray-900">Update Profile</p>
                 <p className="text-sm text-gray-500">Edit your details</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/customer/about')}
+              className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
+            >
+              <Info className="w-6 h-6 text-cyan-600" />
+              <div className="text-left">
+                <p className="font-medium text-gray-900">About SolarNet</p>
+                <p className="text-sm text-gray-500">Company and support information</p>
               </div>
             </button>
           </div>
