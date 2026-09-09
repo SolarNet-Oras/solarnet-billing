@@ -475,7 +475,7 @@ class FinancialMonitoringService
         return array_values($metrics);
     }
 
-    /** @return array{summary: array{review_count: int, duplicate_payment_count: int, duplicate_invoice_count: int}, items: array<int, array<string, mixed>>} */
+    /** @return array{summary: array{review_count: int, monitor_count: int, duplicate_payment_count: int, duplicate_invoice_count: int}, items: array<int, array<string, mixed>>} */
     private function anomalySummary($invoices, $payments, float $outstanding, float $overdue, ?Remittance $pendingRemittances, $archivedCustomerReceivables = null): array
     {
         $items = [];
@@ -542,7 +542,8 @@ class FinancialMonitoringService
         $items = array_slice($items, 0, 25);
         return [
             'summary' => [
-                'review_count' => count($items),
+                'review_count' => count(array_filter($items, fn (array $item) => $item['severity'] === 'review')),
+                'monitor_count' => count(array_filter($items, fn (array $item) => $item['severity'] === 'monitor')),
                 'duplicate_payment_count' => count(array_filter($items, fn (array $item) => $item['type'] === 'duplicate_payment_candidate')),
                 'duplicate_invoice_count' => count(array_filter($items, fn (array $item) => $item['type'] === 'duplicate_invoice_candidate')),
             ],

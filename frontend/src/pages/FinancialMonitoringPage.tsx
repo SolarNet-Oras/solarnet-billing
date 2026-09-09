@@ -47,7 +47,7 @@ type MonitoringData = {
   };
   collector_cash: { summary: { collector_count: number; cash_on_hand: number; awaiting_office_review: number; discrepancy_variance: number }; collectors: CollectorCashRow[] };
   study: { headline: string; findings: string[]; action_required: string };
-  anomalies: { summary: { review_count: number; duplicate_payment_count: number; duplicate_invoice_count: number }; items: Anomaly[] };
+  anomalies: { summary: { review_count: number; monitor_count: number; duplicate_payment_count: number; duplicate_invoice_count: number }; items: Anomaly[] };
   data_sources: string[];
   limitations: string[];
   generated_at: string;
@@ -163,7 +163,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
           </article>
         </section>
 
-        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-2"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><h2 className="font-semibold text-foreground">Detection anomalies</h2><p className="mt-1 text-sm text-muted-foreground">Read-only candidates from deterministic rules. Nothing is corrected automatically.</p></div></div><div className="flex gap-2 text-xs"><span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{data?.anomalies.summary.review_count ?? 0} to review</span><span className="rounded-full bg-muted px-2 py-1 font-semibold text-muted-foreground">Payments {data?.anomalies.summary.duplicate_payment_count ?? 0} · Invoices {data?.anomalies.summary.duplicate_invoice_count ?? 0}</span></div></div>
+        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-2"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><h2 className="font-semibold text-foreground">Detection anomalies</h2><p className="mt-1 text-sm text-muted-foreground">Read-only candidates from deterministic rules. Nothing is corrected automatically.</p></div></div><div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{data?.anomalies.summary.review_count ?? 0} to review</span><span className="rounded-full bg-sky-100 px-2 py-1 font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">{data?.anomalies.summary.monitor_count ?? 0} monitor</span><span className="rounded-full bg-muted px-2 py-1 font-semibold text-muted-foreground">Payments {data?.anomalies.summary.duplicate_payment_count ?? 0} · Invoices {data?.anomalies.summary.duplicate_invoice_count ?? 0}</span></div></div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">{anomalies.length ? anomalies.map((item, index) => <AnomalyCard key={`${item.type}-${index}`} item={item} />) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No review candidates were detected by the current duplicate-payment, duplicate-invoice, remittance, and overdue-receivable checks.</p>}</div>
         </section>
 
