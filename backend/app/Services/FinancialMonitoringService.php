@@ -6,6 +6,7 @@ use App\Models\CustomerCredit;
 use App\Models\FinancialEntry;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\PaymentRefund;
 use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\User;
@@ -274,20 +275,26 @@ class FinancialMonitoringService
 
         $from = $start->copy()->startOfDay()->toDateTimeString();
         $to = $end->copy()->endOfDay()->toDateTimeString();
+        $refundTotals = PaymentRefund::query()
+            ->selectRaw('payment_id, COALESCE(SUM(amount), 0) as refunded_amount')
+            ->groupBy('payment_id');
+        $netPayment = 'GREATEST(payments.amount - COALESCE(payment_refund_totals.refunded_amount, 0), 0)';
+
         $rows = Payment::query()
             ->leftJoin('remittances', 'remittances.id', '=', 'payments.remittance_id')
+            ->leftJoinSub($refundTotals, 'payment_refund_totals', fn ($join) => $join->on('payment_refund_totals.payment_id', '=', 'payments.id'))
             ->whereIn('payments.collector_id', $collectors->pluck('id'))
             ->where('payments.payment_method', 'cash')
             ->selectRaw(implode(', ', [
                 'payments.collector_id',
-                'COUNT(CASE WHEN payments.remittance_id IS NULL THEN 1 END) as unremitted_count',
-                'COALESCE(SUM(CASE WHEN payments.remittance_id IS NULL THEN payments.amount ELSE 0 END), 0) as unremitted_amount',
-                'MIN(CASE WHEN payments.remittance_id IS NULL THEN payments.payment_date END) as oldest_unremitted_date',
-                "COALESCE(SUM(CASE WHEN remittances.status = 'submitted' AND remittances.cancelled_at IS NULL THEN payments.amount ELSE 0 END), 0) as awaiting_review_amount",
-                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? THEN payments.amount ELSE 0 END), 0) as period_collected",
-                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND payments.remittance_id IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_submitted",
-                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.liquidated_at IS NOT NULL THEN payments.amount ELSE 0 END), 0) as period_liquidated",
-                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.status = 'received' THEN payments.amount ELSE 0 END), 0) as period_verified",
+                "COUNT(CASE WHEN (payments.remittance_id IS NULL OR remittances.cancelled_at IS NOT NULL) AND {$netPayment} > 0 THEN 1 END) as unremitted_count",
+                "COALESCE(SUM(CASE WHEN payments.remittance_id IS NULL OR remittances.cancelled_at IS NOT NULL THEN {$netPayment} ELSE 0 END), 0) as unremitted_amount",
+                "MIN(CASE WHEN (payments.remittance_id IS NULL OR remittances.cancelled_at IS NOT NULL) AND {$netPayment} > 0 THEN payments.payment_date END) as oldest_unremitted_date",
+                "COALESCE(SUM(CASE WHEN remittances.status = 'submitted' AND remittances.cancelled_at IS NULL THEN {$netPayment} ELSE 0 END), 0) as awaiting_review_amount",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? THEN {$netPayment} ELSE 0 END), 0) as period_collected",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND payments.remittance_id IS NOT NULL AND remittances.cancelled_at IS NULL THEN {$netPayment} ELSE 0 END), 0) as period_submitted",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.cancelled_at IS NULL AND remittances.liquidated_at IS NOT NULL THEN {$netPayment} ELSE 0 END), 0) as period_liquidated",
+                "COALESCE(SUM(CASE WHEN payments.payment_date BETWEEN ? AND ? AND remittances.cancelled_at IS NULL AND remittances.status = 'received' THEN {$netPayment} ELSE 0 END), 0) as period_verified",
             ]), [$from, $to, $from, $to, $from, $to, $from, $to])
             ->groupBy('payments.collector_id')
             ->get()
