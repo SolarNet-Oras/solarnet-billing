@@ -155,6 +155,12 @@ class FinancialMonitoringService
             ->whereDate('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->sum('balance');
         $openInvoices = (int) (clone $liveReceivables)->count();
+        $archivedCustomerReceivables = Invoice::query()
+            ->whereNotIn('status', ['draft', 'cancelled'])
+            ->where('balance', '>', 0)
+            ->whereHas('customerIncludingArchived', fn ($customer) => $customer->whereNotNull('deleted_at'))
+            ->selectRaw('COUNT(*) as count, COALESCE(SUM(balance), 0) as amount')
+            ->first();
 
         $pendingRemittances = Remittance::query()
             ->whereNull('cancelled_at')
@@ -183,7 +189,7 @@ class FinancialMonitoringService
             ->with(['customer:id,full_name,account_number', 'invoice:id,invoice_number'])
             ->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])
             ->get(['id', 'invoice_id', 'customer_id', 'payment_number', 'amount', 'payment_method', 'payment_date', 'transaction_id', 'reference']);
-        $anomalies = $this->anomalySummary($periodInvoices, $periodPayments, $outstanding, $overdue, $pendingRemittances);
+        $anomalies = $this->anomalySummary($periodInvoices, $periodPayments, $outstanding, $overdue, $pendingRemittances, $archivedCustomerReceivables);
         $collectionRate = $billed > 0 ? self::rounded(($totalCollections / $billed) * 100) : null;
         $expenseRatio = $totalCollections > 0 ? self::rounded(($expenses / $totalCollections) * 100) : null;
         $study = $this->study($billed, $totalCollections, $expenses, $netMovement, $outstanding, $overdue, $pendingRemittances, $collectionRate);
@@ -470,7 +476,7 @@ class FinancialMonitoringService
     }
 
     /** @return array{summary: array{review_count: int, duplicate_payment_count: int, duplicate_invoice_count: int}, items: array<int, array<string, mixed>>} */
-    private function anomalySummary($invoices, $payments, float $outstanding, float $overdue, ?Remittance $pendingRemittances): array
+    private function anomalySummary($invoices, $payments, float $outstanding, float $overdue, ?Remittance $pendingRemittances, $archivedCustomerReceivables = null): array
     {
         $items = [];
 
@@ -512,6 +518,15 @@ class FinancialMonitoringService
                 'message' => 'Collector remittance is still submitted or marked discrepancy. It is not included as company cash until liquidation/receipt is completed.',
                 'remittance_count' => (int) $pendingRemittances->count,
                 'amount_total' => self::rounded((float) $pendingRemittances->amount),
+            ];
+        }
+        if (($archivedCustomerReceivables?->count ?? 0) > 0) {
+            $items[] = [
+                'type' => 'archived_customer_receivables',
+                'severity' => 'review',
+                'message' => 'Open invoices belong to archived customer records. Confirm whether each balance remains collectible, restore the customer if archived accidentally, or cancel an invalid charge through the audited invoice action.',
+                'invoice_count' => (int) $archivedCustomerReceivables->count,
+                'amount_total' => self::rounded((float) $archivedCustomerReceivables->amount),
             ];
         }
         if ($overdue > 0) {

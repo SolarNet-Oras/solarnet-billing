@@ -62,6 +62,15 @@ class Invoice extends Model
         return $this->belongsTo(Customer::class);
     }
 
+    /**
+     * Historical financial records must retain their customer identity even
+     * after the operational customer record has been archived.
+     */
+    public function customerIncludingArchived(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class, 'customer_id')->withTrashed();
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);

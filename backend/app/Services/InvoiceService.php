@@ -455,7 +455,13 @@ class InvoiceService
         return Invoice::whereIn('status', ['sent', 'partial'])
             ->where('due_date', '<', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
             ->where('balance', '>', 0)
-            ->whereHas('customer', fn ($customer) => $customer->whereDoesntHave('servicePlan', fn ($plan) => $plan->whereRaw('LOWER(name) LIKE ?', ['%company owned%'])))
+            ->where(function ($query) {
+                $query
+                    // A soft-deleted customer must not leave its historical
+                    // invoice permanently stuck in "sent" status.
+                    ->whereDoesntHave('customerIncludingArchived')
+                    ->orWhereHas('customerIncludingArchived', fn ($customer) => $customer->whereDoesntHave('servicePlan', fn ($plan) => $plan->whereRaw('LOWER(name) LIKE ?', ['%company owned%'])));
+            })
             ->update(['status' => 'overdue']);
     }
 
