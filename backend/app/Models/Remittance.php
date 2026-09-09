@@ -13,8 +13,8 @@ class Remittance extends Model
 
     protected $hidden = ['expense_receipt_path'];
 
-    protected $fillable = ['collector_id', 'liquidated_by', 'received_by', 'cancelled_by', 'declared_amount', 'cash_counted_amount', 'cash_breakdown', 'liquidation_variance', 'shortage_reason', 'expense_receipt_reference', 'expense_receipt_path', 'variance_financial_entry_id', 'received_amount', 'status', 'notes', 'cancellation_reason', 'submitted_at', 'liquidated_at', 'received_at', 'cancelled_at'];
-    protected $casts = ['declared_amount' => 'float', 'cash_counted_amount' => 'float', 'cash_breakdown' => 'array', 'liquidation_variance' => 'float', 'received_amount' => 'float', 'submitted_at' => 'datetime', 'liquidated_at' => 'datetime', 'received_at' => 'datetime', 'cancelled_at' => 'datetime'];
+    protected $fillable = ['collector_id', 'liquidated_by', 'received_by', 'cancelled_by', 'declared_amount', 'cash_counted_amount', 'cash_returned_amount', 'cash_breakdown', 'cash_return_breakdown', 'liquidation_variance', 'shortage_reason', 'expense_receipt_reference', 'expense_receipt_path', 'variance_financial_entry_id', 'received_amount', 'status', 'notes', 'cancellation_reason', 'submitted_at', 'liquidated_at', 'received_at', 'cancelled_at'];
+    protected $casts = ['declared_amount' => 'float', 'cash_counted_amount' => 'float', 'cash_returned_amount' => 'float', 'cash_breakdown' => 'array', 'cash_return_breakdown' => 'array', 'liquidation_variance' => 'float', 'received_amount' => 'float', 'submitted_at' => 'datetime', 'liquidated_at' => 'datetime', 'received_at' => 'datetime', 'cancelled_at' => 'datetime'];
 
     public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }
     public function liquidator(): BelongsTo { return $this->belongsTo(User::class, 'liquidated_by'); }

@@ -58,6 +58,7 @@ class CashDenominationService
             ->when($from, fn ($query) => $query->where('liquidated_at', '>', $from))
             ->whereNotNull('cash_breakdown')->orderBy('liquidated_at')->each(function (Remittance $remittance) use (&$pieces): void {
                 $this->apply($pieces, $remittance->cash_breakdown ?? [], 1);
+                $this->apply($pieces, $remittance->cash_return_breakdown ?? [], -1);
             });
 
         FinancialEntry::query()->where('created_at', '<=', $through)->when($from, fn ($query) => $query->where('created_at', '>', $from))
