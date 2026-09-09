@@ -43,6 +43,7 @@ import StaffPasswordResetPage from '@/pages/StaffPasswordResetPage';
 import StaffSignupPage from '@/pages/StaffSignupPage';
 import StaffProfilePage from '@/pages/StaffProfilePage';
 import EmployeeDeviceControllerPage from '@/pages/EmployeeDeviceControllerPage';
+import PublicServiceMapPage from '@/pages/PublicServiceMapPage';
 
 // ============================================================================
 // Main App Component
@@ -64,6 +65,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/privacy-policy" element={<LegalPage />} />
               <Route path="/terms" element={<LegalPage />} />
               <Route path="/data-deletion" element={<LegalPage />} />
+              <Route path="/service-map" element={<PublicServiceMapPage />} />
               
               {/* Protected Routes */}
               <Route
