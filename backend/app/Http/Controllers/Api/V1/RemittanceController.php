@@ -366,6 +366,7 @@ class RemittanceController extends Controller
             'cash_return_breakdown.*.denomination' => 'required_with:cash_return_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
             'cash_return_breakdown.*.kind' => 'required_with:cash_return_breakdown|in:bill,coin',
             'cash_return_breakdown.*.count' => 'required_with:cash_return_breakdown|integer|min:0|max:100000',
+            'excess_action' => 'nullable|in:return_change,accept_overage',
             'shortage_reason' => 'nullable|in:travel_expense_gas',
             'expense_receipt_reference' => 'nullable|string|max:100',
             'expense_receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
@@ -387,7 +388,14 @@ class RemittanceController extends Controller
                 abort_if($cashReturned > $cashCounted, 422, 'Returned change cannot be greater than the physical cash received.');
                 $cashRetained = round($cashCounted - $cashReturned, 2);
                 $variance = round($cashRetained - $cashExpected, 2);
-                abort_if($variance > 0, 422, 'Cash above the remittance must be returned as change. Enter its denominations under Cash return.');
+                if ($cashCounted > $cashExpected) {
+                    abort_unless(filled($data['excess_action'] ?? null), 422, 'Choose whether excess cash is returned as change or accepted as a cash overage.');
+                    if (($data['excess_action'] ?? null) === 'return_change') {
+                        abort_unless($cashReturned > 0 && $variance === 0.0, 422, 'Returned-change denominations must make retained cash equal the remittance.');
+                    } else {
+                        abort_if($cashReturned > 0, 422, 'Do not enter returned denominations when accepting the excess as cash overage.');
+                    }
+                }
 
                 if ($variance < 0) {
                     abort_unless(($data['shortage_reason'] ?? null) === 'travel_expense_gas', 422, 'Cash below the remittance is allowed only for Travel Expense - Gas.');
@@ -395,19 +403,19 @@ class RemittanceController extends Controller
                 }
 
                 $entry = null;
-                if ($variance < 0) {
+                if ($variance !== 0.0) {
                     $entry = FinancialEntry::create([
-                        'type' => 'expense',
-                        'category' => 'Travel Expenses',
-                        'description' => 'Gas expense deducted from collector remittance',
+                        'type' => $variance > 0 ? 'sale' : 'expense',
+                        'category' => $variance > 0 ? 'Remittance Cash Overage' : 'Travel Expenses',
+                        'description' => $variance > 0 ? 'Excess cash explicitly accepted during liquidation' : 'Gas expense deducted from collector remittance',
                         'amount' => number_format(abs($variance), 2, '.', ''),
                         'entry_date' => now(config('app.timezone', 'Asia/Manila'))->toDateString(),
-                        'payment_method' => 'cash',
-                        'effect_type' => 'expense',
-                        'source_wallet' => 'cash',
-                        'destination_wallet' => null,
-                        'reference' => trim((string) $data['expense_receipt_reference']),
-                        'notes' => ($receiptPath
+                        'payment_method' => $variance > 0 ? 'add_to_cash' : 'cash',
+                        'effect_type' => $variance > 0 ? 'cash_in' : 'expense',
+                        'source_wallet' => $variance > 0 ? null : 'cash',
+                        'destination_wallet' => $variance > 0 ? 'cash' : null,
+                        'reference' => $variance > 0 ? 'OVERAGE-'.$remittance->id : trim((string) $data['expense_receipt_reference']),
+                        'notes' => $variance > 0 ? 'Explicitly accepted by '.$request->user()->name.' during remittance liquidation.' : ($receiptPath
                                 ? 'Official fuel receipt stored privately for remittance '.$remittance->id
                                 : 'Gas expense declared during remittance liquidation; no receipt file was uploaded.'),
                         'idempotency_key' => Str::uuid(),
@@ -435,11 +443,13 @@ class RemittanceController extends Controller
             throw $e;
         }
 
-        return response()->json(['message' => $remittance->liquidation_variance < 0
+        return response()->json(['message' => $remittance->liquidation_variance > 0
+                ? 'Cash liquidation accepted. The explicitly accepted excess was added to Daily Operations.'
+                : ($remittance->liquidation_variance < 0
                 ? 'Cash liquidation accepted. The documented gas expense was added to Daily Operations.'
                 : ((float) $remittance->cash_returned_amount > 0
                     ? 'Cash liquidation accepted. Returned change was recorded and the retained cash matches the remittance.'
-                    : 'Cash liquidation matches the collector cash total. You may now validate this remittance.'), 'remittance' => $remittance]);
+                    : 'Cash liquidation matches the collector cash total. You may now validate this remittance.')), 'remittance' => $remittance]);
     }
 
     public function index(Request $request): JsonResponse
