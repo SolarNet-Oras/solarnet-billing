@@ -517,7 +517,8 @@ class RemittanceController extends Controller
             abort_if($remittance->status !== 'submitted', 422, 'This remittance has already been verified.');
             abort_unless($remittance->liquidated_at && $remittance->liquidated_by, 422, 'Cash must be liquidated by an administrator or cashier before validation.');
             $cashExpected = (float) $remittance->payments->where('payment_method', 'cash')->sum('amount');
-            $variance = round((float) $remittance->cash_counted_amount - $cashExpected, 2);
+            $cashRetained = round((float) $remittance->cash_counted_amount - (float) $remittance->cash_returned_amount, 2);
+            $variance = round($cashRetained - $cashExpected, 2);
             abort_unless((int) round($variance * 100) === (int) round((float) $remittance->liquidation_variance * 100), 422, 'The stored cash variance no longer reconciles with recorded payments.');
             $reconciledExpected = round((float) $remittance->declared_amount + (float) $remittance->liquidation_variance, 2);
             $enteredAmount = round((float) $data['received_amount'], 2);
