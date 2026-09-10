@@ -134,8 +134,8 @@ const InvoicesPage: React.FC = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await customerService.getCustomers({ per_page: 1000 });
-      setCustomers(response.data);
+      const allCustomers = await customerService.getAllCustomers();
+      setCustomers(allCustomers);
     } catch (error) {
       console.error('Error fetching customers:', error);
     }

@@ -126,6 +126,35 @@ export const customerService = {
     return response.data;
   },
 
+  /** Load every registered customer across the API's bounded pages. */
+  getAllCustomers: async (): Promise<Customer[]> => {
+    const perPage = 100;
+    const customers: Customer[] = [];
+    let page = 1;
+    let lastPage = 1;
+
+    do {
+      const response = await api.get('/customers', {
+        params: {
+          page,
+          per_page: perPage,
+          sort_by: 'name',
+          sort_direction: 'asc',
+        },
+      });
+      const body = response.data as PaginatedResponse<Customer> & {
+        meta?: { last_page?: number };
+        last_page?: number;
+      };
+
+      customers.push(...(body.data ?? []));
+      lastPage = Number(body.meta?.last_page ?? body.last_page ?? 1);
+      page += 1;
+    } while (page <= lastPage);
+
+    return customers;
+  },
+
   /** Download a read-only PDF register for the current Customers-page filters. */
   downloadCustomersPdf: async (params?: { search?: string; status?: string }): Promise<Blob> => {
     const response = await api.get('/customers/pdf', {
