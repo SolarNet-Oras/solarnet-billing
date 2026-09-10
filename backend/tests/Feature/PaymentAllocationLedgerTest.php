@@ -169,6 +169,22 @@ class PaymentAllocationLedgerTest extends TestCase
         $this->assertSame('0.00', CustomerCredit::where('payment_id', $payment->id)->value('remaining_amount'));
     }
 
+    public function test_standalone_advance_is_rejected_while_customer_has_backlog(): void
+    {
+        $customer = $this->customer();
+        $this->invoice($customer, '2026-09-01', '800.00', '400.00', '400.00', 'partial');
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+
+        app(InvoiceService::class)->recordAdvancePayment($customer, [
+            'amount' => '800.00',
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-10',
+            'covered_cycle_date' => '2026-10-01',
+            'transaction_id' => 'blocked-advance-test',
+        ]);
+    }
+
     private function customer(): Customer
     {
         return Customer::create([

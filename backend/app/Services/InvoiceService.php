@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
+use Illuminate\Validation\ValidationException;
 
 class InvoiceService
 {
@@ -768,6 +769,16 @@ class InvoiceService
     {
         return DB::transaction(function () use ($customer, $paymentData) {
             $customer = Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
+            $outstanding = round((float) Invoice::unpaid()
+                ->where('customer_id', $customer->id)
+                ->lockForUpdate()
+                ->get(['balance'])
+                ->sum('balance'), 2);
+            if ($outstanding > 0) {
+                throw ValidationException::withMessages([
+                    'customer_id' => 'Advance payment cannot proceed while the customer has an outstanding invoice balance of PHP ' . number_format($outstanding, 2) . '. Pay the backlog first.',
+                ]);
+            }
             $amount = round((float) $paymentData['amount'], 2);
             if ($amount <= 0) {
                 throw new \RuntimeException('Advance payment amount must be greater than zero.');

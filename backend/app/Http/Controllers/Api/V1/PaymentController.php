@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Customer;
+use App\Models\Invoice;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\OfficeCashLiquidationService;
@@ -33,6 +34,13 @@ class PaymentController extends Controller
             $data['cash_change_amount'] = $cashTender->change((float) $data['cash_counted_amount'], (float) $data['amount']);
         }
         $customer = Customer::findOrFail($data['customer_id']);
+        $outstanding = round((float) Invoice::unpaid()->where('customer_id', $customer->id)->sum('balance'), 2);
+        if ($outstanding > 0) {
+            return response()->json([
+                'message' => 'Advance payment is unavailable while this customer has outstanding invoices. Record the payment against the backlog first.',
+                'outstanding_balance' => $outstanding,
+            ], 422);
+        }
         if (!empty($data['covered_cycle_date']) && !$invoices->isValidFutureBillingCycle(
             $customer,
             Carbon::parse($data['covered_cycle_date'], config('app.timezone', 'Asia/Manila')),

@@ -30,6 +30,25 @@ const paymentMethodLabels: Record<Payment['payment_method'], string> = {
 
 const newPaymentAttemptId = () => `OFFICE-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
+const localDateValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const nextCustomerCycle = (customer: Customer, paymentDate: string) => {
+  const from = new Date(`${paymentDate}T12:00:00`);
+  const installationDay = customer.installation_date ? new Date(`${customer.installation_date}T12:00:00`).getDate() : 1;
+  const cycleDay = customer.billing_cycle_day || installationDay;
+  const candidate = new Date(from.getFullYear(), from.getMonth(), Math.min(cycleDay, new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate()), 12);
+  if (candidate <= from) {
+    const nextMonth = new Date(from.getFullYear(), from.getMonth() + 1, 1, 12);
+    candidate.setFullYear(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(cycleDay, new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate()));
+  }
+  return localDateValue(candidate);
+};
+
 function PaymentMethod({ methods }: { methods: Payment[] }): React.JSX.Element {
   if (methods.length === 0) return <span className="text-gray-400">Not paid</span>;
 
@@ -92,6 +111,10 @@ const InvoicesPage: React.FC = () => {
   const automaticExcess = !isAdvancePayment && paymentData.payment_method === 'cash' && cashChange > 1 ? cashChange : 0;
   const changeToReturn = automaticExcess > 0 ? 0 : cashChange;
   const advanceCustomer = customers.find((customer) => customer.id === advanceCustomerId) ?? null;
+  const advanceMonthlyRate = Number(advanceCustomer?.service_plan?.price ?? advanceCustomer?.monthly_fee ?? 0);
+  const advanceCycleCount = advanceMonthlyRate > 0 && paymentAmount > 0 ? Math.ceil(paymentAmount / advanceMonthlyRate) : 0;
+  const fullyCoveredCycles = advanceMonthlyRate > 0 ? Math.floor(paymentAmount / advanceMonthlyRate) : 0;
+  const finalCycleRemainder = advanceMonthlyRate > 0 ? Math.round((paymentAmount % advanceMonthlyRate) * 100) / 100 : 0;
 
   useEffect(() => {
     fetchInvoices();
@@ -105,6 +128,14 @@ const InvoicesPage: React.FC = () => {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (!isAdvancePayment || !advanceCustomer || !paymentData.payment_date) return;
+    const automaticCycle = nextCustomerCycle(advanceCustomer, paymentData.payment_date);
+    setPaymentData((current) => current.covered_cycle_date === automaticCycle
+      ? current
+      : { ...current, covered_cycle_date: automaticCycle });
+  }, [isAdvancePayment, advanceCustomer, paymentData.payment_date]);
 
   const fetchInvoices = async () => {
     try {
@@ -189,6 +220,8 @@ const InvoicesPage: React.FC = () => {
       resetPaymentForm();
     } catch (error) {
       console.error('Error recording payment:', error);
+      const message = (error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } }).response?.data;
+      window.alert(message?.message ?? Object.values(message?.errors ?? {}).flat()[0] ?? 'Unable to record this payment.');
     } finally {
       paymentSubmissionInFlight.current = false;
       setPaymentSubmitting(false);
@@ -760,8 +793,12 @@ const InvoicesPage: React.FC = () => {
 
                   {isAdvancePayment && <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Future billing cycle due date</label>
-                    <input type="date" value={paymentData.covered_cycle_date} onChange={(e) => setPaymentData({ ...paymentData, covered_cycle_date: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    <p className="mt-1 text-xs text-gray-500">Leave blank to reserve this payment for the next billing anniversary. Larger payments reserve later cycles in order; partial credit reduces that future invoice.</p>
+                    <input type="date" value={paymentData.covered_cycle_date} readOnly className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-gray-900" />
+                    <p className="mt-1 text-xs text-gray-500">Automatically calculated from the customer’s due day and payment date.</p>
+                    {advanceCustomer && advanceMonthlyRate > 0 && paymentAmount > 0 && <div className="mt-2 rounded-lg border border-emerald-200 bg-white p-3 text-sm text-emerald-950">
+                      <b>{advanceCycleCount} billing month{advanceCycleCount === 1 ? '' : 's'} created</b>
+                      <p className="mt-1 text-xs">Monthly charge: {formatPHP(advanceMonthlyRate)} · Fully paid months: {fullyCoveredCycles}{finalCycleRemainder > 0 ? ` · Final month receives ${formatPHP(finalCycleRemainder)} and remains partially paid.` : ''}</p>
+                    </div>}
                   </div>}
 
                   {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4">
