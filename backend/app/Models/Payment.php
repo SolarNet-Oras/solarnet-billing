@@ -35,6 +35,12 @@ class Payment extends Model
         'reference',
         'notes',
         'payment_confirmation_email_sent_at',
+        'payment_confirmation_sms_status',
+        'payment_confirmation_sms_attempt_count',
+        'payment_confirmation_sms_last_attempt_at',
+        'payment_confirmation_sms_sent_at',
+        'payment_confirmation_sms_provider_id',
+        'payment_confirmation_sms_failure_reason',
     ];
 
     protected $casts = [
@@ -46,6 +52,9 @@ class Payment extends Model
         'payer_signature_similarity' => 'float',
         'payment_date' => 'date',
         'payment_confirmation_email_sent_at' => 'datetime',
+        'payment_confirmation_sms_attempt_count' => 'integer',
+        'payment_confirmation_sms_last_attempt_at' => 'datetime',
+        'payment_confirmation_sms_sent_at' => 'datetime',
     ];
 
     public function invoice(): BelongsTo

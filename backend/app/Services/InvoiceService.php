@@ -807,6 +807,10 @@ class InvoiceService
                     ? Carbon::parse($paymentData['covered_cycle_date'], config('app.timezone', 'Asia/Manila'))
                     : null,
             );
+            $advanceInvoices = $this->materializeAdvanceInvoices($customer, $payment);
+            if ($advanceInvoices->isNotEmpty()) {
+                $payment->forceFill(['invoice_id' => $advanceInvoices->first()->id])->save();
+            }
             $this->assertPaymentOwnership($payment);
 
             DB::afterCommit(function () use ($payment) {
@@ -818,6 +822,18 @@ class InvoiceService
                     }
                 } catch (\Throwable $e) {
                     Log::warning('Deferred customer network sync after advance payment failed', [
+                        'payment_id' => $payment->id,
+                        'error_type' => $e::class,
+                    ]);
+                }
+            });
+
+            DB::afterCommit(function () use ($payment) {
+                try {
+                    app(PaymentConfirmationSmsService::class)
+                        ->send($payment->fresh(['customer', 'invoice']));
+                } catch (\Throwable $e) {
+                    Log::warning('Deferred advance-payment confirmation SMS failed', [
                         'payment_id' => $payment->id,
                         'error_type' => $e::class,
                     ]);
@@ -891,6 +907,39 @@ class InvoiceService
             ]);
             $cycleDate->addMonthNoOverflow();
         }
+    }
+
+    /** Create each prepaid monthly invoice once and let its matching credit settle it. */
+    protected function materializeAdvanceInvoices(Customer $customer, Payment $payment)
+    {
+        $customer->loadMissing('servicePlan');
+
+        return CustomerCredit::query()
+            ->where('payment_id', $payment->id)
+            ->whereNotNull('covered_cycle_date')
+            ->orderBy('covered_cycle_date')
+            ->get()
+            ->map(function (CustomerCredit $credit) use ($customer) {
+                $cycle = $credit->covered_cycle_date->copy()->startOfDay();
+                $invoice = $this->generateInvoice(
+                    $customer,
+                    $cycle->copy()->subMonthNoOverflow(),
+                    $cycle,
+                    [],
+                    now(config('app.timezone', 'Asia/Manila')),
+                    $cycle,
+                    $cycle,
+                    'recurring',
+                );
+
+                // The payment receipt is the immediate notification. Preserve
+                // the allocation-derived paid/partial status on this invoice.
+                if ($invoice->sent_at === null) {
+                    $invoice->forceFill(['sent_at' => now()])->save();
+                }
+
+                return $invoice->fresh(['items', 'customer']);
+            });
     }
 
     public function isCycleFullyCovered(Customer $customer, Carbon $cycleDate): bool

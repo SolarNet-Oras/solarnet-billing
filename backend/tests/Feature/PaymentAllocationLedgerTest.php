@@ -146,6 +146,29 @@ class PaymentAllocationLedgerTest extends TestCase
         $this->assertSame('received', $remittance->fresh()->status);
     }
 
+    public function test_standalone_advance_creates_and_settles_the_future_cycle_invoice(): void
+    {
+        $customer = $this->customer();
+
+        $payment = app(InvoiceService::class)->recordAdvancePayment($customer, [
+            'amount' => '800.00',
+            'payment_method' => 'cash',
+            'payment_date' => '2026-09-10',
+            'covered_cycle_date' => '2026-10-01',
+            'transaction_id' => 'standalone-advance-test',
+        ]);
+
+        $invoice = Invoice::where('customer_id', $customer->id)
+            ->whereDate('recurring_cycle_date', '2026-10-01')
+            ->firstOrFail();
+
+        $this->assertSame($invoice->id, $payment->fresh()->invoice_id);
+        $this->assertSame('800.00', $payment->allocations()->where('invoice_id', $invoice->id)->value('amount'));
+        $this->assertSame('0.00', $invoice->balance);
+        $this->assertSame('paid', $invoice->status);
+        $this->assertSame('0.00', CustomerCredit::where('payment_id', $payment->id)->value('remaining_amount'));
+    }
+
     private function customer(): Customer
     {
         return Customer::create([

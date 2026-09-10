@@ -49,6 +49,7 @@ const InvoicesPage: React.FC = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
+  const [advanceCustomerId, setAdvanceCustomerId] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(100);
@@ -90,6 +91,7 @@ const InvoicesPage: React.FC = () => {
   const cashShortfall = Math.max(0, Math.round((effectivePaymentAmount - cashCounted) * 100) / 100);
   const automaticExcess = !isAdvancePayment && paymentData.payment_method === 'cash' && cashChange > 1 ? cashChange : 0;
   const changeToReturn = automaticExcess > 0 ? 0 : cashChange;
+  const advanceCustomer = customers.find((customer) => customer.id === advanceCustomerId) ?? null;
 
   useEffect(() => {
     fetchInvoices();
@@ -155,7 +157,7 @@ const InvoicesPage: React.FC = () => {
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedInvoice || paymentSubmissionInFlight.current) return;
+    if ((!isAdvancePayment && !selectedInvoice) || (isAdvancePayment && !advanceCustomerId) || paymentSubmissionInFlight.current) return;
 
     if (isAdvancePayment && !advanceAmountIsValid) {
       window.alert('Enter a cash amount greater than ₱0.00 to create advance credit. A ₱0.00 payment cannot be recorded as customer credit.');
@@ -177,9 +179,9 @@ const InvoicesPage: React.FC = () => {
         } : {}),
       };
       if (isAdvancePayment) {
-        await invoiceService.recordAdvancePayment({ ...requestData, customer_id: selectedInvoice.customer_id });
+        await invoiceService.recordAdvancePayment({ ...requestData, customer_id: advanceCustomerId });
       } else {
-        await invoiceService.recordPayment(selectedInvoice.id, requestData);
+        await invoiceService.recordPayment(selectedInvoice!.id, requestData);
       }
       setShowPaymentModal(false);
       setIsAdvancePayment(false);
@@ -243,6 +245,8 @@ const InvoicesPage: React.FC = () => {
     });
     setCashCounts({});
     setIsAdvancePayment(false);
+    setAdvanceCustomerId('');
+    setSelectedInvoice(null);
   };
 
   const addAdditionalItem = () => {
@@ -347,13 +351,26 @@ const InvoicesPage: React.FC = () => {
           </label>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Generate Invoice
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => {
+              resetPaymentForm();
+              setIsAdvancePayment(true);
+              setShowPaymentModal(true);
+            }}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+          >
+            <PhilippinePeso className="h-4 w-4" />
+            Record Advance Payment
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Generate Invoice
+          </button>
+        </div>
       </div>
 
       {/* Invoices Table */}
@@ -472,22 +489,6 @@ const InvoicesPage: React.FC = () => {
                           }}
                           className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-200"
                           title="Record Payment"
-                        >
-                          <PhilippinePeso className="w-4 h-4" />
-                        </button>
-                      )}
-                      {invoice.balance <= 0 && invoice.status !== 'cancelled' && (
-                        <button
-                          onClick={() => {
-                            setSelectedInvoice(invoice);
-                            setIsAdvancePayment(true);
-                            paymentAttemptId.current = newPaymentAttemptId();
-                            setPaymentData({ ...paymentData, amount: 0, payment_method: 'cash', transaction_id: '' });
-                            setCashCounts({});
-                            setShowPaymentModal(true);
-                          }}
-                          className="ml-2 text-emerald-600 hover:text-emerald-900"
-                          title="Record advance payment for next month"
                         >
                           <PhilippinePeso className="w-4 h-4" />
                         </button>
@@ -696,20 +697,27 @@ const InvoicesPage: React.FC = () => {
       )}
 
       {/* Record Payment Modal */}
-      {showPaymentModal && selectedInvoice && (
+      {showPaymentModal && (selectedInvoice || isAdvancePayment) && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 p-3 sm:flex sm:items-center sm:justify-center sm:p-6">
           <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
             <div className="max-h-[calc(100vh-1.5rem)] overflow-y-auto p-4 sm:max-h-[calc(100vh-3rem)] sm:p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">{isAdvancePayment ? 'Record Advance Payment' : 'Record Payment'}</h2>
               <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-                <div className="text-sm text-gray-600">Invoice: {selectedInvoice.invoice_number}</div>
-                <div className="text-sm text-gray-600">Customer: {selectedInvoice.customer?.full_name}</div>
+                {!isAdvancePayment && <div className="text-sm text-gray-600">Invoice: {selectedInvoice?.invoice_number}</div>}
+                {!isAdvancePayment && <div className="text-sm text-gray-600">Customer: {selectedInvoice?.customer?.full_name}</div>}
+                {isAdvancePayment && <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Customer</label>
+                  <select value={advanceCustomerId} onChange={(event) => setAdvanceCustomerId(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500" required>
+                    <option value="">Select a customer</option>
+                    {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name} ({customer.account_number})</option>)}
+                  </select>
+                </div>}
                 <div className="text-lg font-bold text-gray-900 mt-2">
-                  {isAdvancePayment ? 'This payment will be saved as credit for the customer’s next invoice.' : `Balance Due: ${formatPHP(selectedInvoice.balance)}`}
+                  {isAdvancePayment ? 'Future monthly invoice(s) will be created and paid from this advance.' : `Balance Due: ${formatPHP(selectedInvoice!.balance)}`}
                 </div>
                 {isAdvancePayment && (
                   <p className="mt-2 text-sm text-emerald-800">
-                    Current balance is {formatPHP(selectedInvoice.balance)}. Enter any cash amount above ₱0.00; it will appear as advance credit and automatically reduce the next eligible billing cycle.
+                    {advanceCustomer ? `${advanceCustomer.full_name}'s payment will be allocated to the selected future billing anniversary.` : 'Select a customer, amount, and optional future billing cycle.'}
                   </p>
                 )}
               </div>
@@ -820,13 +828,13 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={paymentSubmitting || (paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
+                    disabled={paymentSubmitting || (isAdvancePayment && !advanceCustomerId) || (paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
                     aria-busy={paymentSubmitting}
                     data-manual-loading="true"
                     className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     {paymentSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {paymentSubmitting ? 'Processing…' : isAdvancePayment ? 'Save advance credit' : isCashPartialPayment ? `Record ${formatPHP(effectivePaymentAmount)} partial payment` : 'Record Payment'}
+                    {paymentSubmitting ? 'Processing…' : isAdvancePayment ? 'Create and pay future invoice' : isCashPartialPayment ? `Record ${formatPHP(effectivePaymentAmount)} partial payment` : 'Record Payment'}
                   </button>
                 </div>
               </form>

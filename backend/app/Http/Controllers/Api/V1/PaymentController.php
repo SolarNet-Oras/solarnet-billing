@@ -54,6 +54,7 @@ class PaymentController extends Controller
                 ? 'Advance payment recorded and added to pending office liquidation.'
                 : 'Advance payment reserved for the selected future billing cycle.',
             'payment' => $payment,
+            'invoices' => $payment->allocations()->with('invoice')->get()->pluck('invoice')->filter()->values(),
             'remittance' => $remittance,
             'credit_summary' => $invoices->creditSummary($customer),
         ], 201);
