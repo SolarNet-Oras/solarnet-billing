@@ -454,6 +454,7 @@ export interface RecordPaymentRequest {
   reference?: string;
   notes?: string;
   cash_breakdown?: Array<{ denomination: number; count: number }>;
+  cash_change_breakdown?: Array<{ denomination: number; count: number }>;
   cash_change_to_advance?: boolean;
 }
 

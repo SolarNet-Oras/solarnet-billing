@@ -261,6 +261,9 @@ class InvoiceController extends Controller
             'cash_breakdown' => 'required_if:payment_method,cash|array',
             'cash_breakdown.*.denomination' => 'required_with:cash_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
             'cash_breakdown.*.count' => 'required_with:cash_breakdown|integer|min:0|max:100000',
+            'cash_change_breakdown' => 'nullable|array',
+            'cash_change_breakdown.*.denomination' => 'required_with:cash_change_breakdown|integer|in:1000,500,200,100,50,20,10,5,1',
+            'cash_change_breakdown.*.count' => 'required_with:cash_change_breakdown|integer|min:0|max:100000',
             'cash_change_to_advance' => 'nullable|boolean',
         ]);
 
@@ -279,18 +282,28 @@ class InvoiceController extends Controller
                 return response()->json(['message' => 'Cash received must cover the payment amount before it can be recorded.'], 422);
             }
             $cashChange = $this->cashTender->change((float) $paymentData['cash_counted_amount'], (float) $request->amount);
-            // Cash retained above PHP 1 is money received, not change. Include
-            // it in this receipt so InvoiceService can settle every other open
-            // invoice oldest-first and keep only the true remainder as credit.
-            $retainExcess = $cashChange > 1.00;
+            // Exactly PHP 1 is retained automatically. Any larger change is
+            // returned by default and can be retained only with an explicit
+            // cashier selection. Retained money settles open invoices first;
+            // only the true remainder becomes advance credit.
+            $retainExcess = $cashChange === 1.00 || ($cashChange > 1.00 && $request->boolean('cash_change_to_advance'));
             if ($retainExcess) {
                 $paymentData['amount'] = $paymentData['cash_counted_amount'];
                 $paymentData['cash_change_amount'] = 0;
                 $paymentData['cash_change_advance_amount'] = 0;
-                $paymentData['notes'] = trim(($paymentData['notes'] ?? '')."\nCash above the selected invoice amount was automatically allocated to other open invoices; any remainder is customer advance credit.");
+                $paymentData['cash_change_breakdown'] = null;
+                $paymentData['notes'] = trim(($paymentData['notes'] ?? '').($cashChange === 1.00
+                    ? "\nPHP 1 cash excess was retained automatically and allocated oldest-first."
+                    : "\nCash excess was retained with cashier approval, allocated to other open invoices oldest-first, and any remainder became customer advance credit."));
             } else {
                 $paymentData['cash_change_amount'] = $cashChange;
                 $paymentData['cash_change_advance_amount'] = 0;
+                $paymentData['cash_change_breakdown'] = $cashChange > 0
+                    ? $this->normalizedCashBreakdown($request->input('cash_change_breakdown', []))
+                    : null;
+                if ($cashChange > 0 && abs($this->cashTender->tenderedAmount($paymentData['cash_change_breakdown']) - $cashChange) > 0.001) {
+                    return response()->json(['message' => 'Returned-change denominations must equal the cash change due.'], 422);
+                }
             }
         }
         $paymentData['received_by'] = $request->user()->id;

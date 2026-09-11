@@ -99,8 +99,12 @@ const InvoicesPage: React.FC = () => {
     covered_cycle_date: '',
   });
   const [cashCounts, setCashCounts] = useState<Record<number, number>>({});
+  const [cashReturnCounts, setCashReturnCounts] = useState<Record<number, number>>({});
+  const [retainCashExcess, setRetainCashExcess] = useState(false);
   const cashBreakdown = useMemo(() => [1000, 500, 200, 100, 50, 20, 10, 5, 1].map((denomination) => ({ denomination, count: Number(cashCounts[denomination] || 0), amount: denomination * Number(cashCounts[denomination] || 0) })), [cashCounts]);
+  const cashReturnBreakdown = useMemo(() => [1000, 500, 200, 100, 50, 20, 10, 5, 1].map((denomination) => ({ denomination, count: Number(cashReturnCounts[denomination] || 0), amount: denomination * Number(cashReturnCounts[denomination] || 0) })), [cashReturnCounts]);
   const cashCounted = useMemo(() => cashBreakdown.reduce((total, line) => total + line.amount, 0), [cashBreakdown]);
+  const cashReturnCounted = useMemo(() => cashReturnBreakdown.reduce((total, line) => total + line.amount, 0), [cashReturnBreakdown]);
   const paymentAmount = Number(paymentData.amount || 0);
   const advanceAmountIsValid = !isAdvancePayment || paymentAmount > 0;
   const isCashPartialPayment = !isAdvancePayment && paymentData.payment_method === 'cash' && cashCounted > 0 && cashCounted < paymentAmount;
@@ -108,8 +112,11 @@ const InvoicesPage: React.FC = () => {
   const cashCoversPayment = Math.round(cashCounted * 100) >= Math.round(effectivePaymentAmount * 100);
   const cashChange = Math.max(0, Math.round((cashCounted - effectivePaymentAmount) * 100) / 100);
   const cashShortfall = Math.max(0, Math.round((effectivePaymentAmount - cashCounted) * 100) / 100);
-  const automaticExcess = !isAdvancePayment && paymentData.payment_method === 'cash' && cashChange > 1 ? cashChange : 0;
-  const changeToReturn = automaticExcess > 0 ? 0 : cashChange;
+  const automaticOnePesoExcess = !isAdvancePayment && paymentData.payment_method === 'cash' && cashChange === 1;
+  const approvedExcessAllocation = !isAdvancePayment && paymentData.payment_method === 'cash' && cashChange > 1 && retainCashExcess;
+  const retainedExcess = automaticOnePesoExcess || approvedExcessAllocation ? cashChange : 0;
+  const changeToReturn = retainedExcess > 0 ? 0 : cashChange;
+  const cashReturnMatches = changeToReturn === 0 || Math.round(cashReturnCounted * 100) === Math.round(changeToReturn * 100);
   const advanceCustomer = customers.find((customer) => customer.id === advanceCustomerId) ?? null;
   const advanceMonthlyRate = Number(advanceCustomer?.service_plan?.price ?? advanceCustomer?.monthly_fee ?? 0);
   const advanceCycleCount = advanceMonthlyRate > 0 && paymentAmount > 0 ? Math.ceil(paymentAmount / advanceMonthlyRate) : 0;
@@ -198,6 +205,10 @@ const InvoicesPage: React.FC = () => {
       window.alert('Cash received must cover the payment amount. Enter the bills received, then return the displayed change to the client.');
       return;
     }
+    if (paymentData.payment_method === 'cash' && !cashReturnMatches) {
+      window.alert(`Returned-change denominations must equal ${formatPHP(changeToReturn)}.`);
+      return;
+    }
     paymentSubmissionInFlight.current = true;
     setPaymentSubmitting(true);
     try {
@@ -207,6 +218,8 @@ const InvoicesPage: React.FC = () => {
         transaction_id: paymentData.transaction_id.trim() || (!isAdvancePayment ? paymentAttemptId.current : undefined),
         ...(paymentData.payment_method === 'cash' ? {
           cash_breakdown: cashBreakdown.map(({ denomination, count }) => ({ denomination, count })),
+          cash_change_breakdown: changeToReturn > 0 ? cashReturnBreakdown.map(({ denomination, count }) => ({ denomination, count })) : undefined,
+          cash_change_to_advance: approvedExcessAllocation,
         } : {}),
       };
       if (isAdvancePayment) {
@@ -277,6 +290,8 @@ const InvoicesPage: React.FC = () => {
       covered_cycle_date: '',
     });
     setCashCounts({});
+    setCashReturnCounts({});
+    setRetainCashExcess(false);
     setIsAdvancePayment(false);
     setAdvanceCustomerId('');
     setSelectedInvoice(null);
@@ -810,8 +825,10 @@ const InvoicesPage: React.FC = () => {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-semibold text-emerald-950">Cash received and change</h3><p className="mt-1 text-xs leading-5 text-emerald-800">Count the bills given by the client. You can return excess cash or, with the client’s approval, save it as advance credit for a future bill.</p></div><div className={`self-start rounded-lg px-3 py-2 text-left text-sm sm:text-right ${cashCoversPayment ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Cash received</p><b>{formatPHP(cashCounted)}</b></div></div>
                     <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-2 sm:p-3"><div className="grid grid-cols-[4.5rem_minmax(6rem,1fr)_minmax(5.5rem,1fr)] gap-x-2 gap-y-2 text-sm sm:grid-cols-[minmax(6rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)] sm:gap-x-3"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" inputMode="numeric" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="min-w-0 rounded border border-emerald-200 bg-white px-2 py-2 text-base" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div></div>
                     <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div className="rounded-lg bg-white/75 p-3"><p className="text-xs text-emerald-800">{isCashPartialPayment ? 'Partial payment to record' : 'Payment amount'}</p><b className="text-emerald-950">{formatPHP(effectivePaymentAmount)}</b>{isCashPartialPayment && <p className="mt-1 text-xs text-amber-700">Remaining after payment: {formatPHP(Math.max(0, Number(selectedInvoice.balance) - effectivePaymentAmount))}</p>}</div><div className={`rounded-lg p-3 ${cashChange > 0 ? 'bg-amber-100 text-amber-950' : 'bg-white/75 text-emerald-950'}`}><p className="text-xs">Change to return</p><b>{formatPHP(changeToReturn)}</b></div></div>
-                    {automaticExcess > 0 && <div className="mt-4 rounded-lg bg-sky-100 p-3 text-sm text-sky-950"><p className="font-semibold">Automatic excess allocation</p><p className="mt-1 text-xs leading-5">{formatPHP(automaticExcess)} will pay this customer’s other open invoices oldest-first. Any amount left afterward becomes customer advance credit.</p></div>}
-                    <p className={`mt-3 text-xs font-medium ${cashCoversPayment ? 'text-emerald-700' : 'text-amber-800'}`}>{isCashPartialPayment ? `${formatPHP(effectivePaymentAmount)} will be recorded as a partial payment. The remaining balance stays collectible.` : cashCoversPayment ? (automaticExcess > 0 ? 'No cash change will be returned; the retained excess is allocated automatically.' : cashChange > 0 ? `Return ${formatPHP(changeToReturn)} change to the client.` : 'Exact cash received. You may record this payment.') : `Need ${formatPHP(cashShortfall)} more cash to cover the payment.`}</p>
+                    {!isAdvancePayment && cashChange > 1 && <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950"><input type="checkbox" checked={retainCashExcess} onChange={(event) => { setRetainCashExcess(event.target.checked); setCashReturnCounts({}); }} className="mt-0.5 h-4 w-4 rounded border-sky-400" /><span><b>Apply the {formatPHP(cashChange)} excess to this customer</b><span className="mt-1 block text-xs leading-5">Only select this with the customer’s approval. It pays other open invoices oldest-first; any remaining amount becomes advance credit.</span></span></label>}
+                    {automaticOnePesoExcess && <div className="mt-4 rounded-lg bg-sky-100 p-3 text-sm text-sky-950"><p className="font-semibold">Automatic ₱1 excess allocation</p><p className="mt-1 text-xs leading-5">The ₱1 excess is retained and applied to another open invoice or customer advance credit.</p></div>}
+                    {changeToReturn > 0 && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-amber-950">Cash change denominations</p><p className="mt-1 text-xs text-amber-800">Count exactly {formatPHP(changeToReturn)} being returned to the customer.</p></div><b className={cashReturnMatches ? 'text-emerald-700' : 'text-amber-900'}>{formatPHP(cashReturnCounted)}</b></div><div className="mt-3 grid grid-cols-[4.5rem_minmax(6rem,1fr)_minmax(5.5rem,1fr)] gap-x-2 gap-y-2 text-sm"><span className="font-semibold text-amber-900">Pieces</span><span className="font-semibold text-amber-900">Denomination</span><span className="text-right font-semibold text-amber-900">Amount</span>{cashReturnBreakdown.map((line) => <React.Fragment key={`return-${line.denomination}`}><input min="0" inputMode="numeric" type="number" value={cashReturnCounts[line.denomination] || ''} onChange={(event) => setCashReturnCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="min-w-0 rounded border border-amber-200 bg-white px-2 py-2 text-base" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div>{!cashReturnMatches && <p className="mt-2 text-xs font-semibold text-rose-700">Returned denominations must equal {formatPHP(changeToReturn)}.</p>}</div>}
+                    <p className={`mt-3 text-xs font-medium ${cashCoversPayment && cashReturnMatches ? 'text-emerald-700' : 'text-amber-800'}`}>{isCashPartialPayment ? `${formatPHP(effectivePaymentAmount)} will be recorded as a partial payment. The remaining balance stays collectible.` : cashCoversPayment ? (retainedExcess > 0 ? `${formatPHP(retainedExcess)} will be retained and allocated to the customer.` : cashChange > 0 ? `Return ${formatPHP(changeToReturn)} change to the client and record its denominations.` : 'Exact cash received. You may record this payment.') : `Need ${formatPHP(cashShortfall)} more cash to cover the payment.`}</p>
                   </section>}
 
                   <div>
@@ -870,7 +887,7 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={paymentSubmitting || (isAdvancePayment && !advanceCustomerId) || (paymentData.payment_method === 'cash' && !cashCoversPayment) || !advanceAmountIsValid}
+                    disabled={paymentSubmitting || (isAdvancePayment && !advanceCustomerId) || (paymentData.payment_method === 'cash' && (!cashCoversPayment || !cashReturnMatches)) || !advanceAmountIsValid}
                     aria-busy={paymentSubmitting}
                     data-manual-loading="true"
                     className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"

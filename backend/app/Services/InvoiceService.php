@@ -557,6 +557,7 @@ class InvoiceService
                 'cash_change_amount' => $paymentData['cash_change_amount'] ?? null,
                 'cash_change_advance_amount' => $paymentData['cash_change_advance_amount'] ?? null,
                 'cash_breakdown' => $paymentData['cash_breakdown'] ?? null,
+                'cash_change_breakdown' => $paymentData['cash_change_breakdown'] ?? null,
                 'payer_signature' => $paymentData['payer_signature'] ?? null,
                 'payer_signature_similarity' => $paymentData['payer_signature_similarity'] ?? null,
                 'signature_signer_type' => $paymentData['signature_signer_type'] ?? null,
