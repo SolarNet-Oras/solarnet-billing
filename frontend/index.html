@@ -22,7 +22,8 @@
           document.documentElement.classList.add(resolved === 'dark' ? 'dark' : 'light');
           document.documentElement.dataset.theme = preference;
           document.documentElement.style.colorScheme = resolved === 'dark' ? 'dark' : 'light';
-          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#020817' : '#eef2f7');
+          const themeMeta = document.querySelector('meta[name="theme-color"]');
+          if (themeMeta) themeMeta.setAttribute('content', resolved === 'dark' ? '#020817' : '#eef2f7');
         } catch (_) { /* use the light CSS defaults if storage is unavailable */ }
       })();
     </script>
@@ -32,7 +33,8 @@
       (() => {
         const isStaffDomain = window.location.hostname.startsWith('billing.');
         if (isStaffDomain) {
-          document.getElementById('application-manifest')?.setAttribute('href', '/api/v1/admin-app/manifest.webmanifest');
+          const manifest = document.getElementById('application-manifest');
+          if (manifest) manifest.setAttribute('href', '/api/v1/admin-app/manifest.webmanifest');
           document.title = 'SolarNet Staff';
         }
         window.addEventListener('beforeinstallprompt', (event) => {
@@ -44,7 +46,12 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#eef2f7;color:#0f172a;font-family:Arial,sans-serif;text-align:center">
+        <div><strong>Loading SolarNet Customer Portal…</strong><p style="font-size:14px;line-height:1.5">Please wait. If this message remains, update Chrome or Android System WebView and reopen the app.</p></div>
+      </div>
+    </div>
+    <noscript><div style="padding:24px;font-family:Arial,sans-serif">JavaScript must be enabled to use the SolarNet Customer Portal.</div></noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

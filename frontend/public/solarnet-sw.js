@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solarnet-application-shell-v6-official-logo';
+const CACHE_NAME = 'solarnet-application-shell-v7-legacy-android';
 const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
 const APP_SHELL = [
   '/',

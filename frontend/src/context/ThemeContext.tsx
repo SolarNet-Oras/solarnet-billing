@@ -68,7 +68,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const syncSystemTheme = (): void => {
       if (theme === 'system') applyTheme();
     };
-    media.addEventListener('change', syncSystemTheme);
+    if (typeof media.addEventListener === 'function') media.addEventListener('change', syncSystemTheme);
+    else media.addListener(syncSystemTheme);
 
     try {
       localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -78,7 +79,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       console.warn('Failed to save theme preference:', error);
     }
 
-    return () => media.removeEventListener('change', syncSystemTheme);
+    return () => {
+      if (typeof media.removeEventListener === 'function') media.removeEventListener('change', syncSystemTheme);
+      else media.removeListener(syncSystemTheme);
+    };
   }, [theme]);
 
   const setTheme = useCallback((newTheme: Theme): void => setThemeState(newTheme), []);
