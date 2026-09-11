@@ -407,8 +407,12 @@ const InvoicesPage: React.FC = () => {
       </div>
 
       {/* Invoices Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full">
+      <div className="overflow-hidden rounded-lg bg-white shadow">
+        <div className="border-b border-blue-100 bg-blue-50 px-4 py-2 text-xs font-medium text-blue-900 lg:hidden">
+          Swipe or scroll left and right to view every invoice field and action.
+        </div>
+        <div className="w-full overflow-x-auto overscroll-x-contain [touch-action:pan-x_pan-y] [scrollbar-gutter:stable]" role="region" aria-label="Scrollable invoice records" tabIndex={0}>
+        <table className="min-w-[1050px] w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -533,6 +537,7 @@ const InvoicesPage: React.FC = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}
