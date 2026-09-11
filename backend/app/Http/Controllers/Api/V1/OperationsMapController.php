@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -188,18 +190,43 @@ class OperationsMapController extends Controller
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'accuracy_meters' => ['nullable', 'numeric', 'min:0', 'max:5000'],
         ]);
-        $capturedAt = now();
-        $location = StaffLiveLocation::updateOrCreate(
-            ['user_id' => $request->user()->id],
-            [...$data, 'sharing_enabled' => true, 'captured_at' => $capturedAt]
-        );
-        if (Schema::hasTable('staff_location_history')) {
-            StaffLocationHistory::create([...$data, 'user_id' => $request->user()->id, 'captured_at' => $capturedAt]);
-            StaffLocationHistory::query()
-                ->where('user_id', $request->user()->id)
-                ->where('captured_at', '<', $capturedAt->copy()->subDays(30))
-                ->delete();
-        }
+        // Use the database clock and write through the query builder. This avoids
+        // applying the Manila offset twice when PHP/container timezone settings differ.
+        $capturedAt = DB::selectOne(
+            "select to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') as value"
+        )->value;
+        $location = DB::transaction(function () use ($request, $data, $capturedAt): StaffLiveLocation {
+            $location = StaffLiveLocation::query()->where('user_id', $request->user()->id)->first();
+            $values = [...$data, 'sharing_enabled' => true, 'captured_at' => $capturedAt, 'updated_at' => $capturedAt];
+
+            if ($location) {
+                DB::table('staff_live_locations')->where('id', $location->id)->update($values);
+            } else {
+                DB::table('staff_live_locations')->insert([
+                    'id' => (string) Str::uuid(),
+                    'user_id' => $request->user()->id,
+                    ...$values,
+                    'created_at' => $capturedAt,
+                ]);
+            }
+
+            if (Schema::hasTable('staff_location_history')) {
+                DB::table('staff_location_history')->insert([
+                    'id' => (string) Str::uuid(),
+                    'user_id' => $request->user()->id,
+                    ...$data,
+                    'captured_at' => $capturedAt,
+                    'created_at' => $capturedAt,
+                    'updated_at' => $capturedAt,
+                ]);
+                DB::table('staff_location_history')
+                    ->where('user_id', $request->user()->id)
+                    ->where('captured_at', '<', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '30 days'"))
+                    ->delete();
+            }
+
+            return StaffLiveLocation::query()->where('user_id', $request->user()->id)->firstOrFail();
+        });
 
         return response()->json(['message' => 'Live location shared.', 'captured_at' => $location->captured_at]);
     }
