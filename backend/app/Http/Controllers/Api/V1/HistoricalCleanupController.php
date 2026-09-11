@@ -12,6 +12,20 @@ use Illuminate\Validation\Rule;
 
 class HistoricalCleanupController extends Controller
 {
+    public function authorizeAccess(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'username' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string'],
+        ]);
+
+        if (! $this->credentialsMatch($request, $data['username'], $data['password'])) {
+            return response()->json(['status' => 'error', 'message' => 'The Super Administrator username or password is incorrect.'], 422);
+        }
+
+        return response()->json(['status' => 'success']);
+    }
+
     public function index(): JsonResponse
     {
         return response()->json([
@@ -28,12 +42,13 @@ class HistoricalCleanupController extends Controller
             'modules' => ['required', 'array', 'min:1'],
             'modules.*' => ['string', Rule::in(array_keys(HistoricalDataCleanupService::MODULES))],
             'password' => ['required', 'string'],
+            'username' => ['required', 'string', 'max:255'],
         ]);
 
-        if (! Hash::check($data['password'], $request->user()->password)) {
-            return response()->json(['status' => 'error', 'message' => 'The Super Administrator password is incorrect.'], 422);
+        if (! $this->credentialsMatch($request, $data['username'], $data['password'])) {
+            return response()->json(['status' => 'error', 'message' => 'The Super Administrator username or password is incorrect.'], 422);
         }
-        unset($data['password']);
+        unset($data['username'], $data['password']);
 
         try {
             return response()->json(['status' => 'success', 'data' => $cleanup->preview($request->user(), $data)]);
@@ -48,10 +63,11 @@ class HistoricalCleanupController extends Controller
             'preview_token' => ['required', 'uuid'],
             'confirmation' => ['required', 'string'],
             'password' => ['required', 'string'],
+            'username' => ['required', 'string', 'max:255'],
         ]);
 
-        if (! Hash::check($data['password'], $request->user()->password)) {
-            return response()->json(['status' => 'error', 'message' => 'The Super Administrator password is incorrect.'], 422);
+        if (! $this->credentialsMatch($request, $data['username'], $data['password'])) {
+            return response()->json(['status' => 'error', 'message' => 'The Super Administrator username or password is incorrect.'], 422);
         }
 
         try {
@@ -60,5 +76,14 @@ class HistoricalCleanupController extends Controller
         } catch (\RuntimeException $exception) {
             return response()->json(['status' => 'error', 'message' => $exception->getMessage()], 422);
         }
+    }
+
+    private function credentialsMatch(Request $request, string $username, string $password): bool
+    {
+        $user = $request->user();
+        $identityMatches = hash_equals(mb_strtolower(trim((string) $user->email)), mb_strtolower(trim($username)))
+            || hash_equals(mb_strtolower(trim((string) $user->name)), mb_strtolower(trim($username)));
+
+        return $identityMatches && Hash::check($password, $user->password);
     }
 }

@@ -13,11 +13,14 @@ export interface CleanupPreview {
 }
 
 export const historicalCleanupService = {
-  async preview(input: { from_date: string; to_date: string; modules: HistoricalCleanupModule[]; password: string }): Promise<CleanupPreview> {
+  async authorize(username: string, password: string): Promise<void> {
+    await api.post('/super-admin/historical-cleanup/authorize', { username, password });
+  },
+  async preview(input: { from_date: string; to_date: string; modules: HistoricalCleanupModule[]; username: string; password: string }): Promise<CleanupPreview> {
     const response = await api.post<{ data: CleanupPreview }>('/super-admin/historical-cleanup/preview', input);
     return response.data.data;
   },
-  async execute(preview_token: string, confirmation: string, password: string): Promise<void> {
-    await api.post('/super-admin/historical-cleanup/execute', { preview_token, confirmation, password });
+  async execute(preview_token: string, confirmation: string, username: string, password: string): Promise<void> {
+    await api.post('/super-admin/historical-cleanup/execute', { preview_token, confirmation, username, password });
   },
 };
