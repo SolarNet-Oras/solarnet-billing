@@ -407,6 +407,7 @@ export interface Invoice {
   paid_at: string | null;
   items?: InvoiceItem[];
   payments?: Payment[];
+  payment_url?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
+use App\Services\InvoicePaymentLinkService;
 use App\Services\OfficeCashLiquidationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -18,11 +19,17 @@ class InvoiceController extends Controller
 {
     protected InvoiceService $invoiceService;
     protected CashTenderCalculator $cashTender;
+    protected InvoicePaymentLinkService $paymentLinks;
 
-    public function __construct(InvoiceService $invoiceService, CashTenderCalculator $cashTender)
+    public function __construct(
+        InvoiceService $invoiceService,
+        CashTenderCalculator $cashTender,
+        InvoicePaymentLinkService $paymentLinks,
+    )
     {
         $this->invoiceService = $invoiceService;
         $this->cashTender = $cashTender;
+        $this->paymentLinks = $paymentLinks;
     }
 
     /**
@@ -86,6 +93,11 @@ class InvoiceController extends Controller
 
         $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
         $invoices = $query->paginate($perPage)->withQueryString();
+        $invoices->getCollection()->each(function (Invoice $invoice): void {
+            $invoice->setAttribute('payment_url', (float) $invoice->balance > 0 && $invoice->status !== 'cancelled'
+                ? $this->paymentLinks->url($invoice)
+                : null);
+        });
 
         return response()->json($invoices);
     }

@@ -12,6 +12,7 @@ import {
   CheckCircle,
   AlertCircle,
   XCircle,
+  Smartphone,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
@@ -530,6 +531,18 @@ const InvoicesPage: React.FC = () => {
                         >
                           <Send className="w-4 h-4" />
                         </button>
+                      )}
+                      {invoice.balance > 0 && invoice.status !== 'cancelled' && (
+                        <a
+                          href={invoice.payment_url || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={!invoice.payment_url}
+                          className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${invoice.payment_url ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300' : 'pointer-events-none opacity-40'}`}
+                          title="Open secure GCash or QR Ph payment"
+                        >
+                          <Smartphone className="h-4 w-4" /> GCash / QR Ph
+                        </a>
                       )}
                       {invoice.balance > 0 && invoice.status !== 'cancelled' && (
                         <button
