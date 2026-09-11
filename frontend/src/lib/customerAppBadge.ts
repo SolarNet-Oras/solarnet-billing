@@ -5,10 +5,12 @@ type BadgeNavigator = Navigator & {
 
 export const showSuspensionBadge = (): void => {
   const badgeNavigator = navigator as BadgeNavigator;
-  void badgeNavigator.setAppBadge?.(1).catch(() => undefined);
+  if (typeof badgeNavigator.setAppBadge !== 'function') return;
+  void badgeNavigator.setAppBadge(1).catch(() => undefined);
 };
 
 export const clearSuspensionBadge = (): void => {
   const badgeNavigator = navigator as BadgeNavigator;
-  void badgeNavigator.clearAppBadge?.().catch(() => undefined);
+  if (typeof badgeNavigator.clearAppBadge !== 'function') return;
+  void badgeNavigator.clearAppBadge().catch(() => undefined);
 };
