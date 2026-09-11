@@ -38,6 +38,7 @@ class RequireFreshFieldLocation
             ->where('user_id', $user->id)
             ->where('sharing_enabled', true)
             ->where('captured_at', '>=', now()->subMinutes(5))
+            ->where('captured_at', '<=', now()->addMinute())
             ->first();
 
         if (! $location) {

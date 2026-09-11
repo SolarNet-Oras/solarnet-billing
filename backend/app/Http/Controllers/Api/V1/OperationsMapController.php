@@ -34,6 +34,7 @@ class OperationsMapController extends Controller
         $locations = StaffLiveLocation::query()
                 ->where('sharing_enabled', true)
                 ->where('captured_at', '>=', now()->subMinutes(5))
+                ->where('captured_at', '<=', now()->addMinute())
                 ->with('user.roles:id,name')
                 ->latest('captured_at')
                 ->get();
@@ -54,10 +55,13 @@ class OperationsMapController extends Controller
         ];
         $data['staff_tracking_status'] = $fieldUsers->map(function (User $user) use ($allLatestLocations, $insideWorkHours): array {
             $latest = $allLatestLocations->get($user->id);
-            $minutesSinceUpdate = $latest?->captured_at?->diffInMinutes(now());
+            $capturedAt = $latest?->captured_at;
+            $minutesSinceUpdate = $capturedAt?->diffInMinutes(now(), false);
+            $isFresh = $capturedAt !== null
+                && $capturedAt->between(now()->subMinutes(5), now()->addMinute());
             $state = ! $insideWorkHours
                 ? 'off_duty'
-                : ($minutesSinceUpdate !== null && $minutesSinceUpdate <= 5 ? 'reporting' : 'missing');
+                : ($isFresh ? 'reporting' : 'missing');
 
             return [
                 'user_id' => $user->id,
@@ -65,7 +69,7 @@ class OperationsMapController extends Controller
                 'role' => $user->roles->pluck('name')->intersect(['collector', 'technician'])->first(),
                 'state' => $state,
                 'last_captured_at' => $latest?->captured_at?->toIso8601String(),
-                'minutes_since_update' => $minutesSinceUpdate,
+                'minutes_since_update' => $minutesSinceUpdate !== null ? max(0, $minutesSinceUpdate) : null,
             ];
         })->values();
         $staffIds = $locations->pluck('user_id');
@@ -130,6 +134,7 @@ class OperationsMapController extends Controller
         if (Schema::hasTable('staff_location_history')) {
             $history = StaffLocationHistory::query()
                 ->where('captured_at', '>=', now()->subHours(12))
+                ->where('captured_at', '<=', now()->addMinute())
                 ->whereHas('user.roles', fn ($query) => $query->whereIn('name', ['collector', 'technician']))
                 ->with('user.roles:id,name')
                 ->orderBy('captured_at')
