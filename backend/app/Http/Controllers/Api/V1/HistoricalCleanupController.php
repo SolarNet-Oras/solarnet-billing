@@ -7,6 +7,7 @@ use App\Models\HistoricalCleanupAudit;
 use App\Services\HistoricalDataCleanupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class HistoricalCleanupController extends Controller
@@ -26,7 +27,13 @@ class HistoricalCleanupController extends Controller
             'to_date' => ['required', 'date', 'after_or_equal:from_date'],
             'modules' => ['required', 'array', 'min:1'],
             'modules.*' => ['string', Rule::in(array_keys(HistoricalDataCleanupService::MODULES))],
+            'password' => ['required', 'string'],
         ]);
+
+        if (! Hash::check($data['password'], $request->user()->password)) {
+            return response()->json(['status' => 'error', 'message' => 'The Super Administrator password is incorrect.'], 422);
+        }
+        unset($data['password']);
 
         try {
             return response()->json(['status' => 'success', 'data' => $cleanup->preview($request->user(), $data)]);
@@ -40,7 +47,12 @@ class HistoricalCleanupController extends Controller
         $data = $request->validate([
             'preview_token' => ['required', 'uuid'],
             'confirmation' => ['required', 'string'],
+            'password' => ['required', 'string'],
         ]);
+
+        if (! Hash::check($data['password'], $request->user()->password)) {
+            return response()->json(['status' => 'error', 'message' => 'The Super Administrator password is incorrect.'], 422);
+        }
 
         try {
             $audit = $cleanup->execute($request->user(), $data['preview_token'], $data['confirmation'], $request->ip());

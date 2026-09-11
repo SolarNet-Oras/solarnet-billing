@@ -126,8 +126,8 @@ Route::prefix('v1')->group(function () {
         Route::patch('super-admin/client-migrations/customers/{customer}', [ClientMigrationController::class, 'updateExisting'])->middleware('role:super_admin');
         Route::middleware('role:super_admin')->prefix('super-admin/historical-cleanup')->group(function () {
             Route::get('audits', [HistoricalCleanupController::class, 'index']);
-            Route::post('preview', [HistoricalCleanupController::class, 'preview']);
-            Route::post('execute', [HistoricalCleanupController::class, 'execute']);
+            Route::post('preview', [HistoricalCleanupController::class, 'preview'])->middleware('throttle:6,1');
+            Route::post('execute', [HistoricalCleanupController::class, 'execute'])->middleware('throttle:6,1');
         });
         
         // Role routes (admin only)
