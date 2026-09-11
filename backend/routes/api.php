@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{id}/sync-network', [CustomerController::class, 'syncNetwork'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/suspend', [CustomerController::class, 'suspend'])->middleware('permission:edit-customers');
         Route::post('customers/{id}/restore', [CustomerController::class, 'restore'])->middleware('permission:edit-customers');
+        Route::post('customers/{id}/release-mac', [CustomerController::class, 'releaseMac'])->middleware('permission:edit-customers');
         // Customer primary keys are UUIDs. This makes the resource route
         // unable to swallow fixed paths such as /customers/pdf even if an
         // old route cache is ever rebuilt with a different route order.

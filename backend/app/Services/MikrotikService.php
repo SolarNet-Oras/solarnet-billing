@@ -2472,6 +2472,70 @@ class MikrotikService
     }
 
     /**
+     * Release SolarNet-owned metadata from one exact DHCP lease without
+     * deleting the reservation. The MAC/IP remains visible for registration.
+     */
+    public function releaseCustomerDhcpLease(Router $router, string $macAddress, array $allowedComments): array
+    {
+        try {
+            $client = new Client($this->makeConfig($router));
+            $mac = strtoupper(trim($macAddress));
+            $find = (new Query('/ip/dhcp-server/lease/print'))->where('mac-address', $mac);
+            $matches = $client->query($find)->read();
+
+            if (count($matches) !== 1) {
+                return [
+                    'success' => false,
+                    'code' => count($matches) === 0 ? 'LEASE_NOT_FOUND' : 'AMBIGUOUS_LEASE',
+                    'message' => count($matches) === 0
+                        ? 'The exact DHCP lease no longer exists on MikroTik. Synchronize DHCP leases, then try again.'
+                        : 'More than one RouterOS lease uses this MAC. No customer metadata was removed.',
+                ];
+            }
+
+            $lease = $matches[0];
+            $comment = trim((string) ($lease['comment'] ?? ''));
+            $allowed = array_values(array_unique(array_filter(array_map(
+                static fn ($value) => trim((string) $value),
+                $allowedComments,
+            ))));
+            if ($comment !== '' && ! in_array($comment, $allowed, true)) {
+                return [
+                    'success' => false,
+                    'code' => 'COMMENT_NOT_OWNED',
+                    'message' => 'The MikroTik lease comment does not exactly identify this customer. It was preserved for manual review.',
+                ];
+            }
+            if (empty($lease['.id'])) {
+                return ['success' => false, 'code' => 'LEASE_ID_MISSING', 'message' => 'RouterOS did not return an exact lease identifier.'];
+            }
+
+            $client->query(
+                (new Query('/ip/dhcp-server/lease/set'))
+                    ->equal('.id', $lease['.id'])
+                    ->equal('comment', '')
+                    ->equal('rate-limit', '')
+            )->read();
+
+            $verified = $client->query($find)->read();
+            if (count($verified) !== 1
+                || trim((string) ($verified[0]['comment'] ?? '')) !== ''
+                || trim((string) ($verified[0]['rate-limit'] ?? '')) !== '') {
+                return ['success' => false, 'code' => 'RELEASE_NOT_CONFIRMED', 'message' => 'RouterOS did not confirm that the lease comment and rate limit were cleared.'];
+            }
+
+            return ['success' => true, 'code' => 'LEASE_RELEASED', 'message' => "MAC {$mac} is now an unregistered DHCP lease on {$router->name}."];
+        } catch (\Throwable $e) {
+            Log::warning('Customer DHCP lease release failed', [
+                'router_id' => $router->id,
+                'mac' => $macAddress,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'code' => 'ROUTER_ERROR', 'message' => 'MikroTik could not release the customer lease: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Add an IP address to a MikroTik firewall address-list.
      */
     public function addAddressList(Router $router, string $listName, string $address, ?string $comment = null): array

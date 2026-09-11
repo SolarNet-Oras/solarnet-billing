@@ -7,7 +7,7 @@ import { routerService, type Router } from '@/services/routerService';
 import type { Customer } from '@/types/api';
 import { monthlyDueDateLabel } from '@/lib/billingCycle';
 import { useAuth } from '@/hooks/useAuth';
-import { Activity, Ban, CheckCircle2, Crosshair, MapPin, RefreshCw, Router as RouterIcon, Wifi } from 'lucide-react';
+import { Activity, Ban, CheckCircle2, Crosshair, MapPin, RefreshCw, Router as RouterIcon, Unlink, Wifi, X } from 'lucide-react';
 
 interface DhcpLease {
   id: string;
@@ -74,6 +74,9 @@ const EditCustomerPage: React.FC = () => {
   const [dhcpLease, setDhcpLease] = useState<DhcpLease | null>(null);
   const [showLease, setShowLease] = useState<boolean>(false);
   const [networkAction, setNetworkAction] = useState<'suspend' | 'restore' | 'sync' | null>(null);
+  const [showReleaseMac, setShowReleaseMac] = useState(false);
+  const [releaseMacConfirmation, setReleaseMacConfirmation] = useState('');
+  const [releasingMac, setReleasingMac] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -235,6 +238,27 @@ const EditCustomerPage: React.FC = () => {
       setError(err?.response?.data?.message || err?.message || `Failed to ${action} internet.`);
     } finally {
       setNetworkAction(null);
+    }
+  };
+
+  const releaseWrongMac = async (): Promise<void> => {
+    if (!id || releasingMac || !formData.mac_address) return;
+    setReleasingMac(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await api.post<{ message?: string; data?: Customer }>(`/customers/${id}/release-mac`, {
+        confirmation_mac: releaseMacConfirmation,
+      });
+      setFormData((previous) => ({ ...previous, mac_address: '', ip_address: '' }));
+      setDhcpLease(null);
+      setNotice(response.data.message || 'Wrong MAC assignment removed.');
+      setShowReleaseMac(false);
+      setReleaseMacConfirmation('');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to release this MAC assignment.');
+    } finally {
+      setReleasingMac(false);
     }
   };
 
@@ -454,6 +478,13 @@ const EditCustomerPage: React.FC = () => {
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
                   For a replacement ONU/router, save the full MAC after it appears in DHCP. An exact bound lease is made static and receives this client&apos;s plan limit. If it has not appeared yet, the client safely waits for an exact match.
                 </p>
+                {formData.mac_address && (
+                  <button type="button" onClick={() => { setReleaseMacConfirmation(''); setShowReleaseMac(true); }}
+                    className="mt-3 inline-flex items-center gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                    data-testid="release-wrong-mac-btn">
+                    <Unlink className="h-4 w-4" /> Remove wrong MAC
+                  </button>
+                )}
               </div>
               {!isOfficeAdminOnly && <Field label="IP Address" name="ip_address" value={formData.ip_address} onChange={handleChange} placeholder="192.168.1.1" testId="edit-ip-address" />}
               {!isOfficeAdminOnly && <Field label="VLAN" name="vlan" value={formData.vlan} onChange={handleChange} testId="edit-vlan" />}
@@ -491,6 +522,32 @@ const EditCustomerPage: React.FC = () => {
             </button>
           </div>
         </form>
+        {showReleaseMac && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="release-mac-title">
+            <div className="w-full max-w-lg rounded-xl border border-border bg-card p-6 text-card-foreground shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div><h2 id="release-mac-title" className="text-xl font-bold">Remove wrong MAC?</h2><p className="mt-1 text-sm text-muted-foreground">Customer: {formData.full_name}</p></div>
+                <button type="button" onClick={() => setShowReleaseMac(false)} disabled={releasingMac} aria-label="Close"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                This clears the customer MAC/IP and removes only this customer&apos;s comment and rate limit from the exact MikroTik lease. The lease is preserved and becomes available in Unregistered Clients.
+              </div>
+              <label className="mt-4 block text-sm font-medium">Type the exact MAC to confirm</label>
+              <div className="mt-1 font-mono text-sm text-muted-foreground">{formData.mac_address}</div>
+              <input value={releaseMacConfirmation} onChange={(event) => setReleaseMacConfirmation(event.target.value)}
+                className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="00:00:00:00:00:00" autoFocus data-testid="release-mac-confirmation" />
+              <div className="mt-5 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowReleaseMac(false)} disabled={releasingMac} className="rounded-md border border-border px-4 py-2">Cancel</button>
+                <button type="button" onClick={() => void releaseWrongMac()}
+                  disabled={releasingMac || releaseMacConfirmation.trim().toUpperCase() !== formData.mac_address.trim().toUpperCase()}
+                  className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {releasingMac && <RefreshCw className="h-4 w-4 animate-spin" />} {releasingMac ? 'Releasing…' : 'Remove and release MAC'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

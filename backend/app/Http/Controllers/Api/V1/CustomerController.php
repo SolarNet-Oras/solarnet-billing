@@ -744,6 +744,100 @@ class CustomerController extends Controller
         ]);
     }
 
+    /** Release a mistaken MAC assignment while preserving its DHCP lease. */
+    public function releaseMac(Request $request, string $id): JsonResponse
+    {
+        $customer = Customer::findOrFail($id);
+        $mac = $this->normalizeMacForBinding((string) $customer->mac_address);
+        $validated = $request->validate([
+            'confirmation_mac' => ['required', 'string', 'max:32'],
+        ]);
+
+        if (! $mac || $this->normalizeMacForBinding($validated['confirmation_mac']) !== $mac) {
+            return response()->json(['status' => 'error', 'message' => 'Type the customer’s exact current MAC address to confirm.'], 422);
+        }
+
+        try {
+            $result = DB::transaction(function () use ($customer, $mac, $request) {
+                $lockedCustomer = Customer::query()->lockForUpdate()->findOrFail($customer->id);
+                if ($this->normalizeMacForBinding((string) $lockedCustomer->mac_address) !== $mac) {
+                    throw new \RuntimeException('The customer MAC changed. Refresh the page before trying again.');
+                }
+
+                $leases = DhcpLease::query()->with('router')->lockForUpdate()
+                    ->where('is_current', true)->whereNotNull('mac_address')->get()
+                    ->filter(fn (DhcpLease $lease) => $this->normalizeMacForBinding((string) $lease->mac_address) === $mac)
+                    ->values();
+                if ($leases->count() > 1) {
+                    throw new \RuntimeException('This MAC exists on more than one current router lease. Synchronize all routers and resolve the duplicate first.');
+                }
+
+                $lease = $leases->first();
+                $routerResult = null;
+                if ($lease) {
+                    if (! $lease->router) {
+                        throw new \RuntimeException('The matching DHCP lease has no configured router. No assignment was removed.');
+                    }
+                    $account = trim((string) $lockedCustomer->account_number) ?: 'UNKNOWN';
+                    $name = trim((string) preg_replace('/\s+/', ' ', str_replace('|', '/', (string) $lockedCustomer->full_name)));
+                    $routerResult = $this->mikrotikService->releaseCustomerDhcpLease($lease->router, $mac, [
+                        $lockedCustomer->full_name,
+                        'SolarNet | ' . $account . ' | ' . substr($name ?: 'Unnamed customer', 0, 120),
+                    ]);
+                    if (! ($routerResult['success'] ?? false)) {
+                        throw new \RuntimeException($routerResult['message'] ?? 'MikroTik did not confirm the MAC release.');
+                    }
+
+                    $lease->update([
+                        'customer_id' => null,
+                        'is_matched' => false,
+                        'match_source' => null,
+                        'match_note' => 'Released from a customer after an explicitly confirmed wrong-MAC correction.',
+                        'comment' => null,
+                        'rate_limit' => null,
+                    ]);
+                }
+
+                DhcpLease::query()->where('customer_id', $lockedCustomer->id)->update([
+                    'customer_id' => null,
+                    'is_matched' => false,
+                    'match_source' => null,
+                    'match_note' => 'Customer MAC assignment was explicitly released.',
+                ]);
+                $lockedCustomer->update([
+                    'mac_address' => null,
+                    'ip_address' => null,
+                    'mac_binding_status' => null,
+                    'queue_synced' => false,
+                    'queue_sync_status' => 'MAC released; waiting for a replacement DHCP lease.',
+                ]);
+
+                Log::warning('Customer MAC assignment released', [
+                    'customer_id' => $lockedCustomer->id,
+                    'account_number' => $lockedCustomer->account_number,
+                    'released_mac' => $mac,
+                    'lease_id' => $lease?->id,
+                    'router_id' => $lease?->router_id,
+                    'actor_id' => $request->user()?->id,
+                ]);
+
+                return ['customer' => $lockedCustomer->fresh(['technician', 'servicePlan']), 'lease' => $lease, 'router_result' => $routerResult];
+            });
+        } catch (\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $result['lease']
+                ? 'Wrong MAC removed. Its MikroTik comment and rate limit were cleared, and the lease is now visible under Unregistered Clients.'
+                : 'Wrong MAC removed from the customer. No current MikroTik lease existed for that MAC.',
+            'data' => $result['customer'],
+            'released_lease_id' => $result['lease']?->id,
+            'mikrotik' => $result['router_result'],
+        ]);
+    }
+
     /**
      * Bulk soft-delete multiple customers in a single request.
      *
