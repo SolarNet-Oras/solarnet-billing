@@ -368,10 +368,10 @@ Route::prefix('v1')->group(function () {
             Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
             Route::get('locations', [RemittanceController::class, 'collectorLocations']);
             Route::get('clients', [RemittanceController::class, 'collectorClients']);
-            Route::put('clients/{id}/location', [RemittanceController::class, 'updateCollectorLocation']);
+            Route::put('clients/{id}/location', [RemittanceController::class, 'updateCollectorLocation'])->middleware('fresh.field.location');
             Route::post('clients/{id}/plan-change-request', [RemittanceController::class, 'requestCollectorPlanChange']);
             Route::post('clients/{id}/early-invoice', [RemittanceController::class, 'createCollectorEarlyInvoice']);
-            Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
+            Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect'])->middleware('fresh.field.location');
             Route::post('invoices/{id}/gcash-checkout', [RemittanceController::class, 'startGcashCheckout']);
             Route::post('invoices/{id}/gcash-checkouts/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileGcashCheckout']);
             Route::post('invoices/{id}/qr-ph', [RemittanceController::class, 'startQrPhPayment']);
@@ -431,10 +431,10 @@ Route::prefix('v1')->group(function () {
         Route::delete('tickets/{id}', [TicketController::class, 'destroy'])->middleware('permission:delete-tickets');
         Route::post('tickets/{id}/assign', [TicketController::class, 'assign'])->middleware('permission:assign-tickets');
         Route::post('tickets/{id}/claim-installation', [TicketController::class, 'claimInstallation'])->middleware('role:technician');
-        Route::post('tickets/{id}/submit-installation', [TicketController::class, 'submitInstallation'])->middleware('role:technician');
-        Route::post('tickets/{id}/repair/mark-in', [TicketController::class, 'markRepairIn'])->middleware('role:technician');
-        Route::post('tickets/{id}/repair/resolve', [TicketController::class, 'resolveRepair'])->middleware('role:technician');
-        Route::post('tickets/{id}/repair/close', [TicketController::class, 'closeRepair'])->middleware('role:technician');
+        Route::post('tickets/{id}/submit-installation', [TicketController::class, 'submitInstallation'])->middleware(['role:technician', 'fresh.field.location']);
+        Route::post('tickets/{id}/repair/mark-in', [TicketController::class, 'markRepairIn'])->middleware(['role:technician', 'fresh.field.location']);
+        Route::post('tickets/{id}/repair/resolve', [TicketController::class, 'resolveRepair'])->middleware(['role:technician', 'fresh.field.location']);
+        Route::post('tickets/{id}/repair/close', [TicketController::class, 'closeRepair'])->middleware(['role:technician', 'fresh.field.location']);
         Route::post('tickets/{id}/installation/correct-mac', [TicketController::class, 'correctInstallationMac'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/installation/approve', [TicketController::class, 'approveInstallation'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/installation/return', [TicketController::class, 'returnInstallation'])->middleware('role:super_admin|admin');

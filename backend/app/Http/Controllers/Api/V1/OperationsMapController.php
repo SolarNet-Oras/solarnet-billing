@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\StaffLiveLocation;
 use App\Models\StaffLocationHistory;
 use App\Models\Ticket;
+use App\Models\User;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,6 +37,37 @@ class OperationsMapController extends Controller
                 ->with('user.roles:id,name')
                 ->latest('captured_at')
                 ->get();
+        $allLatestLocations = StaffLiveLocation::query()->get()->keyBy('user_id');
+        $fieldUsers = User::query()
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['collector', 'technician']))
+            ->with('roles:id,name')
+            ->orderBy('name')
+            ->get();
+        $workNow = now('Asia/Manila');
+        $insideWorkHours = $workNow->hour >= 6 && $workNow->hour < 18;
+        $data['tracking_policy'] = [
+            'timezone' => 'Asia/Manila',
+            'starts_at' => '06:00',
+            'ends_at' => '18:00',
+            'inside_work_hours' => $insideWorkHours,
+        ];
+        $data['staff_tracking_status'] = $fieldUsers->map(function (User $user) use ($allLatestLocations, $insideWorkHours): array {
+            $latest = $allLatestLocations->get($user->id);
+            $minutesSinceUpdate = $latest?->captured_at?->diffInMinutes(now());
+            $state = ! $insideWorkHours
+                ? 'off_duty'
+                : ($minutesSinceUpdate !== null && $minutesSinceUpdate <= 5 ? 'reporting' : 'missing');
+
+            return [
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'role' => $user->roles->pluck('name')->intersect(['collector', 'technician'])->first(),
+                'state' => $state,
+                'last_captured_at' => $latest?->captured_at?->toIso8601String(),
+                'minutes_since_update' => $minutesSinceUpdate,
+            ];
+        })->values();
         $staffIds = $locations->pluck('user_id');
         $activeTickets = Ticket::query()
             ->whereIn('assigned_to', $staffIds)
@@ -139,6 +171,12 @@ class OperationsMapController extends Controller
             Schema::hasTable('staff_live_locations'),
             503,
             'Staff location storage is not installed yet. Run the pending database migrations.'
+        );
+        $workNow = now('Asia/Manila');
+        abort_unless(
+            $workNow->hour >= 6 && $workNow->hour < 18,
+            422,
+            'Work-location tracking accepts updates only from 6:00 AM to 6:00 PM Asia/Manila.'
         );
         $data = $request->validate([
             'latitude' => ['required', 'numeric', 'between:-90,90'],
