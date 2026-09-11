@@ -53,7 +53,7 @@ const navItems: NavItem[] = [
   { name: 'Billing', path: '/billing', icon: PhilippinePeso, permission: 'view-invoices' },
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'cashier', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
-  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock },
+  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin'] },
   { name: 'Financial Monitoring', path: '/financial-monitoring', icon: ChartNoAxesCombined, roles: ['super_admin', 'admin', 'cashier', 'accounting'] },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
@@ -123,7 +123,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {navItems.filter((item) => !hasRole('technician')
             || item.path === '/dashboard'
             || item.path === '/operations-map'
-            || item.path === '/staff-attendance'
             || item.path === '/install-staff-app'
             || (hasRole('collector') && item.path === '/remittances')).map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;

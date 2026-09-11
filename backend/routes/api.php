@@ -95,10 +95,12 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes (require authentication)
     Route::middleware(['auth:api', 'active.staff'])->group(function () {
-        Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
-        Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn']);
-        Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut']);
-        Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
+        Route::middleware('role:super_admin')->group(function () {
+            Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
+            Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn']);
+            Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut']);
+            Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
+        });
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
         Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
