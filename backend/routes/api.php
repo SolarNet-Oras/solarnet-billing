@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\V1\UnregisteredLeaseController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WireguardController;
 use App\Http\Controllers\Api\V1\EmployeeDeviceController;
+use App\Http\Controllers\Api\V1\StaffAttendanceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -94,6 +95,10 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes (require authentication)
     Route::middleware(['auth:api', 'active.staff'])->group(function () {
+        Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
+        Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn']);
+        Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut']);
+        Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
         Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
