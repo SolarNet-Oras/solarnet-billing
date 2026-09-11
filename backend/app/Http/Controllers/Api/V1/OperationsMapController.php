@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\OperationsMapAsset;
 use App\Models\Payment;
 use App\Models\StaffLiveLocation;
+use App\Models\StaffLocationHistory;
 use App\Models\Ticket;
 use App\Services\OperationsMapService;
 use Illuminate\Http\JsonResponse;
@@ -93,6 +94,41 @@ class OperationsMapController extends Controller
                     ];
                 })->values();
 
+        $data['staff_tracks'] = [];
+        if (Schema::hasTable('staff_location_history')) {
+            $history = StaffLocationHistory::query()
+                ->where('captured_at', '>=', now()->subHours(12))
+                ->whereHas('user.roles', fn ($query) => $query->whereIn('name', ['collector', 'technician']))
+                ->with('user.roles:id,name')
+                ->orderBy('captured_at')
+                ->get()
+                ->groupBy('user_id');
+            $staffById = $data['staff_locations']->keyBy('user_id');
+
+            $data['staff_tracks'] = $history->map(function ($points, string $userId) use ($staffById): array {
+                if ($points->count() > 240) {
+                    $step = (int) ceil($points->count() / 240);
+                    $points = $points->filter(fn ($point, int $index) => $index % $step === 0)
+                        ->push($points->last())->unique('id')->values();
+                }
+                $staff = $staffById->get($userId);
+                $firstPoint = $points->first();
+                $role = $staff['role'] ?? $firstPoint?->user?->roles?->pluck('name')->intersect(['collector', 'technician'])->first();
+
+                return [
+                    'user_id' => $userId,
+                    'name' => $staff['name'] ?? $firstPoint?->user?->name ?? 'Field staff',
+                    'role' => $role ?? 'field_staff',
+                    'points' => $points->map(fn (StaffLocationHistory $point): array => [
+                        'latitude' => $point->latitude,
+                        'longitude' => $point->longitude,
+                        'accuracy_meters' => $point->accuracy_meters,
+                        'captured_at' => $point->captured_at?->toIso8601String(),
+                    ])->values()->all(),
+                ];
+            })->values();
+        }
+
         return response()->json(['data' => $data]);
     }
 
@@ -109,10 +145,18 @@ class OperationsMapController extends Controller
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'accuracy_meters' => ['nullable', 'numeric', 'min:0', 'max:5000'],
         ]);
+        $capturedAt = now();
         $location = StaffLiveLocation::updateOrCreate(
             ['user_id' => $request->user()->id],
-            [...$data, 'sharing_enabled' => true, 'captured_at' => now()]
+            [...$data, 'sharing_enabled' => true, 'captured_at' => $capturedAt]
         );
+        if (Schema::hasTable('staff_location_history')) {
+            StaffLocationHistory::create([...$data, 'user_id' => $request->user()->id, 'captured_at' => $capturedAt]);
+            StaffLocationHistory::query()
+                ->where('user_id', $request->user()->id)
+                ->where('captured_at', '<', $capturedAt->copy()->subDays(30))
+                ->delete();
+        }
 
         return response()->json(['message' => 'Live location shared.', 'captured_at' => $location->captured_at]);
     }

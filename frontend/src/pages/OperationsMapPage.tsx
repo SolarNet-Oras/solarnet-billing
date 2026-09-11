@@ -19,6 +19,7 @@ type ClientPin = {
   network_state: NetworkState;
   network_label: string;
   lease: { ip_address: string | null; status: string; last_seen_at: string | null; router_name: string | null } | null;
+  staff_track?: StaffTrack['points'];
 };
 type AssetType = 'nap' | 'pole' | 'fiber_route';
 type MapAsset = {
@@ -47,10 +48,17 @@ type StaffLocation = Coordinates & {
     address: string | null;
   };
 };
+type StaffTrack = {
+  user_id: string;
+  name: string;
+  role: string;
+  points: Array<Coordinates & { accuracy_meters: number | null; captured_at: string }>;
+};
 type MapData = {
   clients: ClientPin[];
   assets: MapAsset[];
   staff_locations: StaffLocation[];
+  staff_tracks: StaffTrack[];
   summary: {
     mapped_clients: number;
     unmapped_clients: number;
@@ -60,7 +68,7 @@ type MapData = {
   source_note: string;
   generated_at: string;
 };
-type LayerKey = 'clients' | 'status' | 'naps' | 'poles' | 'fiber';
+type LayerKey = 'clients' | 'status' | 'staff_tracks' | 'naps' | 'poles' | 'fiber';
 type AssetForm = {
   id?: string;
   asset_type: AssetType;
@@ -79,7 +87,7 @@ const TILE_SIZE = 256;
 const MIN_ZOOM = 11;
 const MAX_ZOOM = 18;
 const MAX_MERCATOR_LATITUDE = 85.05112878;
-const defaultLayers: Record<LayerKey, boolean> = { clients: true, status: true, naps: true, poles: true, fiber: true };
+const defaultLayers: Record<LayerKey, boolean> = { clients: true, status: true, staff_tracks: true, naps: true, poles: true, fiber: true };
 const emptyAssetForm = (): AssetForm => ({ asset_type: 'nap', name: '', latitude: '', longitude: '', route_coordinates: '', status: 'active', notes: '' });
 const STATE_STYLE: Record<NetworkState, { label: string; marker: string; chip: string }> = {
   online: { label: 'Live DHCP lease', marker: '#10b981', chip: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300' },
@@ -90,6 +98,7 @@ const STATE_STYLE: Record<NetworkState, { label: string; marker: string; chip: s
 const layerMeta: Array<{ key: LayerKey; label: string }> = [
   { key: 'clients', label: 'Clients' },
   { key: 'status', label: 'Service status' },
+  { key: 'staff_tracks', label: 'Field trails' },
   { key: 'naps', label: 'NAPs' },
   { key: 'poles', label: 'Pole attachments' },
   { key: 'fiber', label: 'Fiber lines' },
@@ -108,6 +117,7 @@ function mapBounds(clients: ClientPin[], assets: MapAsset[]): Bounds | null {
     ...assets.flatMap((asset) => asset.asset_type === 'fiber_route'
       ? (asset.route_coordinates || []).filter(isCoordinate)
       : (asset.latitude !== null && asset.longitude !== null ? [{ latitude: asset.latitude, longitude: asset.longitude }] : [])),
+    ...clients.flatMap((client) => client.staff_track || []),
   ];
   if (!points.length) return null;
   return {
@@ -253,11 +263,32 @@ export default function OperationsMapPage(): React.JSX.Element {
       network_state: 'unknown',
       network_label: staff.activity.label,
       lease: null,
+      staff_track: (data?.staff_tracks || []).find((track) => track.user_id === staff.user_id)?.points || [],
     })) : [];
-    const pins = [...(data?.clients || []), ...staffPins];
+    const liveStaffIds = new Set(staffPins.map((pin) => pin.id));
+    const recentOfflineStaffPins: ClientPin[] = canViewStaff ? (data?.staff_tracks || [])
+      .filter((track) => !liveStaffIds.has(`staff-${track.user_id}`) && track.points.length > 0)
+      .map((track) => {
+        const latest = track.points[track.points.length - 1];
+        return {
+          id: `staff-${track.user_id}`,
+          account_number: track.role.replaceAll('_', ' ').toUpperCase(),
+          full_name: track.name,
+          address: 'Recent field trail; no live update in the last five minutes.',
+          customer_status: 'recent field staff trail',
+          latitude: latest.latitude,
+          longitude: latest.longitude,
+          location_source: `staff_history:${latest.captured_at}`,
+          network_state: 'unknown',
+          network_label: 'Recent field trail',
+          lease: null,
+          staff_track: track.points,
+        };
+      }) : [];
+    const pins = [...(data?.clients || []), ...staffPins, ...recentOfflineStaffPins];
     if (!term) return pins;
     return pins.filter((client) => `${client.full_name} ${client.account_number} ${client.address || ''}`.toLowerCase().includes(term));
-  }, [canViewStaff, data?.clients, data?.staff_locations, query]);
+  }, [canViewStaff, data?.clients, data?.staff_locations, data?.staff_tracks, query]);
   const bounds = useMemo(() => mapBounds(visibleClients, data?.assets || []), [visibleClients, data?.assets]);
   useEffect(() => { setMapView(bounds ? fitMapView(bounds) : null); }, [bounds]);
 
@@ -411,6 +442,36 @@ function RealOperationsMap({ view, clients, assets, layers, selectedKey, onSelec
       canvas.removeEventListener('click', suppressClick, true);
     };
   }, [onChangeView]);
+
+  useEffect(() => {
+    const canvas = document.querySelector<SVGSVGElement>('svg[aria-label="OpenStreetMap with SolarNet client and infrastructure overlays"]');
+    if (!canvas) return undefined;
+    canvas.querySelector('[data-staff-tracks]')?.remove();
+    if (!layers.staff_tracks) return undefined;
+
+    const namespace = 'http://www.w3.org/2000/svg';
+    const group = document.createElementNS(namespace, 'g');
+    group.setAttribute('data-staff-tracks', 'true');
+    group.setAttribute('pointer-events', 'none');
+    const colors = ['#2563eb', '#7c3aed', '#0891b2', '#db2777', '#059669', '#ea580c'];
+    clients.filter((client) => (client.staff_track?.length || 0) > 1).forEach((client, index) => {
+      const line = document.createElementNS(namespace, 'polyline');
+      line.setAttribute('points', (client.staff_track || []).map((coordinate) => {
+        const position = screenPoint(coordinate, view);
+        return `${position.x},${position.y}`;
+      }).join(' '));
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', colors[index % colors.length]);
+      line.setAttribute('stroke-width', '4');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('stroke-linejoin', 'round');
+      line.setAttribute('stroke-dasharray', '9 5');
+      line.setAttribute('opacity', '.88');
+      group.appendChild(line);
+    });
+    canvas.appendChild(group);
+    return () => group.remove();
+  }, [clients, layers.staff_tracks, view]);
   return <div className="relative min-h-[420px] overflow-hidden bg-slate-200"><svg viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} className="block min-h-[420px] w-full" role="img" aria-label="OpenStreetMap with SolarNet client and infrastructure overlays"><rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="#cbd5e1" />{tiles.map((tile) => <image key={tile.id} href={tile.href} x={tile.x} y={tile.y} width={TILE_SIZE} height={TILE_SIZE} preserveAspectRatio="none" />)}<defs><filter id="operations-map-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>{layers.fiber && assets.filter((asset) => asset.asset_type === 'fiber_route' && (asset.route_coordinates || []).length > 1).map((asset) => <polyline key={asset.id} points={(asset.route_coordinates || []).map((coordinates) => { const position = point(coordinates); return `${position.x},${position.y}`; }).join(' ')} fill="none" stroke="#0284c7" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" opacity=".9" onClick={() => onSelect(`asset:${asset.id}`)} className="cursor-pointer" />)}{layers.clients && clients.map((client) => { const position = point(client); const selected = selectedKey === `client:${client.id}`; const isStaff = client.id.startsWith('staff-'); const color = isStaff ? '#2563eb' : layers.status ? STATE_STYLE[client.network_state].marker : '#0284c7'; return <g key={client.id} role="button" tabIndex={0} onClick={() => onSelect(`client:${client.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`client:${client.id}`); }} className="cursor-pointer">{isStaff && <circle cx={position.x} cy={position.y} r={selected ? 20 : 17} fill="none" stroke="#3b82f6" strokeWidth="2" opacity=".65"><animate attributeName="r" values="10;22" dur="1.8s" repeatCount="indefinite" /><animate attributeName="opacity" values=".8;0" dur="1.8s" repeatCount="indefinite" /></circle>}<circle cx={position.x} cy={position.y} r={selected ? 16 : 12} fill={color} opacity=".3" filter="url(#operations-map-glow)" /><circle cx={position.x} cy={position.y} r={selected ? 8 : 6} fill={color} stroke="#fff" strokeWidth={selected ? 3 : 2} />{isStaff && <path d={`M ${position.x} ${position.y - 4} L ${position.x + 4} ${position.y + 4} L ${position.x} ${position.y + 2} L ${position.x - 4} ${position.y + 4} Z`} fill="#fff" />}<title>{`${client.full_name} · ${client.network_label}`}</title></g>; })}{layers.naps && assets.filter((asset) => asset.asset_type === 'nap' && asset.latitude !== null && asset.longitude !== null).map((asset) => { const position = point({ latitude: asset.latitude as number, longitude: asset.longitude as number }); const selected = selectedKey === `asset:${asset.id}`; return <g key={asset.id} role="button" tabIndex={0} onClick={() => onSelect(`asset:${asset.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`asset:${asset.id}`); }} className="cursor-pointer"><rect x={position.x - 9} y={position.y - 9} width="18" height="18" rx="4" fill="#7e22ce" stroke={selected ? '#fff' : '#f3e8ff'} strokeWidth={selected ? 3 : 1.5} /><title>{`NAP · ${asset.name}`}</title></g>; })}{layers.poles && assets.filter((asset) => asset.asset_type === 'pole' && asset.latitude !== null && asset.longitude !== null).map((asset) => { const position = point({ latitude: asset.latitude as number, longitude: asset.longitude as number }); const selected = selectedKey === `asset:${asset.id}`; return <g key={asset.id} role="button" tabIndex={0} onClick={() => onSelect(`asset:${asset.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(`asset:${asset.id}`); }} className="cursor-pointer"><path d={`M ${position.x} ${position.y - 10} L ${position.x} ${position.y + 10} M ${position.x - 7} ${position.y - 3} L ${position.x + 7} ${position.y - 3}`} stroke={selected ? '#fff' : '#b45309'} strokeWidth={selected ? 4.5 : 3.5} strokeLinecap="round" /><title>{`Pole attachment · ${asset.name}`}</title></g>; })}</svg><div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg"><button type="button" onClick={() => zoom(1)} disabled={view.zoom >= MAX_ZOOM} aria-label="Zoom in" className="grid h-9 w-9 place-items-center border-b border-slate-200 text-slate-800 hover:bg-slate-100 disabled:opacity-40"><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => zoom(-1)} disabled={view.zoom <= MIN_ZOOM} aria-label="Zoom out" className="grid h-9 w-9 place-items-center text-slate-800 hover:bg-slate-100 disabled:opacity-40"><ZoomOut className="h-4 w-4" /></button></div><button type="button" onClick={onFit} className="absolute bottom-8 right-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white/95 px-2.5 py-2 text-xs font-semibold text-slate-800 shadow hover:bg-white"><Crosshair className="h-3.5 w-3.5" />Fit service area</button><p className="absolute bottom-0 left-0 right-0 bg-slate-950/75 px-3 py-1.5 text-[11px] text-slate-100">{clients.length} displayed client pin{clients.length === 1 ? '' : 's'} · Base map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap contributors</a></p></div>;
 }
 
