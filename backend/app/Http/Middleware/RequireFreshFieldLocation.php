@@ -6,6 +6,7 @@ use App\Models\StaffLiveLocation;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -34,13 +35,16 @@ class RequireFreshFieldLocation
             );
         }
 
+        // staff_live_locations.captured_at is a PostgreSQL timestamp without a
+        // timezone. Compare it with PostgreSQL's own UTC clock so PHP, the app,
+        // and database session timezones cannot shift an otherwise fresh point.
         $location = StaffLiveLocation::query()
             ->where('user_id', $user->id)
             ->where('sharing_enabled', true)
             ->whereNotNull('accuracy_meters')
             ->where('accuracy_meters', '<=', 100)
-            ->where('captured_at', '>=', now()->subMinutes(5))
-            ->where('captured_at', '<=', now()->addMinute())
+            ->where('captured_at', '>=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '5 minutes'"))
+            ->where('captured_at', '<=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + INTERVAL '1 minute'"))
             ->first();
 
         if (! $location) {

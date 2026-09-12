@@ -35,8 +35,8 @@ class OperationsMapController extends Controller
 
         $locations = StaffLiveLocation::query()
                 ->where('sharing_enabled', true)
-                ->where('captured_at', '>=', now()->subMinutes(5))
-                ->where('captured_at', '<=', now()->addMinute())
+                ->where('captured_at', '>=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '5 minutes'"))
+                ->where('captured_at', '<=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + INTERVAL '1 minute'"))
                 ->with('user.roles:id,name')
                 ->latest('captured_at')
                 ->get();
@@ -59,8 +59,11 @@ class OperationsMapController extends Controller
             $latest = $allLatestLocations->get($user->id);
             $capturedAt = $latest?->captured_at;
             $minutesSinceUpdate = $capturedAt?->diffInMinutes(now(), false);
-            $isFresh = $capturedAt !== null
-                && $capturedAt->between(now()->subMinutes(5), now()->addMinute());
+            $isFresh = $latest !== null && StaffLiveLocation::query()
+                ->whereKey($latest->id)
+                ->where('captured_at', '>=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '5 minutes'"))
+                ->where('captured_at', '<=', DB::raw("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + INTERVAL '1 minute'"))
+                ->exists();
             $state = ! $insideWorkHours
                 ? 'off_duty'
                 : ($isFresh ? 'reporting' : 'missing');
