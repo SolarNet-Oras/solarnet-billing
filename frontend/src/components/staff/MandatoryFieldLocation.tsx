@@ -21,14 +21,12 @@ export default function MandatoryFieldLocation(): React.JSX.Element | null {
   const uploading = useRef(false);
   const [state, setState] = useState<TrackingState>(() => isTrackingShift() ? 'starting' : 'off_duty');
   const [detail, setDetail] = useState('');
-  const [accuracy, setAccuracy] = useState<number | null>(null);
   const roles = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const isFieldStaff = ['collector', 'technician'].some((role) => roles.includes(role));
 
   const upload = async (position: GeolocationPosition, force = false): Promise<void> => {
     if (uploading.current || (!force && Date.now() - lastUploadAt.current < 15000)) return;
     const reportedAccuracy = position.coords.accuracy;
-    setAccuracy(reportedAccuracy);
     if (!Number.isFinite(reportedAccuracy) || reportedAccuracy > 100) {
       setDetail(`Location accuracy is approximately ${Math.round(reportedAccuracy)} m. Turn on Precise Location or High Accuracy and try outdoors or near a window.`);
       setState('blocked');
@@ -123,7 +121,7 @@ export default function MandatoryFieldLocation(): React.JSX.Element | null {
   if (state === 'active') {
     return <div role="status" className="fixed bottom-3 left-3 z-[70] flex max-w-[calc(100vw-1.5rem)] items-center gap-2 rounded-full border border-emerald-400/50 bg-emerald-950/90 px-3 py-2 text-xs font-semibold text-emerald-100 shadow-lg backdrop-blur lg:left-[17rem]">
       <MapPin className="h-4 w-4 animate-pulse" />
-      <span>Precise work location active{accuracy !== null ? ` · ±${Math.round(accuracy)} m` : ''}</span>
+      <span>Work location active</span>
     </div>;
   }
 
@@ -131,7 +129,7 @@ export default function MandatoryFieldLocation(): React.JSX.Element | null {
     <section className="w-full max-w-md rounded-2xl border border-amber-400/40 bg-slate-900 p-6 text-center text-white shadow-2xl">
       <ShieldAlert className="mx-auto h-12 w-12 text-amber-300" />
       <h1 id="location-required-title" className="mt-4 text-xl font-bold">Work location is required</h1>
-      <p className="mt-2 text-sm leading-6 text-slate-200">Collector and technician access requires a current precise location. Enable location for SolarNet in this device's browser or app settings.</p>
+      <p className="mt-2 text-sm leading-6 text-slate-200">Collector and technician access requires a current work location. Enable location for SolarNet in this device's browser or app settings.</p>
       <p className="mt-3 text-xs text-slate-400">The application remains locked until a real GPS position is accepted. A website cannot change the phone's Always Allow setting for you.</p>
       {detail && <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">{detail}</p>}
       <button type="button" onClick={() => { setState('starting'); requestFreshPosition(true); }} className="mt-5 w-full rounded-xl bg-amber-400 px-4 py-3 font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60" disabled={state === 'starting'}>

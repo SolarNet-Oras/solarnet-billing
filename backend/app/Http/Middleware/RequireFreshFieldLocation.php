@@ -49,7 +49,7 @@ class RequireFreshFieldLocation
 
         if (! $location) {
             return $this->locationRequired(
-                'A current precise work location is required. Turn on Precise Location or High Accuracy, keep the SolarNet staff app open, and try again.'
+                'A current work location is required. Enable location, keep the SolarNet staff app open, and try again.'
             );
         }
 
