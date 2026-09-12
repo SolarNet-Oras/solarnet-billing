@@ -494,8 +494,14 @@ function RealOperationsMap({ view, clients, assets, layers, selectedKey, onSelec
     const group = document.createElementNS(namespace, 'g');
     group.setAttribute('data-staff-tracks', 'true');
     group.setAttribute('pointer-events', 'none');
-    const colors = ['#2563eb', '#7c3aed', '#0891b2', '#db2777', '#059669', '#ea580c'];
-    clients.filter((client) => (client.staff_track?.length || 0) > 1).forEach((client, index) => {
+    const trackedClients = clients.filter((client) => (client.staff_track?.length || 0) > 1);
+    const colorByClient = new Map(
+      [...trackedClients]
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((client, index) => [client.id, `hsl(${Math.round((index * 137.508) % 360)} 78% 43%)`]),
+    );
+    trackedClients.forEach((client) => {
+      const trackColor = colorByClient.get(client.id) || '#2563eb';
       const line = document.createElementNS(namespace, 'polyline');
       const roadTrack = roadTracks[client.id] || [];
       line.setAttribute('points', roadTrack.map((coordinate) => {
@@ -503,7 +509,7 @@ function RealOperationsMap({ view, clients, assets, layers, selectedKey, onSelec
         return `${position.x},${position.y}`;
       }).join(' '));
       line.setAttribute('fill', 'none');
-      line.setAttribute('stroke', colors[index % colors.length]);
+      line.setAttribute('stroke', trackColor);
       line.setAttribute('stroke-width', '1.35');
       line.setAttribute('stroke-linecap', 'round');
       line.setAttribute('stroke-linejoin', 'round');
@@ -516,7 +522,7 @@ function RealOperationsMap({ view, clients, assets, layers, selectedKey, onSelec
         dot.setAttribute('cx', String(position.x));
         dot.setAttribute('cy', String(position.y));
         dot.setAttribute('r', '1.75');
-        dot.setAttribute('fill', colors[index % colors.length]);
+        dot.setAttribute('fill', trackColor);
         dot.setAttribute('stroke', '#ffffff');
         dot.setAttribute('stroke-width', '.55');
         dot.setAttribute('opacity', '.92');
