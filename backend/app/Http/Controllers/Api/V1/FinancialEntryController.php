@@ -160,21 +160,29 @@ class FinancialEntryController extends Controller
         $data = $request->validate([
             'type' => 'required|string|max:100',
             'description' => 'required|string|max:255',
+            'effect_type' => 'nullable|in:expense,cash_in,transfer',
             'payment_method' => 'required|in:cash,gcash,bank_bpi,bank_landbank,add_to_cash,add_to_gcash,deposit_to_bpi,deposit_to_landbank',
             'source_wallet' => 'nullable|in:cash,gcash,bpi,landbank',
         ]);
         $data['type'] = trim($data['type']);
         $data['description'] = trim($data['description']);
+        $data['effect_type'] ??= $data['type'] === 'Cash In'
+            ? (empty($data['source_wallet']) ? 'cash_in' : 'transfer')
+            : 'expense';
 
-        if ($data['type'] === 'Cash In') {
+        if (in_array($data['effect_type'], ['cash_in', 'transfer'], true)) {
             $destination = $this->walletFor($data['payment_method']);
             if ($destination === 'other' || in_array($data['payment_method'], ['cash', 'gcash', 'bank_bpi', 'bank_landbank'], true)) {
-                return response()->json(['message' => 'Cash In must use an Add to or Deposit to destination.'], 422);
+                return response()->json(['message' => 'New funds and transfers must choose Add to Cash/GCash or Deposit to BPI/Landbank.'], 422);
             }
-            $effect = $data['source_wallet'] ? 'transfer' : 'cash_in';
+            if ($data['effect_type'] === 'transfer' && empty($data['source_wallet'])) {
+                return response()->json(['message' => 'Internal transfers require a source wallet.'], 422);
+            }
+            if ($data['effect_type'] === 'cash_in') $data['source_wallet'] = null;
+            $effect = $data['effect_type'];
         } else {
             if (!in_array($data['payment_method'], ['cash', 'gcash', 'bank_bpi', 'bank_landbank'], true)) {
-                return response()->json(['message' => 'Expense definitions must use Cash, GCash, BPI, or Landbank.'], 422);
+                return response()->json(['message' => 'Choose which wallet paid the expense: Cash, GCash, BPI, or Landbank.'], 422);
             }
             $data['source_wallet'] = $this->walletFor($data['payment_method']);
             $destination = null;
