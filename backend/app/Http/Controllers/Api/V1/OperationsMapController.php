@@ -188,7 +188,7 @@ class OperationsMapController extends Controller
         $data = $request->validate([
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
-            'accuracy_meters' => ['nullable', 'numeric', 'min:0', 'max:5000'],
+            'accuracy_meters' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
         // Use the database clock and write through the query builder. This avoids
         // applying the Manila offset twice when PHP/container timezone settings differ.
@@ -228,7 +228,13 @@ class OperationsMapController extends Controller
             return StaffLiveLocation::query()->where('user_id', $request->user()->id)->firstOrFail();
         });
 
-        return response()->json(['message' => 'Live location shared.', 'captured_at' => $location->captured_at]);
+        return response()->json([
+            'message' => 'Precise work location shared.',
+            'captured_at' => $location->captured_at,
+            'accuracy_meters' => $location->accuracy_meters,
+            'tracking_timezone' => 'Asia/Manila',
+            'tracking_ends_at' => '18:00',
+        ]);
     }
 
     public function store(Request $request, OperationsMapService $operationsMap): JsonResponse

@@ -37,13 +37,15 @@ class RequireFreshFieldLocation
         $location = StaffLiveLocation::query()
             ->where('user_id', $user->id)
             ->where('sharing_enabled', true)
+            ->whereNotNull('accuracy_meters')
+            ->where('accuracy_meters', '<=', 100)
             ->where('captured_at', '>=', now()->subMinutes(5))
             ->where('captured_at', '<=', now()->addMinute())
             ->first();
 
         if (! $location) {
             return $this->locationRequired(
-                'A current work location is required from 6:00 AM to 6:00 PM. Allow precise location, keep the SolarNet staff app open, and try again after it reports your position.'
+                'A current precise work location (within 100 meters) is required from 6:00 AM to 6:00 PM Asia/Manila. Turn on Precise Location or High Accuracy, keep the SolarNet staff app open, and try again.'
             );
         }
 
@@ -60,6 +62,7 @@ class RequireFreshFieldLocation
                 'starts_at' => '06:00',
                 'ends_at' => '18:00',
                 'maximum_age_minutes' => 5,
+                'maximum_accuracy_meters' => 100,
             ],
         ], 428);
     }
