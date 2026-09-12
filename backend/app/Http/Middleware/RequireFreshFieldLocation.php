@@ -49,7 +49,7 @@ class RequireFreshFieldLocation
 
         if (! $location) {
             return $this->locationRequired(
-                'A current precise work location (within 100 meters) is required from 6:00 AM to 6:00 PM Asia/Manila. Turn on Precise Location or High Accuracy, keep the SolarNet staff app open, and try again.'
+                'A current precise work location is required. Turn on Precise Location or High Accuracy, keep the SolarNet staff app open, and try again.'
             );
         }
 
