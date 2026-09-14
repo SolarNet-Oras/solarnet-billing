@@ -16,14 +16,20 @@ export default function AttendanceInstallPage(): React.JSX.Element {
   const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = /android/i.test(window.navigator.userAgent);
   const standaloneContainer = window.matchMedia('(display-mode: standalone)').matches;
+  const isAttendanceOrigin = window.location.host === attendanceHost;
 
   useEffect(() => {
+    if (isAttendanceOrigin && (standaloneContainer || installed)) {
+      window.location.replace('/attendance-app');
+      return;
+    }
     const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     manifest?.setAttribute('href', '/api/v1/attendance-app/manifest.webmanifest');
     const onPrompt = () => setPrompt(window.__solarnetInstallPrompt || null);
     const onInstalled = () => {
       window.localStorage.setItem('solarnet-attendance-pwa-installed-v1', 'yes');
       setInstalled(true);
+      window.location.replace('/attendance-app');
     };
     window.addEventListener('solarnet:install-prompt-ready', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
@@ -31,7 +37,7 @@ export default function AttendanceInstallPage(): React.JSX.Element {
       window.removeEventListener('solarnet:install-prompt-ready', onPrompt);
       window.removeEventListener('appinstalled', onInstalled);
     };
-  }, []);
+  }, [installed, isAttendanceOrigin, standaloneContainer]);
 
   const install = async () => {
     if (!prompt) { setHelp(true); return; }
@@ -40,6 +46,8 @@ export default function AttendanceInstallPage(): React.JSX.Element {
     if (choice.outcome === 'accepted') {
       window.localStorage.setItem('solarnet-attendance-pwa-installed-v1', 'yes');
       setInstalled(true);
+      window.location.replace('/attendance-app');
+      return;
     }
     window.__solarnetInstallPrompt = undefined;
     setPrompt(null);
