@@ -27,19 +27,31 @@
         } catch (_) { /* use the light CSS defaults if storage is unavailable */ }
       })();
     </script>
-    <link id="application-manifest" rel="manifest" href="/api/v1/customer-portal/manifest.webmanifest" />
+    <script>
+      (() => {
+        const attendance = window.location.pathname === '/attendance-app'
+          || window.location.pathname.startsWith('/attendance-app/');
+        const staff = window.location.hostname.startsWith('billing.');
+        const manifest = document.createElement('link');
+        manifest.id = 'application-manifest';
+        manifest.rel = 'manifest';
+        manifest.href = attendance
+          ? '/api/v1/attendance-app/manifest.webmanifest'
+          : staff
+            ? '/api/v1/admin-app/manifest.webmanifest'
+            : '/api/v1/customer-portal/manifest.webmanifest';
+        document.head.appendChild(manifest);
+      })();
+    </script>
     <title>SolarNet Customer App</title>
     <script>
       (() => {
         const isStaffDomain = window.location.hostname.startsWith('billing.');
         const isAttendanceApp = window.location.pathname === '/attendance-app'
           || window.location.pathname.startsWith('/attendance-app/');
-        const manifest = document.getElementById('application-manifest');
         if (isAttendanceApp) {
-          if (manifest) manifest.setAttribute('href', '/api/v1/attendance-app/manifest.webmanifest');
           document.title = 'SolarNet Attendance';
         } else if (isStaffDomain) {
-          if (manifest) manifest.setAttribute('href', '/api/v1/admin-app/manifest.webmanifest');
           document.title = 'SolarNet Staff';
         }
         window.addEventListener('beforeinstallprompt', (event) => {
