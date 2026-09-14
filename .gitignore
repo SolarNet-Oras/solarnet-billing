@@ -80,6 +80,9 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
+android-attendance/.gradle/
+android-attendance/app/build/
+*.apk
 .env
 .env.*
 *.env
