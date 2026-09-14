@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solarnet-application-shell-v11-attendance-icon';
+const CACHE_NAME = 'solarnet-application-shell-v12-attendance-standalone';
 const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
 const APP_SHELL = [
   '/',
@@ -41,7 +41,7 @@ self.addEventListener('fetch', (event) => {
       url.pathname.startsWith('/customer/')
         ? '/customer/login'
         : url.pathname.startsWith('/attendance-app/')
-          ? '/attendance-app/login'
+          ? '/attendance-app/'
           : '/login',
     ))),
   );

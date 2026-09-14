@@ -233,11 +233,11 @@ class SettingsController extends Controller
     public function publicAttendanceManifest(): JsonResponse
     {
         return response()->json([
-            'id' => '/attendance-app',
+            'id' => '/attendance-app/kiosk-v2',
             'name' => Setting::get('company.name', 'Solarnet Internet').' Attendance',
             'short_name' => 'SolarNet Time',
             'description' => 'Dedicated attendance kiosk for an authorized Super Administrator device.',
-            'start_url' => '/attendance-app/',
+            'start_url' => '/attendance-app/?source=installed-attendance-app',
             'scope' => '/attendance-app/',
             'display' => 'standalone',
             'background_color' => '#020817',
