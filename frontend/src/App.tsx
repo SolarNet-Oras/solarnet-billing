@@ -71,6 +71,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/data-deletion" element={<LegalPage />} />
               <Route path="/service-map" element={<PublicServiceMapPage />} />
               <Route path="/attendance-app/install" element={<AttendanceInstallPage />} />
+              <Route path="/attendance-app/login" element={<LoginPage />} />
               
               {/* Protected Routes */}
               <Route
@@ -187,6 +188,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
               <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
               <Route path="/attendance-app" element={<ProtectedRoute allowedRoles={['admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><AttendanceAppPage /></ProtectedRoute>} />
+              <Route path="/attendance-app/" element={<ProtectedRoute allowedRoles={['admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><AttendanceAppPage /></ProtectedRoute>} />
               <Route path="/install-staff-app" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><StaffAppInstallPage /></ProtectedRoute>} />
               <Route
                 path="/tickets"

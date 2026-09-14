@@ -4,6 +4,8 @@ const APP_SHELL = [
   '/',
   '/login',
   '/attendance-app',
+  '/attendance-app/',
+  '/attendance-app/login',
   '/customer/login',
   OFFICIAL_NOTIFICATION_ICON,
   '/solarnet-company-logo-512.png?v=20260907-official',
@@ -33,7 +35,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match(url.pathname.startsWith('/customer/') ? '/customer/login' : '/login'))),
+    fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match(
+      url.pathname.startsWith('/customer/')
+        ? '/customer/login'
+        : url.pathname.startsWith('/attendance-app/')
+          ? '/attendance-app/login'
+          : '/login',
+    ))),
   );
 });
 

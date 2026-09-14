@@ -28,7 +28,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ returnTo: location.pathname + location.search }} />;
+    const loginPath = location.pathname === '/attendance-app' || location.pathname.startsWith('/attendance-app/')
+      ? '/attendance-app/login'
+      : '/login';
+    return <Navigate to={loginPath} replace state={{ returnTo: location.pathname + location.search }} />;
   }
 
   const roles = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);

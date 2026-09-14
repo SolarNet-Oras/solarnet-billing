@@ -8,6 +8,7 @@ const REMEMBERED_STAFF_EMAIL_KEY = 'solarnet-remembered-staff-email';
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const attendanceLogin = location.pathname.startsWith('/attendance-app/');
   const { login } = useAuth();
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   
@@ -66,9 +67,9 @@ const LoginPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
-          <h1 className="text-3xl font-bold text-foreground mb-2">{branding.name}</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{attendanceLogin ? 'SolarNet Attendance' : branding.name}</h1>
           <p className="text-muted-foreground">
-            Sign in to your account
+            {attendanceLogin ? 'Employee time-in and time-out' : 'Sign in to your account'}
           </p>
         </div>
 
@@ -142,10 +143,10 @@ const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          {!attendanceLogin && <div className="mt-6 text-center">
             <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">Forgot your password?</Link>
             <p className="mt-2 text-xs text-muted-foreground">Need a staff account? <Link to="/staff-signup" className="font-medium text-primary hover:underline">Submit a signup request</Link>.</p>
-          </div>
+          </div>}
         </div>
 
         {/* Footer */}
