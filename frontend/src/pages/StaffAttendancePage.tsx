@@ -8,7 +8,7 @@ type RecordRow = { id:string; work_date:string; clocked_in_at:string|null; clock
 type Employee = { id:string; name:string; email:string; roles:string[]; pin_configured:boolean; records:RecordRow[]; compensation:Compensation|null; summary:{present_days:number;late_days:number;late_minutes:number;worked_hours:number;overtime_hours:number;base_pay:number;overtime_pay:number;allowance:number;deductions:number;net_pay:number} };
 type Payload = { month:string; can_manage_payroll:boolean; employees:Employee[] };
 const money = (value:number):string => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(value||0);
-const attendanceInstallerUrl = `${(import.meta.env.VITE_ATTENDANCE_URL || 'https://attendance.solarnetportal.com').replace(/\/$/, '')}/attendance-app/install`;
+const attendanceInstallerUrl = `${(import.meta.env.VITE_ATTENDANCE_URL || 'https://attendance.solarnetportal.com').replace(/\/$/, '')}/solarnet-attendance.apk`;
 
 export default function StaffAttendancePage(): React.JSX.Element {
   const [month,setMonth]=useState(new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Manila'}).slice(0,7));
