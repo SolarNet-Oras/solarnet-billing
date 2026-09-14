@@ -131,10 +131,15 @@ class StaffAttendanceController extends Controller
             $late = ($daily / 480) * $rows->sum('late_minutes');
             $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($rows->sum('overtime_minutes') / 60);
             $allowance = (float) ($profile?->monthly_allowance ?? 0);
-            $deductions = (float) ($profile?->monthly_deduction ?? 0) + $late;
+            $sss = (float) ($profile?->sss_deduction ?? 0);
+            $philhealth = (float) ($profile?->philhealth_deduction ?? 0);
+            $pagibig = (float) ($profile?->pagibig_deduction ?? 0);
+            $cashAdvance = (float) ($profile?->cash_advance_deduction ?? 0);
+            $otherDeductions = (float) ($profile?->monthly_deduction ?? 0);
+            $deductions = $otherDeductions + $sss + $philhealth + $pagibig + $cashAdvance + $late;
 
             return [
-                'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email,
+                'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email, 'phone'=>$user->phone,
                 'pin_configured'=>filled($user->attendance_pin_hash),
                 'roles'=>$user->roles->pluck('name')->values(),
                 'records'=>$rows->values(),
@@ -144,7 +149,10 @@ class StaffAttendanceController extends Controller
                     'late_minutes'=>$rows->sum('late_minutes'), 'worked_hours'=>round($rows->sum('worked_minutes') / 60, 2),
                     'overtime_hours'=>round($rows->sum('overtime_minutes') / 60, 2),
                     'base_pay'=>round($base, 2), 'overtime_pay'=>round($overtime, 2),
-                    'allowance'=>round($allowance, 2), 'deductions'=>round($deductions, 2),
+                    'allowance'=>round($allowance, 2), 'late_deduction'=>round($late, 2),
+                    'sss_deduction'=>round($sss, 2), 'philhealth_deduction'=>round($philhealth, 2),
+                    'pagibig_deduction'=>round($pagibig, 2), 'cash_advance_deduction'=>round($cashAdvance, 2),
+                    'other_deductions'=>round($otherDeductions, 2), 'deductions'=>round($deductions, 2),
                     'net_pay'=>round(max(0, $base + $overtime + $allowance - $deductions), 2),
                 ],
             ];
@@ -204,12 +212,20 @@ class StaffAttendanceController extends Controller
         abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
 
         $data = $request->validate([
+            'employee_name'=>'required|string|max:255', 'employee_email'=>['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'employee_phone'=>'nullable|string|max:30',
+            'job_title'=>'nullable|string|max:120', 'employment_status'=>['required', Rule::in(['regular', 'probationary', 'contractual', 'part_time'])],
+            'hire_date'=>'nullable|date', 'employee_address'=>'nullable|string|max:1000',
             'monthly_salary'=>'required|numeric|min:0|max:10000000', 'daily_rate'=>'required|numeric|min:0|max:1000000',
             'monthly_allowance'=>'required|numeric|min:0|max:1000000', 'monthly_deduction'=>'required|numeric|min:0|max:1000000',
+            'sss_deduction'=>'required|numeric|min:0|max:1000000', 'philhealth_deduction'=>'required|numeric|min:0|max:1000000',
+            'pagibig_deduction'=>'required|numeric|min:0|max:1000000', 'cash_advance_deduction'=>'required|numeric|min:0|max:1000000',
             'work_days_per_month'=>'required|integer|min:1|max:31', 'scheduled_start'=>'required|date_format:H:i',
             'scheduled_end'=>'required|date_format:H:i|after:scheduled_start', 'grace_minutes'=>'required|integer|min:0|max:180',
             'overtime_multiplier'=>'required|numeric|min:1|max:5',
         ]);
+        $user->update(['name'=>$data['employee_name'], 'email'=>$data['employee_email'], 'phone'=>$data['employee_phone'] ?? null]);
+        unset($data['employee_name'], $data['employee_email'], $data['employee_phone']);
         $profile = StaffCompensation::updateOrCreate(['user_id'=>$user->id], [...$data, 'updated_by'=>$request->user()->id]);
         return response()->json(['message'=>'Salary settings updated.', 'data'=>$profile]);
     }
