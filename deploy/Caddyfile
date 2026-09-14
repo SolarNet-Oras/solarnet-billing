@@ -62,6 +62,9 @@
     @attendance_landing path /
     redir @attendance_landing /attendance-app/install permanent
     import solarnet_application
+    # Camera remains disabled on every other SolarNet origin. The dedicated
+    # attendance kiosk alone may request its own front camera and location.
+    header >Permissions-Policy "geolocation=(self), camera=(self), microphone=(), payment=(), serial=(), usb=()"
 }
 
 # Preserve historical staff links while moving the former billing hostname to
