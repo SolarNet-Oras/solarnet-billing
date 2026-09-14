@@ -76,7 +76,7 @@ class TicketCreatedSmsService
     {
         $name = Str::limit(trim((string) $ticket->customer?->full_name), 32, '');
         $subject = Str::limit((string) preg_replace('/\s+/', ' ', trim((string) $ticket->subject)), 72, '...');
-        return "SOLARNET SUPPORT\n\n"
+        return "SUPPORT NOTICE\n\n"
             . "Hi {$name},\n\n"
             . "Your ticket {$ticket->ticket_number} has been created.\n"
             . "Concern: {$subject}\n\n"

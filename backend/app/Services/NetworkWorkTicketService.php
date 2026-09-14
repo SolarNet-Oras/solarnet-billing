@@ -91,6 +91,6 @@ class NetworkWorkTicketService
         $end = filled($data['scheduled_end_at'] ?? null)
             ? ' Expected completion: '.Carbon::parse($data['scheduled_end_at'])->timezone('Asia/Manila')->format('M j, Y g:i A').'.'
             : '';
-        return mb_substr("SOLARNET MAINTENANCE ADVISORY: We sincerely apologize for the possible temporary interruption in the {$router->name} service area on {$start}.{$end} This maintenance helps improve internet reliability and resolve network issues. Thank you for your patience and understanding.", 0, 459);
+        return mb_substr("MAINTENANCE ADVISORY: We sincerely apologize for the possible temporary interruption in the {$router->name} service area on {$start}.{$end} This maintenance helps improve internet reliability and resolve network issues. Thank you for your patience and understanding.", 0, 459);
     }
 }

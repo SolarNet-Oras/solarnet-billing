@@ -33,7 +33,7 @@ class FinalGracePeriodWarningServiceTest extends TestCase
         ]);
 
         $this->assertSame(
-            'SOLARNET: FINAL WARNING. Your account has an outstanding balance of PHP 3,000.00. Your 5-day grace period ends today. Please settle now to avoid service suspension. Pay: https://solarnetportal.com/customer/billing',
+            'FINAL WARNING: Your account has an outstanding balance of PHP 3,000.00. Your 5-day grace period ends today. Please settle now to avoid service suspension. Pay: https://solarnetportal.com/customer/billing',
             $message,
         );
     }

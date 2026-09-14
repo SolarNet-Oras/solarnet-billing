@@ -35,7 +35,7 @@ class PaymentConfirmationSmsService
         ])->save();
 
         $invoice = $payment->invoice;
-        $message = 'SOLARNET: Hi ' . trim(explode(' ', trim($customer->full_name))[0] ?: 'Customer') . ",\n\n"
+        $message = 'Hi ' . trim(explode(' ', trim($customer->full_name))[0] ?: 'Customer') . ",\n\n"
             . 'We received PHP ' . number_format((float) $payment->amount, 2)
             . ' as your advance payment.'
             . ($invoice ? "\nInvoice: {$invoice->invoice_number}\nDue: {$invoice->due_date->format('M j, Y')}" : '')

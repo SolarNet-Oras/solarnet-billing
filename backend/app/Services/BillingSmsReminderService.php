@@ -159,7 +159,7 @@ class BillingSmsReminderService
         $firstName = trim((string) preg_split('/\s+/', trim($customer->full_name))[0]);
         $firstName = $firstName !== '' ? $firstName : 'Customer';
 
-        return 'SOLARNET: Hi ' . $firstName . ",\n\n"
+        return 'Hi ' . $firstName . ",\n\n"
             . 'Your bill of PHP ' . number_format($outstanding, 2)
             . ' is due ' . $dueDate->copy()->setTimezone(self::TIMEZONE)->format('M j, Y') . ".\n\n"
             . "Pay by GCash:\n"

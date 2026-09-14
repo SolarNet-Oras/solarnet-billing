@@ -382,7 +382,7 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
                 onChange={(e) => update("message", e.target.value)}
                 maxLength={459}
                 rows={6}
-                placeholder="SOLARNET ADVISORY: ..."
+                placeholder="ADVISORY: ..."
                 className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2.5"
               />
               <span className="mt-1 block text-xs text-muted-foreground">

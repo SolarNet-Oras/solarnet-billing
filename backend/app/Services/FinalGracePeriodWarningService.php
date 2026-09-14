@@ -187,7 +187,7 @@ class FinalGracePeriodWarningService
 
     public function smsMessage(Customer $customer, array $event): string
     {
-        return 'SOLARNET: FINAL WARNING. Your account has an outstanding balance of PHP '
+        return 'FINAL WARNING: Your account has an outstanding balance of PHP '
             . number_format((float) $event['outstanding_balance'], 2)
             . '. Your ' . $event['grace_days'] . '-day grace period ends today. Please settle now to avoid service suspension. Pay: '
             . $event['portal_url'];

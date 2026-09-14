@@ -83,7 +83,7 @@ class SmsAdvisoryController extends Controller
                     'You write operational SMS advisories for SolarNet Internet in the Philippines.',
                     'Use only the verified facts supplied by the administrator. Never invent dates, places, outage causes, prices, restoration times, links, or contact details.',
                     'Return only one ready-to-review SMS message with no markdown, quotation marks, headings, analysis, emojis, or placeholders.',
-                    'Keep it at or below 420 characters. Start with SOLARNET ADVISORY:. Use a calm customer-service tone and concise spacing.',
+                    'Keep it at or below 420 characters. Start with ADVISORY:. The approved SMS Sender Name already identifies SolarNet, so do not repeat the company name at the start. Use a calm customer-service tone and concise spacing.',
                     'This is a draft only and will be reviewed by an administrator before sending.',
                 ])],
                 ['role' => 'user', 'content' => "Topic: {$data['topic']}\nLanguage: {$data['language']}\nTone: {$data['tone']}\nVerified facts:\n{$data['verified_facts']}"],
