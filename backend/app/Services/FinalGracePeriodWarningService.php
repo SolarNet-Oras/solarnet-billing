@@ -75,7 +75,7 @@ class FinalGracePeriodWarningService
             if ($channel === FinalGracePeriodWarning::CHANNEL_SMS && !$this->smsEnabled()) {
                 $warning->forceFill([
                     'status' => 'skipped',
-                    'failure_reason' => 'Billing SMS reminders are disabled or PhilSMS is not configured.',
+                    'failure_reason' => 'Billing SMS reminders are disabled or Semaphore is not configured.',
                 ])->save();
                 $deliveries[$channel] = 'skipped_sms_not_configured';
                 continue;
@@ -248,7 +248,7 @@ class FinalGracePeriodWarningService
             return 'invalid';
         }
 
-        $service = app(PhilSmsService::class);
+        $service = app(SemaphoreSmsService::class);
         $delivery = $service->send($warning->recipient, $this->smsMessage($warning->customer, $event));
         if ($delivery === 'sent') {
             $warning->forceFill([
@@ -260,7 +260,7 @@ class FinalGracePeriodWarningService
             return 'sent';
         }
 
-        $reason = $service->lastFailureReason() ?? "PhilSMS delivery result: {$delivery}.";
+        $reason = $service->lastFailureReason() ?? "Semaphore delivery result: {$delivery}.";
         if (in_array($delivery, ['skipped_invalid_phone', 'skipped_no_phone'], true)) {
             $warning->forceFill(['status' => 'invalid', 'failure_reason' => $reason])->save();
             return 'invalid';
@@ -307,7 +307,7 @@ class FinalGracePeriodWarningService
     private function recipientFor(Customer $customer, string $channel): ?string
     {
         if ($channel === FinalGracePeriodWarning::CHANNEL_SMS) {
-            return app(PhilSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
+            return app(SemaphoreSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
         }
 
         $email = trim((string) $customer->email);
@@ -319,14 +319,14 @@ class FinalGracePeriodWarningService
         if ($recipient === null || $recipient === '') return false;
 
         return $channel === FinalGracePeriodWarning::CHANNEL_SMS
-            ? app(PhilSmsService::class)->normalisePhilippineMobile($recipient) !== null
+            ? app(SemaphoreSmsService::class)->normalisePhilippineMobile($recipient) !== null
             : filter_var($recipient, FILTER_VALIDATE_EMAIL) !== false;
     }
 
     private function smsEnabled(): bool
     {
         return (bool) Setting::get('billing.sms_reminder_enabled', true)
-            && app(PhilSmsService::class)->isConfigured();
+            && app(SemaphoreSmsService::class)->isConfigured();
     }
 
     private function markSkipped(FinalGracePeriodWarning $warning, string $reason): void
@@ -336,8 +336,8 @@ class FinalGracePeriodWarningService
 
     private function isTemporarySmsFailure(string $reason): bool
     {
-        return str_starts_with($reason, 'Network request to PhilSMS failed:')
-            || preg_match('/PhilSMS returned HTTP (429|500|502|503|504)\\b/', $reason) === 1;
+        return str_starts_with($reason, 'Network request to Semaphore failed:')
+            || preg_match('/Semaphore returned HTTP (429|500|502|503|504)\\b/', $reason) === 1;
     }
 
     private function isClearlyInvalidEmailFailure(string $reason): bool

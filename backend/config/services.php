@@ -41,17 +41,14 @@ return [
         ],
     ],
 
-    // Transactional SMS is sent through PhilSMS only when an application flow
+    // Transactional SMS is sent through Semaphore only when an application flow
     // explicitly requests it. Daily billing reminders remain Web Push only.
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
-        'philsms_api_token' => env('PHILSMS_API_TOKEN'),
-        // PhilSMS's documented default sender ID. Set PHILSMS_SENDER_ID to a
-        // registered custom brand only after PhilSMS has approved it.
-        'philsms_sender_id' => env('PHILSMS_SENDER_ID', 'PhilSMS'),
-        // PhilSMS's current dashboard documentation uses this host. Keeping it
-        // configurable supports a future provider-host change without a code edit.
-        'philsms_base_url' => env('PHILSMS_BASE_URL', 'https://dashboard.philsms.com/api/v3'),
+        'semaphore_api_key' => env('SEMAPHORE_API_KEY'),
+        // Optional. When blank, Semaphore uses the account's registered default.
+        'semaphore_sender_name' => env('SEMAPHORE_SENDER_NAME'),
+        'semaphore_base_url' => env('SEMAPHORE_BASE_URL', 'https://api.semaphore.co/api/v4'),
     ],
 
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.

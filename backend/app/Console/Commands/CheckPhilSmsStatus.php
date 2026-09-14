@@ -2,31 +2,31 @@
 
 namespace App\Console\Commands;
 
-use App\Services\PhilSmsService;
+use App\Services\SemaphoreSmsService;
 use Illuminate\Console\Command;
 
 class CheckPhilSmsStatus extends Command
 {
-    protected $signature = 'sms:philsms-status';
+    protected $signature = 'sms:semaphore-status';
 
-    protected $description = 'Read the PhilSMS account balance without sending an SMS or changing application data';
+    protected $description = 'Read the Semaphore account balance without sending an SMS or changing application data';
 
-    public function handle(PhilSmsService $philSms): int
+    public function handle(SemaphoreSmsService $sms): int
     {
-        $result = $philSms->balance();
+        $result = $sms->balance();
 
         if ($result['status'] === 'available') {
-            $this->info('PhilSMS authentication: connected');
+            $this->info('Semaphore authentication: connected');
             $this->line('SMS units: ' . json_encode($result['data'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;
         }
 
         if ($result['status'] === 'not_configured') {
-            $this->error('PhilSMS is not configured. Set SMS_DRIVER=philsms, PHILSMS_API_TOKEN, and PHILSMS_SENDER_ID in deploy/.env.');
+            $this->error('Semaphore is not configured. Set SMS_DRIVER=semaphore and SEMAPHORE_API_KEY in deploy/.env.');
         } else {
-            $this->error('PhilSMS authentication: failed');
-            $this->error('Reason: ' . ($philSms->lastFailureReason() ?? 'Unknown provider error.'));
+            $this->error('Semaphore authentication: failed');
+            $this->error('Reason: ' . ($sms->lastFailureReason() ?? 'Unknown provider error.'));
         }
 
         return self::FAILURE;

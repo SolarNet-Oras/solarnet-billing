@@ -25,7 +25,7 @@ class SendTicketCreatedSms implements ShouldQueue
     public function handle(TicketCreatedSmsService $notifications): void
     {
         if ($notifications->deliver($this->ticketId) === 'failed') {
-            throw new RuntimeException('PhilSMS did not accept the ticket-created SMS; retrying once.');
+            throw new RuntimeException('Semaphore did not accept the ticket-created SMS; retrying once.');
         }
     }
 }

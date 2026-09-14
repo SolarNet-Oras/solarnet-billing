@@ -7,7 +7,7 @@ use App\Models\Customer;
 use App\Models\Router;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
-use App\Services\PhilSmsService;
+use App\Services\SemaphoreSmsService;
 use App\Services\Ai\OpenAiClient;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -52,7 +52,7 @@ class SmsAdvisoryController extends Controller
         ]]);
     }
 
-    public function preview(Request $request, PhilSmsService $sms): JsonResponse
+    public function preview(Request $request, SemaphoreSmsService $sms): JsonResponse
     {
         $data = $this->validated($request, false);
         $routerId = $data['router_id'] ?? null;
@@ -103,10 +103,10 @@ class SmsAdvisoryController extends Controller
         return response()->json(['data' => ['message' => mb_substr($draft, 0, 459)]]);
     }
 
-    public function send(Request $request, PhilSmsService $sms): JsonResponse
+    public function send(Request $request, SemaphoreSmsService $sms): JsonResponse
     {
         $data = $this->validated($request, true);
-        abort_unless($sms->isConfigured(), 422, 'PhilSMS is not configured. No advisory was queued.');
+        abort_unless($sms->isConfigured(), 422, 'Semaphore is not configured. No advisory was queued.');
         $routerId = $data['router_id'] ?? null;
         $recipients = $this->recipients($data['recipient_filter'], $routerId, $sms);
         abort_if($recipients->isEmpty(), 422, 'No customer with a valid Philippine mobile number matched this filter.');
@@ -160,7 +160,7 @@ class SmsAdvisoryController extends Controller
             ->when($routerId, fn (Builder $query) => $query->where('router_id', $routerId));
     }
 
-    private function recipients(string $filter, ?string $routerId, PhilSmsService $sms)
+    private function recipients(string $filter, ?string $routerId, SemaphoreSmsService $sms)
     {
         return $this->query($filter, $routerId)->get(['id', 'full_name', 'contact_number'])
             ->map(fn (Customer $customer) => ['customer' => $customer, 'recipient' => $sms->normalisePhilippineMobile((string) $customer->contact_number)])

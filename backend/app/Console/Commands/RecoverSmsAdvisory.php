@@ -68,7 +68,8 @@ class RecoverSmsAdvisory extends Command
 
         foreach ($claimedIds as $index => $id) {
             try {
-                SendSmsAdvisoryRecipient::dispatch($id)->delay(now()->addSeconds(intdiv($index, 5)));
+                // Semaphore's regular messages endpoint allows 120 requests/minute.
+                SendSmsAdvisoryRecipient::dispatch($id)->delay(now()->addSeconds(intdiv($index, 2)));
             } catch (\Throwable $e) {
                 $campaign->recipients()->whereKey($id)->where('status', 'redispatched')->update([
                     'status' => 'queued',

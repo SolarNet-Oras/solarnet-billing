@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
-use App\Services\PhilSmsService;
+use App\Services\SemaphoreSmsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,7 +23,7 @@ class SendSmsAdvisoryRecipient implements ShouldQueue
 
     public function __construct(public string $recipientId) {}
 
-    public function handle(PhilSmsService $sms): void
+    public function handle(SemaphoreSmsService $sms): void
     {
         $claimed = SmsAdvisoryRecipient::query()
             ->whereKey($this->recipientId)

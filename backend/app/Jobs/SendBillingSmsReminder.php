@@ -17,7 +17,7 @@ class SendBillingSmsReminder implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     // First attempt plus one automatic retry. A provider response is recorded
-    // as sent only by BillingSmsReminderService after PhilSMS accepts it.
+    // as sent only by BillingSmsReminderService after Semaphore accepts it.
     public int $tries = 2;
     public array $backoff = [60];
     public int $timeout = 30;
@@ -30,7 +30,7 @@ class SendBillingSmsReminder implements ShouldQueue
     {
         $result = $reminders->deliver($this->notificationId);
         if (in_array($result, ['retry', 'failed'], true)) {
-            throw new RuntimeException('PhilSMS did not accept the billing SMS; retrying once.');
+            throw new RuntimeException('Semaphore did not accept the billing SMS; retrying once.');
         }
     }
 

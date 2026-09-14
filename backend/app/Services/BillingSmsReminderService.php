@@ -36,7 +36,7 @@ class BillingSmsReminderService
             return 'skipped_not_due';
         }
 
-        $phone = app(PhilSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
+        $phone = app(SemaphoreSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
         $portalUrl = $this->portalUrl();
         $outstanding = $this->customerOutstanding($customer);
         if ($phone === null || $portalUrl === null || $outstanding <= 0) {
@@ -77,7 +77,7 @@ class BillingSmsReminderService
             return 'skipped';
         }
 
-        $phone = app(PhilSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
+        $phone = app(SemaphoreSmsService::class)->normalisePhilippineMobile((string) $customer->contact_number);
         $portalUrl = $this->portalUrl();
         $outstanding = $this->customerOutstanding($customer);
         if ($phone === null) {
@@ -105,7 +105,7 @@ class BillingSmsReminderService
             'failure_reason' => null,
         ])->save();
 
-        $service = app(PhilSmsService::class);
+        $service = app(SemaphoreSmsService::class);
         $delivery = $service->send($phone, $this->message($customer, $outstanding, $this->dueDate($invoice), $portalUrl));
 
         if ($delivery === 'sent') {
@@ -118,7 +118,7 @@ class BillingSmsReminderService
             return 'sent';
         }
 
-        $reason = $service->lastFailureReason() ?? "PhilSMS delivery result: {$delivery}.";
+        $reason = $service->lastFailureReason() ?? "Semaphore delivery result: {$delivery}.";
         if (in_array($delivery, ['skipped_invalid_phone', 'skipped_no_phone'], true)) {
             $notification->forceFill(['status' => 'invalid', 'failure_reason' => $reason])->save();
 
@@ -219,7 +219,7 @@ class BillingSmsReminderService
 
     private function isTemporaryFailure(string $reason): bool
     {
-        return str_starts_with($reason, 'Network request to PhilSMS failed:')
-            || preg_match('/PhilSMS returned HTTP (429|500|502|503|504)\b/', $reason) === 1;
+        return str_starts_with($reason, 'Network request to Semaphore failed:')
+            || preg_match('/Semaphore returned HTTP (429|500|502|503|504)\b/', $reason) === 1;
     }
 }

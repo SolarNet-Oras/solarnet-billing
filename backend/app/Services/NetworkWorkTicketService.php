@@ -16,7 +16,7 @@ class NetworkWorkTicketService
     public function __construct(
         protected TicketService $tickets,
         protected TicketWorkflowService $workflow,
-        protected PhilSmsService $sms,
+        protected SemaphoreSmsService $sms,
     ) {}
 
     public function create(array $data, User $actor): Ticket
@@ -25,7 +25,7 @@ class NetworkWorkTicketService
         $recipients = collect();
         if ($data['ticket_type'] === 'maintenance') {
             abort_unless($router, 422, 'Select the affected router for this maintenance ticket.');
-            abort_unless($this->sms->isConfigured(), 422, 'PhilSMS is not configured. No maintenance ticket or advisory was created.');
+            abort_unless($this->sms->isConfigured(), 422, 'Semaphore is not configured. No maintenance ticket or advisory was created.');
             $recipients = Customer::where('router_id', $router->id)
                 ->get(['id', 'contact_number'])
                 ->map(fn (Customer $customer) => [

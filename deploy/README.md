@@ -155,27 +155,25 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
 
 You can also run `php artisan web-push:test` with no account argument to list available account numbers. For `sent`, the selected customer must have already signed in on that device and enabled alerts. `skipped_no_subscription` means no active device subscription exists; `skipped_not_configured` means the VAPID package or environment values are missing.
 
-## Optional PhilSMS transactional SMS
+## Optional Semaphore transactional SMS
 
-SolarNet uses PhilSMS for explicit transactional SMS only. The daily unpaid-invoice reminder remains **Web Push only**; configuring PhilSMS does not create recurring SMS messages.
+SolarNet uses Semaphore for explicit transactional SMS only. The daily unpaid-invoice reminder remains **Web Push only**; configuring Semaphore does not create recurring SMS messages.
 
-Create an API token and register a sender ID in the PhilSMS dashboard, then add these server-side values to `deploy/.env` (never commit or place the token in the frontend):
+Create an API key and optionally register a Sender Name in Semaphore, then add these server-side values to `deploy/.env` (never commit or place the key in the frontend):
 
 ```env
-SMS_DRIVER=philsms
-# Keep the token quoted: PhilSMS tokens commonly contain a | character.
-PHILSMS_API_TOKEN='your-philsms-api-token'
-# Use PhilSMS while a custom Sender ID is awaiting telco approval.
-PHILSMS_SENDER_ID=PhilSMS
-# Required by the current PhilSMS dashboard API documentation.
-PHILSMS_BASE_URL=https://dashboard.philsms.com/api/v3
+SMS_DRIVER=semaphore
+SEMAPHORE_API_KEY='your-semaphore-api-key'
+# Optional: omit this until the custom Sender Name is active in Semaphore.
+SEMAPHORE_SENDER_NAME=SolarNet
+SEMAPHORE_BASE_URL=https://api.semaphore.co/api/v4
 ```
 
-PhilSMS supports Philippine numbers. `PhilSMS` is the provider default sender ID. An alphanumeric custom sender ID, such as `SolarNet`, must be registered and is limited to 11 characters. Restart through the normal deployment command, then send one explicit test to a real mobile number:
+Semaphore supports Philippine numbers and uses the account's default Sender Name when `SEMAPHORE_SENDER_NAME` is omitted. Restart through the normal deployment command, then send one explicit test to a real mobile number:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
-  php artisan sms:philsms-test 09171234567
+  php artisan sms:semaphore-test 09171234567
 ```
 
 The command reports provider acceptance only; it does not alter billing, customer records, or MikroTik.
@@ -184,7 +182,7 @@ To verify the API token and remaining SMS units without sending a message, use:
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env exec -T backend \
-  php artisan sms:philsms-status
+  php artisan sms:semaphore-status
 ```
 
 ## 6. Point MikroTik at the new server

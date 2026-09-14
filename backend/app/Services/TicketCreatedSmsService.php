@@ -57,7 +57,7 @@ class TicketCreatedSmsService
             return 'skipped_no_phone';
         }
 
-        $sms = app(PhilSmsService::class);
+        $sms = app(SemaphoreSmsService::class);
         $result = $sms->send($ticket->customer->contact_number, $this->message($ticket));
 
         Log::log($result === 'sent' ? 'info' : ($result === 'failed' ? 'warning' : 'notice'), 'Ticket-created SMS delivery result', [

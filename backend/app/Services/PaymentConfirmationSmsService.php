@@ -17,7 +17,7 @@ class PaymentConfirmationSmsService
         }
 
         $customer = $payment->customer;
-        $sms = app(PhilSmsService::class);
+        $sms = app(SemaphoreSmsService::class);
         $phone = $sms->normalisePhilippineMobile((string) $customer?->contact_number);
         if (!$customer || $phone === null) {
             $payment->forceFill([
@@ -54,7 +54,7 @@ class PaymentConfirmationSmsService
 
         $payment->forceFill([
             'payment_confirmation_sms_status' => 'failed',
-            'payment_confirmation_sms_failure_reason' => $sms->lastFailureReason() ?? "PhilSMS delivery result: {$result}.",
+            'payment_confirmation_sms_failure_reason' => $sms->lastFailureReason() ?? "Semaphore delivery result: {$result}.",
         ])->save();
         return 'failed';
     }
