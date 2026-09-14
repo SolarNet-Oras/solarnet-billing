@@ -33,7 +33,6 @@
         # These policies tighten browser behavior without blocking SolarNet's
         # same-origin GPS capture, API calls, or PayMongo-hosted checkout.
         Content-Security-Policy "base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://*.paymongo.com; object-src 'none'; upgrade-insecure-requests"
-        Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
         X-Permitted-Cross-Domain-Policies "none"
         -Server
     }
@@ -49,11 +48,13 @@
     @customer_landing path /
     redir @customer_landing /customer/login permanent
     import solarnet_application
+    header Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
 }
 
 # Staff/admin billing application.
 {$ADMIN_DOMAIN} {
     import solarnet_application
+    header Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
 }
 
 # Attendance uses a separate origin so Android never merges its PWA with the
@@ -64,7 +65,7 @@
     import solarnet_application
     # Camera remains disabled on every other SolarNet origin. The dedicated
     # attendance kiosk alone may request its own front camera and location.
-    header >Permissions-Policy "geolocation=(self), camera=(self), microphone=(), payment=(), serial=(), usb=()"
+    header Permissions-Policy "geolocation=(self), camera=(self), microphone=(), payment=(), serial=(), usb=()"
 }
 
 # Preserve historical staff links while moving the former billing hostname to
