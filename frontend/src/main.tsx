@@ -1,7 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
 import AppErrorBoundary from './components/AppErrorBoundary.tsx'
 
 if ('serviceWorker' in navigator) {
@@ -10,10 +9,17 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
-  </StrictMode>,
-)
+const attendance = window.location.hostname.startsWith('attendance.')
+  || window.location.pathname === '/attendance-app'
+  || window.location.pathname.startsWith('/attendance-app/');
+
+async function boot(): Promise<void> {
+  const App = attendance
+    ? (await import('./AttendanceRoot.tsx')).default
+    : (await import('./App.tsx')).default;
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode><AppErrorBoundary><App /></AppErrorBoundary></StrictMode>,
+  );
+}
+
+void boot();
