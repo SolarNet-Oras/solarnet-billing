@@ -54,7 +54,6 @@ const navItems: NavItem[] = [
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'cashier', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
   { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin'] },
-  { name: 'My Attendance', path: '/attendance-app', icon: CalendarClock, roles: ['admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
   { name: 'Financial Monitoring', path: '/financial-monitoring', icon: ChartNoAxesCombined, roles: ['super_admin', 'admin', 'cashier', 'accounting'] },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },

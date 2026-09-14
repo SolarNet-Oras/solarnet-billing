@@ -238,7 +238,7 @@ class SettingsController extends Controller
             'short_name' => 'Attendance',
             'description' => 'Secure employee clock-in and clock-out using SolarNet server time.',
             'start_url' => '/attendance-app',
-            'scope' => '/',
+            'scope' => '/attendance-app',
             'display' => 'standalone',
             'background_color' => '#020817',
             'theme_color' => '#0369a1',
