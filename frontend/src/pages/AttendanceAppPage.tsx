@@ -5,8 +5,10 @@ import api, { getErrorMessage } from '@/services/api';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
+
+declare global { interface Window { __solarnetInstallPrompt?: BeforeInstallPromptEvent; } }
 
 type AttendanceRecord = {
   id: string;
@@ -32,7 +34,7 @@ export default function AttendanceAppPage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(() => window.__solarnetInstallPrompt || null);
   const [clock, setClock] = useState(Date.now());
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
   const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
@@ -57,12 +59,15 @@ export default function AttendanceAppPage(): React.JSX.Element {
     const previousManifest = manifest.href;
     manifest.href = '/api/v1/attendance-app/manifest.webmanifest';
     const onInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPromptEvent); };
+    const onCapturedPrompt = () => setInstallPrompt(window.__solarnetInstallPrompt || null);
     window.addEventListener('beforeinstallprompt', onInstall);
+    window.addEventListener('solarnet:install-prompt-ready', onCapturedPrompt);
     void load();
     const refresh = window.setInterval(() => void load(), 30_000);
     const ticker = window.setInterval(() => setClock(Date.now()), 1_000);
     return () => {
       window.removeEventListener('beforeinstallprompt', onInstall);
+      window.removeEventListener('solarnet:install-prompt-ready', onCapturedPrompt);
       window.clearInterval(refresh);
       window.clearInterval(ticker);
       if (previousManifest) manifest.href = previousManifest;
@@ -94,6 +99,7 @@ export default function AttendanceAppPage(): React.JSX.Element {
     if (!installPrompt) return;
     await installPrompt.prompt();
     await installPrompt.userChoice;
+    window.__solarnetInstallPrompt = undefined;
     setInstallPrompt(null);
   };
 

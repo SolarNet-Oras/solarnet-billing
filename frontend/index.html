@@ -32,8 +32,13 @@
     <script>
       (() => {
         const isStaffDomain = window.location.hostname.startsWith('billing.');
-        if (isStaffDomain) {
-          const manifest = document.getElementById('application-manifest');
+        const isAttendanceApp = window.location.pathname === '/attendance-app'
+          || window.location.pathname.startsWith('/attendance-app/');
+        const manifest = document.getElementById('application-manifest');
+        if (isAttendanceApp) {
+          if (manifest) manifest.setAttribute('href', '/api/v1/attendance-app/manifest.webmanifest');
+          document.title = 'SolarNet Attendance';
+        } else if (isStaffDomain) {
           if (manifest) manifest.setAttribute('href', '/api/v1/admin-app/manifest.webmanifest');
           document.title = 'SolarNet Staff';
         }
