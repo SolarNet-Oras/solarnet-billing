@@ -47,6 +47,7 @@ import PublicServiceMapPage from '@/pages/PublicServiceMapPage';
 import CustomerAboutPage from '@/pages/CustomerAboutPage';
 import StaffAttendancePage from '@/pages/StaffAttendancePage';
 import AttendanceAppPage from '@/pages/AttendanceAppPage';
+import AttendanceInstallPage from '@/pages/AttendanceInstallPage';
 
 // ============================================================================
 // Main App Component
@@ -69,6 +70,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/terms" element={<LegalPage />} />
               <Route path="/data-deletion" element={<LegalPage />} />
               <Route path="/service-map" element={<PublicServiceMapPage />} />
+              <Route path="/attendance-app/install" element={<AttendanceInstallPage />} />
               
               {/* Protected Routes */}
               <Route
