@@ -24,7 +24,7 @@ class StaffAttendanceController extends Controller
             ->where('is_active', true)
             ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'attendance_pin_hash']);
         $records = StaffAttendanceRecord::query()
             ->whereIn('user_id', $users->pluck('id'))
             ->whereDate('work_date', $now->toDateString())
@@ -39,6 +39,7 @@ class StaffAttendanceController extends Controller
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
+                    'pin_configured' => filled($user->attendance_pin_hash),
                     'record' => $record,
                     'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
                 ];
@@ -51,12 +52,18 @@ class StaffAttendanceController extends Controller
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         $data = $request->validate([
             'employee_id' => ['required', 'uuid', 'exists:users,id'],
-            'password' => ['required', 'string', 'max:255'],
+            'credential' => ['required', 'string', 'max:255'],
+            'credential_type' => ['required', Rule::in(['pin', 'password'])],
             'action' => ['required', Rule::in(['clock_in', 'clock_out'])],
         ]);
         $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
         abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
-        abort_unless(Hash::check($data['password'], $employee->password), 422, 'The employee password is incorrect.');
+        $validCredential = $data['credential_type'] === 'pin'
+            ? filled($employee->attendance_pin_hash) && Hash::check($data['credential'], $employee->attendance_pin_hash)
+            : Hash::check($data['credential'], $employee->password);
+        abort_unless($validCredential, 422, $data['credential_type'] === 'pin'
+            ? 'The PIN does not belong to the selected employee.'
+            : 'The employee password is incorrect.');
 
         return $data['action'] === 'clock_in'
             ? $this->recordClockIn($employee)
@@ -93,6 +100,7 @@ class StaffAttendanceController extends Controller
 
             return [
                 'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email,
+                'pin_configured'=>filled($user->attendance_pin_hash),
                 'roles'=>$user->roles->pluck('name')->values(),
                 'records'=>$rows->values(),
                 'compensation'=>$manager ? $profile : null,
@@ -169,5 +177,28 @@ class StaffAttendanceController extends Controller
         ]);
         $profile = StaffCompensation::updateOrCreate(['user_id'=>$user->id], [...$data, 'updated_by'=>$request->user()->id]);
         return response()->json(['message'=>'Salary settings updated.', 'data'=>$profile]);
+    }
+
+    public function updateAttendancePin(Request $request, User $user): JsonResponse
+    {
+        abort_unless($request->user()->hasRole('super_admin'), 403);
+        abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
+
+        $data = $request->validate([
+            'pin' => ['required', 'digits_between:4,8', 'confirmed'],
+            'admin_password' => ['required', 'string', 'max:255'],
+        ]);
+        abort_unless(Hash::check($data['admin_password'], $request->user()->password), 422, 'Your Super Administrator password is incorrect.');
+
+        $duplicate = User::query()
+            ->where('id', '!=', $user->id)
+            ->whereNotNull('attendance_pin_hash')
+            ->get(['id', 'attendance_pin_hash'])
+            ->contains(fn (User $employee): bool => Hash::check($data['pin'], $employee->attendance_pin_hash));
+        abort_if($duplicate, 422, 'This attendance PIN is already assigned to another employee. Choose a unique PIN.');
+
+        $user->forceFill(['attendance_pin_hash' => Hash::make($data['pin'])])->save();
+
+        return response()->json(['message' => 'Attendance PIN updated.', 'data' => ['pin_configured' => true]]);
     }
 }

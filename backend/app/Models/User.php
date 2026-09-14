@@ -29,6 +29,7 @@ class User extends Authenticatable implements JWTSubject
         'password',
         'is_active',
         'last_login_at',
+        'attendance_pin_hash',
     ];
 
     /**
@@ -40,6 +41,7 @@ class User extends Authenticatable implements JWTSubject
         'password',
         'remember_token',
         'profile_photo_path',
+        'attendance_pin_hash',
     ];
 
     protected $appends = ['profile_photo_url'];
