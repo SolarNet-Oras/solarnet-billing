@@ -105,6 +105,7 @@ Route::prefix('v1')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
             Route::put('staff-attendance/{user}/pin', [StaffAttendanceController::class, 'updateAttendancePin'])->middleware('throttle:10,1');
+            Route::get('staff-attendance/records/{attendance}/photo/{type}', [StaffAttendanceController::class, 'photo'])->whereIn('type', ['clock-in','clock-out'])->middleware('throttle:60,1');
         });
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');

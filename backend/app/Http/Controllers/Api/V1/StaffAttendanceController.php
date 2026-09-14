@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\StaffAttendanceRecord;
+use App\Models\StaffAttendancePhotoAudit;
 use App\Models\StaffCompensation;
 use App\Models\StaffLiveLocation;
 use App\Models\User;
@@ -11,7 +12,9 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class StaffAttendanceController extends Controller
@@ -40,7 +43,7 @@ class StaffAttendanceController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'pin_configured' => filled($user->attendance_pin_hash),
-                    'record' => $record,
+                    'record' => $record?->only(['id', 'clocked_in_at', 'clocked_out_at', 'status']),
                     'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
                 ];
             })->values(),
@@ -55,6 +58,11 @@ class StaffAttendanceController extends Controller
             'credential' => ['required', 'string', 'max:255'],
             'credential_type' => ['required', Rule::in(['pin', 'password'])],
             'action' => ['required', Rule::in(['clock_in', 'clock_out'])],
+            'photo' => ['required', 'image', 'mimes:jpeg,jpg,png', 'max:3072'],
+            'photo_consent' => ['accepted'],
+            'face_count' => ['required', 'integer', 'in:1'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
         $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
         abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
@@ -65,9 +73,36 @@ class StaffAttendanceController extends Controller
             ? 'The PIN does not belong to the selected employee.'
             : 'The employee password is incorrect.');
 
-        return $data['action'] === 'clock_in'
-            ? $this->recordClockIn($employee)
-            : $this->recordClockOut($employee);
+        if (config('attendance.require_location')) {
+            abort_unless(isset($data['latitude'], $data['longitude']), 422, 'Location is required for camera attendance.');
+        }
+
+        $cooldown = max(5, (int) config('attendance.scan_cooldown_seconds', 10));
+        $cooldownKey = 'attendance-camera:'.$employee->id.':'.$data['action'];
+        abort_unless(Cache::add($cooldownKey, true, now()->addSeconds($cooldown)), 429, 'Attendance already recorded. Please wait before trying again.');
+
+        $path = $request->file('photo')->store('attendance/'.now()->format('Y/m'), 'local');
+        abort_unless($path, 500, 'The attendance photo could not be stored.');
+        $evidence = [
+            'photo_path' => $path,
+            'photo_captured_at' => now(),
+            'ip_address' => $request->ip(),
+            'device' => mb_substr((string) $request->userAgent(), 0, 500),
+            'latitude' => $data['latitude'] ?? null,
+            'longitude' => $data['longitude'] ?? null,
+        ];
+
+        try {
+            $response = $data['action'] === 'clock_in'
+                ? $this->recordClockIn($employee, $evidence)
+                : $this->recordClockOut($employee, $evidence);
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($path);
+            throw $exception;
+        }
+        if ($response->getStatusCode() >= 400) Storage::disk('local')->delete($path);
+
+        return $response;
     }
 
     public function index(Request $request): JsonResponse
@@ -126,7 +161,7 @@ class StaffAttendanceController extends Controller
         return $this->recordClockIn($request->user());
     }
 
-    private function recordClockIn(User $employee): JsonResponse
+    private function recordClockIn(User $employee, array $evidence = []): JsonResponse
     {
         $now = now('Asia/Manila');
         $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
@@ -135,7 +170,7 @@ class StaffAttendanceController extends Controller
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record = StaffAttendanceRecord::firstOrCreate(
             ['user_id'=>$employee->id, 'work_date'=>$now->toDateString()],
-            ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$location?->latitude, 'clock_in_longitude'=>$location?->longitude]
+            ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_in_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence?'camera_pin':null, 'clock_in_photo_path'=>$evidence['photo_path']??null, 'clock_in_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_in_ip_address'=>$evidence['ip_address']??null, 'clock_in_device'=>$evidence['device']??null]
         );
         if (! $record->wasRecentlyCreated) return response()->json(['message'=>'You are already clocked in today.', 'data'=>$record], 409);
         return response()->json(['message'=>'Clock-in recorded.', 'data'=>$record], 201);
@@ -149,7 +184,7 @@ class StaffAttendanceController extends Controller
         return $this->recordClockOut($request->user());
     }
 
-    private function recordClockOut(User $employee): JsonResponse
+    private function recordClockOut(User $employee, array $evidence = []): JsonResponse
     {
         $now = now('Asia/Manila');
         $record = StaffAttendanceRecord::where('user_id', $employee->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
@@ -159,7 +194,7 @@ class StaffAttendanceController extends Controller
         $scheduledEnd = Carbon::parse($now->toDateString().' '.$profile->scheduled_end, 'Asia/Manila');
         $overtime = max(0, $scheduledEnd->diffInMinutes($now, false));
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
-        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$location?->latitude, 'clock_out_longitude'=>$location?->longitude]);
+        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence?'camera_pin':$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
     }
 
@@ -200,5 +235,14 @@ class StaffAttendanceController extends Controller
         $user->forceFill(['attendance_pin_hash' => Hash::make($data['pin'])])->save();
 
         return response()->json(['message' => 'Attendance PIN updated.', 'data' => ['pin_configured' => true]]);
+    }
+
+    public function photo(Request $request, StaffAttendanceRecord $attendance, string $type)
+    {
+        $path = $type === 'clock-in' ? $attendance->clock_in_photo_path : $attendance->clock_out_photo_path;
+        abort_unless($path && Storage::disk('local')->exists($path), 404, 'Attendance photo not found.');
+        StaffAttendancePhotoAudit::create(['attendance_record_id'=>$attendance->id,'actor_id'=>$request->user()->id,'event'=>'photo_viewed','photo_type'=>$type,'ip_address'=>$request->ip()]);
+
+        return Storage::disk('local')->response($path, null, ['Cache-Control'=>'private, no-store']);
     }
 }

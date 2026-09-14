@@ -101,3 +101,10 @@ Schedule::command('qos:complete-safe-tests')
     ->timezone($tz)
     ->withoutOverlapping()
     ->runInBackground();
+
+// Daily — remove expired private photo evidence while preserving attendance.
+Schedule::command('attendance:cleanup-photos')
+    ->dailyAt('02:30')
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
