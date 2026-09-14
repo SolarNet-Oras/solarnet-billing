@@ -22,8 +22,11 @@ class StaffAttendanceController extends Controller
         $end = $start->copy()->endOfMonth();
         $manager = true;
         $canEditPayroll = true;
-        $users = User::query()->where('is_active', true)->with('roles:id,name')->orderBy('name');
-        if (! $manager) $users->whereKey($request->user()->id);
+        $users = User::query()
+            ->where('is_active', true)
+            ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
+            ->with('roles:id,name')
+            ->orderBy('name');
         $users = $users->get();
         $records = StaffAttendanceRecord::query()->whereIn('user_id', $users->pluck('id'))->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])->orderByDesc('work_date')->get()->groupBy('user_id');
         $profiles = StaffCompensation::query()->whereIn('user_id', $users->pluck('id'))->get()->keyBy('user_id');
@@ -60,6 +63,8 @@ class StaffAttendanceController extends Controller
 
     public function clockIn(Request $request): JsonResponse
     {
+        abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
+
         $now = now('Asia/Manila');
         $profile = StaffCompensation::firstOrCreate(['user_id'=>$request->user()->id]);
         $scheduled = Carbon::parse($now->toDateString().' '.$profile->scheduled_start, 'Asia/Manila')->addMinutes($profile->grace_minutes);
@@ -75,6 +80,8 @@ class StaffAttendanceController extends Controller
 
     public function clockOut(Request $request): JsonResponse
     {
+        abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
+
         $now = now('Asia/Manila');
         $record = StaffAttendanceRecord::where('user_id', $request->user()->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
         if ($record->clocked_out_at) return response()->json(['message'=>'You are already clocked out today.', 'data'=>$record], 409);
@@ -90,6 +97,8 @@ class StaffAttendanceController extends Controller
     public function updateCompensation(Request $request, User $user): JsonResponse
     {
         abort_unless($request->user()->hasRole('super_admin'), 403);
+        abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
+
         $data = $request->validate([
             'monthly_salary'=>'required|numeric|min:0|max:10000000', 'daily_rate'=>'required|numeric|min:0|max:1000000',
             'monthly_allowance'=>'required|numeric|min:0|max:1000000', 'monthly_deduction'=>'required|numeric|min:0|max:1000000',
