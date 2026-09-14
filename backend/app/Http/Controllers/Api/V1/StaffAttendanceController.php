@@ -23,7 +23,6 @@ class StaffAttendanceController extends Controller
         $users = User::query()
             ->where('is_active', true)
             ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
-            ->with('roles:id,name')
             ->orderBy('name')
             ->get(['id', 'name']);
         $records = StaffAttendanceRecord::query()
@@ -40,7 +39,6 @@ class StaffAttendanceController extends Controller
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
-                    'roles' => $user->roles->pluck('name')->values(),
                     'record' => $record,
                     'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
                 ];

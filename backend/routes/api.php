@@ -60,6 +60,11 @@ Route::prefix('v1')->group(function () {
     // It contains branding and a staff login start URL, never staff data.
     Route::get('/admin-app/manifest.webmanifest', [SettingsController::class, 'publicAdminManifest']);
     Route::get('/attendance-app/manifest.webmanifest', [SettingsController::class, 'publicAttendanceManifest']);
+    // The dedicated attendance device does not hold a Super Administrator
+    // session. Every punch is still authenticated with the employee's own
+    // password and aggressively rate-limited.
+    Route::get('/staff-attendance/kiosk', [StaffAttendanceController::class, 'kiosk'])->middleware('throttle:60,1');
+    Route::post('/staff-attendance/kiosk/punch', [StaffAttendanceController::class, 'kioskPunch'])->middleware('throttle:10,1');
 
     // Meta calls these endpoints directly. Signature validation is mandatory
     // for events; staff OAuth remains bound to a short-lived server-side state.
@@ -99,8 +104,6 @@ Route::prefix('v1')->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
-            Route::get('staff-attendance/kiosk', [StaffAttendanceController::class, 'kiosk']);
-            Route::post('staff-attendance/kiosk/punch', [StaffAttendanceController::class, 'kioskPunch'])->middleware('throttle:10,1');
         });
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
