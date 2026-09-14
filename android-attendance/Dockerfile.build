@@ -1,0 +1,23 @@
+FROM eclipse-temurin:17-jdk
+
+ARG ANDROID_COMMAND_LINE_TOOLS=11076708
+ARG GRADLE_VERSION=8.10.2
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH=/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/android-sdk/cmdline-tools /opt/gradle \
+    && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_COMMAND_LINE_TOOLS}_latest.zip" -o /tmp/android-tools.zip \
+    && unzip -q /tmp/android-tools.zip -d /tmp/android-tools \
+    && mv /tmp/android-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
+    && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
+    && unzip -q /tmp/gradle.zip -d /opt \
+    && mv "/opt/gradle-${GRADLE_VERSION}"/* /opt/gradle/ \
+    && yes | sdkmanager --licenses >/dev/null \
+    && sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" \
+    && rm -rf /tmp/android-tools /tmp/android-tools.zip /tmp/gradle.zip
+
+WORKDIR /workspace/android-attendance
+CMD ["sh", "-lc", "gradle --no-daemon clean assembleRelease && cp app/build/outputs/apk/release/app-release.apk /output/solarnet-attendance.apk"]
