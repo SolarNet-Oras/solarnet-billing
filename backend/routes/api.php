@@ -99,11 +99,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
-        });
-        Route::middleware('role:admin|cashier|office_admin|collector|technician|noc|accounting|viewer')->group(function () {
-            Route::get('staff-attendance/me', [StaffAttendanceController::class, 'myStatus']);
-            Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn'])->middleware('throttle:10,1');
-            Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut'])->middleware('throttle:10,1');
+            Route::get('staff-attendance/kiosk', [StaffAttendanceController::class, 'kiosk']);
+            Route::post('staff-attendance/kiosk/punch', [StaffAttendanceController::class, 'kioskPunch'])->middleware('throttle:10,1');
         });
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');

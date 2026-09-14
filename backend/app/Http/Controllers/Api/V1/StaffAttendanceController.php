@@ -10,27 +10,59 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class StaffAttendanceController extends Controller
 {
-    public function myStatus(Request $request): JsonResponse
+    public function kiosk(Request $request): JsonResponse
     {
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
-        abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
-
         $now = now('Asia/Manila');
-        $record = StaffAttendanceRecord::query()
-            ->where('user_id', $request->user()->id)
+        $users = User::query()
+            ->where('is_active', true)
+            ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
+            ->with('roles:id,name')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+        $records = StaffAttendanceRecord::query()
+            ->whereIn('user_id', $users->pluck('id'))
             ->whereDate('work_date', $now->toDateString())
-            ->first();
+            ->get()
+            ->keyBy('user_id');
 
         return response()->json(['data' => [
             'server_time' => $now->toIso8601String(),
             'timezone' => 'Asia/Manila',
-            'record' => $record,
-            'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
+            'employees' => $users->map(function (User $user) use ($records): array {
+                $record = $records->get($user->id);
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'roles' => $user->roles->pluck('name')->values(),
+                    'record' => $record,
+                    'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
+                ];
+            })->values(),
         ]]);
+    }
+
+    public function kioskPunch(Request $request): JsonResponse
+    {
+        abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
+        $data = $request->validate([
+            'employee_id' => ['required', 'uuid', 'exists:users,id'],
+            'password' => ['required', 'string', 'max:255'],
+            'action' => ['required', Rule::in(['clock_in', 'clock_out'])],
+        ]);
+        $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
+        abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
+        abort_unless(Hash::check($data['password'], $employee->password), 422, 'The employee password is incorrect.');
+
+        return $data['action'] === 'clock_in'
+            ? $this->recordClockIn($employee)
+            : $this->recordClockOut($employee);
     }
 
     public function index(Request $request): JsonResponse
@@ -85,13 +117,18 @@ class StaffAttendanceController extends Controller
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
 
+        return $this->recordClockIn($request->user());
+    }
+
+    private function recordClockIn(User $employee): JsonResponse
+    {
         $now = now('Asia/Manila');
-        $profile = StaffCompensation::firstOrCreate(['user_id'=>$request->user()->id]);
+        $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
         $scheduled = Carbon::parse($now->toDateString().' '.$profile->scheduled_start, 'Asia/Manila')->addMinutes($profile->grace_minutes);
         $late = max(0, $scheduled->diffInMinutes($now, false));
-        $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $request->user()->id)->first() : null;
+        $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record = StaffAttendanceRecord::firstOrCreate(
-            ['user_id'=>$request->user()->id, 'work_date'=>$now->toDateString()],
+            ['user_id'=>$employee->id, 'work_date'=>$now->toDateString()],
             ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$location?->latitude, 'clock_in_longitude'=>$location?->longitude]
         );
         if (! $record->wasRecentlyCreated) return response()->json(['message'=>'You are already clocked in today.', 'data'=>$record], 409);
@@ -103,14 +140,19 @@ class StaffAttendanceController extends Controller
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
 
+        return $this->recordClockOut($request->user());
+    }
+
+    private function recordClockOut(User $employee): JsonResponse
+    {
         $now = now('Asia/Manila');
-        $record = StaffAttendanceRecord::where('user_id', $request->user()->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
+        $record = StaffAttendanceRecord::where('user_id', $employee->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
         if ($record->clocked_out_at) return response()->json(['message'=>'You are already clocked out today.', 'data'=>$record], 409);
-        $profile = StaffCompensation::firstOrCreate(['user_id'=>$request->user()->id]);
+        $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
         $worked = max(0, $record->clocked_in_at->diffInMinutes(now(), false));
         $scheduledEnd = Carbon::parse($now->toDateString().' '.$profile->scheduled_end, 'Asia/Manila');
         $overtime = max(0, $scheduledEnd->diffInMinutes($now, false));
-        $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $request->user()->id)->first() : null;
+        $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$location?->latitude, 'clock_out_longitude'=>$location?->longitude]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
     }

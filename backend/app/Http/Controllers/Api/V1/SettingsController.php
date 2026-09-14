@@ -236,7 +236,7 @@ class SettingsController extends Controller
             'id' => '/attendance-app',
             'name' => Setting::get('company.name', 'Solarnet Internet').' Attendance',
             'short_name' => 'SolarNet Time',
-            'description' => 'Dedicated employee time-in and time-out application.',
+            'description' => 'Dedicated attendance kiosk for an authorized Super Administrator device.',
             'start_url' => '/attendance-app/',
             'scope' => '/attendance-app/',
             'display' => 'standalone',

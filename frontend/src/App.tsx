@@ -187,8 +187,8 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/wireguard" element={<ProtectedRoute allowedRoles={['super_admin']}><WireguardPage /></ProtectedRoute>} />
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
               <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
-              <Route path="/attendance-app" element={<ProtectedRoute allowedRoles={['admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><AttendanceAppPage /></ProtectedRoute>} />
-              <Route path="/attendance-app/" element={<ProtectedRoute allowedRoles={['admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><AttendanceAppPage /></ProtectedRoute>} />
+              <Route path="/attendance-app" element={<ProtectedRoute allowedRoles={['super_admin']}><AttendanceAppPage /></ProtectedRoute>} />
+              <Route path="/attendance-app/" element={<ProtectedRoute allowedRoles={['super_admin']}><AttendanceAppPage /></ProtectedRoute>} />
               <Route path="/install-staff-app" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><StaffAppInstallPage /></ProtectedRoute>} />
               <Route
                 path="/tickets"
