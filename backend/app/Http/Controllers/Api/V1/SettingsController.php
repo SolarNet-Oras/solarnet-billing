@@ -242,7 +242,7 @@ class SettingsController extends Controller
             'display' => 'standalone',
             'background_color' => '#020817',
             'theme_color' => '#0369a1',
-            'icons' => $this->applicationIcons(),
+            'icons' => $this->attendanceApplicationIcons(),
         ])->header('Content-Type', 'application/manifest+json')
           ->header('Cache-Control', 'no-store, max-age=0');
     }
@@ -262,6 +262,15 @@ class SettingsController extends Controller
         return [
             ['src' => '/solarnet-company-logo-192.png?v=20260907-official', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
             ['src' => '/solarnet-company-logo-512.png?v=20260907-official', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+        ];
+    }
+
+    /** Dedicated attendance artwork; never reused by Staff or Customer PWAs. */
+    private function attendanceApplicationIcons(): array
+    {
+        return [
+            ['src' => '/solarnet-attendance-icon-192.png?v=20260914-attendance', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/solarnet-attendance-icon-512.png?v=20260914-attendance', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
         ];
     }
 

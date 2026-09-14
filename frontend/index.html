@@ -51,6 +51,13 @@
           || window.location.pathname.startsWith('/attendance-app/');
         if (isAttendanceApp) {
           document.title = 'SolarNet Attendance';
+          const touchIcon = document.getElementById('company-apple-touch-icon');
+          if (touchIcon) touchIcon.setAttribute('href', '/solarnet-attendance-icon-192.png?v=20260914-attendance');
+          const favicon = document.getElementById('company-favicon');
+          if (favicon) {
+            favicon.setAttribute('type', 'image/png');
+            favicon.setAttribute('href', '/solarnet-attendance-icon-192.png?v=20260914-attendance');
+          }
         } else if (isStaffDomain) {
           document.title = 'SolarNet Staff';
         }
