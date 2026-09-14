@@ -1,8 +1,9 @@
-const CACHE_NAME = 'solarnet-application-shell-v8-customer-dashboard-fix';
+const CACHE_NAME = 'solarnet-application-shell-v9-attendance-app';
 const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
 const APP_SHELL = [
   '/',
   '/login',
+  '/attendance-app',
   '/customer/login',
   OFFICIAL_NOTIFICATION_ICON,
   '/solarnet-company-logo-512.png?v=20260907-official',

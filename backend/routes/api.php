@@ -59,6 +59,7 @@ Route::prefix('v1')->group(function () {
     // Public only because browsers fetch manifests without an API token.
     // It contains branding and a staff login start URL, never staff data.
     Route::get('/admin-app/manifest.webmanifest', [SettingsController::class, 'publicAdminManifest']);
+    Route::get('/attendance-app/manifest.webmanifest', [SettingsController::class, 'publicAttendanceManifest']);
 
     // Meta calls these endpoints directly. Signature validation is mandatory
     // for events; staff OAuth remains bound to a short-lived server-side state.
@@ -97,9 +98,12 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:api', 'active.staff'])->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
-            Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn']);
-            Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut']);
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
+        });
+        Route::middleware('role:admin|cashier|office_admin|collector|technician|noc|accounting|viewer')->group(function () {
+            Route::get('staff-attendance/me', [StaffAttendanceController::class, 'myStatus']);
+            Route::post('staff-attendance/clock-in', [StaffAttendanceController::class, 'clockIn'])->middleware('throttle:10,1');
+            Route::post('staff-attendance/clock-out', [StaffAttendanceController::class, 'clockOut'])->middleware('throttle:10,1');
         });
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');

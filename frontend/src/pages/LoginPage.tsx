@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import customerPortalService from '@/services/customerPortalService';
 
@@ -7,6 +7,7 @@ const REMEMBERED_STAFF_EMAIL_KEY = 'solarnet-remembered-staff-email';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '' });
   
@@ -45,7 +46,13 @@ const LoginPage: React.FC = () => {
       if (rememberSignIn) window.localStorage.setItem(REMEMBERED_STAFF_EMAIL_KEY, formData.email.trim().toLowerCase());
       else window.localStorage.removeItem(REMEMBERED_STAFF_EMAIL_KEY);
       const isCollector = signedInUser.role === 'collector' || signedInUser.roles?.some((role) => typeof role === 'string' ? role === 'collector' : role.name === 'collector');
-      navigate(isCollector ? '/remittances' : '/dashboard');
+      const requestedReturn = (location.state as { returnTo?: unknown } | null)?.returnTo;
+      const safeReturn = typeof requestedReturn === 'string'
+        && requestedReturn.startsWith('/')
+        && !requestedReturn.startsWith('//')
+        ? requestedReturn
+        : null;
+      navigate(safeReturn || (isCollector ? '/remittances' : '/dashboard'), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {

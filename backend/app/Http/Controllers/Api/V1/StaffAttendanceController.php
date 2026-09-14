@@ -14,6 +14,25 @@ use Illuminate\Support\Facades\Schema;
 
 class StaffAttendanceController extends Controller
 {
+    public function myStatus(Request $request): JsonResponse
+    {
+        abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
+        abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
+
+        $now = now('Asia/Manila');
+        $record = StaffAttendanceRecord::query()
+            ->where('user_id', $request->user()->id)
+            ->whereDate('work_date', $now->toDateString())
+            ->first();
+
+        return response()->json(['data' => [
+            'server_time' => $now->toIso8601String(),
+            'timezone' => 'Asia/Manila',
+            'record' => $record,
+            'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
+        ]]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
@@ -63,6 +82,7 @@ class StaffAttendanceController extends Controller
 
     public function clockIn(Request $request): JsonResponse
     {
+        abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
 
         $now = now('Asia/Manila');
@@ -80,6 +100,7 @@ class StaffAttendanceController extends Controller
 
     public function clockOut(Request $request): JsonResponse
     {
+        abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         abort_if($request->user()->hasRole('super_admin'), 403, 'Super Administrators are not included in attendance or payroll.');
 
         $now = now('Asia/Manila');

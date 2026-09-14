@@ -229,6 +229,24 @@ class SettingsController extends Controller
           ->header('Cache-Control', 'no-store, max-age=0');
     }
 
+    /** Minimal installable application for employee attendance only. */
+    public function publicAttendanceManifest(): JsonResponse
+    {
+        return response()->json([
+            'id' => '/attendance-app',
+            'name' => Setting::get('company.name', 'Solarnet Internet').' Attendance',
+            'short_name' => 'Attendance',
+            'description' => 'Secure employee clock-in and clock-out using SolarNet server time.',
+            'start_url' => '/attendance-app',
+            'scope' => '/',
+            'display' => 'standalone',
+            'background_color' => '#020817',
+            'theme_color' => '#0369a1',
+            'icons' => $this->applicationIcons(),
+        ])->header('Content-Type', 'application/manifest+json')
+          ->header('Cache-Control', 'no-store, max-age=0');
+    }
+
     /** Keep uploaded branding on the domain currently serving the app. */
     private function publicLogoUrl(): string
     {
