@@ -29,7 +29,8 @@
     </script>
     <script>
       (() => {
-        const attendance = window.location.pathname === '/attendance-app'
+        const attendance = window.location.hostname.startsWith('attendance.')
+          || window.location.pathname === '/attendance-app'
           || window.location.pathname.startsWith('/attendance-app/');
         const staff = window.location.hostname.startsWith('billing.');
         const manifest = document.createElement('link');
@@ -47,7 +48,8 @@
     <script>
       (() => {
         const isStaffDomain = window.location.hostname.startsWith('billing.');
-        const isAttendanceApp = window.location.pathname === '/attendance-app'
+        const isAttendanceApp = window.location.hostname.startsWith('attendance.')
+          || window.location.pathname === '/attendance-app'
           || window.location.pathname.startsWith('/attendance-app/');
         if (isAttendanceApp) {
           document.title = 'SolarNet Attendance';

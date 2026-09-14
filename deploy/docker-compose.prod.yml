@@ -36,6 +36,7 @@ services:
     environment:
       CUSTOMER_DOMAIN: ${CUSTOMER_DOMAIN}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      ATTENDANCE_DOMAIN: ${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
       LEGACY_ADMIN_DOMAIN: ${LEGACY_ADMIN_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
     networks: [edge]
@@ -48,6 +49,7 @@ services:
       args:
         # Empty in production: the SPA calls /api on the host it was opened on.
         VITE_API_URL: ""
+        VITE_ATTENDANCE_URL: https://${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
     restart: unless-stopped
     networks: [edge]
 
@@ -88,8 +90,8 @@ services:
       CACHE_STORE: redis
       SESSION_DRIVER: redis
       QUEUE_CONNECTION: redis
-      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN},https://${CUSTOMER_DOMAIN}
-      SANCTUM_STATEFUL_DOMAINS: ${ADMIN_DOMAIN},${CUSTOMER_DOMAIN}
+      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN},https://${CUSTOMER_DOMAIN},https://${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
+      SANCTUM_STATEFUL_DOMAINS: ${ADMIN_DOMAIN},${CUSTOMER_DOMAIN},${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
       SESSION_DOMAIN: ""
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: lax

@@ -45,6 +45,7 @@ Edit `.env` and set:
 |---|---|
 | `CUSTOMER_DOMAIN` | Customer portal hostname, e.g. `solarnetportal.com` |
 | `ADMIN_DOMAIN` | Staff billing hostname, e.g. `billing.solarnetportal.com` |
+| `ATTENDANCE_DOMAIN` | Dedicated attendance PWA hostname, e.g. `attendance.solarnetportal.com` |
 | `LEGACY_ADMIN_DOMAIN` | Existing billing hostname to redirect, e.g. `billing.solarnetconnection.com` |
 | `ACME_EMAIL` | Your email (for Let's Encrypt) |
 | `DB_PASSWORD` | `openssl rand -base64 32` |
@@ -66,6 +67,7 @@ the same VPS IPv4 address and wait for public DNS to resolve them:
 ```text
 solarnetportal.com             A   <VPS_IPV4>
 billing.solarnetportal.com     A   <VPS_IPV4>
+attendance.solarnetportal.com  A   <VPS_IPV4>
 billing.solarnetconnection.com A   <VPS_IPV4>   # keep during the redirect
 ```
 

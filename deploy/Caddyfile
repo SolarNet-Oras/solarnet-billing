@@ -56,6 +56,14 @@
     import solarnet_application
 }
 
+# Attendance uses a separate origin so Android never merges its PWA with the
+# Staff application, whose legacy manifest owns the billing-domain root scope.
+{$ATTENDANCE_DOMAIN} {
+    @attendance_landing path /
+    redir @attendance_landing /attendance-app/install permanent
+    import solarnet_application
+}
+
 # Preserve historical staff links while moving the former billing hostname to
 # the new permanent billing address. Caddy issues its own certificate first.
 {$LEGACY_ADMIN_DOMAIN} {

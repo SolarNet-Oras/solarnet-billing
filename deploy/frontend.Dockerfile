@@ -3,6 +3,8 @@ FROM node:20-alpine AS builder
 
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
+ARG VITE_ATTENDANCE_URL
+ENV VITE_ATTENDANCE_URL=${VITE_ATTENDANCE_URL}
 
 WORKDIR /app
 COPY frontend/package.json frontend/yarn.lock* frontend/package-lock.json* ./

@@ -9,6 +9,7 @@ interface BeforeInstallPromptEvent extends Event {
 declare global { interface Window { __solarnetInstallPrompt?: BeforeInstallPromptEvent; } }
 
 export default function AttendanceInstallPage(): React.JSX.Element {
+  const attendanceHost = new URL(import.meta.env.VITE_ATTENDANCE_URL || 'https://attendance.solarnetportal.com').host;
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(() => window.__solarnetInstallPrompt || null);
   const [installed, setInstalled] = useState(() => window.localStorage.getItem('solarnet-attendance-pwa-installed-v1') === 'yes');
   const [help, setHelp] = useState(false);
@@ -51,7 +52,7 @@ export default function AttendanceInstallPage(): React.JSX.Element {
       <div className="mt-5 space-y-3 text-sm text-slate-200"><p className="flex gap-2"><Smartphone className="mt-0.5 h-5 w-5 text-sky-300"/>Designed for a designated shared attendance device—not employee phones.</p><p className="flex gap-2"><ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-300"/>A Super Administrator authorizes the kiosk; each employee confirms a punch with their own password.</p></div>
       {installed ? <div className="mt-6 flex items-center justify-center gap-2 rounded-xl bg-emerald-500/15 px-5 py-4 font-semibold text-emerald-200"><CheckCircle2 className="h-5 w-5"/>Attendance app installed</div> : <button onClick={() => void install()} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 py-4 font-bold text-slate-950 hover:bg-sky-300"><Download className="h-5 w-5"/>Install Attendance App</button>}
       {standaloneContainer && !installed && <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100"><strong>This is the SolarNet Staff app window, not the Attendance app.</strong> Open this installer in Chrome or Safari first, then install it to create a separate SolarNet Time icon.</div>}
-      {isAndroid && standaloneContainer && !installed && <a href="intent://billing.solarnetportal.com/attendance-app/install#Intent;scheme=https;package=com.android.chrome;end" className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-sky-300/30 px-4 py-3 font-semibold text-sky-100">Open installer in Chrome</a>}
+      {isAndroid && standaloneContainer && !installed && <a href={`intent://${attendanceHost}/attendance-app/install#Intent;scheme=https;package=com.android.chrome;end`} className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-sky-300/30 px-4 py-3 font-semibold text-sky-100">Open installer in Chrome</a>}
       {(help || isIos) && !installed && <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-slate-300">{isIos ? <><Share2 className="mr-1 inline h-4 w-4"/>Open this link in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</> : <>Open this page in Chrome’s normal browser window, then choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. If an old Attendance shortcut exists, remove it first and reload this page.</>}</div>}
       <a href="/attendance-app" className="mt-5 block text-center text-sm font-semibold text-sky-300 hover:text-sky-200">Open attendance without installing</a>
     </section>
