@@ -15,22 +15,30 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\Rule;
 
 class SmsAdvisoryController extends Controller
 {
     public function index(): JsonResponse
     {
+        $queueIsEmpty = Queue::size('default') === 0;
         $campaigns = SmsAdvisoryCampaign::with('creator:id,name')
             ->withCount(['recipients as queued_count' => fn ($query) => $query->where('status', 'queued')])
             ->latest()->limit(30)->get()
-            ->each(function (SmsAdvisoryCampaign $campaign): void {
+            ->each(function (SmsAdvisoryCampaign $campaign) use ($queueIsEmpty): void {
                 $campaign->setAttribute('pending_count', max(0,
                     (int) $campaign->recipient_count
                     - (int) $campaign->sent_count
                     - (int) $campaign->failed_count
                     - (int) $campaign->skipped_count
                 ));
+                $campaign->setAttribute('recoverable_count', $queueIsEmpty
+                    ? $campaign->recipients()
+                        ->where('status', 'redispatched')
+                        ->where('updated_at', '<=', now()->subMinutes(5))
+                        ->count()
+                    : 0);
             });
 
         return response()->json(['data' => $campaigns]);
@@ -152,10 +160,10 @@ class SmsAdvisoryController extends Controller
         ]);
 
         $pending = $campaign->recipients()->where('status', 'queued')->count();
-        abort_if($pending === 0, 422, 'No safely queued recipient remains. Sent, sending, failed, and skipped records were not changed.');
-
-        $dispatched = $outbox->dispatchQueued($campaign, 1000);
-        abort_if($dispatched === 0, 409, 'The pending recipients were already claimed by another request or the scheduler. Refresh delivery history.');
+        $dispatched = $pending > 0
+            ? $outbox->dispatchQueued($campaign, 1000)
+            : $outbox->recoverMissingJobs($campaign, 1000);
+        abort_if($dispatched === 0, 409, 'Nothing was safely recoverable. The queue may contain active jobs, a provider call may be running, or another request already claimed these recipients. Refresh delivery history.');
 
         return response()->json([
             'message' => "{$dispatched} pending recipient(s) were safely redispatched. Already sent recipients were excluded.",

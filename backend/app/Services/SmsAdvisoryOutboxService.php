@@ -6,9 +6,43 @@ use App\Jobs\SendSmsAdvisoryRecipient;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 class SmsAdvisoryOutboxService
 {
+    public function recoverMissingJobs(SmsAdvisoryCampaign $campaign, int $limit = 1000): int
+    {
+        // A redispatched row normally has a corresponding ready, delayed, or
+        // reserved Redis job. Only reclaim when the entire default queue is
+        // empty and this campaign has no job actively making a provider call.
+        if (Queue::size('default') !== 0) return 0;
+        if ($campaign->recipients()->where('status', 'sending')->exists()) return 0;
+
+        $staleIds = $campaign->recipients()
+            ->where('status', 'redispatched')
+            ->where('updated_at', '<=', now()->subMinutes(5))
+            ->oldest('updated_at')
+            ->limit(min(1000, max(1, $limit)))
+            ->pluck('id');
+
+        if ($staleIds->isEmpty()) return 0;
+
+        DB::transaction(function () use ($campaign, $staleIds): void {
+            SmsAdvisoryRecipient::query()
+                ->where('campaign_id', $campaign->id)
+                ->whereIn('id', $staleIds)
+                ->where('status', 'redispatched')
+                ->where('updated_at', '<=', now()->subMinutes(5))
+                ->update([
+                    'status' => 'queued',
+                    'failure_reason' => 'Recovered after the Redis queue was verified empty.',
+                    'updated_at' => now(),
+                ]);
+        });
+
+        return $this->dispatchQueued($campaign, $limit);
+    }
+
     /**
      * Claim and queue only recipients that are still durably queued.
      * The atomic status transition prevents repeated clicks from duplicating SMS.
