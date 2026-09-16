@@ -234,7 +234,7 @@ export default function OperationsMapPage(): React.JSX.Element {
   const roles = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canManageAssets = ['super_admin', 'admin', 'technician', 'noc'].some((role) => roles.includes(role));
   const isFieldStaff = ['collector', 'technician'].some((role) => roles.includes(role));
-  const canViewStaff = ['super_admin', 'admin'].some((role) => roles.includes(role));
+  const canViewStaff = ['super_admin', 'admin', 'office_admin'].some((role) => roles.includes(role));
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);

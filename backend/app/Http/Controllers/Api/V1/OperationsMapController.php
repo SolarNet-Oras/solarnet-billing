@@ -25,7 +25,7 @@ class OperationsMapController extends Controller
     {
         $data = $operationsMap->snapshot();
         $canViewStaff = Schema::hasTable('staff_live_locations')
-            && $request->user()->hasAnyRole(['super_admin', 'admin']);
+            && $request->user()->hasAnyRole(['super_admin', 'admin', 'office_admin']);
 
         if (! $canViewStaff) {
             $data['staff_locations'] = [];
