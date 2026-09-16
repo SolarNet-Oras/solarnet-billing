@@ -418,6 +418,7 @@ Route::prefix('v1')->group(function () {
             Route::post('compose', [SmsAdvisoryController::class, 'compose'])->middleware('throttle:6,1');
             Route::post('preview', [SmsAdvisoryController::class, 'preview'])->middleware('throttle:20,1');
             Route::post('send', [SmsAdvisoryController::class, 'send'])->middleware('throttle:3,10');
+            Route::post('{campaign}/force-dispatch', [SmsAdvisoryController::class, 'forceDispatch'])->middleware('throttle:3,10');
         });
 
         // Operations Map reads saved GPS points and the latest stored DHCP

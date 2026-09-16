@@ -8,6 +8,7 @@ use App\Models\Router;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
 use App\Services\SemaphoreSmsService;
+use App\Services\SmsAdvisoryOutboxService;
 use App\Services\Ai\OpenAiClient;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,7 @@ class SmsAdvisoryController extends Controller
     public function index(): JsonResponse
     {
         $campaigns = SmsAdvisoryCampaign::with('creator:id,name')
+            ->withCount(['recipients as queued_count' => fn ($query) => $query->where('status', 'queued')])
             ->latest()->limit(30)->get()
             ->each(function (SmsAdvisoryCampaign $campaign): void {
                 $campaign->setAttribute('pending_count', max(0,
@@ -103,7 +105,7 @@ class SmsAdvisoryController extends Controller
         return response()->json(['data' => ['message' => mb_substr($draft, 0, 459)]]);
     }
 
-    public function send(Request $request, SemaphoreSmsService $sms): JsonResponse
+    public function send(Request $request, SemaphoreSmsService $sms, SmsAdvisoryOutboxService $outbox): JsonResponse
     {
         $data = $this->validated($request, true);
         abort_unless($sms->isConfigured(), 422, 'Semaphore is not configured. No advisory was queued.');
@@ -135,9 +137,29 @@ class SmsAdvisoryController extends Controller
             return $campaign;
         });
 
+        $dispatched = $outbox->dispatchQueued($campaign, 1000);
+
         return response()->json([
-            'message' => "Advisory safely staged for {$campaign->recipient_count} verified recipient(s). Delivery starts within one minute.",
-            'data' => $campaign,
+            'message' => "Advisory queued for {$campaign->recipient_count} verified recipient(s); {$dispatched} delivery job(s) started immediately.",
+            'data' => $campaign->fresh(),
+        ], 202);
+    }
+
+    public function forceDispatch(Request $request, SmsAdvisoryCampaign $campaign, SmsAdvisoryOutboxService $outbox): JsonResponse
+    {
+        $request->validate([
+            'confirmation' => ['required', Rule::in(['FORCE SEND PENDING SMS'])],
+        ]);
+
+        $pending = $campaign->recipients()->where('status', 'queued')->count();
+        abort_if($pending === 0, 422, 'No safely queued recipient remains. Sent, sending, failed, and skipped records were not changed.');
+
+        $dispatched = $outbox->dispatchQueued($campaign, 1000);
+        abort_if($dispatched === 0, 409, 'The pending recipients were already claimed by another request or the scheduler. Refresh delivery history.');
+
+        return response()->json([
+            'message' => "{$dispatched} pending recipient(s) were safely redispatched. Already sent recipients were excluded.",
+            'data' => $campaign->fresh(),
         ], 202);
     }
 

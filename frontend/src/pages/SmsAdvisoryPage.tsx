@@ -32,6 +32,7 @@ type Campaign = {
   failed_count: number;
   skipped_count: number;
   pending_count: number;
+  queued_count: number;
   created_at: string;
   creator?: { name: string };
 };
@@ -68,6 +69,7 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
     tone: "empathetic",
   });
   const [aiBusy, setAiBusy] = useState(false);
+  const [forceBusyId, setForceBusyId] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -195,6 +197,27 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const forceDispatch = async (campaign: Campaign): Promise<void> => {
+    if (!window.confirm(`Force send ${campaign.pending_count} pending recipient(s) for “${campaign.title}”? Already sent recipients will be excluded.`)) return;
+    setForceBusyId(campaign.id);
+    setError("");
+    setMessage("");
+    try {
+      const response = await api.post(`/sms-advisories/${campaign.id}/force-dispatch`, {
+        confirmation: "FORCE SEND PENDING SMS",
+      });
+      setMessage(response.data.message);
+      await load();
+    } catch (requestError: unknown) {
+      const e = requestError as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+      setError(e.response?.data?.errors
+        ? Object.values(e.response.data.errors).flat().join(" ")
+        : e.response?.data?.message || "Pending SMS could not be redispatched.");
+    } finally {
+      setForceBusyId(null);
     }
   };
 
@@ -534,6 +557,20 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
                     Skipped {campaign.skipped_count}
                   </span>
                 </div>
+                {campaign.queued_count > 0 && (
+                  <div className="mt-3 border-t border-border pt-3">
+                    <button
+                      type="button"
+                      disabled={forceBusyId !== null}
+                      onClick={() => void forceDispatch(campaign)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-500 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-500/10 disabled:opacity-50 dark:text-blue-300"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${forceBusyId === campaign.id ? "animate-spin" : ""}`} />
+                      {forceBusyId === campaign.id ? "Redispatching…" : `Force resend pending (${campaign.queued_count})`}
+                    </button>
+                    <p className="mt-1 text-xs text-muted-foreground">Only recipients still safely marked pending are claimed. Previously sent numbers are never selected.</p>
+                  </div>
+                )}
               </article>
             ))}
             {!campaigns.length && (
