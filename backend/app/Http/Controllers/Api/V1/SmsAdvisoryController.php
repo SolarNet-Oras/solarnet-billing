@@ -22,7 +22,17 @@ class SmsAdvisoryController extends Controller
 {
     public function index(): JsonResponse
     {
-        $queueIsEmpty = Queue::size('default') === 0;
+        // Campaign history is stored in PostgreSQL and must remain available
+        // even when Redis is restarting. Queue health only affects whether the
+        // UI may offer a safe recovery action for a stale claim.
+        $queueIsEmpty = false;
+        try {
+            $queueIsEmpty = Queue::size('default') === 0;
+        } catch (\Throwable $exception) {
+            Log::warning('SMS advisory queue status unavailable while loading history', [
+                'error' => $exception->getMessage(),
+            ]);
+        }
         $campaigns = SmsAdvisoryCampaign::with('creator:id,name')
             ->withCount(['recipients as queued_count' => fn ($query) => $query->where('status', 'queued')])
             ->latest()->limit(30)->get()

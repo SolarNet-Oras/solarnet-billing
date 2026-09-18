@@ -73,16 +73,16 @@ export default function SmsAdvisoryPage(): React.JSX.Element {
   const [forceBusyId, setForceBusyId] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
-    try {
-      const [history, options] = await Promise.all([
-        api.get("/sms-advisories"),
-        api.get("/sms-advisories/options"),
-      ]);
-      setCampaigns(history.data.data || []);
-      setRouters(options.data.data?.routers || []);
-    } catch {
-      setError("Could not load SMS advisory history.");
-    }
+    const [history, options] = await Promise.allSettled([
+      api.get("/sms-advisories"),
+      api.get("/sms-advisories/options"),
+    ]);
+
+    if (history.status === "fulfilled") setCampaigns(history.value.data.data || []);
+    if (options.status === "fulfilled") setRouters(options.value.data.data?.routers || []);
+
+    if (history.status === "rejected") setError("Could not load SMS advisory history. Refresh after checking the backend logs.");
+    else if (options.status === "rejected") setError("Advisory history loaded, but router recipient options are temporarily unavailable.");
   }, []);
   useEffect(() => {
     void load();
