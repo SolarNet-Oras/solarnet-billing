@@ -35,6 +35,7 @@ class IpIntelligenceServiceTest extends TestCase
         $result = app(IpIntelligenceService::class)->lookup('8.8.8.8');
 
         $this->assertSame('AS15169', $result['asn']);
+        $this->assertSame('Google LLC', $result['as_name']);
         $this->assertSame('Google', $result['isp']);
         $this->assertTrue($result['hosting']);
         $this->assertSame('hosting', $result['classification']);

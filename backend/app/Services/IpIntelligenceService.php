@@ -31,6 +31,7 @@ class IpIntelligenceService
                 'ip' => (string) ($response->json('ip') ?? $ip),
                 'ip_type' => $response->json('type'),
                 'asn' => isset($connection['asn']) ? 'AS'.ltrim((string) $connection['asn'], 'ASas') : null,
+                'as_name' => $connection['org'] ?? $connection['isp'] ?? null,
                 'isp' => $connection['isp'] ?? null,
                 'organization' => $connection['org'] ?? null,
                 'domain' => $connection['domain'] ?? null,
