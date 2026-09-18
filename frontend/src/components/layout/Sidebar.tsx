@@ -27,6 +27,7 @@ import {
   Wifi,
   Waypoints,
   Download,
+  Globe2,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ const navItems: NavItem[] = [
   { name: 'RADIUS / IPoE', path: '/radius-ipoe', icon: Radio, roles: ['super_admin', 'admin'] },
   { name: 'WireGuard', path: '/wireguard', icon: Waypoints, roles: ['super_admin'] },
   { name: 'Device Controller', path: '/employee-device-controller', icon: MonitorSmartphone, roles: ['super_admin'] },
+  { name: 'IP / ASN Lookup', path: '/ip-intelligence', icon: Globe2, roles: ['super_admin'] },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Users', path: '/users', icon: Users, roles: ['super_admin'] },
   { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },

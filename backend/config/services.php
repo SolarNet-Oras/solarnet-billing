@@ -51,6 +51,10 @@ return [
         'semaphore_base_url' => env('SEMAPHORE_BASE_URL', 'https://api.semaphore.co/api/v4'),
     ],
 
+    'ip_intelligence' => [
+        'base_url' => env('IP_INTELLIGENCE_BASE_URL', 'https://ipwho.is'),
+    ],
+
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.
       'paymongo' => [
          'secret_key' => env('PAYMONGO_SECRET_KEY'),

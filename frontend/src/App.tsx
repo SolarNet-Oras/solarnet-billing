@@ -48,6 +48,7 @@ import CustomerAboutPage from '@/pages/CustomerAboutPage';
 import StaffAttendancePage from '@/pages/StaffAttendancePage';
 import AttendanceAppPage from '@/pages/AttendanceAppPage';
 import AttendanceInstallPage from '@/pages/AttendanceInstallPage';
+import IpIntelligencePage from '@/pages/IpIntelligencePage';
 
 // ============================================================================
 // Main App Component
@@ -186,6 +187,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/radius-ipoe" element={<ProtectedRoute allowedRoles={['super_admin', 'admin']}><RadiusIpOePage /></ProtectedRoute>} />
               <Route path="/wireguard" element={<ProtectedRoute allowedRoles={['super_admin']}><WireguardPage /></ProtectedRoute>} />
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
+              <Route path="/ip-intelligence" element={<ProtectedRoute allowedRoles={['super_admin']}><IpIntelligencePage /></ProtectedRoute>} />
               <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
               <Route path="/attendance-app" element={<AttendanceAppPage />} />
               <Route path="/attendance-app/" element={<AttendanceAppPage />} />
