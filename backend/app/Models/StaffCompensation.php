@@ -12,7 +12,7 @@ class StaffCompensation extends Model
 
     protected $table = 'staff_compensations';
 
-    protected $fillable = ['user_id', 'job_title', 'employment_status', 'hire_date', 'employee_address', 'monthly_salary', 'daily_rate', 'monthly_allowance', 'monthly_deduction', 'sss_deduction', 'philhealth_deduction', 'pagibig_deduction', 'cash_advance_deduction', 'work_days_per_month', 'scheduled_start', 'scheduled_end', 'grace_minutes', 'overtime_multiplier', 'updated_by'];
-    protected $casts = ['hire_date'=>'date', 'monthly_salary'=>'float', 'daily_rate'=>'float', 'monthly_allowance'=>'float', 'monthly_deduction'=>'float', 'sss_deduction'=>'float', 'philhealth_deduction'=>'float', 'pagibig_deduction'=>'float', 'cash_advance_deduction'=>'float', 'work_days_per_month'=>'integer', 'grace_minutes'=>'integer', 'overtime_multiplier'=>'float'];
+    protected $fillable = ['user_id', 'job_title', 'employment_status', 'hire_date', 'employee_address', 'monthly_salary', 'daily_rate', 'monthly_allowance', 'monthly_deduction', 'sss_enabled', 'philhealth_enabled', 'pagibig_enabled', 'cash_advance_deduction', 'work_days_per_month', 'scheduled_start', 'scheduled_end', 'grace_minutes', 'overtime_multiplier', 'updated_by'];
+    protected $casts = ['hire_date'=>'date', 'monthly_salary'=>'float', 'daily_rate'=>'float', 'monthly_allowance'=>'float', 'monthly_deduction'=>'float', 'sss_enabled'=>'boolean', 'philhealth_enabled'=>'boolean', 'pagibig_enabled'=>'boolean', 'cash_advance_deduction'=>'float', 'work_days_per_month'=>'integer', 'grace_minutes'=>'integer', 'overtime_multiplier'=>'float'];
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
 }

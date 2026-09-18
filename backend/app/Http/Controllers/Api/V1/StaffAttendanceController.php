@@ -8,6 +8,7 @@ use App\Models\StaffAttendancePhotoAudit;
 use App\Models\StaffCompensation;
 use App\Models\StaffLiveLocation;
 use App\Models\User;
+use App\Services\PhilippinePayrollContributionService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -120,9 +121,15 @@ class StaffAttendanceController extends Controller
             ->orderBy('name');
         $users = $users->get();
         $records = StaffAttendanceRecord::query()->whereIn('user_id', $users->pluck('id'))->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])->orderByDesc('work_date')->get()->groupBy('user_id');
+        $todayRecords = StaffAttendanceRecord::query()
+            ->whereIn('user_id', $users->pluck('id'))
+            ->whereDate('work_date', now('Asia/Manila')->toDateString())
+            ->get()
+            ->keyBy('user_id');
         $profiles = StaffCompensation::query()->whereIn('user_id', $users->pluck('id'))->get()->keyBy('user_id');
 
-        $employees = $users->map(function (User $user) use ($records, $profiles, $manager): array {
+        $contributionService = app(PhilippinePayrollContributionService::class);
+        $employees = $users->map(function (User $user) use ($records, $todayRecords, $profiles, $manager, $contributionService): array {
             $rows = $records->get($user->id, collect());
             $profile = $profiles->get($user->id);
             $daily = (float) ($profile?->daily_rate ?: (($profile?->monthly_salary ?? 0) / max(1, $profile?->work_days_per_month ?? 26)));
@@ -131,21 +138,26 @@ class StaffAttendanceController extends Controller
             $late = ($daily / 480) * $rows->sum('late_minutes');
             $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($rows->sum('overtime_minutes') / 60);
             $allowance = (float) ($profile?->monthly_allowance ?? 0);
-            $sss = (float) ($profile?->sss_deduction ?? 0);
-            $philhealth = (float) ($profile?->philhealth_deduction ?? 0);
-            $pagibig = (float) ($profile?->pagibig_deduction ?? 0);
+            $government = $contributionService->employeeShares((float) ($profile?->monthly_salary ?? 0));
+            $sss = $profile?->sss_enabled ? $government['sss'] : 0;
+            $philhealth = $profile?->philhealth_enabled ? $government['philhealth'] : 0;
+            $pagibig = $profile?->pagibig_enabled ? $government['pagibig'] : 0;
             $cashAdvance = (float) ($profile?->cash_advance_deduction ?? 0);
             $otherDeductions = (float) ($profile?->monthly_deduction ?? 0);
             $deductions = $otherDeductions + $sss + $philhealth + $pagibig + $cashAdvance + $late;
 
             return [
                 'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email, 'phone'=>$user->phone,
+                'profile_photo_url'=>$user->profile_photo_url,
                 'pin_configured'=>filled($user->attendance_pin_hash),
                 'roles'=>$user->roles->pluck('name')->values(),
                 'records'=>$rows->values(),
+                'today_record'=>$todayRecords->get($user->id),
                 'compensation'=>$manager ? $profile : null,
                 'summary'=>[
-                    'present_days'=>$presentDays, 'late_days'=>$rows->where('late_minutes', '>', 0)->count(),
+                    'present_days'=>$presentDays, 'absent_days'=>$rows->where('status', 'absent')->count(),
+                    'leave_days'=>$rows->where('status', 'leave')->count(),
+                    'late_days'=>$rows->where('late_minutes', '>', 0)->count(),
                     'late_minutes'=>$rows->sum('late_minutes'), 'worked_hours'=>round($rows->sum('worked_minutes') / 60, 2),
                     'overtime_hours'=>round($rows->sum('overtime_minutes') / 60, 2),
                     'base_pay'=>round($base, 2), 'overtime_pay'=>round($overtime, 2),
@@ -153,7 +165,9 @@ class StaffAttendanceController extends Controller
                     'sss_deduction'=>round($sss, 2), 'philhealth_deduction'=>round($philhealth, 2),
                     'pagibig_deduction'=>round($pagibig, 2), 'cash_advance_deduction'=>round($cashAdvance, 2),
                     'other_deductions'=>round($otherDeductions, 2), 'deductions'=>round($deductions, 2),
+                    'gross_pay'=>round($base + $overtime + $allowance, 2),
                     'net_pay'=>round(max(0, $base + $overtime + $allowance - $deductions), 2),
+                    'government_rule_version'=>$government['rule_version'],
                 ],
             ];
         });
@@ -218,8 +232,8 @@ class StaffAttendanceController extends Controller
             'hire_date'=>'nullable|date', 'employee_address'=>'nullable|string|max:1000',
             'monthly_salary'=>'required|numeric|min:0|max:10000000', 'daily_rate'=>'required|numeric|min:0|max:1000000',
             'monthly_allowance'=>'required|numeric|min:0|max:1000000', 'monthly_deduction'=>'required|numeric|min:0|max:1000000',
-            'sss_deduction'=>'required|numeric|min:0|max:1000000', 'philhealth_deduction'=>'required|numeric|min:0|max:1000000',
-            'pagibig_deduction'=>'required|numeric|min:0|max:1000000', 'cash_advance_deduction'=>'required|numeric|min:0|max:1000000',
+            'sss_enabled'=>'required|boolean', 'philhealth_enabled'=>'required|boolean',
+            'pagibig_enabled'=>'required|boolean', 'cash_advance_deduction'=>'required|numeric|min:0|max:1000000',
             'work_days_per_month'=>'required|integer|min:1|max:31', 'scheduled_start'=>'required|date_format:H:i',
             'scheduled_end'=>'required|date_format:H:i|after:scheduled_start', 'grace_minutes'=>'required|integer|min:0|max:180',
             'overtime_multiplier'=>'required|numeric|min:1|max:5',
