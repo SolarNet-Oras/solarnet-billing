@@ -52,7 +52,8 @@ return [
     ],
 
     'ip_intelligence' => [
-        'base_url' => env('IP_INTELLIGENCE_BASE_URL', 'https://ipwho.is'),
+        'base_url' => env('IPINFO_BASE_URL', 'https://api.ipinfo.io/lite'),
+        'token' => env('IPINFO_TOKEN'),
     ],
 
     // Server-side only. Never expose PAYMONGO_SECRET_KEY to the frontend.

@@ -16,29 +16,31 @@ class IpIntelligenceServiceTest extends TestCase
         Cache::flush();
     }
 
-    public function test_it_normalizes_network_and_hosting_intelligence(): void
+    public function test_it_normalizes_ipinfo_lite_ownership_data_without_exposing_the_token(): void
     {
-        Http::fake(['https://ipwho.is/*' => Http::response([
-            'success' => true,
+        config()->set('services.ip_intelligence.base_url', 'https://api.ipinfo.io/lite');
+        config()->set('services.ip_intelligence.token', 'test-token');
+        Http::fake(['https://api.ipinfo.io/lite/*' => Http::response([
             'ip' => '8.8.8.8',
-            'type' => 'IPv4',
-            'country' => 'United States',
+            'asn' => 'AS15169',
+            'as_name' => 'Google LLC',
+            'as_domain' => 'google.com',
             'country_code' => 'US',
-            'region' => 'California',
-            'city' => 'Mountain View',
-            'latitude' => 37.4,
-            'longitude' => -122.1,
-            'connection' => ['asn' => 15169, 'isp' => 'Google', 'org' => 'Google LLC', 'domain' => 'google.com', 'type' => 'Hosting'],
-            'security' => ['hosting' => true, 'proxy' => false, 'vpn' => false, 'tor' => false, 'anonymous' => false],
+            'country' => 'United States',
+            'continent_code' => 'NA',
+            'continent' => 'North America',
         ], 200)]);
 
         $result = app(IpIntelligenceService::class)->lookup('8.8.8.8');
 
         $this->assertSame('AS15169', $result['asn']);
         $this->assertSame('Google LLC', $result['as_name']);
-        $this->assertSame('Google', $result['isp']);
-        $this->assertTrue($result['hosting']);
-        $this->assertSame('hosting', $result['classification']);
+        $this->assertSame('google.com', $result['domain']);
+        $this->assertSame('North America', $result['continent']);
+        $this->assertNull($result['hosting']);
+        $this->assertSame('unavailable', $result['classification']);
+        $this->assertArrayNotHasKey('token', $result);
+        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer test-token'));
     }
 
     public function test_private_addresses_are_never_sent_to_provider(): void
