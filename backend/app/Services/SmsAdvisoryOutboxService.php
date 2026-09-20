@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Queue;
 
 class SmsAdvisoryOutboxService
 {
-    public function recoverMissingJobs(SmsAdvisoryCampaign $campaign, int $limit = 1000): int
+    public function recoverMissingJobs(SmsAdvisoryCampaign $campaign, int $limit = 1000, bool $immediate = false): int
     {
         // A redispatched row normally has a corresponding ready, delayed, or
         // reserved Redis job. Only reclaim when the entire default queue is
@@ -20,7 +20,7 @@ class SmsAdvisoryOutboxService
 
         $staleIds = $campaign->recipients()
             ->where('status', 'redispatched')
-            ->where('updated_at', '<=', now()->subMinutes(5))
+            ->when(! $immediate, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
             ->oldest('updated_at')
             ->limit(min(1000, max(1, $limit)))
             ->pluck('id');
@@ -32,10 +32,12 @@ class SmsAdvisoryOutboxService
                 ->where('campaign_id', $campaign->id)
                 ->whereIn('id', $staleIds)
                 ->where('status', 'redispatched')
-                ->where('updated_at', '<=', now()->subMinutes(5))
+                ->when(! $immediate, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
                 ->update([
                     'status' => 'queued',
-                    'failure_reason' => 'Recovered after the Redis queue was verified empty.',
+                    'failure_reason' => $immediate
+                        ? 'Recovered by an explicitly authorized dashboard action after safety checks passed.'
+                        : 'Recovered after the Redis queue was verified empty.',
                     'updated_at' => now(),
                 ]);
         });

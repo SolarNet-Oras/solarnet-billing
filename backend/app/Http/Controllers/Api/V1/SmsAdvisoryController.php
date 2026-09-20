@@ -46,7 +46,6 @@ class SmsAdvisoryController extends Controller
                 $campaign->setAttribute('recoverable_count', $queueIsEmpty
                     ? $campaign->recipients()
                         ->where('status', 'redispatched')
-                        ->where('updated_at', '<=', now()->subMinutes(5))
                         ->count()
                     : 0);
             });
@@ -173,12 +172,15 @@ class SmsAdvisoryController extends Controller
 
         $pending = $campaign->recipients()->where('status', 'queued')->count();
         $dispatched = $pending > 0
-            ? $outbox->dispatchQueued($campaign, 1000)
-            : $outbox->recoverMissingJobs($campaign, 1000);
+            ? $outbox->dispatchQueued($campaign, 20)
+            : $outbox->recoverMissingJobs($campaign, 20, true);
+        if ($dispatched === 0 && $campaign->recipients()->where('status', 'redispatched')->exists()) {
+            $dispatched = $outbox->recoverMissingJobs($campaign, 20, true);
+        }
         abort_if($dispatched === 0, 409, 'Nothing was safely recoverable. The queue may contain active jobs, a provider call may be running, or another request already claimed these recipients. Refresh delivery history.');
 
         return response()->json([
-            'message' => "{$dispatched} pending recipient(s) were safely redispatched. Already sent recipients were excluded.",
+            'message' => "{$dispatched} pending recipient(s) were safely processed. Already sent recipients were excluded.",
             'data' => $campaign->fresh(),
         ], 202);
     }
