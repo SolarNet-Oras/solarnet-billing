@@ -108,3 +108,11 @@ Schedule::command('attendance:cleanup-photos')
     ->timezone($tz)
     ->withoutOverlapping()
     ->runInBackground();
+
+// 12:00 Asia/Manila daily; the command processes only a valid payday: the
+// 15th, or the 30th (the last calendar day when February is shorter).
+Schedule::command('payroll:process-scheduled')
+    ->dailyAt('12:00')
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();

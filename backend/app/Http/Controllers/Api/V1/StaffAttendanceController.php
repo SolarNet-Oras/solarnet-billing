@@ -7,6 +7,7 @@ use App\Models\StaffAttendanceRecord;
 use App\Models\StaffAttendancePhotoAudit;
 use App\Models\StaffCompensation;
 use App\Models\StaffLiveLocation;
+use App\Models\StaffPayrollDisbursement;
 use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use Carbon\Carbon;
@@ -172,7 +173,25 @@ class StaffAttendanceController extends Controller
             ];
         });
 
-        return response()->json(['data'=>['month'=>$month, 'can_manage_payroll'=>$canEditPayroll, 'employees'=>$employees]]);
+        $payrollRuns = Schema::hasTable('staff_payroll_disbursements')
+            ? StaffPayrollDisbursement::with('user:id,name,email')
+                ->whereBetween('pay_date', [$start->toDateString(), $end->toDateString()])
+                ->orderByDesc('pay_date')->orderBy('created_at')->get()
+            : collect();
+
+        return response()->json(['data'=>[
+            'month'=>$month,
+            'can_manage_payroll'=>$canEditPayroll,
+            'payroll_policy'=>[
+                'first_cutoff'=>'21st of previous month through 4th',
+                'first_release'=>'15th at 12:00 PM',
+                'second_cutoff'=>'5th through 20th',
+                'second_release'=>'30th at 12:00 PM (last day for short months)',
+                'timezone'=>'Asia/Manila',
+            ],
+            'payroll_runs'=>$payrollRuns,
+            'employees'=>$employees,
+        ]]);
     }
 
     public function clockIn(Request $request): JsonResponse
