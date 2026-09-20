@@ -11,6 +11,7 @@ use App\Models\StaffPayrollDisbursement;
 use App\Models\InstallationIncentivePool;
 use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
+use App\Services\StaffProfilePhotoService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -294,6 +295,14 @@ class StaffAttendanceController extends Controller
         $user->forceFill(['attendance_pin_hash' => Hash::make($data['pin'])])->save();
 
         return response()->json(['message' => 'Attendance PIN updated.', 'data' => ['pin_configured' => true]]);
+    }
+
+    public function updateReferencePhoto(Request $request, User $user, StaffProfilePhotoService $photos): JsonResponse
+    {
+        abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
+        $request->validate(['photo'=>['required','image','mimes:jpeg,jpg,png,webp','max:4096','dimensions:min_width=128,min_height=128']]);
+        $updated=$photos->replace($user,$request->file('photo'));
+        return response()->json(['message'=>'Attendance reference/profile photo updated.','data'=>['profile_photo_url'=>$updated->profile_photo_url]]);
     }
 
     public function photo(Request $request, StaffAttendanceRecord $attendance, string $type)

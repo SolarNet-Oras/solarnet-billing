@@ -42,6 +42,7 @@ import InvoiceQuickPayPage from '@/pages/InvoiceQuickPayPage';
 import StaffPasswordResetPage from '@/pages/StaffPasswordResetPage';
 import StaffSignupPage from '@/pages/StaffSignupPage';
 import StaffProfilePage from '@/pages/StaffProfilePage';
+import StaffLeavePage from '@/pages/StaffLeavePage';
 import EmployeeDeviceControllerPage from '@/pages/EmployeeDeviceControllerPage';
 import PublicServiceMapPage from '@/pages/PublicServiceMapPage';
 import CustomerAboutPage from '@/pages/CustomerAboutPage';
@@ -189,6 +190,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
               <Route path="/ip-intelligence" element={<ProtectedRoute allowedRoles={['super_admin']}><IpIntelligencePage /></ProtectedRoute>} />
               <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
+              <Route path="/staff-leave" element={<ProtectedRoute><StaffLeavePage /></ProtectedRoute>} />
               <Route path="/attendance-app" element={<AttendanceAppPage />} />
               <Route path="/attendance-app/" element={<AttendanceAppPage />} />
               <Route path="/install-staff-app" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer']}><StaffAppInstallPage /></ProtectedRoute>} />

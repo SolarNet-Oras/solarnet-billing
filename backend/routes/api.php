@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WireguardController;
 use App\Http\Controllers\Api\V1\EmployeeDeviceController;
 use App\Http\Controllers\Api\V1\StaffAttendanceController;
+use App\Http\Controllers\Api\V1\StaffLeaveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -108,7 +109,11 @@ Route::prefix('v1')->group(function () {
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
             Route::put('staff-attendance/{user}/pin', [StaffAttendanceController::class, 'updateAttendancePin'])->middleware('throttle:10,1');
             Route::get('staff-attendance/records/{attendance}/photo/{type}', [StaffAttendanceController::class, 'photo'])->whereIn('type', ['clock-in','clock-out'])->middleware('throttle:60,1');
+            Route::post('staff-attendance/{user}/reference-photo', [StaffAttendanceController::class, 'updateReferencePhoto'])->middleware('throttle:10,1');
+            Route::patch('staff-leave/{leave}/review', [StaffLeaveController::class, 'review']);
         });
+        Route::get('staff-leave', [StaffLeaveController::class, 'index']);
+        Route::post('staff-leave', [StaffLeaveController::class, 'store'])->middleware('throttle:10,1');
         // Dashboard routes
         Route::get('dashboard/metrics', [DashboardController::class, 'metrics'])->middleware('permission:view-dashboard');
         Route::get('dashboard/client-monitor', [DashboardController::class, 'clientMonitor'])->middleware('permission:view-dashboard');
