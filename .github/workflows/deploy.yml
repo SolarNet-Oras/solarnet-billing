@@ -19,16 +19,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
 
           script: |
-            cd /opt/solarnet-billing
-
-            git fetch origin
-            git reset --hard origin/main
-            git clean -fd
-
-            cd deploy
-
-            docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-
-            docker compose -f docker-compose.prod.yml --env-file .env exec -T backend php artisan migrate --force || true
-
-            docker compose -f docker-compose.prod.yml --env-file .env exec -T backend php artisan optimize:clear || true
+            set -e
+            cd /var/www/solarnet-billing
+            git pull --ff-only origin main
+            RUN_SEEDERS=0 bash deploy/deploy.sh

@@ -177,9 +177,30 @@ echo "==> Restarting PHP services to load the deployed source"
 # therefore required after every deploy; otherwise they can serve old PHP.
 $COMPOSE up -d --force-recreate backend worker cron
 
+echo "==> Restarting the backend proxy with the new PHP container address"
+# Docker may assign a new IP whenever the PHP container is recreated. Nginx
+# resolves the upstream name when it starts, so leaving this container alive
+# can make it proxy to the removed PHP container and return persistent 502s.
+$COMPOSE up -d --force-recreate backend-nginx
+
+echo "==> Waiting for the Laravel health endpoint"
+backend_ready=0
+for attempt in $(seq 1 45); do
+  if $COMPOSE exec -T backend-nginx wget -qO- http://127.0.0.1/up >/dev/null 2>&1; then
+    backend_ready=1
+    break
+  fi
+  sleep 2
+done
+if [ "$backend_ready" != "1" ]; then
+  echo "ERROR: Laravel did not become healthy after 90 seconds."
+  $COMPOSE logs --tail=100 backend backend-nginx
+  exit 1
+fi
+
 echo "==> Starting updated web services"
-# backend-nginx has no changed configuration and remains running. Frontend is
-# rebuilt for same-origin API calls, while Caddy receives the new host/TLS map.
+# Frontend is rebuilt for same-origin API calls, while Caddy receives the new
+# host/TLS map only after the API is confirmed healthy.
 $COMPOSE up -d --force-recreate frontend caddy
 
 echo "==> Cleaning up dangling images"
