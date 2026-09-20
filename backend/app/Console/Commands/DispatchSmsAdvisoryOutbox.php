@@ -12,13 +12,22 @@ use Illuminate\Support\Facades\Queue;
 
 class DispatchSmsAdvisoryOutbox extends Command
 {
-    protected $signature = 'sms:dispatch-advisory-outbox {--limit=250 : Maximum queued recipients to claim}';
+    protected $signature = 'sms:dispatch-advisory-outbox
+                            {--limit=250 : Maximum queued recipients to claim}
+                            {--campaign= : Process only this campaign UUID}
+                            {--recover-claimed : Immediately reclaim abandoned redispatched rows after safety checks}';
 
-    protected $description = 'Dispatch durable queued SMS advisory recipients to Redis';
+    protected $description = 'Deliver durable queued SMS advisory recipients directly to the configured provider';
 
     public function handle(): int
     {
         $limit = min(1000, max(1, (int) $this->option('limit')));
+        $campaignId = trim((string) $this->option('campaign'));
+        $recoverClaimed = (bool) $this->option('recover-claimed');
+        if ($campaignId !== '' && ! SmsAdvisoryCampaign::query()->whereKey($campaignId)->exists()) {
+            $this->error('The requested SMS advisory campaign was not found.');
+            return self::FAILURE;
+        }
 
         // A deploy, Redis restart, or worker interruption can remove a queued
         // job after its durable recipient row was claimed. Reclaim only when
@@ -26,11 +35,15 @@ class DispatchSmsAdvisoryOutbox extends Command
         // and the claim has been untouched for five minutes. This prevents a
         // delayed or currently executing job from producing a duplicate SMS.
         $recovered = 0;
-        if (Queue::size('default') === 0
-            && ! SmsAdvisoryRecipient::query()->where('status', 'sending')->exists()) {
+        $queueIsEmpty = Queue::size('default') === 0;
+        $sendingExists = SmsAdvisoryRecipient::query()
+            ->when($campaignId !== '', fn ($query) => $query->where('campaign_id', $campaignId))
+            ->where('status', 'sending')->exists();
+        if ($queueIsEmpty && ! $sendingExists) {
             $staleIds = SmsAdvisoryRecipient::query()
+                ->when($campaignId !== '', fn ($query) => $query->where('campaign_id', $campaignId))
                 ->where('status', 'redispatched')
-                ->where('updated_at', '<=', now()->subMinutes(5))
+                ->when(! $recoverClaimed, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
                 ->oldest('updated_at')
                 ->limit($limit)
                 ->pluck('id');
@@ -39,16 +52,19 @@ class DispatchSmsAdvisoryOutbox extends Command
                 $recovered = SmsAdvisoryRecipient::query()
                     ->whereIn('id', $staleIds)
                     ->where('status', 'redispatched')
-                    ->where('updated_at', '<=', now()->subMinutes(5))
+                    ->when(! $recoverClaimed, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
                     ->update([
                         'status' => 'queued',
-                        'failure_reason' => 'Automatically recovered after the Redis queue was verified empty.',
+                        'failure_reason' => $recoverClaimed
+                            ? 'Explicitly recovered after verifying that the queue was empty and no provider call was active.'
+                            : 'Automatically recovered after the Redis queue was verified empty.',
                         'updated_at' => now(),
                     ]);
             }
         }
 
         $candidateIds = SmsAdvisoryRecipient::query()
+            ->when($campaignId !== '', fn ($query) => $query->where('campaign_id', $campaignId))
             ->where('status', 'queued')
             ->oldest('created_at')
             ->limit($limit)
@@ -56,6 +72,15 @@ class DispatchSmsAdvisoryOutbox extends Command
 
         if ($candidateIds->isEmpty()) {
             if ($recovered > 0) $this->info("{$recovered} stale advisory recipient(s) recovered; none remained claimable.");
+            else {
+                $counts = SmsAdvisoryRecipient::query()
+                    ->when($campaignId !== '', fn ($query) => $query->where('campaign_id', $campaignId))
+                    ->selectRaw('status, COUNT(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
+                $this->warn('No queued recipient was claimable. Current states: '.($counts->isEmpty() ? 'none' : $counts->map(fn ($count, $status) => "{$status}={$count}")->implode(', ')).'.');
+                if (! $queueIsEmpty) $this->warn('Redis still contains queue jobs; immediate claim recovery was refused to prevent duplicate SMS.');
+                if ($sendingExists) $this->warn('A provider delivery is currently active; immediate claim recovery was refused to prevent duplicate SMS.');
+                if (($counts['redispatched'] ?? 0) > 0 && ! $recoverClaimed) $this->line('Wait five minutes for automatic recovery, or use --recover-claimed after confirming no other sender process is running.');
+            }
             return self::SUCCESS;
         }
 
