@@ -413,6 +413,8 @@ Route::prefix('v1')->group(function () {
         // relied on for access control; the endpoint is role-gated as well.
         Route::get('financial-monitoring', [FinancialMonitoringController::class, 'index'])
             ->middleware('role:super_admin|admin|cashier|accounting');
+        Route::post('financial-monitoring/archived-customers/{id}/restore', [FinancialMonitoringController::class, 'restoreArchivedCustomer'])
+            ->middleware('role:super_admin');
 
         Route::middleware('role:super_admin|admin|office_admin')->prefix('sms-advisories')->group(function () {
             Route::get('/', [SmsAdvisoryController::class, 'index']);

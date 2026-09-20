@@ -502,7 +502,7 @@ class FinancialMonitoringService
                 'payment_numbers' => $group->pluck('payment_number')->values()->all(),
                 'detail_count' => $group->count(),
                 'details' => $group->map(fn (Payment $payment) => [
-                    'id' => $payment->id, 'record' => $payment->payment_number,
+                    'id' => $payment->id, 'resource_type' => 'payment', 'record' => $payment->payment_number,
                     'party' => $payment->customer?->full_name, 'account_number' => $payment->customer?->account_number,
                     'date' => $payment->payment_date?->toDateString(), 'status' => $payment->payment_method,
                     'amount' => self::rounded((float) $payment->amount),
@@ -524,7 +524,7 @@ class FinancialMonitoringService
                 'invoice_numbers' => $group->pluck('invoice_number')->values()->all(),
                 'detail_count' => $group->count(),
                 'details' => $group->map(fn (Invoice $invoice) => [
-                    'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                    'id' => $invoice->id, 'resource_type' => 'invoice', 'record' => $invoice->invoice_number,
                     'party' => $invoice->customer?->full_name, 'account_number' => $invoice->customer?->account_number,
                     'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,
                     'amount' => self::rounded((float) $invoice->balance),
@@ -544,7 +544,7 @@ class FinancialMonitoringService
                     ->whereIn('status', ['submitted', 'discrepancy'])->orderByDesc('submitted_at')->limit(100)
                     ->get(['id', 'collector_id', 'status', 'declared_amount', 'submitted_at'])
                     ->map(fn (Remittance $remittance) => [
-                        'id' => $remittance->id, 'record' => 'Remittance '.substr($remittance->id, -8),
+                        'id' => $remittance->id, 'resource_type' => 'remittance', 'record' => 'Remittance '.substr($remittance->id, -8),
                         'party' => $remittance->collector?->name, 'account_number' => null,
                         'date' => $remittance->submitted_at?->toIso8601String(), 'status' => $remittance->status,
                         'amount' => self::rounded((float) $remittance->declared_amount),
@@ -565,9 +565,12 @@ class FinancialMonitoringService
                     ->orderBy('due_date')->limit(100)
                     ->get(['id', 'customer_id', 'invoice_number', 'due_date', 'balance', 'status'])
                     ->map(fn (Invoice $invoice) => [
-                        'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                        'id' => $invoice->id, 'resource_type' => 'invoice', 'record' => $invoice->invoice_number,
                         'party' => $invoice->customerIncludingArchived?->full_name,
                         'account_number' => $invoice->customerIncludingArchived?->account_number,
+                        'customer_id' => $invoice->customer_id,
+                        'archived_at' => $invoice->customerIncludingArchived?->deleted_at?->toIso8601String(),
+                        'archive_reason' => 'No archive reason was recorded by the legacy customer archive action.',
                         'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,
                         'amount' => self::rounded((float) $invoice->balance),
                     ])->values()->all(),
@@ -588,7 +591,7 @@ class FinancialMonitoringService
                     ->orderBy('due_date')->limit(100)
                     ->get(['id', 'customer_id', 'invoice_number', 'due_date', 'balance', 'status'])
                     ->map(fn (Invoice $invoice) => [
-                        'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                        'id' => $invoice->id, 'resource_type' => 'invoice', 'record' => $invoice->invoice_number,
                         'party' => $invoice->customerIncludingArchived?->full_name,
                         'account_number' => $invoice->customerIncludingArchived?->account_number,
                         'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,

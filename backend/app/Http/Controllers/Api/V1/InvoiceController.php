@@ -190,6 +190,7 @@ class InvoiceController extends Controller
             'due_date' => 'nullable|date',
             'discount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:1000',
+            'correction_reason' => 'nullable|string|min:10|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -200,6 +201,15 @@ class InvoiceController extends Controller
         }
 
         $invoice->fill($request->only(['status', 'due_date', 'discount', 'notes']));
+        if ($request->filled('correction_reason')) {
+            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only the Super Administrator can record an invoice correction.');
+            $invoice->notes = trim(($invoice->notes ? $invoice->notes."\n" : '').sprintf(
+                '[Correction %s by %s] %s',
+                now()->toDateTimeString(),
+                $request->user()->name,
+                trim($request->string('correction_reason')->toString())
+            ));
+        }
 
         if ($request->has('discount')) {
             $invoice->save();

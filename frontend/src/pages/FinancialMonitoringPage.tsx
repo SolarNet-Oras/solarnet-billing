@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Eye, Landmark, RefreshCw, ReceiptText, ShieldAlert, ShieldCheck, Sparkles, WalletCards, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Eye, Landmark, Loader2, Pencil, RefreshCw, ReceiptText, RotateCcw, ShieldAlert, ShieldCheck, Sparkles, Trash2, WalletCards, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatPHP } from '@/lib/currency';
@@ -18,7 +18,7 @@ type Wallet = {
 };
 type DailyMetric = { date: string; billed: number; collections: number; cash_in: number; expenses: number; processing_fees: number; net_operating_movement: number };
 type Allocation = { key: string; label: string; percent_of_planning_base: number; percent_of_collections: number; amount: number };
-type AnomalyDetail = { id: string; record?: string | null; party?: string | null; account_number?: string | null; date?: string | null; status?: string | null; amount?: number | null };
+type AnomalyDetail = { id: string; resource_type?: 'invoice' | 'payment' | 'remittance'; record?: string | null; party?: string | null; account_number?: string | null; customer_id?: string | null; date?: string | null; status?: string | null; amount?: number | null; archived_at?: string | null; archive_reason?: string | null };
 type Anomaly = { type: string; severity: 'review' | 'monitor'; message: string; amount_total?: number; customer?: { account_number?: string | null; full_name?: string | null }; payment_numbers?: string[]; invoice_numbers?: string[]; payment_count?: number; invoice_count?: number; remittance_count?: number; detail_count?: number; details?: AnomalyDetail[] };
 type CollectorCashRow = {
   collector_id: string; collector_name: string; is_active: boolean;
@@ -92,6 +92,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
   const roleNames = [user?.role, ...(user?.roles ?? []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canReviewRemittances = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(role as string));
+  const isSuperAdmin = roleNames.includes('super_admin');
   const askFinanceAi = (): void => {
     window.dispatchEvent(new CustomEvent('solarnet:open-ai', {
       detail: { prompt: `Explain the verified Financial Monitoring study for ${month}. Use the finance tool, show Result, Data source, Calculation, Findings, Risk, Recommendation, and Action required. Do not change any financial record.` },
@@ -169,7 +170,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
           <div className="mt-4 grid gap-3 md:grid-cols-2">{anomalies.length ? anomalies.map((item, index) => <AnomalyCard key={`${item.type}-${index}`} item={item} onView={() => setSelectedAnomaly(item)} />) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No review candidates were detected by the current duplicate-payment, duplicate-invoice, remittance, and overdue-receivable checks.</p>}</div>
         </section>
 
-        {selectedAnomaly && <AnomalyDetailsDialog item={selectedAnomaly} onClose={() => setSelectedAnomaly(null)} />}
+        {selectedAnomaly && <AnomalyDetailsDialog item={selectedAnomaly} canCorrect={isSuperAdmin} onClose={() => setSelectedAnomaly(null)} onChanged={() => { setSelectedAnomaly(null); void load(); }} />}
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
           <article className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -275,15 +276,53 @@ function AnomalyCard({ item, onView }: { item: Anomaly; onView: () => void }): R
   return <article className="flex flex-col rounded-xl border border-border bg-background p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-semibold capitalize text-foreground">{item.type.replaceAll('_', ' ')}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.severity === 'review' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{item.severity}</span></div><p className="mt-2 text-sm text-muted-foreground">{item.message}</p>{identity && <p className="mt-2 text-xs font-medium text-foreground">{identity}</p>}{records && <p className="mt-1 break-words text-xs text-muted-foreground">{records}</p>}<div className="mt-auto flex items-end justify-between gap-3 pt-3">{item.amount_total !== undefined ? <p className="text-sm font-bold text-foreground">{formatPHP(item.amount_total)}</p> : <span />}<button type="button" onClick={onView} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted"><Eye className="h-3.5 w-3.5" />View details</button></div></article>;
 }
 
-function AnomalyDetailsDialog({ item, onClose }: { item: Anomaly; onClose: () => void }): React.JSX.Element {
+function AnomalyDetailsDialog({ item, canCorrect, onClose, onChanged }: { item: Anomaly; canCorrect: boolean; onClose: () => void; onChanged: () => void }): React.JSX.Element {
   const details = item.details ?? [];
   const title = item.type.replaceAll('_', ' ');
+  const [editing, setEditing] = useState<AnomalyDetail | null>(null);
+  const [dueDate, setDueDate] = useState('');
+  const [status, setStatus] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState('');
+  const [actionError, setActionError] = useState('');
+  const beginCorrection = (detail: AnomalyDetail): void => {
+    setEditing(detail); setDueDate(detail.date?.slice(0, 10) ?? ''); setStatus(detail.status ?? 'sent'); setReason(''); setActionError('');
+  };
+  const correctInvoice = async (): Promise<void> => {
+    if (!editing || reason.trim().length < 10) { setActionError('Enter a correction reason of at least 10 characters.'); return; }
+    setBusy(editing.id); setActionError('');
+    try {
+      await api.put(`/invoices/${editing.id}`, { due_date: dueDate, status, correction_reason: reason.trim() });
+      onChanged();
+    } catch (error: any) { setActionError(error.response?.data?.message || 'Invoice correction failed.'); }
+    finally { setBusy(''); }
+  };
+  const deleteRecord = async (detail: AnomalyDetail): Promise<void> => {
+    if (!window.confirm(`Delete ${detail.record}? This is allowed only when the existing safety checks pass.`)) return;
+    setBusy(detail.id); setActionError('');
+    try {
+      if (detail.resource_type === 'invoice') await api.delete(`/invoices/${detail.id}`);
+      else if (detail.resource_type === 'remittance') await api.delete(`/remittances/${detail.id}`);
+      else throw new Error('Payments cannot be deleted from anomaly review; use an audited refund or correction.');
+      onChanged();
+    } catch (error: any) { setActionError(error.response?.data?.message || error.message || 'Delete failed.'); }
+    finally { setBusy(''); }
+  };
+  const restoreCustomer = async (detail: AnomalyDetail): Promise<void> => {
+    if (!detail.customer_id || reason.trim().length < 10) { setActionError('Enter a restoration reason of at least 10 characters.'); return; }
+    setBusy(detail.id); setActionError('');
+    try { await api.post(`/financial-monitoring/archived-customers/${detail.customer_id}/restore`, { reason: reason.trim() }); onChanged(); }
+    catch (error: any) { setActionError(error.response?.data?.message || 'Customer restoration failed.'); }
+    finally { setBusy(''); }
+  };
   return <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="anomaly-details-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-border p-4 sm:p-5"><div><h3 id="anomaly-details-title" className="font-bold capitalize text-foreground">{title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail_count ?? details.length} record{(item.detail_count ?? details.length) === 1 ? '' : 's'} behind this detection · read-only</p></div><button type="button" onClick={onClose} aria-label="Close details" className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-5 w-5" /></button></header>
       <div className="overflow-auto p-3 sm:p-5">
-        {details.length ? <table className="w-full min-w-[650px] text-left text-sm"><thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-2.5">Record</th><th className="p-2.5">Customer / collector</th><th className="p-2.5">Date</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Amount</th></tr></thead><tbody>{details.map((detail) => <tr key={detail.id} className="border-t border-border"><td className="p-2.5 font-semibold text-foreground">{detail.record || detail.id}</td><td className="p-2.5 text-foreground">{detail.party || 'Not available'}{detail.account_number && <span className="block text-xs text-muted-foreground">{detail.account_number}</span>}</td><td className="p-2.5 text-muted-foreground">{formatAnomalyDate(detail.date)}</td><td className="p-2.5 capitalize text-muted-foreground">{detail.status?.replaceAll('_', ' ') || '—'}</td><td className="p-2.5 text-right font-semibold text-foreground">{detail.amount === null || detail.amount === undefined ? '—' : formatPHP(detail.amount)}</td></tr>)}</tbody></table> : <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No underlying records were returned. Refresh Financial Monitoring and try again.</p>}
+        {details.length ? <table className="w-full min-w-[760px] text-left text-sm"><thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-2.5">Record</th><th className="p-2.5">Customer / collector</th><th className="p-2.5">Date</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Amount</th>{canCorrect && <th className="p-2.5 text-right">Super Admin action</th>}</tr></thead><tbody>{details.map((detail) => <tr key={detail.id} className="border-t border-border"><td className="p-2.5 font-semibold text-foreground">{detail.record || detail.id}</td><td className="p-2.5 text-foreground">{detail.party || 'Not available'}{detail.account_number && <span className="block text-xs text-muted-foreground">{detail.account_number}</span>}{detail.archived_at && <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">Archived {formatAnomalyDate(detail.archived_at)}<br />Why: {detail.archive_reason}</span>}</td><td className="p-2.5 text-muted-foreground">{formatAnomalyDate(detail.date)}</td><td className="p-2.5 capitalize text-muted-foreground">{detail.status?.replaceAll('_', ' ') || '—'}</td><td className="p-2.5 text-right font-semibold text-foreground">{detail.amount === null || detail.amount === undefined ? '—' : formatPHP(detail.amount)}</td>{canCorrect && <td className="p-2.5"><div className="flex justify-end gap-1.5">{detail.resource_type === 'invoice' && !detail.customer_id && <button type="button" onClick={() => beginCorrection(detail)} className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"><Pencil className="h-3 w-3" />Correct</button>}{detail.customer_id && <button type="button" onClick={() => beginCorrection(detail)} className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300"><RotateCcw className="h-3 w-3" />Restore</button>}{detail.resource_type !== 'payment' && <button type="button" disabled={busy === detail.id} onClick={() => void deleteRecord(detail)} className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50 dark:text-red-300"><Trash2 className="h-3 w-3" />Delete</button>}</div></td>}</tr>)}</tbody></table> : <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No underlying records were returned. Refresh Financial Monitoring and try again.</p>}
         {(item.detail_count ?? 0) > details.length && <p className="mt-3 text-xs text-muted-foreground">Showing the first {details.length} of {item.detail_count} records.</p>}
+        {editing && <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-bold text-foreground">Correct {editing.record}</p><p className="text-xs text-muted-foreground">This action is available only to a Super Administrator.</p></div><button type="button" onClick={() => setEditing(null)} className="text-muted-foreground"><X className="h-4 w-4" /></button></div>{editing.customer_id ? <><p className="mt-3 text-xs text-muted-foreground">The customer was soft-archived on {formatAnomalyDate(editing.archived_at)}. {editing.archive_reason}</p><label className="mt-3 block text-xs font-semibold text-foreground">Reason for restoring<input value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="Explain why this archive was incorrect" /></label><button type="button" disabled={busy === editing.id} onClick={() => void restoreCustomer(editing)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === editing.id && <Loader2 className="h-4 w-4 animate-spin" />}Restore archived customer</button></> : <><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-foreground">Due date<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></label><label className="text-xs font-semibold text-foreground">Status<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"><option value="sent">Sent</option><option value="partial">Partially paid</option><option value="overdue">Overdue</option><option value="cancelled">Cancelled</option></select></label></div><label className="mt-3 block text-xs font-semibold text-foreground">Correction reason<input value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="Explain the verified correction" /></label><button type="button" disabled={busy === editing.id} onClick={() => void correctInvoice()} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{busy === editing.id && <Loader2 className="h-4 w-4 animate-spin" />}Save correction</button></>}</div>}
+        {actionError && <p role="alert" className="mt-3 rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{actionError}</p>}
       </div>
       <footer className="flex justify-end border-t border-border p-3 sm:px-5"><button type="button" onClick={onClose} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Close</button></footer>
     </section>
