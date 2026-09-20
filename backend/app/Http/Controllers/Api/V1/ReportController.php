@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\AutomationLog;
+use App\Models\ActivityLog;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Ticket;
@@ -14,6 +15,53 @@ use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
+    public function activityLog(Request $request): JsonResponse
+    {
+        $perPage = min(max((int) $request->input('per_page', 50), 1), 100);
+        $query = ActivityLog::query();
+
+        if ($request->filled('search')) {
+            $search = '%'.trim((string) $request->input('search')).'%';
+            $query->where(function ($builder) use ($search): void {
+                $builder->where('actor_name', 'ilike', $search)
+                    ->orWhere('action', 'ilike', $search)
+                    ->orWhere('category', 'ilike', $search)
+                    ->orWhere('subject_id', 'ilike', $search)
+                    ->orWhere('path', 'ilike', $search);
+            });
+        }
+        if ($request->filled('category')) {
+            $query->where('category', $request->input('category'));
+        }
+        if ($request->input('outcome') === 'success') {
+            $query->where('response_status', '<', 400);
+        } elseif ($request->input('outcome') === 'failed') {
+            $query->where('response_status', '>=', 400);
+        }
+        if ($request->filled('from')) $query->whereDate('created_at', '>=', $request->input('from'));
+        if ($request->filled('to')) $query->whereDate('created_at', '<=', $request->input('to'));
+
+        $summary = [
+            'total' => (clone $query)->count(),
+            'success' => (clone $query)->where('response_status', '<', 400)->count(),
+            'failed' => (clone $query)->where('response_status', '>=', 400)->count(),
+            'actors' => (clone $query)->whereNotNull('actor_id')->distinct()->count('actor_id'),
+        ];
+        $logs = $query->latest('created_at')->paginate($perPage);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $logs->items(),
+            'meta' => [
+                'current_page' => $logs->currentPage(),
+                'last_page' => $logs->lastPage(),
+                'per_page' => $logs->perPage(),
+                'total' => $logs->total(),
+            ],
+            'summary' => $summary,
+        ]);
+    }
+
     /**
      * Operational billing/automation audit feed for the Logs & Reports page.
      * This intentionally uses the existing view-reports permission so staff
