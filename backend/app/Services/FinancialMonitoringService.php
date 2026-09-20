@@ -500,6 +500,13 @@ class FinancialMonitoringService
                 'payment_count' => $group->count(),
                 'amount_total' => self::rounded((float) $group->sum('amount')),
                 'payment_numbers' => $group->pluck('payment_number')->values()->all(),
+                'detail_count' => $group->count(),
+                'details' => $group->map(fn (Payment $payment) => [
+                    'id' => $payment->id, 'record' => $payment->payment_number,
+                    'party' => $payment->customer?->full_name, 'account_number' => $payment->customer?->account_number,
+                    'date' => $payment->payment_date?->toDateString(), 'status' => $payment->payment_method,
+                    'amount' => self::rounded((float) $payment->amount),
+                ])->values()->all(),
             ];
         }
 
@@ -515,6 +522,13 @@ class FinancialMonitoringService
                 'invoice_count' => $group->count(),
                 'amount_total' => self::rounded((float) $group->sum('total')),
                 'invoice_numbers' => $group->pluck('invoice_number')->values()->all(),
+                'detail_count' => $group->count(),
+                'details' => $group->map(fn (Invoice $invoice) => [
+                    'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                    'party' => $invoice->customer?->full_name, 'account_number' => $invoice->customer?->account_number,
+                    'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,
+                    'amount' => self::rounded((float) $invoice->balance),
+                ])->values()->all(),
             ];
         }
 
@@ -525,6 +539,16 @@ class FinancialMonitoringService
                 'message' => 'Collector remittance is still submitted or marked discrepancy. It is not included as company cash until liquidation/receipt is completed.',
                 'remittance_count' => (int) $pendingRemittances->count,
                 'amount_total' => self::rounded((float) $pendingRemittances->amount),
+                'detail_count' => (int) $pendingRemittances->count,
+                'details' => Remittance::query()->with('collector:id,name')->whereNull('cancelled_at')
+                    ->whereIn('status', ['submitted', 'discrepancy'])->orderByDesc('submitted_at')->limit(100)
+                    ->get(['id', 'collector_id', 'status', 'declared_amount', 'submitted_at'])
+                    ->map(fn (Remittance $remittance) => [
+                        'id' => $remittance->id, 'record' => 'Remittance '.substr($remittance->id, -8),
+                        'party' => $remittance->collector?->name, 'account_number' => null,
+                        'date' => $remittance->submitted_at?->toIso8601String(), 'status' => $remittance->status,
+                        'amount' => self::rounded((float) $remittance->declared_amount),
+                    ])->values()->all(),
             ];
         }
         if (($archivedCustomerReceivables?->count ?? 0) > 0) {
@@ -534,6 +558,19 @@ class FinancialMonitoringService
                 'message' => 'Open invoices belong to archived customer records. Confirm whether each balance remains collectible, restore the customer if archived accidentally, or cancel an invalid charge through the audited invoice action.',
                 'invoice_count' => (int) $archivedCustomerReceivables->count,
                 'amount_total' => self::rounded((float) $archivedCustomerReceivables->amount),
+                'detail_count' => (int) $archivedCustomerReceivables->count,
+                'details' => Invoice::query()->with('customerIncludingArchived:id,full_name,account_number,deleted_at')
+                    ->whereNotIn('status', ['draft', 'cancelled'])->where('balance', '>', 0)
+                    ->whereHas('customerIncludingArchived', fn ($customer) => $customer->whereNotNull('deleted_at'))
+                    ->orderBy('due_date')->limit(100)
+                    ->get(['id', 'customer_id', 'invoice_number', 'due_date', 'balance', 'status'])
+                    ->map(fn (Invoice $invoice) => [
+                        'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                        'party' => $invoice->customerIncludingArchived?->full_name,
+                        'account_number' => $invoice->customerIncludingArchived?->account_number,
+                        'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,
+                        'amount' => self::rounded((float) $invoice->balance),
+                    ])->values()->all(),
             ];
         }
         if ($overdue > 0) {
@@ -543,6 +580,20 @@ class FinancialMonitoringService
                 'message' => 'Open receivables include amounts due today or earlier under SolarNet billing policy. Review collection follow-up and suspension policy separately.',
                 'amount_total' => self::rounded($overdue),
                 'outstanding_total' => self::rounded($outstanding),
+                'detail_count' => Invoice::query()->whereNotIn('status', ['draft', 'cancelled'])
+                    ->where('balance', '>', 0)->whereDate('due_date', '<=', now(config('app.timezone', 'Asia/Manila'))->startOfDay())->count(),
+                'details' => Invoice::query()->with('customerIncludingArchived:id,full_name,account_number,deleted_at')
+                    ->whereNotIn('status', ['draft', 'cancelled'])->where('balance', '>', 0)
+                    ->whereDate('due_date', '<=', now(config('app.timezone', 'Asia/Manila'))->startOfDay())
+                    ->orderBy('due_date')->limit(100)
+                    ->get(['id', 'customer_id', 'invoice_number', 'due_date', 'balance', 'status'])
+                    ->map(fn (Invoice $invoice) => [
+                        'id' => $invoice->id, 'record' => $invoice->invoice_number,
+                        'party' => $invoice->customerIncludingArchived?->full_name,
+                        'account_number' => $invoice->customerIncludingArchived?->account_number,
+                        'date' => $invoice->due_date?->toDateString(), 'status' => $invoice->status,
+                        'amount' => self::rounded((float) $invoice->balance),
+                    ])->values()->all(),
             ];
         }
 

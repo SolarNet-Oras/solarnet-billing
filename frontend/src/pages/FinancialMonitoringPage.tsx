@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Landmark, RefreshCw, ReceiptText, ShieldAlert, ShieldCheck, Sparkles, WalletCards } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Banknote, BrainCircuit, ChartNoAxesCombined, CircleDollarSign, Eye, Landmark, RefreshCw, ReceiptText, ShieldAlert, ShieldCheck, Sparkles, WalletCards, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatPHP } from '@/lib/currency';
@@ -18,7 +18,8 @@ type Wallet = {
 };
 type DailyMetric = { date: string; billed: number; collections: number; cash_in: number; expenses: number; processing_fees: number; net_operating_movement: number };
 type Allocation = { key: string; label: string; percent_of_planning_base: number; percent_of_collections: number; amount: number };
-type Anomaly = { type: string; severity: 'review' | 'monitor'; message: string; amount_total?: number; customer?: { account_number?: string | null; full_name?: string | null }; payment_numbers?: string[]; invoice_numbers?: string[]; payment_count?: number; invoice_count?: number; remittance_count?: number };
+type AnomalyDetail = { id: string; record?: string | null; party?: string | null; account_number?: string | null; date?: string | null; status?: string | null; amount?: number | null };
+type Anomaly = { type: string; severity: 'review' | 'monitor'; message: string; amount_total?: number; customer?: { account_number?: string | null; full_name?: string | null }; payment_numbers?: string[]; invoice_numbers?: string[]; payment_count?: number; invoice_count?: number; remittance_count?: number; detail_count?: number; details?: AnomalyDetail[] };
 type CollectorCashRow = {
   collector_id: string; collector_name: string; is_active: boolean;
   unremitted_payment_count: number; cash_on_hand: number; oldest_unremitted_date: string | null;
@@ -68,6 +69,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   const [data, setData] = useState<MonitoringData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -164,8 +166,10 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex gap-2"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><h2 className="font-semibold text-foreground">Detection anomalies</h2><p className="mt-1 text-sm text-muted-foreground">Read-only candidates from deterministic rules. Nothing is corrected automatically.</p></div></div><div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{data?.anomalies.summary.review_count ?? 0} to review</span><span className="rounded-full bg-sky-100 px-2 py-1 font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300">{data?.anomalies.summary.monitor_count ?? 0} monitor</span><span className="rounded-full bg-muted px-2 py-1 font-semibold text-muted-foreground">Payments {data?.anomalies.summary.duplicate_payment_count ?? 0} · Invoices {data?.anomalies.summary.duplicate_invoice_count ?? 0}</span></div></div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">{anomalies.length ? anomalies.map((item, index) => <AnomalyCard key={`${item.type}-${index}`} item={item} />) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No review candidates were detected by the current duplicate-payment, duplicate-invoice, remittance, and overdue-receivable checks.</p>}</div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">{anomalies.length ? anomalies.map((item, index) => <AnomalyCard key={`${item.type}-${index}`} item={item} onView={() => setSelectedAnomaly(item)} />) : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No review candidates were detected by the current duplicate-payment, duplicate-invoice, remittance, and overdue-receivable checks.</p>}</div>
         </section>
+
+        {selectedAnomaly && <AnomalyDetailsDialog item={selectedAnomaly} onClose={() => setSelectedAnomaly(null)} />}
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
           <article className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -265,10 +269,31 @@ function AllocationCard({ label, value, detail, accent = 'text-foreground' }: { 
   return <div className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
 }
 
-function AnomalyCard({ item }: { item: Anomaly }): React.JSX.Element {
+function AnomalyCard({ item, onView }: { item: Anomaly; onView: () => void }): React.JSX.Element {
   const identity = [item.customer?.full_name, item.customer?.account_number].filter(Boolean).join(' · ');
   const records = item.payment_numbers?.length ? item.payment_numbers.join(', ') : item.invoice_numbers?.join(', ');
-  return <article className="rounded-xl border border-border bg-background p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-semibold capitalize text-foreground">{item.type.replaceAll('_', ' ')}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.severity === 'review' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{item.severity}</span></div><p className="mt-2 text-sm text-muted-foreground">{item.message}</p>{identity && <p className="mt-2 text-xs font-medium text-foreground">{identity}</p>}{records && <p className="mt-1 break-words text-xs text-muted-foreground">{records}</p>}{item.amount_total !== undefined && <p className="mt-3 text-sm font-bold text-foreground">{formatPHP(item.amount_total)}</p>}</article>;
+  return <article className="flex flex-col rounded-xl border border-border bg-background p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-semibold capitalize text-foreground">{item.type.replaceAll('_', ' ')}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.severity === 'review' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'}`}>{item.severity}</span></div><p className="mt-2 text-sm text-muted-foreground">{item.message}</p>{identity && <p className="mt-2 text-xs font-medium text-foreground">{identity}</p>}{records && <p className="mt-1 break-words text-xs text-muted-foreground">{records}</p>}<div className="mt-auto flex items-end justify-between gap-3 pt-3">{item.amount_total !== undefined ? <p className="text-sm font-bold text-foreground">{formatPHP(item.amount_total)}</p> : <span />}<button type="button" onClick={onView} className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted"><Eye className="h-3.5 w-3.5" />View details</button></div></article>;
+}
+
+function AnomalyDetailsDialog({ item, onClose }: { item: Anomaly; onClose: () => void }): React.JSX.Element {
+  const details = item.details ?? [];
+  const title = item.type.replaceAll('_', ' ');
+  return <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="anomaly-details-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      <header className="flex items-start justify-between gap-3 border-b border-border p-4 sm:p-5"><div><h3 id="anomaly-details-title" className="font-bold capitalize text-foreground">{title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail_count ?? details.length} record{(item.detail_count ?? details.length) === 1 ? '' : 's'} behind this detection · read-only</p></div><button type="button" onClick={onClose} aria-label="Close details" className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-5 w-5" /></button></header>
+      <div className="overflow-auto p-3 sm:p-5">
+        {details.length ? <table className="w-full min-w-[650px] text-left text-sm"><thead className="sticky top-0 bg-muted text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="p-2.5">Record</th><th className="p-2.5">Customer / collector</th><th className="p-2.5">Date</th><th className="p-2.5">Status</th><th className="p-2.5 text-right">Amount</th></tr></thead><tbody>{details.map((detail) => <tr key={detail.id} className="border-t border-border"><td className="p-2.5 font-semibold text-foreground">{detail.record || detail.id}</td><td className="p-2.5 text-foreground">{detail.party || 'Not available'}{detail.account_number && <span className="block text-xs text-muted-foreground">{detail.account_number}</span>}</td><td className="p-2.5 text-muted-foreground">{formatAnomalyDate(detail.date)}</td><td className="p-2.5 capitalize text-muted-foreground">{detail.status?.replaceAll('_', ' ') || '—'}</td><td className="p-2.5 text-right font-semibold text-foreground">{detail.amount === null || detail.amount === undefined ? '—' : formatPHP(detail.amount)}</td></tr>)}</tbody></table> : <p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No underlying records were returned. Refresh Financial Monitoring and try again.</p>}
+        {(item.detail_count ?? 0) > details.length && <p className="mt-3 text-xs text-muted-foreground">Showing the first {details.length} of {item.detail_count} records.</p>}
+      </div>
+      <footer className="flex justify-end border-t border-border p-3 sm:px-5"><button type="button" onClick={onClose} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Close</button></footer>
+    </section>
+  </div>;
+}
+
+function formatAnomalyDate(value?: string | null): string {
+  if (!value) return '—';
+  const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-PH', value.length === 10 ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function FinanceMetricsGraph({ metrics }: { metrics: DailyMetric[] }): React.JSX.Element {
