@@ -155,10 +155,12 @@ class SmsAdvisoryController extends Controller
             return $campaign;
         });
 
-        $dispatched = $outbox->dispatchQueued($campaign, 1000);
+        // Process a small first batch immediately; the every-minute durable
+        // outbox scheduler continues the remainder without relying on Redis.
+        $dispatched = $outbox->dispatchQueued($campaign, 20);
 
         return response()->json([
-            'message' => "Advisory queued for {$campaign->recipient_count} verified recipient(s); {$dispatched} delivery job(s) started immediately.",
+            'message' => "Advisory accepted for {$campaign->recipient_count} verified recipient(s); {$dispatched} recipient(s) were processed immediately and the durable outbox will continue automatically.",
             'data' => $campaign->fresh(),
         ], 202);
     }

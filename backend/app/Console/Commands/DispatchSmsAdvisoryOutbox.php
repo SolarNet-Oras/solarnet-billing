@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\SendSmsAdvisoryRecipient;
 use App\Models\SmsAdvisoryCampaign;
 use App\Models\SmsAdvisoryRecipient;
+use App\Services\SemaphoreSmsService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -70,17 +71,17 @@ class DispatchSmsAdvisoryOutbox extends Command
             return $ids;
         });
 
-        foreach ($claimedIds as $index => $id) {
+        foreach ($claimedIds as $id) {
             try {
-                // Semaphore's regular messages endpoint allows 120 requests/minute.
-                SendSmsAdvisoryRecipient::dispatch($id)->delay(now()->addSeconds(intdiv($index, 2)));
+                // Deliver from the durable database outbox. This intentionally
+                // avoids losing a job between a database claim and Redis.
+                (new SendSmsAdvisoryRecipient($id))->handle(app(SemaphoreSmsService::class));
             } catch (\Throwable $e) {
                 SmsAdvisoryRecipient::query()->whereKey($id)->where('status', 'redispatched')->update([
-                    'status' => 'queued',
-                    'failure_reason' => 'Outbox dispatch failed before provider delivery: '.$e->getMessage(),
+                    'failure_reason' => 'Direct outbox delivery failed and will be retried safely: '.$e->getMessage(),
                     'updated_at' => now(),
                 ]);
-                $this->error("Could not dispatch recipient {$id}: {$e->getMessage()}");
+                $this->error("Could not deliver recipient {$id}: {$e->getMessage()}");
             }
         }
 
@@ -93,7 +94,7 @@ class DispatchSmsAdvisoryOutbox extends Command
             'updated_at' => now(),
         ]);
 
-        $message = count($claimedIds).' advisory recipient(s) claimed from the durable outbox.';
+        $message = count($claimedIds).' advisory recipient(s) processed from the durable outbox.';
         if ($recovered > 0) $message .= " {$recovered} stale Redis claim(s) were recovered automatically.";
         $this->info($message);
         return self::SUCCESS;

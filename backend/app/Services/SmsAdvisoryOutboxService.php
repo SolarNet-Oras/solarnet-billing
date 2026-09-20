@@ -44,8 +44,12 @@ class SmsAdvisoryOutboxService
     }
 
     /**
-     * Claim and queue only recipients that are still durably queued.
-     * The atomic status transition prevents repeated clicks from duplicating SMS.
+     * Claim and deliver recipients from the durable PostgreSQL outbox.
+     *
+     * Mass advisories deliberately do not depend on a second Redis handoff:
+     * production Redis restarts previously left rows marked redispatched while
+     * no job existed. The atomic status transition still prevents two HTTP or
+     * scheduler processes from sending the same recipient concurrently.
      */
     public function dispatchQueued(SmsAdvisoryCampaign $campaign, int $limit = 250): int
     {
@@ -74,17 +78,15 @@ class SmsAdvisoryOutboxService
             return $ids;
         });
 
-        foreach ($claimedIds as $index => $id) {
+        foreach ($claimedIds as $id) {
             try {
-                SendSmsAdvisoryRecipient::dispatch($id)
-                    ->delay(now()->addSeconds(intdiv($index, 2)));
+                (new SendSmsAdvisoryRecipient($id))->handle(app(SemaphoreSmsService::class));
             } catch (\Throwable $exception) {
                 SmsAdvisoryRecipient::query()
                     ->whereKey($id)
                     ->where('status', 'redispatched')
                     ->update([
-                        'status' => 'queued',
-                        'failure_reason' => 'Queue dispatch failed before provider delivery: '.$exception->getMessage(),
+                        'failure_reason' => 'Direct outbox delivery failed and will be retried safely: '.$exception->getMessage(),
                         'updated_at' => now(),
                     ]);
             }
