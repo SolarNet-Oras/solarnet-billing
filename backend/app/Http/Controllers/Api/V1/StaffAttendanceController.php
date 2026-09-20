@@ -8,6 +8,7 @@ use App\Models\StaffAttendancePhotoAudit;
 use App\Models\StaffCompensation;
 use App\Models\StaffLiveLocation;
 use App\Models\StaffPayrollDisbursement;
+use App\Models\InstallationIncentivePool;
 use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use Carbon\Carbon;
@@ -178,6 +179,14 @@ class StaffAttendanceController extends Controller
                 ->whereBetween('pay_date', [$start->toDateString(), $end->toDateString()])
                 ->orderByDesc('pay_date')->orderBy('created_at')->get()
             : collect();
+        $installationIncentives = Schema::hasTable('installation_incentive_pools')
+            ? InstallationIncentivePool::with([
+                'ticket:id,ticket_number,customer_id,registered_at',
+                'ticket.customer:id,full_name,account_number',
+                'allocations.user:id,name',
+            ])->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
+                ->latest('work_date')->get()
+            : collect();
 
         return response()->json(['data'=>[
             'month'=>$month,
@@ -190,6 +199,7 @@ class StaffAttendanceController extends Controller
                 'timezone'=>'Asia/Manila',
             ],
             'payroll_runs'=>$payrollRuns,
+            'installation_incentives'=>$installationIncentives,
             'employees'=>$employees,
         ]]);
     }
