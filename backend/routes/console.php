@@ -109,8 +109,9 @@ Schedule::command('attendance:cleanup-photos')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 12:00 Asia/Manila daily; the command processes only a valid payday: the
-// 15th, or the 30th (the last calendar day when February is shorter).
+// 12:00 Asia/Manila daily. Payslips are prepared and emailed one day before
+// payday; scheduled records become released on the 15th/30th (last day in a
+// short month).
 Schedule::command('payroll:process-scheduled')
     ->dailyAt('12:00')
     ->timezone($tz)

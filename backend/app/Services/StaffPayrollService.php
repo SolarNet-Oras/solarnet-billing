@@ -43,7 +43,7 @@ class StaffPayrollService
             if ($dryRun) { $result['created']++; continue; }
             $payroll = StaffPayrollDisbursement::firstOrCreate(
                 ['user_id'=>$user->id, 'pay_date'=>$payDate->toDateString()],
-                [...$values, 'cutoff_start'=>$start, 'cutoff_end'=>$end, 'status'=>'processed', 'processed_at'=>now()]
+                [...$values, 'cutoff_start'=>$start, 'cutoff_end'=>$end, 'status'=>'scheduled', 'prepared_at'=>now()]
             );
             if ($payroll->wasRecentlyCreated) $result['created']++; else $result['skipped']++;
             if ($payroll->payslip_emailed_at || ! filter_var($user->email, FILTER_VALIDATE_EMAIL)) continue;

@@ -15,12 +15,12 @@ class StaffPayrollDisbursement extends Model
         'allowance', 'gross_pay', 'late_deduction', 'sss_deduction', 'philhealth_deduction',
         'pagibig_deduction', 'cash_advance_deduction', 'other_deductions', 'total_deductions',
         'net_pay', 'present_days', 'worked_minutes', 'overtime_minutes', 'status',
-        'processed_at', 'payslip_emailed_at', 'email_error', 'calculation_snapshot',
+        'prepared_at', 'released_at', 'payslip_emailed_at', 'email_error', 'calculation_snapshot',
     ];
 
     protected $casts = [
         'cutoff_start'=>'date', 'cutoff_end'=>'date', 'pay_date'=>'date',
-        'processed_at'=>'datetime', 'payslip_emailed_at'=>'datetime',
+        'prepared_at'=>'datetime', 'released_at'=>'datetime', 'payslip_emailed_at'=>'datetime',
         'base_pay'=>'float', 'overtime_pay'=>'float', 'allowance'=>'float', 'gross_pay'=>'float',
         'late_deduction'=>'float', 'sss_deduction'=>'float', 'philhealth_deduction'=>'float',
         'pagibig_deduction'=>'float', 'cash_advance_deduction'=>'float', 'other_deductions'=>'float',

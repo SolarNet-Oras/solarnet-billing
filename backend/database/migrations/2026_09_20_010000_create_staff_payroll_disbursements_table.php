@@ -28,8 +28,9 @@ return new class extends Migration {
             $table->unsignedSmallInteger('present_days')->default(0);
             $table->unsignedInteger('worked_minutes')->default(0);
             $table->unsignedInteger('overtime_minutes')->default(0);
-            $table->string('status', 24)->default('processed')->index();
-            $table->timestamp('processed_at');
+            $table->string('status', 24)->default('scheduled')->index();
+            $table->timestamp('prepared_at');
+            $table->timestamp('released_at')->nullable();
             $table->timestamp('payslip_emailed_at')->nullable();
             $table->text('email_error')->nullable();
             $table->json('calculation_snapshot')->nullable();
