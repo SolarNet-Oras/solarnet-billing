@@ -222,6 +222,7 @@ class TicketWorkflowService
             ]);
 
             $locked->update(['status' => 'closed', 'workflow_status' => 'registered', 'approved_by' => $admin->id, 'approved_at' => now(), 'registered_at' => now(), 'closed_at' => now(), 'closed_by' => $admin->id]);
+            app(InstallationIncentiveService::class)->allocate($locked->fresh());
             $this->history($locked, $admin, 'installation_approved', 'waiting_admin_approval', 'approved', null, ['mac_address' => $mac, 'lease_id' => $lease->id]);
             $this->history($locked, $admin, 'customer_registered', 'approved', 'registered', "Customer {$customer->account_number} registered and ticket closed.");
             $this->history($locked, $admin, 'ticket_closed', 'registered', 'closed', "Installation {$locked->ticket_number} completed.");

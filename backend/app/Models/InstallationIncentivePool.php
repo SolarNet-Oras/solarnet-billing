@@ -1,0 +1,17 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class InstallationIncentivePool extends Model
+{
+    use HasUuids;
+    protected $fillable = ['ticket_id','work_date','pool_amount','eligible_count','status'];
+    protected $casts = ['work_date'=>'date','pool_amount'=>'float','eligible_count'=>'integer'];
+    public function ticket(): BelongsTo { return $this->belongsTo(Ticket::class); }
+    public function allocations(): HasMany { return $this->hasMany(InstallationIncentiveAllocation::class, 'pool_id'); }
+}

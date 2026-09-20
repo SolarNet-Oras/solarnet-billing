@@ -7,6 +7,7 @@ use App\Models\FinancialEntry;
 use App\Models\DailyCashCount;
 use App\Models\Payment;
 use App\Models\TransactionDefinition;
+use App\Models\InstallationIncentivePool;
 use App\Services\CashDenominationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -94,6 +95,11 @@ class FinancialEntryController extends Controller
             ->whereDate('count_date', $end)
             ->latest('created_at')
             ->first();
+        $installationIncentives = InstallationIncentivePool::with([
+            'ticket:id,ticket_number,customer_id,registered_at',
+            'ticket.customer:id,full_name,account_number',
+            'allocations.user:id,name',
+        ])->whereBetween('work_date', [$start, $end])->latest('work_date')->get();
 
         return response()->json(['data' => [
             'period' => $period,
@@ -105,6 +111,7 @@ class FinancialEntryController extends Controller
             'wallets' => $wallets,
             'cash_count' => $cashCount,
             'cash_denomination_position' => app(CashDenominationService::class)->livePosition(),
+            'installation_incentives' => $installationIncentives,
         ]]);
     }
 

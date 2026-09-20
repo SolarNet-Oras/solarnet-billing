@@ -6,6 +6,7 @@ use App\Services\StaffPayrollService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use App\Models\StaffPayrollDisbursement;
+use App\Models\InstallationIncentiveAllocation;
 
 class ProcessScheduledPayroll extends Command
 {
@@ -26,9 +27,12 @@ class ProcessScheduledPayroll extends Command
         $today = now('Asia/Manila')->startOfDay();
         $released = 0;
         if ($this->isPayday($today) && ! $this->option('dry-run')) {
-            $released = StaffPayrollDisbursement::whereDate('pay_date', $today->toDateString())
-                ->where('status', 'scheduled')
+            $payrollIds = StaffPayrollDisbursement::whereDate('pay_date', $today->toDateString())
+                ->where('status', 'scheduled')->pluck('id');
+            $released = StaffPayrollDisbursement::whereIn('id', $payrollIds)
                 ->update(['status'=>'released', 'released_at'=>now()]);
+            InstallationIncentiveAllocation::whereIn('payroll_disbursement_id', $payrollIds)
+                ->update(['status'=>'paid']);
         }
 
         $tomorrow = $today->copy()->addDay();

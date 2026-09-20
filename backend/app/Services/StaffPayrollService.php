@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\StaffAttendanceRecord;
 use App\Models\StaffCompensation;
 use App\Models\StaffPayrollDisbursement;
+use App\Models\InstallationIncentiveAllocation;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -45,7 +46,11 @@ class StaffPayrollService
                 ['user_id'=>$user->id, 'pay_date'=>$payDate->toDateString()],
                 [...$values, 'cutoff_start'=>$start, 'cutoff_end'=>$end, 'status'=>'scheduled', 'prepared_at'=>now()]
             );
-            if ($payroll->wasRecentlyCreated) $result['created']++; else $result['skipped']++;
+            if ($payroll->wasRecentlyCreated) {
+                $result['created']++;
+                InstallationIncentiveAllocation::whereIn('id', $values['calculation_snapshot']['installation_incentive_allocation_ids'] ?? [])
+                    ->whereNull('payroll_disbursement_id')->update(['payroll_disbursement_id'=>$payroll->id, 'status'=>'included_in_payroll']);
+            } else $result['skipped']++;
             if ($payroll->payslip_emailed_at || ! filter_var($user->email, FILTER_VALIDATE_EMAIL)) continue;
             try {
                 $this->emailPayslip($payroll, $user);
@@ -71,22 +76,26 @@ class StaffPayrollService
         $late = ($daily / 480) * $rows->sum('late_minutes');
         $overtime = ($daily / 8) * (float) $profile->overtime_multiplier * ($rows->sum('overtime_minutes') / 60);
         $government = $this->contributions->employeeShares((float) $profile->monthly_salary);
+        $incentives = InstallationIncentiveAllocation::where('user_id', $user->id)
+            ->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
+            ->whereNull('payroll_disbursement_id')->where('status', 'earned')->get();
+        $installationIncentive = (float) $incentives->sum('share_amount');
         $allowance = (float) $profile->monthly_allowance / 2;
         $sss = $profile->sss_enabled ? $government['sss'] / 2 : 0;
         $philhealth = $profile->philhealth_enabled ? $government['philhealth'] / 2 : 0;
         $pagibig = $profile->pagibig_enabled ? $government['pagibig'] / 2 : 0;
         $cashAdvance = (float) $profile->cash_advance_deduction / 2;
         $other = (float) $profile->monthly_deduction / 2;
-        $gross = $base + $overtime + $allowance;
+        $gross = $base + $overtime + $allowance + $installationIncentive;
         $deductions = $late + $sss + $philhealth + $pagibig + $cashAdvance + $other;
         $money = fn ($value) => round(max(0, (float) $value), 2);
         return [
-            'base_pay'=>$money($base), 'overtime_pay'=>$money($overtime), 'allowance'=>$money($allowance), 'gross_pay'=>$money($gross),
+            'base_pay'=>$money($base), 'overtime_pay'=>$money($overtime), 'allowance'=>$money($allowance), 'installation_incentive'=>$money($installationIncentive), 'gross_pay'=>$money($gross),
             'late_deduction'=>$money($late), 'sss_deduction'=>$money($sss), 'philhealth_deduction'=>$money($philhealth),
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
             'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
             'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$rows->sum('overtime_minutes'),
-            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all()],
+            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
     }
 
@@ -94,7 +103,7 @@ class StaffPayrollService
     {
         $peso = fn ($value) => 'PHP '.number_format((float) $value, 2);
         $rows = [
-            ['Base attendance pay', $payroll->base_pay], ['Overtime pay', $payroll->overtime_pay], ['Allowance', $payroll->allowance],
+            ['Base attendance pay', $payroll->base_pay], ['Overtime pay', $payroll->overtime_pay], ['Allowance', $payroll->allowance], ['Installation incentives', $payroll->installation_incentive],
             ['Gross pay', $payroll->gross_pay], ['Late deduction', -$payroll->late_deduction], ['SSS', -$payroll->sss_deduction],
             ['PhilHealth', -$payroll->philhealth_deduction], ['Pag-IBIG', -$payroll->pagibig_deduction],
             ['Cash advance', -$payroll->cash_advance_deduction], ['Other deductions', -$payroll->other_deductions],
