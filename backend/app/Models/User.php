@@ -31,6 +31,8 @@ class User extends Authenticatable implements JWTSubject
         'is_active',
         'last_login_at',
         'attendance_pin_hash',
+        'attendance_reference_photo_path',
+        'attendance_reference_captured_at',
         'signup_status',
         'signup_requested_at',
         'signup_reviewed_by',
@@ -47,6 +49,7 @@ class User extends Authenticatable implements JWTSubject
         'remember_token',
         'profile_photo_path',
         'attendance_pin_hash',
+        'attendance_reference_photo_path',
     ];
 
     protected $appends = ['profile_photo_url'];
@@ -68,6 +71,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'attendance_reference_captured_at' => 'datetime',
             'signup_requested_at' => 'datetime',
             'signup_reviewed_at' => 'datetime',
             'is_active' => 'boolean',

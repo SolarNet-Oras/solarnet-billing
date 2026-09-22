@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -47,6 +48,7 @@ class StaffAttendanceController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'pin_configured' => filled($user->attendance_pin_hash),
+                    'reference_configured' => filled($user->attendance_reference_photo_path),
                     'record' => $record?->only(['id', 'clocked_in_at', 'clocked_out_at', 'status']),
                     'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
                 ];
@@ -105,6 +107,15 @@ class StaffAttendanceController extends Controller
             throw $exception;
         }
         if ($response->getStatusCode() >= 400) Storage::disk('local')->delete($path);
+        if ($response->getStatusCode() < 400 && $data['action'] === 'clock_in' && blank($employee->attendance_reference_photo_path)) {
+            $referencePath = 'attendance-reference/'.$employee->id.'.jpg';
+            if (Storage::disk('local')->copy($path, $referencePath)) {
+                $employee->forceFill([
+                    'attendance_reference_photo_path' => $referencePath,
+                    'attendance_reference_captured_at' => now(),
+                ])->save();
+            }
+        }
 
         return $response;
     }
@@ -152,6 +163,8 @@ class StaffAttendanceController extends Controller
             return [
                 'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email, 'phone'=>$user->phone,
                 'profile_photo_url'=>$user->profile_photo_url,
+                'attendance_reference_configured'=>filled($user->attendance_reference_photo_path),
+                'attendance_reference_captured_at'=>$user->attendance_reference_captured_at,
                 'pin_configured'=>filled($user->attendance_pin_hash),
                 'roles'=>$user->roles->pluck('name')->values(),
                 'records'=>$rows->values(),
@@ -312,5 +325,26 @@ class StaffAttendanceController extends Controller
         StaffAttendancePhotoAudit::create(['attendance_record_id'=>$attendance->id,'actor_id'=>$request->user()->id,'event'=>'photo_viewed','photo_type'=>$type,'ip_address'=>$request->ip()]);
 
         return Storage::disk('local')->response($path, null, ['Cache-Control'=>'private, no-store']);
+    }
+
+    public function referencePhoto(Request $request, User $user)
+    {
+        abort_if($user->hasRole('super_admin'), 404);
+        $path = $user->attendance_reference_photo_path;
+        abort_unless($path && Storage::disk('local')->exists($path), 404, 'Attendance reference photo not found.');
+        Log::info('Attendance reference photo viewed', ['employee_id'=>$user->id,'actor_id'=>$request->user()->id,'ip_address'=>$request->ip()]);
+
+        return Storage::disk('local')->response($path, null, ['Cache-Control'=>'private, no-store']);
+    }
+
+    public function resetReferencePhoto(Request $request, User $user): JsonResponse
+    {
+        abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
+        $path = $user->attendance_reference_photo_path;
+        $user->forceFill(['attendance_reference_photo_path'=>null,'attendance_reference_captured_at'=>null])->save();
+        if ($path) Storage::disk('local')->delete($path);
+        Log::warning('Attendance reference photo reset', ['employee_id'=>$user->id,'actor_id'=>$request->user()->id,'ip_address'=>$request->ip()]);
+
+        return response()->json(['message'=>'Attendance reference reset. The next successful time-in photo becomes the new reference.']);
     }
 }

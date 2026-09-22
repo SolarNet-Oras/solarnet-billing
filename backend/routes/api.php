@@ -109,6 +109,8 @@ Route::prefix('v1')->group(function () {
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
             Route::put('staff-attendance/{user}/pin', [StaffAttendanceController::class, 'updateAttendancePin'])->middleware('throttle:10,1');
             Route::get('staff-attendance/records/{attendance}/photo/{type}', [StaffAttendanceController::class, 'photo'])->whereIn('type', ['clock-in','clock-out'])->middleware('throttle:60,1');
+            Route::get('staff-attendance/{user}/reference-photo', [StaffAttendanceController::class, 'referencePhoto'])->middleware('throttle:60,1');
+            Route::delete('staff-attendance/{user}/reference-photo', [StaffAttendanceController::class, 'resetReferencePhoto'])->middleware('throttle:10,1');
             Route::post('staff-attendance/{user}/reference-photo', [StaffAttendanceController::class, 'updateReferencePhoto'])->middleware('throttle:10,1');
             Route::patch('staff-leave/{leave}/review', [StaffLeaveController::class, 'review']);
         });
