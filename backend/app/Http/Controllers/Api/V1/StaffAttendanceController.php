@@ -66,10 +66,19 @@ class StaffAttendanceController extends Controller
             'action' => ['required', Rule::in(['clock_in', 'clock_out'])],
             'photo' => ['required', 'image', 'mimes:jpeg,jpg,png', 'max:3072'],
             'photo_consent' => ['accepted'],
-            'face_count' => ['required', 'integer', 'in:1'],
+            'face_detection_supported' => ['nullable', 'boolean'],
+            'face_count' => ['nullable', 'integer', 'in:1'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
+        // Older installed kiosks always submit face_count=1 but do not send
+        // the capability flag. Keep them compatible while allowing browsers
+        // without the optional FaceDetector API to submit photo evidence for
+        // authorized human review.
+        $faceDetectionSupported = ! array_key_exists('face_detection_supported', $data)
+            || (bool) $data['face_detection_supported'];
+        abort_if($faceDetectionSupported && (int) ($data['face_count'] ?? 0) !== 1, 422, 'Exactly one face must be visible.');
+
         $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
         abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
         $validCredential = $data['credential_type'] === 'pin'
@@ -96,6 +105,8 @@ class StaffAttendanceController extends Controller
             'device' => mb_substr((string) $request->userAgent(), 0, 500),
             'latitude' => $data['latitude'] ?? null,
             'longitude' => $data['longitude'] ?? null,
+            'face_detection_supported' => $faceDetectionSupported,
+            'verification_method' => $faceDetectionSupported ? 'camera_pin' : 'camera_pin_manual_review',
         ];
 
         try {
@@ -235,7 +246,7 @@ class StaffAttendanceController extends Controller
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record = StaffAttendanceRecord::firstOrCreate(
             ['user_id'=>$employee->id, 'work_date'=>$now->toDateString()],
-            ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_in_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence?'camera_pin':null, 'clock_in_photo_path'=>$evidence['photo_path']??null, 'clock_in_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_in_ip_address'=>$evidence['ip_address']??null, 'clock_in_device'=>$evidence['device']??null]
+            ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_in_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??null, 'clock_in_photo_path'=>$evidence['photo_path']??null, 'clock_in_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_in_ip_address'=>$evidence['ip_address']??null, 'clock_in_device'=>$evidence['device']??null]
         );
         if (! $record->wasRecentlyCreated) return response()->json(['message'=>'You are already clocked in today.', 'data'=>$record], 409);
         return response()->json(['message'=>'Clock-in recorded.', 'data'=>$record], 201);
@@ -259,7 +270,7 @@ class StaffAttendanceController extends Controller
         $scheduledEnd = Carbon::parse($now->toDateString().' '.$profile->scheduled_end, 'Asia/Manila');
         $overtime = max(0, $scheduledEnd->diffInMinutes($now, false));
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
-        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence?'camera_pin':$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
+        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
     }
 
