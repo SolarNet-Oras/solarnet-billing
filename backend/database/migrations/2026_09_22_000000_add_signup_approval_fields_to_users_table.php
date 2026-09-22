@@ -4,6 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Support\LegacyDefaultAdministrator;
 
 return new class extends Migration
 {
@@ -22,6 +23,7 @@ return new class extends Migration
             ->where('is_active', false)
             ->whereNull('last_login_at')
             ->whereNull('deleted_at')
+            ->whereRaw('LOWER(email) <> ?', [LegacyDefaultAdministrator::EMAIL])
             ->update([
                 'signup_status' => 'pending',
                 'signup_requested_at' => DB::raw('created_at'),
