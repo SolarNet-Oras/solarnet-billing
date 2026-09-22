@@ -145,7 +145,7 @@ class StaffAttendanceController extends Controller
             ->with('roles:id,name')
             ->orderBy('name');
         $users = $users->get();
-        $records = StaffAttendanceRecord::query()->whereIn('user_id', $users->pluck('id'))->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])->orderByDesc('work_date')->get()->groupBy('user_id');
+        $records = StaffAttendanceRecord::query()->with('overtimeReviewer:id,name')->whereIn('user_id', $users->pluck('id'))->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])->orderByDesc('work_date')->get()->groupBy('user_id');
         $todayRecords = StaffAttendanceRecord::query()
             ->whereIn('user_id', $users->pluck('id'))
             ->whereDate('work_date', now('Asia/Manila')->toDateString())
@@ -161,7 +161,8 @@ class StaffAttendanceController extends Controller
             $presentDays = $rows->whereIn('status', ['present', 'late'])->count();
             $base = $daily * $presentDays;
             $late = ($daily / 480) * $rows->sum('late_minutes');
-            $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($rows->sum('overtime_minutes') / 60);
+            $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
+            $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($approvedOvertimeMinutes / 60);
             $allowance = (float) ($profile?->monthly_allowance ?? 0);
             $government = $contributionService->employeeShares((float) ($profile?->monthly_salary ?? 0));
             $sss = $profile?->sss_enabled ? $government['sss'] : 0;
@@ -186,7 +187,8 @@ class StaffAttendanceController extends Controller
                     'leave_days'=>$rows->where('status', 'leave')->count(),
                     'late_days'=>$rows->where('late_minutes', '>', 0)->count(),
                     'late_minutes'=>$rows->sum('late_minutes'), 'worked_hours'=>round($rows->sum('worked_minutes') / 60, 2),
-                    'overtime_hours'=>round($rows->sum('overtime_minutes') / 60, 2),
+                    'overtime_hours'=>round($approvedOvertimeMinutes / 60, 2),
+                    'pending_overtime_minutes'=>$rows->where('overtime_status', 'pending')->sum('overtime_minutes'),
                     'base_pay'=>round($base, 2), 'overtime_pay'=>round($overtime, 2),
                     'allowance'=>round($allowance, 2), 'late_deduction'=>round($late, 2),
                     'sss_deduction'=>round($sss, 2), 'philhealth_deduction'=>round($philhealth, 2),
@@ -267,13 +269,45 @@ class StaffAttendanceController extends Controller
         $now = now('Asia/Manila');
         $record = StaffAttendanceRecord::where('user_id', $employee->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
         if ($record->clocked_out_at) return response()->json(['message'=>'You are already clocked out today.', 'data'=>$record], 409);
-        $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
         $worked = (int) floor(max(0, $record->clocked_in_at->diffInMinutes(now(), false)));
-        $scheduledEnd = Carbon::parse($now->toDateString().' '.$profile->scheduled_end, 'Asia/Manila');
-        $overtime = (int) floor(max(0, $scheduledEnd->diffInMinutes($now, false)));
+        $overtimeStart = Carbon::parse($now->toDateString().' 18:00:00', 'Asia/Manila');
+        $overtime = (int) floor(max(0, $overtimeStart->diffInMinutes($now, false)));
+        $overtimeStatus = $overtime > 0 ? 'pending' : 'not_applicable';
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
-        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
+        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'overtime_status'=>$overtimeStatus, 'approved_overtime_minutes'=>0, 'overtime_reviewed_by'=>null, 'overtime_reviewed_at'=>null, 'overtime_review_notes'=>null, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
+    }
+
+    public function reviewOvertime(Request $request, StaffAttendanceRecord $attendance): JsonResponse
+    {
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approved', 'rejected'])],
+            'notes' => ['nullable', 'string', 'max:500'],
+        ]);
+        abort_unless($attendance->overtime_status === 'pending' && $attendance->overtime_minutes > 0, 422, 'Only pending overtime can be reviewed.');
+        abort_if(
+            StaffPayrollDisbursement::query()
+                ->where('user_id', $attendance->user_id)
+                ->whereDate('cutoff_start', '<=', $attendance->work_date)
+                ->whereDate('cutoff_end', '>=', $attendance->work_date)
+                ->exists(),
+            422,
+            'This attendance date is already included in a payroll run and can no longer be changed.'
+        );
+
+        $approved = $data['decision'] === 'approved';
+        $attendance->update([
+            'overtime_status' => $data['decision'],
+            'approved_overtime_minutes' => $approved ? $attendance->overtime_minutes : 0,
+            'overtime_reviewed_by' => $request->user()->id,
+            'overtime_reviewed_at' => now(),
+            'overtime_review_notes' => filled($data['notes'] ?? null) ? trim($data['notes']) : null,
+        ]);
+
+        return response()->json([
+            'message' => $approved ? 'Overtime approved for payroll.' : 'Overtime rejected and excluded from payroll.',
+            'data' => $attendance->fresh('overtimeReviewer:id,name'),
+        ]);
     }
 
     public function updateCompensation(Request $request, User $user): JsonResponse

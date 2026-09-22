@@ -74,7 +74,8 @@ class StaffPayrollService
         $present = $rows->whereIn('status', ['present', 'late'])->count();
         $base = $daily * $present;
         $late = ($daily / 480) * $rows->sum('late_minutes');
-        $overtime = ($daily / 8) * (float) $profile->overtime_multiplier * ($rows->sum('overtime_minutes') / 60);
+        $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
+        $overtime = ($daily / 8) * (float) $profile->overtime_multiplier * ($approvedOvertimeMinutes / 60);
         $government = $this->contributions->employeeShares((float) $profile->monthly_salary);
         $incentives = InstallationIncentiveAllocation::where('user_id', $user->id)
             ->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
@@ -94,7 +95,7 @@ class StaffPayrollService
             'late_deduction'=>$money($late), 'sss_deduction'=>$money($sss), 'philhealth_deduction'=>$money($philhealth),
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
             'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
-            'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$rows->sum('overtime_minutes'),
+            'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$approvedOvertimeMinutes,
             'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
     }
