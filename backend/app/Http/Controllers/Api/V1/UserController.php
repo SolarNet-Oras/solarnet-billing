@@ -9,9 +9,48 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
+    public function signupRequests(): JsonResponse
+    {
+        $requests = $this->visibleUsers()
+            ->with('roles:id,name,display_name')
+            ->where('signup_status', 'pending')
+            ->orderBy('signup_requested_at')
+            ->get(['id', 'name', 'email', 'phone', 'is_active', 'signup_status', 'signup_requested_at', 'created_at']);
+
+        return response()->json(['status' => 'success', 'data' => $requests]);
+    }
+
+    public function reviewSignup(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate(['decision' => ['required', Rule::in(['approve', 'reject'])]]);
+        $user = $this->visibleUsers()->with('roles')->where('signup_status', 'pending')->findOrFail($id);
+
+        DB::transaction(function () use ($data, $request, $user): void {
+            $user->forceFill([
+                'is_active' => $data['decision'] === 'approve',
+                'signup_status' => $data['decision'] === 'approve' ? 'approved' : 'rejected',
+                'signup_reviewed_by' => $request->user()->id,
+                'signup_reviewed_at' => now(),
+            ])->save();
+
+            if ($data['decision'] === 'reject') {
+                $user->delete();
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $data['decision'] === 'approve'
+                ? 'Staff signup approved. The employee can now sign in.'
+                : 'Staff signup rejected and removed from the approval queue.',
+        ]);
+    }
+
     /**
      * Display a listing of users
      */
@@ -78,6 +117,9 @@ class UserController extends Controller
             'phone' => $request->phone,
             'password' => Hash::make($request->password),
             'is_active' => $request->input('is_active', true),
+            'signup_status' => 'approved',
+            'signup_reviewed_by' => $request->user()->id,
+            'signup_reviewed_at' => now(),
         ]);
 
         // Assign roles
@@ -158,6 +200,12 @@ class UserController extends Controller
         }
 
         $data = $request->only(['name', 'email', 'phone', 'is_active']);
+
+        if ($request->boolean('is_active') && $user->signup_status === 'pending') {
+            $data['signup_status'] = 'approved';
+            $data['signup_reviewed_by'] = $request->user()->id;
+            $data['signup_reviewed_at'] = now();
+        }
 
         if ($request->has('roles') && $request->user()->id === $user->id) {
             $currentRoles = $user->roles()->pluck('name')->sort()->values()->all();

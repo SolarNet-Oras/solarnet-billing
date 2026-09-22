@@ -27,6 +27,10 @@ interface UserForm {
   roles: string[];
   is_active: boolean;
 }
+interface SignupRequest extends UserRow {
+  signup_status: 'pending';
+  signup_requested_at: string | null;
+}
 interface ClientPortalAccount {
   id: string;
   account_number: string;
@@ -50,6 +54,7 @@ const LEGACY_DEFAULT_ADMIN_EMAIL = 'admin@ispbilling.local';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [signupRequests, setSignupRequests] = useState<SignupRequest[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [clientAccounts, setClientAccounts] = useState<ClientPortalAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,19 +63,22 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [uRes, rRes, cRes] = await Promise.all([
+      const [uRes, rRes, cRes, signupRes] = await Promise.all([
         api.get('/users', { params: { search: search || undefined, per_page: 50 } }),
         api.get('/roles').catch(() => ({ data: { data: [] } })),
         api.get('/customer-portal-accounts').catch(() => ({ data: { data: [] } })),
+        api.get('/users/signup-requests'),
       ]);
       setUsers(uRes.data?.data || []);
       setRoles(rRes.data?.data || []);
       setClientAccounts(cRes.data?.data || []);
+      setSignupRequests(signupRes.data?.data || []);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to load users');
     } finally {
@@ -159,6 +167,21 @@ export default function UsersPage() {
     }
   };
 
+  const reviewSignup = async (request: SignupRequest, decision: 'approve' | 'reject'): Promise<void> => {
+    const verb = decision === 'approve' ? 'approve' : 'reject';
+    if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} the staff account request from ${request.name}?`)) return;
+    setReviewing(request.id);
+    setError(null);
+    try {
+      await api.post(`/users/${request.id}/signup-review`, { decision });
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.message || `Could not ${verb} this signup request.`);
+    } finally {
+      setReviewing(null);
+    }
+  };
+
   const resetClientPassword = async (client: ClientPortalAccount): Promise<void> => {
     if (!client.email) {
       alert('This client has no registered email. Add an email on the customer record first.');
@@ -227,6 +250,14 @@ export default function UsersPage() {
             data-testid="user-search-input"
           />
         </div>
+
+        <section className="overflow-hidden rounded-xl border border-amber-300 bg-card shadow-sm" data-testid="staff-signup-approvals">
+          <div className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-3 dark:bg-amber-950/20">
+            <div><h2 className="font-semibold text-foreground">Pending Staff Approvals</h2><p className="text-xs text-muted-foreground">Requests submitted from the staff signup page. Approval immediately enables sign-in with the requested role.</p></div>
+            <span className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white">{signupRequests.length} pending</span>
+          </div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead className="bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3">Applicant</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">Requested role</th><th className="px-4 py-3">Submitted</th><th className="px-4 py-3 text-right">Decision</th></tr></thead><tbody className="divide-y divide-border">{signupRequests.map(request=><tr key={request.id}><td className="px-4 py-3"><p className="font-semibold text-foreground">{request.name}</p><p className="text-xs text-muted-foreground">{request.email}</p></td><td className="px-4 py-3">{request.phone||'Not provided'}</td><td className="px-4 py-3">{request.roles.map(role=>role.display_name||role.name).join(', ')}</td><td className="px-4 py-3">{new Date(request.signup_requested_at||request.created_at).toLocaleString('en-PH')}</td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><button disabled={reviewing===request.id} onClick={()=>void reviewSignup(request,'approve')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button disabled={reviewing===request.id} onClick={()=>void reviewSignup(request,'reject')} className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Reject</button></div></td></tr>)}{signupRequests.length===0&&<tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No staff signup requests are waiting for approval.</td></tr>}</tbody></table></div>
+        </section>
 
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">

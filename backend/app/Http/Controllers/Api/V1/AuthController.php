@@ -66,6 +66,8 @@ class AuthController extends Controller
                 'phone' => filled($data['phone'] ?? null) ? trim($data['phone']) : null,
                 'password' => Hash::make($data['password']),
                 'is_active' => false,
+                'signup_status' => 'pending',
+                'signup_requested_at' => now(),
             ]);
             $user->roles()->attach($role->id);
 

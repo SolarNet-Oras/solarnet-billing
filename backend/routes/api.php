@@ -126,6 +126,8 @@ Route::prefix('v1')->group(function () {
         // Keep this separate from customer portal-account support, which office
         // administrators may still need for a customer password reset.
         Route::middleware('role:super_admin')->group(function () {
+            Route::get('users/signup-requests', [UserController::class, 'signupRequests']);
+            Route::post('users/{user}/signup-review', [UserController::class, 'reviewSignup'])->middleware('throttle:20,1');
             Route::apiResource('users', UserController::class);
             Route::post('users/{user}/roles', [UserController::class, 'assignRoles']);
             Route::get('employee-devices', [EmployeeDeviceController::class, 'index']);
