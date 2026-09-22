@@ -242,7 +242,9 @@ class StaffAttendanceController extends Controller
         $now = now('Asia/Manila');
         $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
         $scheduled = Carbon::parse($now->toDateString().' '.$profile->scheduled_start, 'Asia/Manila')->addMinutes($profile->grace_minutes);
-        $late = max(0, $scheduled->diffInMinutes($now, false));
+        // Carbon 3 returns fractional minutes. Attendance columns are integer
+        // counters, so store only completed minutes consistently.
+        $late = (int) floor(max(0, $scheduled->diffInMinutes($now, false)));
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record = StaffAttendanceRecord::firstOrCreate(
             ['user_id'=>$employee->id, 'work_date'=>$now->toDateString()],
@@ -266,9 +268,9 @@ class StaffAttendanceController extends Controller
         $record = StaffAttendanceRecord::where('user_id', $employee->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
         if ($record->clocked_out_at) return response()->json(['message'=>'You are already clocked out today.', 'data'=>$record], 409);
         $profile = StaffCompensation::firstOrCreate(['user_id'=>$employee->id]);
-        $worked = max(0, $record->clocked_in_at->diffInMinutes(now(), false));
+        $worked = (int) floor(max(0, $record->clocked_in_at->diffInMinutes(now(), false)));
         $scheduledEnd = Carbon::parse($now->toDateString().' '.$profile->scheduled_end, 'Asia/Manila');
-        $overtime = max(0, $scheduledEnd->diffInMinutes($now, false));
+        $overtime = (int) floor(max(0, $scheduledEnd->diffInMinutes($now, false)));
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
