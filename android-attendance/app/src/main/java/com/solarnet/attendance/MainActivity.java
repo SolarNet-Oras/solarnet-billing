@@ -28,6 +28,9 @@ public final class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        // HTML and service-worker metadata must come from the server after a
+        // deployment. Vite assets are content-hashed and remain cache-safe.
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setMediaPlaybackRequiresUserGesture(false);
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -49,7 +52,8 @@ public final class MainActivity extends Activity {
             }
         });
         ensurePermissions();
-        webView.loadUrl(state == null ? START_URL : START_URL);
+        webView.clearCache(true);
+        webView.loadUrl(START_URL + "?app=android&shell=20260922-camera-fallback");
     }
 
     private void ensurePermissions() {
