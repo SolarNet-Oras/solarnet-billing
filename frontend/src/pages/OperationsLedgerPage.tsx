@@ -64,7 +64,8 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const [movementCashCounts, setMovementCashCounts] = useState<Record<number, number>>({});
   const [detailEntry, setDetailEntry] = useState<Entry | null>(null);
 
-  const activeDefinitions = useMemo(() => definitions.filter((definition) => definition.active !== false && (canTopUpCash || !(definition.effect_type === 'cash_in' && !definition.source_wallet && ['cash', 'gcash', 'bpi', 'landbank'].includes(String(definition.destination_wallet))))), [definitions, canTopUpCash]);
+  const activeDefinitions = useMemo(() => definitions.filter((definition) => definition.active !== false), [definitions]);
+  const isSuperAdminOnlyDefinition = (definition: Definition): boolean => definition.effect_type === 'cash_in' && !definition.source_wallet && ['cash', 'gcash', 'bpi', 'landbank'].includes(String(definition.destination_wallet));
   const types = useMemo(() => [...new Set(activeDefinitions.map((definition) => definition.type))], [activeDefinitions]);
   const descriptions = useMemo(() => [...new Set(activeDefinitions.filter((definition) => definition.type === type).map((definition) => definition.description))], [activeDefinitions, type]);
   const paymentOptions = useMemo(() => activeDefinitions.filter((definition) => definition.type === type && definition.description === description), [activeDefinitions, type, description]);
@@ -99,6 +100,11 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const save = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     if (isSaving || !definitionId) return;
+    const definition = activeDefinitions.find((item) => item.id === definitionId);
+    if (!canTopUpCash && definition && isSuperAdminOnlyDefinition(definition)) {
+      setError('This wallet-funding option is visible for synchronization but can be recorded only by a Super Administrator.');
+      return;
+    }
     setError(''); setIsSaving(true);
     try {
       await api.post('/financial-entries', { transaction_definition_id: definitionId, amount: Number(amount), entry_date: date, reference: reference || null, idempotency_key: crypto.randomUUID(), cash_breakdown: movementTouchesCash ? movementBreakdown.map(({ denomination, kind, count }) => ({ denomination, kind, count })) : null });
@@ -218,7 +224,7 @@ export default function OperationsLedgerPage(): React.JSX.Element {
     <section className="grid gap-6 lg:grid-cols-3"><form onSubmit={save} className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Add daily record</h2><p className="mt-1 text-xs text-muted-foreground">Choose each field in order. Invalid combinations cannot be saved.</p><div className="mt-4 space-y-3">
       <label className="block text-xs font-semibold text-muted-foreground">Type of transaction<select required value={type} onChange={(event) => { setType(event.target.value); setDescription(''); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground"><option value="">Select transaction type</option>{types.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label className="block text-xs font-semibold text-muted-foreground">Description<select required disabled={!type} value={description} onChange={(event) => { setDescription(event.target.value); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{type ? 'Select description' : 'Select a type first'}</option>{descriptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-      <label className="block text-xs font-semibold text-muted-foreground">Payment method<select required disabled={!description} value={definitionId} onChange={(event) => setDefinitionId(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{description ? 'Select payment method' : 'Select a description first'}</option>{paymentOptions.map((option) => <option key={option.id} value={option.id}>{METHOD_LABELS[option.payment_method] ?? option.payment_method}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-muted-foreground">Payment method<select required disabled={!description} value={definitionId} onChange={(event) => setDefinitionId(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{description ? 'Select payment method' : 'Select a description first'}</option>{paymentOptions.map((option) => {const restricted=!canTopUpCash&&isSuperAdminOnlyDefinition(option);return <option key={option.id} value={option.id} disabled={restricted}>{METHOD_LABELS[option.payment_method] ?? option.payment_method}{restricted?' — Super Administrator only':''}</option>})}</select>{!canTopUpCash&&paymentOptions.some(isSuperAdminOnlyDefinition)&&<span className="mt-1 block text-[11px] font-normal text-muted-foreground">The shared dropdown is synchronized. Owner-funding and wallet top-ups remain restricted to the Super Administrator.</span>}</label>
       <label className="block text-xs font-semibold text-muted-foreground">Amount<input required min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label>
       <label className="block text-xs font-semibold text-muted-foreground">Reference / OR number <span className="font-normal">(optional)</span><input value={reference} onChange={(event) => setReference(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label>
       {cashMovementFields}
