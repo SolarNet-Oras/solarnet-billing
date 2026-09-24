@@ -13,7 +13,9 @@ class CleanupOnuRemoteSessions extends Command
     public function handle(OnuRemoteAccessService $service): int
     {
         if ($this->option('all')) {
-            $this->info($service->cleanupAllOpen().' open legacy public ONU session(s) cleaned.');
+            $sessions = $service->cleanupAllOpen();
+            $rules = $service->cleanupAllLegacyRouterRules();
+            $this->info($sessions.' open legacy public ONU session(s) cleaned; '.$rules.' orphaned MikroTik rule(s) removed.');
             return self::SUCCESS;
         }
 

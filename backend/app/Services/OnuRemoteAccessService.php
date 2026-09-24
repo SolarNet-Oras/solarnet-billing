@@ -91,6 +91,36 @@ class OnuRemoteAccessService
         return $count;
     }
 
+    public function cleanupAllLegacyRouterRules(): int
+    {
+        $count = 0;
+
+        Router::query()->where('is_active', true)->each(function (Router $router) use (&$count): void {
+            try {
+                $client = $this->client($router);
+
+                foreach (['/ip/firewall/nat', '/ip/firewall/filter'] as $menu) {
+                    foreach ($client->query(new Query($menu.'/print'))->read() as $rule) {
+                        $comment = (string) ($rule['comment'] ?? '');
+                        $id = $rule['.id'] ?? null;
+
+                        if ($id && str_starts_with($comment, self::COMMENT_PREFIX)) {
+                            $client->query((new Query($menu.'/remove'))->equal('.id', $id))->read();
+                            $count++;
+                        }
+                    }
+                }
+            } catch (Throwable $exception) {
+                Log::error('Legacy ONU router-rule cleanup failed', [
+                    'router_id'=>$router->id,
+                    'error'=>$exception->getMessage(),
+                ]);
+            }
+        });
+
+        return $count;
+    }
+
     public function url(OnuRemoteSession $session): string
     {
         return ($session->target_port === 443 ? 'https' : 'http').'://'.$session->public_host.':'.$session->public_port.$session->path;
