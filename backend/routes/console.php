@@ -103,7 +103,7 @@ Schedule::command('qos:complete-safe-tests')
     ->runInBackground();
 
 // Every minute — remove only expired, SolarNet-tagged temporary ONU access rules.
-Schedule::command('onu-remote:cleanup --all')
+Schedule::command('onu-remote:cleanup')
     ->everyMinute()
     ->timezone($tz)
     ->withoutOverlapping()
