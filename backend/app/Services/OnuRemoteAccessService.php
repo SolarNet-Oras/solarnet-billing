@@ -74,6 +74,23 @@ class OnuRemoteAccessService
         return $count;
     }
 
+    public function cleanupAllOpen(): int
+    {
+        $count = 0;
+        OnuRemoteSession::with('router')
+            ->whereIn('status', ['active', 'creating', 'cleanup_failed'])
+            ->each(function (OnuRemoteSession $session) use (&$count): void {
+                try {
+                    $this->close($session);
+                    $count++;
+                } catch (Throwable) {
+                    // close() records cleanup_failed and the exact error for retry.
+                }
+            });
+
+        return $count;
+    }
+
     public function url(OnuRemoteSession $session): string
     {
         return ($session->target_port === 443 ? 'https' : 'http').'://'.$session->public_host.':'.$session->public_port.$session->path;
