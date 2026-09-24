@@ -28,6 +28,7 @@ import {
   Waypoints,
   Download,
   Globe2,
+  SlidersHorizontal,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
   { name: 'Facebook Automation', path: '/facebook-automation', icon: MessageCircle, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Mass SMS Advisory', path: '/sms-advisories', icon: MessageSquareText, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Network Devices', path: '/network-devices', icon: Network, permission: 'view-routers' },
+  { name: 'Config ONU', path: '/config-onu', icon: SlidersHorizontal, roles: ['super_admin'] },
   { name: 'Cybersecurity', path: '/cybersecurity', icon: ShieldCheck, roles: ['super_admin', 'admin', 'noc'] },
   { name: 'RADIUS / IPoE', path: '/radius-ipoe', icon: Radio, roles: ['super_admin', 'admin'] },
   { name: 'WireGuard', path: '/wireguard', icon: Waypoints, roles: ['super_admin'] },

@@ -50,6 +50,7 @@ import StaffAttendancePage from '@/pages/StaffAttendancePage';
 import AttendanceAppPage from '@/pages/AttendanceAppPage';
 import AttendanceInstallPage from '@/pages/AttendanceInstallPage';
 import IpIntelligencePage from '@/pages/IpIntelligencePage';
+import OnuConfigPage from '@/pages/OnuConfigPage';
 
 // ============================================================================
 // Main App Component
@@ -189,6 +190,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/wireguard" element={<ProtectedRoute allowedRoles={['super_admin']}><WireguardPage /></ProtectedRoute>} />
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
               <Route path="/ip-intelligence" element={<ProtectedRoute allowedRoles={['super_admin']}><IpIntelligencePage /></ProtectedRoute>} />
+              <Route path="/config-onu" element={<ProtectedRoute allowedRoles={['super_admin']}><OnuConfigPage /></ProtectedRoute>} />
               <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
               <Route path="/staff-leave" element={<ProtectedRoute><StaffLeavePage /></ProtectedRoute>} />
               <Route path="/attendance-app" element={<AttendanceAppPage />} />

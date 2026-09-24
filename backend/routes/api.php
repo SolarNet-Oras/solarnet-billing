@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\OltSnmpController;
 use App\Http\Controllers\Api\V1\HistoricalCleanupController;
 use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\IpIntelligenceController;
+use App\Http\Controllers\Api\V1\OnuRemoteAccessController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
 use App\Http\Controllers\Api\V1\FinancialMonitoringController;
 use App\Http\Controllers\Api\V1\FacebookAutomationController;
@@ -104,6 +105,9 @@ Route::prefix('v1')->group(function () {
     // Protected routes (require authentication)
     Route::middleware(['auth:api', 'active.staff'])->group(function () {
         Route::middleware('role:super_admin')->group(function () {
+            Route::get('onu-remote-sessions', [OnuRemoteAccessController::class, 'index']);
+            Route::post('onu-remote-sessions', [OnuRemoteAccessController::class, 'store'])->middleware('throttle:10,1');
+            Route::delete('onu-remote-sessions/{onuRemoteSession}', [OnuRemoteAccessController::class, 'destroy'])->middleware('throttle:20,1');
             Route::post('ip-intelligence/lookup', [IpIntelligenceController::class, 'lookup'])->middleware('throttle:30,1');
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);

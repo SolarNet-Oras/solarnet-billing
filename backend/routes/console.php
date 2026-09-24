@@ -102,6 +102,13 @@ Schedule::command('qos:complete-safe-tests')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Every minute — remove only expired, SolarNet-tagged temporary ONU access rules.
+Schedule::command('onu-remote:cleanup')
+    ->everyMinute()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Daily — remove expired private photo evidence while preserving attendance.
 Schedule::command('attendance:cleanup-photos')
     ->dailyAt('02:30')
