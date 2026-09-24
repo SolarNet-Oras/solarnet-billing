@@ -22,11 +22,20 @@ class OnuRemoteAccessController extends Controller
             ...$session->toArray(),
             'url'=>$session->status==='active' && $session->expires_at->isFuture() ? $service->url($session) : null,
         ]);
-        return response()->json(['data'=>['customers'=>$customers,'sessions'=>$sessions,'session_minutes'=>10,'paths'=>['/fh','/adminhtml']]]);
+        return response()->json(['data'=>[
+            'customers'=>$customers,
+            'sessions'=>$sessions,
+            'session_minutes'=>10,
+            'paths'=>['/fh','/adminhtml'],
+            'access_ready'=>false,
+            'access_blocker'=>'ONU access is disabled until the private MikroTik/VPN management path has been audited and verified.',
+        ]]);
     }
 
     public function store(Request $request, OnuRemoteAccessService $service): JsonResponse
     {
+        abort(409, 'Public ONU port forwarding is disabled. Complete the private MikroTik/VPN management-path audit before opening ONU sessions.');
+
         $data=$request->validate([
             'customer_id'=>['required','uuid','exists:customers,id'],
             'path'=>['required','string','max:200','regex:/^\/[A-Za-z0-9._~!$&\'()*+,;=:@%\/-]*$/'],
