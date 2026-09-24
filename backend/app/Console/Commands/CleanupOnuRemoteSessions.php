@@ -14,8 +14,11 @@ class CleanupOnuRemoteSessions extends Command
     {
         if ($this->option('all')) {
             $sessions = $service->cleanupAllOpen();
-            $rules = $service->cleanupAllLegacyRouterRules();
-            $this->info($sessions.' open legacy public ONU session(s) cleaned; '.$rules.' orphaned MikroTik rule(s) removed.');
+            $cleanup = $service->cleanupAllLegacyRouterRules();
+            $this->info($sessions.' open legacy public ONU session(s) cleaned; '.$cleanup['rules_removed'].' orphaned MikroTik rule(s) removed from '.$cleanup['routers_scanned'].' router(s).');
+            if ($cleanup['routers_failed'] > 0) {
+                $this->warn($cleanup['routers_failed'].' router(s) could not be inspected. Check the Laravel log for router name and error.');
+            }
             return self::SUCCESS;
         }
 

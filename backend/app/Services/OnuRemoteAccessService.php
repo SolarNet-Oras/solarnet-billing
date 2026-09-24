@@ -91,11 +91,13 @@ class OnuRemoteAccessService
         return $count;
     }
 
-    public function cleanupAllLegacyRouterRules(): int
+    /** @return array{routers_scanned:int,rules_removed:int,routers_failed:int} */
+    public function cleanupAllLegacyRouterRules(): array
     {
-        $count = 0;
+        $result = ['routers_scanned'=>0, 'rules_removed'=>0, 'routers_failed'=>0];
 
-        Router::query()->where('is_active', true)->each(function (Router $router) use (&$count): void {
+        Router::query()->each(function (Router $router) use (&$result): void {
+            $result['routers_scanned']++;
             try {
                 $client = $this->client($router);
 
@@ -106,19 +108,21 @@ class OnuRemoteAccessService
 
                         if ($id && str_starts_with($comment, self::COMMENT_PREFIX)) {
                             $client->query((new Query($menu.'/remove'))->equal('.id', $id))->read();
-                            $count++;
+                            $result['rules_removed']++;
                         }
                     }
                 }
             } catch (Throwable $exception) {
+                $result['routers_failed']++;
                 Log::error('Legacy ONU router-rule cleanup failed', [
                     'router_id'=>$router->id,
+                    'router_name'=>$router->name,
                     'error'=>$exception->getMessage(),
                 ]);
             }
         });
 
-        return $count;
+        return $result;
     }
 
     public function url(OnuRemoteSession $session): string
