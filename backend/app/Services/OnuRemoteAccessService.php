@@ -26,8 +26,7 @@ class OnuRemoteAccessService
 
         $client = $this->client($router);
         $cloud = $client->query(new Query('/ip/cloud/print'))->read()[0] ?? [];
-        $publicHost = rtrim(trim((string) ($cloud['dns-name'] ?? '')), '.');
-        if ($publicHost === '' || preg_match('/^[A-Za-z0-9.-]+$/', $publicHost) !== 1) throw new \RuntimeException('MikroTik IP Cloud/DDNS is not available on this router. Configure a valid public router hostname before starting ONU access.');
+        $publicHost = $this->publicHost($cloud, $router);
 
         $port = $this->availablePort($client);
         $session = new OnuRemoteSession([
@@ -94,6 +93,44 @@ class OnuRemoteAccessService
             if ($client->query((new Query('/ip/firewall/nat/print'))->where('dst-port',(string)$port))->read() === []) return $port;
         }
         throw new \RuntimeException('No safe temporary remote-access port is currently available.');
+    }
+
+    private function publicHost(array $cloud, Router $router): string
+    {
+        $dnsName = rtrim(trim((string) ($cloud['dns-name'] ?? '')), '.');
+        if ($dnsName !== '' && filter_var($dnsName, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+            return $dnsName;
+        }
+
+        $publicAddress = trim((string) ($cloud['public-address'] ?? ''));
+        if ($this->isPublicIpv4($publicAddress)) {
+            return $publicAddress;
+        }
+
+        $configuredHost = trim((string) $router->host);
+        if ($this->isPublicIpv4($configuredHost)) {
+            return $configuredHost;
+        }
+
+        if (
+            $configuredHost !== ''
+            && filter_var($configuredHost, FILTER_VALIDATE_IP) === false
+            && filter_var($configuredHost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)
+            && ! in_array(strtolower($configuredHost), ['localhost', 'localhost.localdomain'], true)
+        ) {
+            return rtrim($configuredHost, '.');
+        }
+
+        throw new \RuntimeException('No public MikroTik hostname or IPv4 address is available. Enable MikroTik IP Cloud/DDNS or configure a publicly reachable router host. Private and WireGuard addresses cannot be opened in a browser.');
+    }
+
+    private function isPublicIpv4(string $address): bool
+    {
+        return filter_var(
+            $address,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+        ) !== false;
     }
 
     private function removeOwnedRules(Client $client, string $comment): void
