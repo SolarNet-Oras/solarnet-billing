@@ -15,7 +15,7 @@ return new class extends Migration {
             $table->string('customer_ip', 45);
             $table->string('source_ip', 45);
             $table->unsignedSmallInteger('target_port');
-            $table->unsignedSmallInteger('public_port')->index();
+            $table->unsignedInteger('public_port')->index();
             $table->string('public_host');
             $table->string('path', 255);
             $table->string('router_comment')->unique();
