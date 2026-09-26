@@ -15,7 +15,7 @@ const employeeRoles=['admin','office_admin','cashier','collector','technician','
 const money=(value:number):string=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(value||0);
 const attendanceInstallerUrl=`${(import.meta.env.VITE_ATTENDANCE_URL||'https://attendance.solarnetportal.com').replace(/\/$/,'')}/solarnet-attendance.apk`;
 const temporaryAvatarCache=new Map<string,Promise<string>>();
-const time=(value:string|null):string=>value?new Date(value).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'numeric',minute:'2-digit'}):'—';
+const time=(value:string|null):string=>value?new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
 const duration=(minutes:number):string=>`${Math.floor(minutes/60)}h ${minutes%60}m`;
 const label=(value:string):string=>value.replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
 
