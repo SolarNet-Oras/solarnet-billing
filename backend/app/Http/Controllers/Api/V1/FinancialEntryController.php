@@ -232,7 +232,11 @@ class FinancialEntryController extends Controller
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
         if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'gcash', 'bpi', 'landbank'], true)) {
-            abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only a Super Administrator can add new funds to Cash, GCash, BPI, or Landbank.');
+            abort_unless(
+                $request->user()?->hasAnyRole(['super_admin', 'admin', 'office_admin', 'cashier']),
+                403,
+                'Only an Administrator, Office Administrator, Cashier, or Super Administrator can record money-in transactions.',
+            );
         }
         $touchesCash = $definition->source_wallet === 'cash' || $definition->destination_wallet === 'cash';
         if ($touchesCash) {

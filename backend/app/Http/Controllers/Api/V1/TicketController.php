@@ -18,13 +18,29 @@ class TicketController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign:id,status,recipient_count,sent_count,failed_count,skipped_count', 'assignedTechnician', 'comments', 'histories.user']);
+        $query = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'referral.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign:id,status,recipient_count,sent_count,failed_count,skipped_count', 'assignedTechnician', 'comments', 'histories.user']);
         if ($request->filled('status')) $query->where('workflow_status', $request->status);
         if ($request->filled('ticket_type')) $query->where('ticket_type', $request->ticket_type);
         if ($request->filled('priority')) $query->where('priority', $request->priority);
         if ($request->filled('category')) $query->where('category', $request->category);
         if ($request->filled('assigned_to')) $query->where('assigned_to', $request->assigned_to);
         if ($request->boolean('unassigned')) $query->whereNull('assigned_to');
+        if ($request->filled('search')) {
+            $search = '%'.mb_strtolower(trim($request->string('search')->toString())).'%';
+            $query->where(function ($builder) use ($search): void {
+                $builder->whereRaw('LOWER(ticket_number) LIKE ?', [$search])
+                    ->orWhereRaw('LOWER(subject) LIKE ?', [$search])
+                    ->orWhereHas('customer', fn ($customer) => $customer
+                        ->whereRaw('LOWER(full_name) LIKE ?', [$search])
+                        ->orWhereRaw('LOWER(account_number) LIKE ?', [$search]))
+                    ->orWhereHas('referral', fn ($referral) => $referral
+                        ->whereRaw('LOWER(prospect_name) LIKE ?', [$search])
+                        ->orWhereRaw('LOWER(phone) LIKE ?', [$search])
+                        ->orWhereHas('referrer', fn ($referrer) => $referrer
+                            ->whereRaw('LOWER(full_name) LIKE ?', [$search])
+                            ->orWhereRaw('LOWER(account_number) LIKE ?', [$search])));
+            });
+        }
         $tickets = $query->latest()->paginate(min((int) $request->get('per_page', 15), 100));
         $tickets->getCollection()->each(function (Ticket $ticket): void {
             $ticket->setAttribute('client_notes', $ticket->customer?->notes);
@@ -38,7 +54,7 @@ class TicketController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $ticket = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
+        $ticket = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'referral.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
         $ticket->setAttribute('client_notes', $ticket->customer?->notes);
         if ($ticket->ticket_type === 'installation' && $ticket->workflow_status === 'waiting_admin_approval') {
             $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));

@@ -289,6 +289,22 @@ export interface Ticket {
   id: string;
   ticket_number: string;
   customer_id: string | null;
+  referral_id?: string | null;
+  referral?: {
+    id: string;
+    prospect_name: string;
+    phone: string;
+    email?: string | null;
+    address: string;
+    status: string;
+    reward_choice?: 'cash' | 'billing_credit' | null;
+    reward_amount: number;
+    referrer?: {
+      id: string;
+      full_name: string;
+      account_number: string;
+    } | null;
+  } | null;
   router_id?: string | null;
   router?: { id: string; name: string; location?: string | null } | null;
   sms_advisory_campaign?: { id: string; status: string; recipient_count: number; sent_count: number; failed_count: number; skipped_count: number } | null;

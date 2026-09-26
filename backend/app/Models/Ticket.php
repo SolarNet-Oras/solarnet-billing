@@ -15,6 +15,7 @@ class Ticket extends Model
     protected $fillable = [
         'ticket_number',
         'customer_id',
+        'referral_id',
         'router_id',
         'sms_advisory_campaign_id',
         'assigned_to',
@@ -61,6 +62,11 @@ class Ticket extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function referral(): BelongsTo
+    {
+        return $this->belongsTo(CustomerReferral::class, 'referral_id');
     }
 
     public function router(): BelongsTo { return $this->belongsTo(Router::class); }

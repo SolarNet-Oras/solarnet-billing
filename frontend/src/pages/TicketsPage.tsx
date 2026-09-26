@@ -41,7 +41,7 @@ const emptyInstallationApplication = {
 };
 
 const ReferralTag: React.FC<{ ticket: Ticket; compact?: boolean }> = ({ ticket, compact = false }) => {
-  const referrer = ticket.customer?.referral_source?.referrer;
+  const referrer = ticket.referral?.referrer ?? ticket.customer?.referral_source?.referrer;
   if (!referrer) return null;
 
   return (
@@ -109,7 +109,7 @@ const TicketsPage: React.FC = () => {
     api.get('/customer-portal/service-plans')
       .then((response) => setInstallationPlans(response.data?.data || []))
       .catch(() => setInstallationPlans([]));
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter, priorityFilter, searchTerm]);
   /* oxlint-enable react-hooks/exhaustive-deps */
 
   const fetchTickets = async () => {
@@ -122,6 +122,9 @@ const TicketsPage: React.FC = () => {
       }
       if (priorityFilter !== 'all') {
         params.priority = priorityFilter;
+      }
+      if (searchTerm.trim()) {
+        params.search = searchTerm.trim();
       }
 
       const response = await ticketService.getTickets(params);
@@ -437,6 +440,8 @@ const TicketsPage: React.FC = () => {
     return (
       ticket.ticket_number.toLowerCase().includes(searchLower) ||
       ticket.subject.toLowerCase().includes(searchLower) ||
+      ticket.referral?.prospect_name?.toLowerCase().includes(searchLower) ||
+      ticket.referral?.phone?.toLowerCase().includes(searchLower) ||
       ticket.customer?.full_name?.toLowerCase().includes(searchLower) ||
       ticket.customer?.referral_source?.referrer?.full_name?.toLowerCase().includes(searchLower) ||
       ticket.customer?.referral_source?.referrer?.account_number?.toLowerCase().includes(searchLower) ||
@@ -594,7 +599,8 @@ const TicketsPage: React.FC = () => {
                       {ticket.ticket_number}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      <p className="whitespace-nowrap">{ticket.customer?.full_name || (ticket.router ? `${ticket.router.name} service area` : 'Network-wide')}</p>
+                      <p className="whitespace-nowrap">{ticket.referral?.prospect_name || ticket.customer?.full_name || (ticket.router ? `${ticket.router.name} service area` : 'Network-wide')}</p>
+                      {ticket.referral && <p className="text-xs text-gray-500">Referral prospect</p>}
                       <ReferralTag ticket={ticket} compact />
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
@@ -900,8 +906,8 @@ const TicketsPage: React.FC = () => {
 
                   <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div>
-                      <p className="text-sm text-gray-600">Customer</p>
-                      <p className="font-medium">{selectedTicket.customer?.full_name}</p>
+                      <p className="text-sm text-gray-600">{selectedTicket.referral ? 'Referral prospect' : 'Customer'}</p>
+                      <p className="font-medium">{selectedTicket.referral?.prospect_name || selectedTicket.customer?.full_name}</p>
                       <ReferralTag ticket={selectedTicket} compact />
                     </div>
                     <div>
@@ -917,6 +923,19 @@ const TicketsPage: React.FC = () => {
                       <p className="font-medium">{selectedTicket.assigned_technician?.name || 'Unassigned'}</p>
                     </div>
                   </div>
+
+                  {selectedTicket.referral && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <h3 className="font-semibold text-emerald-950">Customer referral</h3>
+                      <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                        <div><dt className="text-emerald-700">Prospect</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.prospect_name}</dd></div>
+                        <div><dt className="text-emerald-700">Status</dt><dd className="font-semibold capitalize text-emerald-950">{selectedTicket.referral.status.replaceAll('_', ' ')}</dd></div>
+                        <div><dt className="text-emerald-700">Phone</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.phone}</dd></div>
+                        <div><dt className="text-emerald-700">Email</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.email || 'Not provided'}</dd></div>
+                        <div className="sm:col-span-2"><dt className="text-emerald-700">Address</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.address}</dd></div>
+                      </dl>
+                    </div>
+                  )}
 
                   {(selectedTicket.client_notes || selectedTicket.customer?.notes) && (
                     <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">

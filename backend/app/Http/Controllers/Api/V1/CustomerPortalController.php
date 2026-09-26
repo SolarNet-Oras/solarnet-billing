@@ -11,12 +11,15 @@ use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymongoCheckout;
+use App\Models\Ticket;
 use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
 use App\Services\CustomerLocationCaptureService;
 use App\Services\CustomerWebPushNotificationService;
 use App\Services\CustomerPortalTokenService;
 use App\Services\CustomerReferralService;
+use App\Services\TicketService;
+use App\Services\TicketWorkflowService;
 use App\Support\CustomerPortalUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -446,17 +449,43 @@ class CustomerPortalController extends Controller
             return response()->json(['status' => 'error', 'message' => 'This prospect was already referred. A second referral bonus cannot be created.'], 422);
         }
 
-        $referral = CustomerReferral::create([
-            'referrer_customer_id' => $customer->id,
-            'prospect_name' => trim($validated['name']),
-            'phone' => trim($validated['phone']),
-            'phone_normalized' => $phone,
-            'email' => $email !== '' ? $email : null,
-            'email_normalized' => $email !== '' ? $email : null,
-            'address' => trim($validated['address']),
-            'status' => 'submitted',
-            'reward_amount' => CustomerReferralService::REWARD_AMOUNT,
-        ]);
+        $referral = DB::transaction(function () use ($customer, $validated, $phone, $email): CustomerReferral {
+            $referral = CustomerReferral::create([
+                'referrer_customer_id' => $customer->id,
+                'prospect_name' => trim($validated['name']),
+                'phone' => trim($validated['phone']),
+                'phone_normalized' => $phone,
+                'email' => $email !== '' ? $email : null,
+                'email_normalized' => $email !== '' ? $email : null,
+                'address' => trim($validated['address']),
+                'status' => 'submitted',
+                'reward_amount' => CustomerReferralService::REWARD_AMOUNT,
+            ]);
+
+            $ticket = Ticket::create([
+                'ticket_number' => app(TicketService::class)->generateTicketNumber(),
+                'customer_id' => $customer->id,
+                'referral_id' => $referral->id,
+                'subject' => 'Customer referral: '.$referral->prospect_name,
+                'description' => 'Referral submitted for office follow-up and new-client verification.',
+                'priority' => 'medium',
+                'category' => 'general',
+                'status' => 'open',
+                'ticket_type' => 'other',
+                'workflow_status' => 'open',
+            ]);
+            app(TicketWorkflowService::class)->history(
+                $ticket,
+                null,
+                'customer_referral_submitted',
+                null,
+                'open',
+                'Submitted through the customer referral portal.',
+                ['referral_id' => $referral->id, 'referrer_customer_id' => $customer->id],
+            );
+
+            return $referral;
+        });
 
         return response()->json([
             'status' => 'success',
