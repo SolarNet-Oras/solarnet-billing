@@ -53,7 +53,14 @@ class StaffAttendanceController extends Controller
                     'name' => $user->name,
                     'pin_configured' => filled($user->attendance_pin_hash),
                     'reference_configured' => filled($user->attendance_reference_photo_path),
-                    'record' => $record?->only(['id', 'clocked_in_at', 'clocked_out_at', 'status']),
+                    'record' => $record ? [
+                        'id' => $record->id,
+                        'clocked_in_at' => $record->clocked_in_at?->copy()->utc()->toIso8601String(),
+                        'clocked_out_at' => $record->clocked_out_at?->copy()->utc()->toIso8601String(),
+                        'clocked_in_at_manila' => $record->clocked_in_at?->copy()->timezone('Asia/Manila')->format('h:i:s A'),
+                        'clocked_out_at_manila' => $record->clocked_out_at?->copy()->timezone('Asia/Manila')->format('h:i:s A'),
+                        'status' => $record->status,
+                    ] : null,
                     'state' => ! $record ? 'not_clocked_in' : ($record->clocked_out_at ? 'clocked_out' : 'clocked_in'),
                 ];
             })->values(),

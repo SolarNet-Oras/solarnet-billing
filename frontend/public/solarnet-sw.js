@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solarnet-application-shell-v13-attendance-camera-fallback';
+const CACHE_NAME = 'solarnet-application-shell-v14-attendance-manila-time';
 const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
 const APP_SHELL = [
   '/',
