@@ -71,8 +71,11 @@ class StaffPayrollService
         $profile = $user->compensation;
         $rows = StaffAttendanceRecord::where('user_id', $user->id)->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])->get();
         $daily = (float) ($profile->daily_rate ?: ($profile->monthly_salary / max(1, $profile->work_days_per_month)));
-        $present = $rows->whereIn('status', ['present', 'late'])->count();
-        $base = $daily * $present;
+        $payableRows = $rows->whereIn('status', ['present', 'late']);
+        $present = $payableRows->count();
+        $fullDays = $payableRows->filter(fn (StaffAttendanceRecord $row) => (int) $row->worked_minutes >= 480)->count();
+        $halfDays = $payableRows->filter(fn (StaffAttendanceRecord $row) => (int) $row->worked_minutes > 0 && (int) $row->worked_minutes < 480)->count();
+        $base = ($daily * $fullDays) + (($daily / 2) * $halfDays);
         $late = ($daily / 480) * $rows->sum('late_minutes');
         $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
         $overtime = ($daily / 8) * (float) $profile->overtime_multiplier * ($approvedOvertimeMinutes / 60);
@@ -97,7 +100,7 @@ class StaffPayrollService
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
             'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
             'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$approvedOvertimeMinutes,
-            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
+            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'required_daily_minutes'=>480, 'full_day_count'=>$fullDays, 'half_day_count'=>$halfDays, 'attendance_pay_rule'=>'480 minutes or more = full day; 1-479 minutes = half day; 0 minutes = no attendance pay', 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
     }
 

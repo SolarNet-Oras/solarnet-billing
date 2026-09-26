@@ -158,8 +158,11 @@ class StaffAttendanceController extends Controller
             $rows = $records->get($user->id, collect());
             $profile = $profiles->get($user->id);
             $daily = (float) ($profile?->daily_rate ?: (($profile?->monthly_salary ?? 0) / max(1, $profile?->work_days_per_month ?? 26)));
-            $presentDays = $rows->whereIn('status', ['present', 'late'])->count();
-            $base = $daily * $presentDays;
+            $payableRows = $rows->whereIn('status', ['present', 'late']);
+            $presentDays = $payableRows->count();
+            $fullDays = $payableRows->filter(fn (StaffAttendanceRecord $row) => (int) $row->worked_minutes >= 480)->count();
+            $halfDays = $payableRows->filter(fn (StaffAttendanceRecord $row) => (int) $row->worked_minutes > 0 && (int) $row->worked_minutes < 480)->count();
+            $base = ($daily * $fullDays) + (($daily / 2) * $halfDays);
             $late = ($daily / 480) * $rows->sum('late_minutes');
             $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
             $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($approvedOvertimeMinutes / 60);
@@ -183,7 +186,7 @@ class StaffAttendanceController extends Controller
                 'today_record'=>$todayRecords->get($user->id),
                 'compensation'=>$manager ? $profile : null,
                 'summary'=>[
-                    'present_days'=>$presentDays, 'absent_days'=>$rows->where('status', 'absent')->count(),
+                    'present_days'=>$presentDays, 'full_days'=>$fullDays, 'half_days'=>$halfDays, 'absent_days'=>$rows->where('status', 'absent')->count(),
                     'leave_days'=>$rows->where('status', 'leave')->count(),
                     'late_days'=>$rows->where('late_minutes', '>', 0)->count(),
                     'late_minutes'=>$rows->sum('late_minutes'), 'worked_hours'=>round($rows->sum('worked_minutes') / 60, 2),
