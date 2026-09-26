@@ -37,9 +37,23 @@ class StaffPayrollService
         $users = User::query()->where('is_active', true)
             ->whereDoesntHave('roles', fn ($q) => $q->where('name', 'super_admin'))
             ->whereHas('compensation')->with('compensation')->orderBy('name')->get();
-        $result = ['created'=>0, 'emailed'=>0, 'email_failed'=>0, 'skipped'=>0, 'cutoff_start'=>$start->toDateString(), 'cutoff_end'=>$end->toDateString(), 'pay_date'=>$payDate->toDateString()];
+        $result = ['created'=>0, 'emailed'=>0, 'email_failed'=>0, 'skipped'=>0, 'no_attendance_skipped'=>0, 'cutoff_start'=>$start->toDateString(), 'cutoff_end'=>$end->toDateString(), 'pay_date'=>$payDate->toDateString()];
 
         foreach ($users as $user) {
+            $hasPayableAttendance = StaffAttendanceRecord::query()
+                ->where('user_id', $user->id)
+                ->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
+                ->whereIn('status', ['present', 'late'])
+                ->where('worked_minutes', '>', 0)
+                ->exists();
+
+            if (! $hasPayableAttendance) {
+                $result['skipped']++;
+                $result['no_attendance_skipped']++;
+
+                continue;
+            }
+
             $values = $this->calculate($user, $start, $end, $payDate);
             if ($dryRun) { $result['created']++; continue; }
             $payroll = StaffPayrollDisbursement::firstOrCreate(
