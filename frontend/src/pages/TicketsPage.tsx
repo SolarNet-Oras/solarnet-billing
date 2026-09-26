@@ -54,6 +54,15 @@ const ReferralTag: React.FC<{ ticket: Ticket; compact?: boolean }> = ({ ticket, 
   );
 };
 
+const ticketCategoryLabel = (ticket: Ticket): string => {
+  if (ticket.referral) return 'New Installation';
+  if (ticket.ticket_type === 'installation') return 'Installation application';
+  if (ticket.ticket_type === 'repair') return 'Repair';
+  if (ticket.ticket_type === 'maintenance') return 'Maintenance';
+  if (ticket.ticket_type === 'expansion') return 'Network expansion';
+  return ticket.category.replace('_', ' ');
+};
+
 const TicketsPage: React.FC = () => {
   const { user } = useAuth();
   const roleNames = [user?.role, ...(user?.roles || []).map((item) => typeof item === 'string' ? item : item.name)].filter(Boolean);
@@ -607,7 +616,7 @@ const TicketsPage: React.FC = () => {
                       {ticket.subject}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
-                      {ticket.ticket_type === 'installation' ? 'installation application' : ticket.ticket_type === 'repair' ? 'repair' : ticket.ticket_type === 'maintenance' ? 'maintenance' : ticket.ticket_type === 'expansion' ? 'network expansion' : ticket.category.replace('_', ' ')}
+                      {ticketCategoryLabel(ticket)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getPriorityBadge(ticket.priority)}
@@ -912,7 +921,7 @@ const TicketsPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Category</p>
-                      <p className="font-medium capitalize">{selectedTicket.ticket_type === 'installation' ? 'Installation application' : selectedTicket.ticket_type === 'repair' ? 'Repair' : selectedTicket.category.replace('_', ' ')}</p>
+                      <p className="font-medium capitalize">{ticketCategoryLabel(selectedTicket)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Created</p>
