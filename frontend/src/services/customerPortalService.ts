@@ -26,6 +26,14 @@ export interface CustomerReferral {
   created_at: string;
 }
 
+export interface ReferralServicePlan {
+  id: string;
+  name: string;
+  download_speed: number;
+  upload_speed: number;
+  price: number;
+}
+
 const DEFAULT_APP_ICON = '/solarnet-mark.svg';
 
 const applyBranding = (branding: CompanyBranding): void => {
@@ -221,7 +229,12 @@ export const customerPortalService = {
     return response.data;
   },
 
-  submitReferral: async (data: { name: string; phone: string; email?: string; address: string }): Promise<{ message: string; data: CustomerReferral }> => {
+  getReferralServicePlans: async (): Promise<ReferralServicePlan[]> => {
+    const response = await api.get('/customer-portal/service-plans');
+    return response.data?.data || [];
+  },
+
+  submitReferral: async (data: { name: string; phone: string; email?: string; address: string; service_plan_id: string }): Promise<{ message: string; data: CustomerReferral }> => {
     const response = await api.post('/customer-portal/referrals', data);
     return response.data;
   },

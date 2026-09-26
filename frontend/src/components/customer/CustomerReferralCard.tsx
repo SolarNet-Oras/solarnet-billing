@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Banknote, CheckCircle2, Gift, LoaderCircle, Mail, MapPin, Phone, Send, Sparkles, Users } from 'lucide-react';
-import customerPortalService, { type CustomerReferral } from '../../services/customerPortalService';
+import customerPortalService, { type CustomerReferral, type ReferralServicePlan } from '../../services/customerPortalService';
 import { formatPHP } from '../../lib/currency';
 
-const EMPTY_FORM = { name: '', phone: '', email: '', address: '' };
+const EMPTY_FORM = { name: '', phone: '', email: '', address: '', service_plan_id: '' };
 
 const CustomerReferralCard: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [referrals, setReferrals] = useState<CustomerReferral[]>([]);
+  const [plans, setPlans] = useState<ReferralServicePlan[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -17,7 +18,10 @@ const CustomerReferralCard: React.FC = () => {
     try { setReferrals((await customerPortalService.getReferrals()).data); } catch { /* The promotion remains usable if history is temporarily unavailable. */ }
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    customerPortalService.getReferralServicePlans().then(setPlans).catch(() => setPlans([]));
+  }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
@@ -46,6 +50,7 @@ const CustomerReferralCard: React.FC = () => {
       <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Phone number *<div className="relative mt-1"><Phone className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input required inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-950 outline-none focus:border-cyan-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white" /></div></label>
       <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Email (optional)<div className="relative mt-1"><Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-950 outline-none focus:border-cyan-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white" /></div></label>
       <label className="text-sm font-semibold text-slate-800 dark:text-slate-100">Installation address *<div className="relative mt-1"><MapPin className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-3 text-slate-950 outline-none focus:border-cyan-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white" /></div></label>
+      <label className="text-sm font-semibold text-slate-800 dark:text-slate-100 sm:col-span-2">Requested service plan *<select required value={form.service_plan_id} onChange={(e) => setForm({ ...form, service_plan_id: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-cyan-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white"><option value="">Select the client’s confirmed plan</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.download_speed}/{plan.upload_speed} Mbps · {formatPHP(plan.price)}/month</option>)}</select></label>
       <div className="sm:col-span-2"><p className="mb-3 text-xs leading-5 text-slate-600 dark:text-slate-300">Submitting a name does not immediately create a bonus. SolarNet verifies that this is a new client and that their subscription becomes active.</p><button disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950 hover:bg-amber-400 disabled:opacity-60">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit referral</button></div>
     </form>}
 

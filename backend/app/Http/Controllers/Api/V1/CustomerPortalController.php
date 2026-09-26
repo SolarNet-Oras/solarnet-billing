@@ -11,6 +11,7 @@ use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymongoCheckout;
+use App\Models\ServicePlan;
 use App\Models\Ticket;
 use App\Services\PaymongoService;
 use App\Services\BillingSuspensionService;
@@ -429,6 +430,7 @@ class CustomerPortalController extends Controller
             'phone' => ['required', 'string', 'max:30', 'regex:/^[0-9+() .-]{7,30}$/'],
             'email' => 'nullable|email|max:255',
             'address' => 'required|string|min:3|max:1000',
+            'service_plan_id' => ['required', 'uuid', 'exists:service_plans,id'],
         ]);
         $phone = CustomerReferralService::normalizePhone($validated['phone']);
         $email = strtolower(trim((string) ($validated['email'] ?? '')));
@@ -449,7 +451,16 @@ class CustomerPortalController extends Controller
             return response()->json(['status' => 'error', 'message' => 'This prospect was already referred. A second referral bonus cannot be created.'], 422);
         }
 
-        $referral = DB::transaction(function () use ($customer, $validated, $phone, $email): CustomerReferral {
+        $plan = ServicePlan::query()
+            ->whereKey($validated['service_plan_id'])
+            ->where('is_active', true)
+            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+            ->first();
+        if (! $plan) {
+            return response()->json(['status' => 'error', 'message' => 'Select an active residential service plan.'], 422);
+        }
+
+        $referral = DB::transaction(function () use ($customer, $validated, $phone, $email, $plan): CustomerReferral {
             $referral = CustomerReferral::create([
                 'referrer_customer_id' => $customer->id,
                 'prospect_name' => trim($validated['name']),
@@ -462,26 +473,45 @@ class CustomerPortalController extends Controller
                 'reward_amount' => CustomerReferralService::REWARD_AMOUNT,
             ]);
 
+            do {
+                $pendingAccount = 'PENDING-'.strtoupper(bin2hex(random_bytes(4)));
+            } while (Customer::withTrashed()->where('account_number', $pendingAccount)->exists());
+
+            $prospect = Customer::create([
+                'account_number' => $pendingAccount,
+                'full_name' => $referral->prospect_name,
+                'email' => $referral->email,
+                'contact_number' => $referral->phone,
+                'address' => $referral->address,
+                'service_plan_id' => $plan->id,
+                'monthly_fee' => $plan->price,
+                'installation_date' => now()->toDateString(),
+                'status' => 'pending',
+                'notes' => 'Customer referral from '.$customer->full_name.' ('.$customer->account_number.').',
+                'location_status' => 'not_captured',
+            ]);
+            $referral->update(['referred_customer_id' => $prospect->id]);
+
             $ticket = Ticket::create([
                 'ticket_number' => app(TicketService::class)->generateTicketNumber(),
-                'customer_id' => $customer->id,
+                'customer_id' => $prospect->id,
                 'referral_id' => $referral->id,
-                'subject' => 'Customer referral: '.$referral->prospect_name,
-                'description' => 'Referral submitted for office follow-up and new-client verification.',
+                'subject' => 'New Installation Application — referral: '.$referral->prospect_name,
+                'description' => 'Referral installation application. A technician must claim the work, complete installation, and submit the ONU/router MAC for administrator approval.',
                 'priority' => 'medium',
-                'category' => 'general',
+                'category' => 'technical',
                 'status' => 'open',
-                'ticket_type' => 'other',
-                'workflow_status' => 'open',
+                'ticket_type' => 'installation',
+                'workflow_status' => 'unclaimed',
             ]);
             app(TicketWorkflowService::class)->history(
                 $ticket,
                 null,
                 'customer_referral_submitted',
                 null,
-                'open',
-                'Submitted through the customer referral portal.',
-                ['referral_id' => $referral->id, 'referrer_customer_id' => $customer->id],
+                'unclaimed',
+                'Submitted through the customer referral portal as a new installation application.',
+                ['referral_id' => $referral->id, 'referrer_customer_id' => $customer->id, 'prospect_customer_id' => $prospect->id, 'service_plan_id' => $plan->id],
             );
 
             return $referral;
