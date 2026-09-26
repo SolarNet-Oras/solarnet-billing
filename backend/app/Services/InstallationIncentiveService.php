@@ -7,6 +7,7 @@ use App\Models\InstallationIncentivePool;
 use App\Models\StaffAttendanceRecord;
 use App\Models\Ticket;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
 class InstallationIncentiveService
@@ -18,7 +19,8 @@ class InstallationIncentiveService
         return DB::transaction(function () use ($ticket): InstallationIncentivePool {
             $existing = InstallationIncentivePool::with('allocations.user')->where('ticket_id', $ticket->id)->lockForUpdate()->first();
             if ($existing) return $existing;
-            $workDate = ($ticket->registered_at ?? now())->copy()->timezone('Asia/Manila')->toDateString();
+            $installationAt = ($ticket->registered_at ?? now())->copy()->utc();
+            $workDate = $installationAt->copy()->timezone('Asia/Manila')->toDateString();
             $eligible = User::query()->where('is_active', true)
                 ->whereHas('compensation', fn ($q) => $q->where('employment_status', 'regular'))
                 ->where(function ($q) {
@@ -27,7 +29,12 @@ class InstallationIncentiveService
                 })->get();
             $attendance = StaffAttendanceRecord::whereDate('work_date', $workDate)
                 ->whereIn('user_id', $eligible->pluck('id'))->whereIn('status', ['present','late'])->whereNotNull('clocked_in_at')->get()->keyBy('user_id');
-            $present = $eligible->filter(fn (User $user) => $attendance->has($user->id))->values();
+            $present = $eligible->filter(function (User $user) use ($attendance, $installationAt): bool {
+                $record = $attendance->get($user->id);
+
+                return $record
+                    && $this->isOnDutyAt($record->clocked_in_at, $record->clocked_out_at, $installationAt);
+            })->values();
             $pool = InstallationIncentivePool::create(['ticket_id'=>$ticket->id,'work_date'=>$workDate,'pool_amount'=>self::POOL_AMOUNT,'eligible_count'=>$present->count(),'status'=>$present->isEmpty()?'unallocated_no_present_staff':'allocated']);
             if ($present->isNotEmpty()) {
                 $shares = $this->shares($present->count());
@@ -46,5 +53,18 @@ class InstallationIncentiveService
         $shares = array_fill(0, $eligibleCount, $base);
         $shares[0] = round($shares[0] + (self::POOL_AMOUNT - array_sum($shares)), 2);
         return $shares;
+    }
+
+    public function isOnDutyAt(
+        CarbonInterface $clockedInAt,
+        ?CarbonInterface $clockedOutAt,
+        CarbonInterface $installationAt
+    ): bool {
+        $clockIn = $clockedInAt->copy()->utc();
+        $clockOut = $clockedOutAt?->copy()->utc();
+        $installed = $installationAt->copy()->utc();
+
+        return $clockIn->lessThanOrEqualTo($installed)
+            && ($clockOut === null || $clockOut->greaterThanOrEqualTo($installed));
     }
 }
