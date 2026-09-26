@@ -15,7 +15,8 @@ const employeeRoles=['admin','office_admin','cashier','collector','technician','
 const money=(value:number):string=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(value||0);
 const attendanceInstallerUrl=`${(import.meta.env.VITE_ATTENDANCE_URL||'https://attendance.solarnetportal.com').replace(/\/$/,'')}/solarnet-attendance.apk`;
 const temporaryAvatarCache=new Map<string,Promise<string>>();
-const time=(value:string|null):string=>value?new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
+const utcTimestamp=(value:string):Date=>{let normalized=value.trim().replace(' ','T');if(!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized))normalized+='Z';return new Date(normalized)};
+const time=(value:string|null):string=>value?utcTimestamp(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—';
 const payrollDate=(value:string):string=>new Date(value).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
 const cutoffLabel=(month:string,cutoff:'first'|'second'):string=>{const[year,monthNumber]=month.split('-').map(Number);const start=cutoff==='first'?new Date(Date.UTC(year,monthNumber-2,21,12)):new Date(Date.UTC(year,monthNumber-1,5,12));const end=cutoff==='first'?new Date(Date.UTC(year,monthNumber-1,4,12)):new Date(Date.UTC(year,monthNumber-1,20,12));const format=(date:Date)=>date.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric'});return`${format(start)} – ${format(end)}`};
 const duration=(minutes:number):string=>`${Math.floor(minutes/60)}h ${minutes%60}m`;

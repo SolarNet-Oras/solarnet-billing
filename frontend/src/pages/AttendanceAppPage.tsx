@@ -7,7 +7,8 @@ declare global { interface Window { __solarnetInstallPrompt?: BeforeInstallPromp
 type RecordRow={id:string;clocked_in_at:string|null;clocked_out_at:string|null};
 type Employee={id:string;name:string;pin_configured:boolean;reference_configured:boolean;state:'not_clocked_in'|'clocked_in'|'clocked_out';record:RecordRow|null};
 type Payload={server_time:string;timezone:string;employees:Employee[]};
-const displayTime=(value?:string|null)=>value?new Date(value).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
+const utcTimestamp=(value:string):Date=>{let normalized=value.trim().replace(' ','T');if(!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized))normalized+='Z';return new Date(normalized)};
+const displayTime=(value?:string|null)=>value?utcTimestamp(value).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
 
 export default function AttendanceAppPage():React.JSX.Element{
   const videoRef=useRef<HTMLVideoElement|null>(null); const streamRef=useRef<MediaStream|null>(null);
