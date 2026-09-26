@@ -7,11 +7,86 @@ use App\Models\DhcpLease;
 use App\Models\Ticket;
 use App\Models\TicketHistory;
 use App\Models\User;
+use App\Models\ServicePlan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TicketWorkflowService
 {
+    public function claimReferralInstallation(Ticket $ticket, User $technician, string $servicePlanId): Ticket
+    {
+        return DB::transaction(function () use ($ticket, $technician, $servicePlanId) {
+            $locked = Ticket::with('referral.referrer')->lockForUpdate()->findOrFail($ticket->id);
+            if (! $locked->referral_id || ! $locked->referral) {
+                throw ValidationException::withMessages(['ticket' => 'This ticket is not a customer referral.']);
+            }
+            if ($locked->assigned_to && $locked->assigned_to !== $technician->id) {
+                throw ValidationException::withMessages(['ticket' => 'This installation application has already been claimed.']);
+            }
+            if ($locked->workflow_status !== 'open' || $locked->status !== 'open') {
+                throw ValidationException::withMessages(['status' => 'This referral is no longer available to claim.']);
+            }
+
+            $referral = $locked->referral;
+            $plan = ServicePlan::query()
+                ->whereKey($servicePlanId)
+                ->where('is_active', true)
+                ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+                ->firstOrFail();
+
+            if ($referral->referred_customer_id) {
+                $prospect = Customer::query()->lockForUpdate()->findOrFail($referral->referred_customer_id);
+                if ($prospect->status !== 'pending') {
+                    throw ValidationException::withMessages(['customer' => 'The referred person already has a non-pending customer record.']);
+                }
+                $prospect->update(['service_plan_id' => $plan->id, 'monthly_fee' => $plan->price]);
+            } else {
+                $phone = preg_replace('/\D+/', '', (string) $referral->phone) ?? '';
+                $email = strtolower(trim((string) $referral->email));
+                $duplicate = Customer::withTrashed()->where(function ($query) use ($phone, $email): void {
+                    $query->whereRaw("regexp_replace(COALESCE(contact_number, ''), '[^0-9]', '', 'g') = ?", [$phone]);
+                    if ($email !== '') $query->orWhereRaw('LOWER(email) = ?', [$email]);
+                })->first();
+                if ($duplicate) {
+                    throw ValidationException::withMessages(['customer' => "A customer record already exists for this referral ({$duplicate->full_name}). Office staff must reconcile it before installation."]);
+                }
+
+                $prospect = Customer::create([
+                    'account_number' => 'PENDING-'.strtoupper(bin2hex(random_bytes(4))),
+                    'full_name' => $referral->prospect_name,
+                    'email' => $referral->email,
+                    'contact_number' => $referral->phone,
+                    'address' => $referral->address,
+                    'service_plan_id' => $plan->id,
+                    'monthly_fee' => $plan->price,
+                    'installation_date' => now()->toDateString(),
+                    'status' => 'pending',
+                    'notes' => 'Customer referral from '.$referral->referrer?->full_name.' ('.$referral->referrer?->account_number.').',
+                    'location_status' => 'not_captured',
+                ]);
+                $referral->update(['referred_customer_id' => $prospect->id]);
+            }
+
+            $locked->update([
+                'customer_id' => $prospect->id,
+                'ticket_type' => 'installation',
+                'category' => 'technical',
+                'assigned_to' => $technician->id,
+                'status' => 'in_progress',
+                'workflow_status' => 'claimed',
+                'claimed_at' => now(),
+            ]);
+            $this->history($locked, $technician, 'referral_converted_to_installation', 'open', 'unclaimed', null, [
+                'referral_id' => $referral->id,
+                'customer_id' => $prospect->id,
+                'service_plan_id' => $plan->id,
+            ]);
+            $this->history($locked, $technician, 'installation_claimed', 'unclaimed', 'claimed');
+
+            return $locked->fresh($this->relations());
+        });
+    }
+
     public function claimInstallation(Ticket $ticket, User $technician): Ticket
     {
         return DB::transaction(function () use ($ticket, $technician) {

@@ -464,6 +464,7 @@ Route::prefix('v1')->group(function () {
         Route::delete('tickets/{id}', [TicketController::class, 'destroy'])->middleware('permission:delete-tickets');
         Route::post('tickets/{id}/assign', [TicketController::class, 'assign'])->middleware('permission:assign-tickets');
         Route::post('tickets/{id}/claim-installation', [TicketController::class, 'claimInstallation'])->middleware('role:technician');
+        Route::post('tickets/{id}/claim-referral-installation', [TicketController::class, 'claimReferralInstallation'])->middleware('role:technician');
         Route::post('tickets/{id}/submit-installation', [TicketController::class, 'submitInstallation'])->middleware(['role:technician', 'fresh.field.location']);
         Route::post('tickets/{id}/repair/mark-in', [TicketController::class, 'markRepairIn'])->middleware(['role:technician', 'fresh.field.location']);
         Route::post('tickets/{id}/repair/resolve', [TicketController::class, 'resolveRepair'])->middleware(['role:technician', 'fresh.field.location']);

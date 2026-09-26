@@ -133,6 +133,16 @@ class TicketController extends Controller
         return response()->json(['message' => 'Installation application claimed.', 'ticket' => $this->workflow->claimInstallation(Ticket::findOrFail($id), $request->user())]);
     }
 
+    public function claimReferralInstallation(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate(['service_plan_id' => ['required', 'uuid', 'exists:service_plans,id']]);
+
+        return response()->json([
+            'message' => 'Referral converted to a pending installation application and assigned to you.',
+            'ticket' => $this->workflow->claimReferralInstallation(Ticket::findOrFail($id), $request->user(), $data['service_plan_id']),
+        ]);
+    }
+
     public function submitInstallation(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['mac_address' => ['required', 'string', 'max:32'], 'notes' => ['required', 'string', 'max:2000']]);
