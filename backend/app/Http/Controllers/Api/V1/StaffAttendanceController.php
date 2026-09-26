@@ -223,6 +223,8 @@ class StaffAttendanceController extends Controller
                 'first_release'=>'15th at 12:00 PM',
                 'second_cutoff'=>'5th through 20th',
                 'second_release'=>'30th at 12:00 PM (last day for short months)',
+                'first_incentive_cutoff'=>'1st through 15th; released on the 15th',
+                'second_incentive_cutoff'=>'16th through 30th; released on the 30th (last day for short months)',
                 'timezone'=>'Asia/Manila',
             ],
             'payroll_runs'=>$payrollRuns,

@@ -40,7 +40,7 @@ class StaffPayrollService
         $result = ['created'=>0, 'emailed'=>0, 'email_failed'=>0, 'skipped'=>0, 'cutoff_start'=>$start->toDateString(), 'cutoff_end'=>$end->toDateString(), 'pay_date'=>$payDate->toDateString()];
 
         foreach ($users as $user) {
-            $values = $this->calculate($user, $start, $end);
+            $values = $this->calculate($user, $start, $end, $payDate);
             if ($dryRun) { $result['created']++; continue; }
             $payroll = StaffPayrollDisbursement::firstOrCreate(
                 ['user_id'=>$user->id, 'pay_date'=>$payDate->toDateString()],
@@ -65,7 +65,7 @@ class StaffPayrollService
         return $result;
     }
 
-    private function calculate(User $user, CarbonInterface $start, CarbonInterface $end): array
+    private function calculate(User $user, CarbonInterface $start, CarbonInterface $end, CarbonInterface $payDate): array
     {
         /** @var StaffCompensation $profile */
         $profile = $user->compensation;
@@ -77,8 +77,9 @@ class StaffPayrollService
         $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
         $overtime = ($daily / 8) * (float) $profile->overtime_multiplier * ($approvedOvertimeMinutes / 60);
         $government = $this->contributions->employeeShares((float) $profile->monthly_salary);
+        [$incentiveStart, $incentiveEnd] = $this->incentivePeriodFor($payDate);
         $incentives = InstallationIncentiveAllocation::where('user_id', $user->id)
-            ->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
+            ->whereBetween('work_date', [$incentiveStart->toDateString(), $incentiveEnd->toDateString()])
             ->whereNull('payroll_disbursement_id')->where('status', 'earned')->get();
         $installationIncentive = (float) $incentives->sum('share_amount');
         $allowance = (float) $profile->monthly_allowance / 2;
@@ -96,8 +97,22 @@ class StaffPayrollService
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
             'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
             'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$approvedOvertimeMinutes,
-            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
+            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
+    }
+
+    /** Installation incentives use calendar half-months, independently of salary attendance cutoffs. */
+    public function incentivePeriodFor(CarbonInterface $payDate): array
+    {
+        $date = Carbon::instance($payDate)->timezone('Asia/Manila')->startOfDay();
+        if ($date->day === 15) {
+            return [$date->copy()->startOfMonth(), $date->copy()->day(15)];
+        }
+        $releaseDay = min(30, $date->daysInMonth);
+        if ($date->day === $releaseDay) {
+            return [$date->copy()->day(16), $date->copy()->day($releaseDay)];
+        }
+        throw new \InvalidArgumentException('Installation incentives may run only on the 15th or the 30th (last day in a short month).');
     }
 
     private function emailPayslip(StaffPayrollDisbursement $payroll, User $user): void
