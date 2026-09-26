@@ -15,7 +15,8 @@ class StaffPayrollDisbursement extends Model
         'allowance', 'installation_incentive', 'gross_pay', 'late_deduction', 'sss_deduction', 'philhealth_deduction',
         'pagibig_deduction', 'cash_advance_deduction', 'other_deductions', 'total_deductions',
         'net_pay', 'present_days', 'worked_minutes', 'overtime_minutes', 'status',
-        'prepared_at', 'released_at', 'payslip_emailed_at', 'email_error', 'calculation_snapshot',
+        'prepared_at', 'released_at', 'release_method', 'release_reference', 'released_by',
+        'financial_entry_id', 'payslip_emailed_at', 'email_error', 'calculation_snapshot',
     ];
 
     protected $casts = [
@@ -28,4 +29,6 @@ class StaffPayrollDisbursement extends Model
     ];
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function releaser(): BelongsTo { return $this->belongsTo(User::class, 'released_by'); }
+    public function financialEntry(): BelongsTo { return $this->belongsTo(FinancialEntry::class); }
 }

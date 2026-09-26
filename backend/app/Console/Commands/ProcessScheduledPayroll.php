@@ -5,13 +5,11 @@ namespace App\Console\Commands;
 use App\Services\StaffPayrollService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use App\Models\StaffPayrollDisbursement;
-use App\Models\InstallationIncentiveAllocation;
 
 class ProcessScheduledPayroll extends Command
 {
     protected $signature = 'payroll:process-scheduled {--date=} {--dry-run}';
-    protected $description = 'Email payslips one day before payday and release scheduled payroll on payday';
+    protected $description = 'Prepare and email payslips one day before payday; salary release remains a manual wallet-backed action';
 
     public function handle(StaffPayrollService $payroll): int
     {
@@ -25,24 +23,14 @@ class ProcessScheduledPayroll extends Command
         }
 
         $today = now('Asia/Manila')->startOfDay();
-        $released = 0;
-        if ($this->isPayday($today) && ! $this->option('dry-run')) {
-            $payrollIds = StaffPayrollDisbursement::whereDate('pay_date', $today->toDateString())
-                ->where('status', 'scheduled')->pluck('id');
-            $released = StaffPayrollDisbursement::whereIn('id', $payrollIds)
-                ->update(['status'=>'released', 'released_at'=>now()]);
-            InstallationIncentiveAllocation::whereIn('payroll_disbursement_id', $payrollIds)
-                ->update(['status'=>'paid']);
-        }
-
         $tomorrow = $today->copy()->addDay();
         if ($this->isPayday($tomorrow)) {
             $exit = $this->prepare($payroll, $tomorrow);
-            $this->info("Payroll records released today: {$released}");
+            $this->info('Payslips prepared. Release each salary from Attendance & Payroll after selecting its source wallet.');
             return $exit;
         }
 
-        $this->info("No payslip preparation is due today. Payroll records released today: {$released}");
+        $this->info('No payslip preparation is due today. Salary releases remain available in Attendance & Payroll.');
         return self::SUCCESS;
     }
 

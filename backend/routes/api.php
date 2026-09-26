@@ -111,6 +111,9 @@ Route::prefix('v1')->group(function () {
             Route::delete('onu-remote-sessions/{onuRemoteSession}', [OnuRemoteAccessController::class, 'destroy'])->middleware('throttle:20,1');
             Route::post('ip-intelligence/lookup', [IpIntelligenceController::class, 'lookup'])->middleware('throttle:30,1');
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
+            Route::post('staff-attendance/payroll/prepare', [StaffAttendanceController::class, 'preparePayroll'])->middleware('throttle:5,1');
+            Route::get('staff-attendance/payroll/{payroll}', [StaffAttendanceController::class, 'payrollPayslip']);
+            Route::post('staff-attendance/payroll/{payroll}/release', [StaffAttendanceController::class, 'releasePayroll'])->middleware('throttle:10,1');
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
             Route::put('staff-attendance/{user}/pin', [StaffAttendanceController::class, 'updateAttendancePin'])->middleware('throttle:10,1');
             Route::get('staff-attendance/records/{attendance}/photo/{type}', [StaffAttendanceController::class, 'photo'])->whereIn('type', ['clock-in','clock-out'])->middleware('throttle:60,1');

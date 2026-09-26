@@ -9,9 +9,12 @@ use App\Models\StaffCompensation;
 use App\Models\StaffLiveLocation;
 use App\Models\StaffPayrollDisbursement;
 use App\Models\InstallationIncentivePool;
+use App\Models\FinancialEntry;
 use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use App\Services\StaffProfilePhotoService;
+use App\Services\CashDenominationService;
+use App\Services\StaffPayrollService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,6 +23,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StaffAttendanceController extends Controller
@@ -234,6 +238,85 @@ class StaffAttendanceController extends Controller
             'installation_incentives'=>$installationIncentives,
             'employees'=>$employees,
         ]]);
+    }
+
+    public function payrollPayslip(StaffPayrollDisbursement $payroll): JsonResponse
+    {
+        return response()->json(['data' => $payroll->load(['user:id,name,email', 'releaser:id,name', 'financialEntry'])]);
+    }
+
+    public function preparePayroll(Request $request, StaffPayrollService $service): JsonResponse
+    {
+        $data = $request->validate(['pay_date' => ['required', 'date']]);
+        $payDate = Carbon::parse($data['pay_date'], 'Asia/Manila')->startOfDay();
+        try {
+            $result = $service->process($payDate);
+        } catch (\InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
+        return response()->json(['message' => 'Payroll cutoff prepared. Payslips are ready for review and release.', 'data' => $result]);
+    }
+
+    public function releasePayroll(Request $request, StaffPayrollDisbursement $payroll, CashDenominationService $denominations): JsonResponse
+    {
+        $data = $request->validate([
+            'payment_method' => ['required', Rule::in(['cash', 'gcash', 'bank_bpi', 'bank_landbank'])],
+            'reference' => ['required', 'string', 'max:100'],
+            'cash_breakdown' => ['nullable', 'array', 'size:10'],
+            'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'in:1000,500,200,100,50,20,10,5,1'],
+            'cash_breakdown.*.kind' => ['required_with:cash_breakdown', Rule::in(['bill', 'coin'])],
+            'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
+        ]);
+
+        if ($data['payment_method'] === 'cash') {
+            abort_unless(isset($data['cash_breakdown']), 422, 'Cash denominations are required for a cash salary release.');
+            $data['cash_breakdown'] = $denominations->normalize($data['cash_breakdown']);
+            $denominations->assertEqualsAmount($data['cash_breakdown'], (float) $payroll->net_pay);
+        } else {
+            $data['cash_breakdown'] = null;
+        }
+
+        $payroll = DB::transaction(function () use ($request, $payroll, $data): StaffPayrollDisbursement {
+            $locked = StaffPayrollDisbursement::with('user:id,name,email')->lockForUpdate()->findOrFail($payroll->id);
+            abort_if($locked->status === 'released' || $locked->financial_entry_id, 409, 'This salary has already been released.');
+            abort_unless($locked->status === 'scheduled', 422, 'Only a scheduled payroll can be released.');
+
+            $wallet = match ($data['payment_method']) {
+                'cash' => 'cash', 'gcash' => 'gcash', 'bank_bpi' => 'bpi', 'bank_landbank' => 'landbank',
+            };
+            $entry = FinancialEntry::firstOrCreate(
+                ['idempotency_key' => $locked->id],
+                [
+                    'type' => 'expense',
+                    'category' => 'Employee Salary',
+                    'description' => $locked->user->name.' salary · '.$locked->cutoff_start->toDateString().' to '.$locked->cutoff_end->toDateString(),
+                    'amount' => $locked->net_pay,
+                    'cash_breakdown' => $data['cash_breakdown'],
+                    'entry_date' => now('Asia/Manila')->toDateString(),
+                    'payment_method' => $data['payment_method'],
+                    'effect_type' => 'expense',
+                    'source_wallet' => $wallet,
+                    'destination_wallet' => null,
+                    'reference' => trim($data['reference']),
+                    'notes' => 'Payroll '.$locked->id.'; gross '.number_format($locked->gross_pay, 2).'; deductions '.number_format($locked->total_deductions, 2).'; cash advance deduction '.number_format($locked->cash_advance_deduction, 2).'.',
+                    'recorded_by' => $request->user()->id,
+                ]
+            );
+
+            $locked->update([
+                'status' => 'released',
+                'released_at' => now('UTC'),
+                'release_method' => $data['payment_method'],
+                'release_reference' => trim($data['reference']),
+                'released_by' => $request->user()->id,
+                'financial_entry_id' => $entry->id,
+            ]);
+            \App\Models\InstallationIncentiveAllocation::where('payroll_disbursement_id', $locked->id)->update(['status' => 'paid']);
+
+            return $locked->fresh(['user:id,name,email', 'releaser:id,name', 'financialEntry']);
+        });
+
+        return response()->json(['message' => 'Salary released and recorded in Daily Operations as an expense.', 'data' => $payroll]);
     }
 
     public function clockIn(Request $request): JsonResponse
