@@ -100,7 +100,7 @@ class StaffAttendanceController extends Controller
         abort_unless($path, 500, 'The attendance photo could not be stored.');
         $evidence = [
             'photo_path' => $path,
-            'photo_captured_at' => now(),
+            'photo_captured_at' => now('UTC'),
             'ip_address' => $request->ip(),
             'device' => mb_substr((string) $request->userAgent(), 0, 500),
             'latitude' => $data['latitude'] ?? null,
@@ -255,7 +255,7 @@ class StaffAttendanceController extends Controller
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
         $record = StaffAttendanceRecord::firstOrCreate(
             ['user_id'=>$employee->id, 'work_date'=>$now->toDateString()],
-            ['clocked_in_at'=>now(), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_in_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??null, 'clock_in_photo_path'=>$evidence['photo_path']??null, 'clock_in_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_in_ip_address'=>$evidence['ip_address']??null, 'clock_in_device'=>$evidence['device']??null]
+            ['clocked_in_at'=>now('UTC'), 'status'=>$late > 0 ? 'late' : 'present', 'late_minutes'=>$late, 'clock_in_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_in_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??null, 'clock_in_photo_path'=>$evidence['photo_path']??null, 'clock_in_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_in_ip_address'=>$evidence['ip_address']??null, 'clock_in_device'=>$evidence['device']??null]
         );
         if (! $record->wasRecentlyCreated) return response()->json(['message'=>'You are already clocked in today.', 'data'=>$record], 409);
         return response()->json(['message'=>'Clock-in recorded.', 'data'=>$record], 201);
@@ -274,12 +274,12 @@ class StaffAttendanceController extends Controller
         $now = now('Asia/Manila');
         $record = StaffAttendanceRecord::where('user_id', $employee->id)->whereDate('work_date', $now->toDateString())->firstOrFail();
         if ($record->clocked_out_at) return response()->json(['message'=>'You are already clocked out today.', 'data'=>$record], 409);
-        $worked = (int) floor(max(0, $record->clocked_in_at->diffInMinutes(now(), false)));
+        $worked = (int) floor(max(0, $record->clocked_in_at->copy()->utc()->diffInMinutes(now('UTC'), false)));
         $overtimeStart = Carbon::parse($now->toDateString().' 18:00:00', 'Asia/Manila');
         $overtime = (int) floor(max(0, $overtimeStart->diffInMinutes($now, false)));
         $overtimeStatus = $overtime > 0 ? 'pending' : 'not_applicable';
         $location = Schema::hasTable('staff_live_locations') ? StaffLiveLocation::where('user_id', $employee->id)->first() : null;
-        $record->update(['clocked_out_at'=>now(), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'overtime_status'=>$overtimeStatus, 'approved_overtime_minutes'=>0, 'overtime_reviewed_by'=>null, 'overtime_reviewed_at'=>null, 'overtime_review_notes'=>null, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
+        $record->update(['clocked_out_at'=>now('UTC'), 'worked_minutes'=>$worked, 'overtime_minutes'=>$overtime, 'overtime_status'=>$overtimeStatus, 'approved_overtime_minutes'=>0, 'overtime_reviewed_by'=>null, 'overtime_reviewed_at'=>null, 'overtime_review_notes'=>null, 'clock_out_latitude'=>$evidence['latitude']??$location?->latitude, 'clock_out_longitude'=>$evidence['longitude']??$location?->longitude, 'verification_method'=>$evidence['verification_method']??$record->verification_method, 'clock_out_photo_path'=>$evidence['photo_path']??null, 'clock_out_photo_captured_at'=>$evidence['photo_captured_at']??null, 'clock_out_ip_address'=>$evidence['ip_address']??null, 'clock_out_device'=>$evidence['device']??null]);
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
     }
 
