@@ -18,7 +18,7 @@ class TicketController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Ticket::with(['customer.servicePlan', 'router:id,name,location', 'smsAdvisoryCampaign:id,status,recipient_count,sent_count,failed_count,skipped_count', 'assignedTechnician', 'comments', 'histories.user']);
+        $query = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign:id,status,recipient_count,sent_count,failed_count,skipped_count', 'assignedTechnician', 'comments', 'histories.user']);
         if ($request->filled('status')) $query->where('workflow_status', $request->status);
         if ($request->filled('ticket_type')) $query->where('ticket_type', $request->ticket_type);
         if ($request->filled('priority')) $query->where('priority', $request->priority);
@@ -38,7 +38,7 @@ class TicketController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $ticket = Ticket::with(['customer.servicePlan', 'router:id,name,location', 'smsAdvisoryCampaign', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
+        $ticket = Ticket::with(['customer.servicePlan', 'customer.referralSource.referrer:id,full_name,account_number', 'router:id,name,location', 'smsAdvisoryCampaign', 'assignedTechnician', 'comments.user', 'comments.customer', 'histories.user'])->findOrFail($id);
         $ticket->setAttribute('client_notes', $ticket->customer?->notes);
         if ($ticket->ticket_type === 'installation' && $ticket->workflow_status === 'waiting_admin_approval') {
             $ticket->setAttribute('installation_validation', $this->workflow->installationValidation($ticket));

@@ -40,6 +40,20 @@ const emptyInstallationApplication = {
   location_accuracy_meters: undefined as number | undefined,
 };
 
+const ReferralTag: React.FC<{ ticket: Ticket; compact?: boolean }> = ({ ticket, compact = false }) => {
+  const referrer = ticket.customer?.referral_source?.referrer;
+  if (!referrer) return null;
+
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 font-semibold text-emerald-800 ${compact ? 'mt-1 px-2 py-0.5 text-[11px]' : 'px-3 py-1 text-xs'}`}
+      title={`Referred by ${referrer.full_name} (${referrer.account_number})`}
+    >
+      Referral · Referred by {referrer.full_name}
+    </span>
+  );
+};
+
 const TicketsPage: React.FC = () => {
   const { user } = useAuth();
   const roleNames = [user?.role, ...(user?.roles || []).map((item) => typeof item === 'string' ? item : item.name)].filter(Boolean);
@@ -424,6 +438,8 @@ const TicketsPage: React.FC = () => {
       ticket.ticket_number.toLowerCase().includes(searchLower) ||
       ticket.subject.toLowerCase().includes(searchLower) ||
       ticket.customer?.full_name?.toLowerCase().includes(searchLower) ||
+      ticket.customer?.referral_source?.referrer?.full_name?.toLowerCase().includes(searchLower) ||
+      ticket.customer?.referral_source?.referrer?.account_number?.toLowerCase().includes(searchLower) ||
       ticket.router?.name?.toLowerCase().includes(searchLower)
     );
   });
@@ -577,8 +593,9 @@ const TicketsPage: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {ticket.ticket_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {ticket.customer?.full_name || (ticket.router ? `${ticket.router.name} service area` : 'Network-wide')}
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <p className="whitespace-nowrap">{ticket.customer?.full_name || (ticket.router ? `${ticket.router.name} service area` : 'Network-wide')}</p>
+                      <ReferralTag ticket={ticket} compact />
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
                       {ticket.subject}
@@ -885,6 +902,7 @@ const TicketsPage: React.FC = () => {
                     <div>
                       <p className="text-sm text-gray-600">Customer</p>
                       <p className="font-medium">{selectedTicket.customer?.full_name}</p>
+                      <ReferralTag ticket={selectedTicket} compact />
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Category</p>

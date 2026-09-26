@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends Model
@@ -197,6 +198,14 @@ class Customer extends Model
     public function credits(): HasMany { return $this->hasMany(CustomerCredit::class); }
 
     public function referrals(): HasMany { return $this->hasMany(CustomerReferral::class, 'referrer_customer_id'); }
+
+    /** The referral record that introduced this customer to SolarNet. */
+    public function referralSource(): HasOne
+    {
+        return $this->hasOne(CustomerReferral::class, 'referred_customer_id')
+            ->orderByDesc('qualified_at')
+            ->orderByDesc('created_at');
+    }
 
     public function locationEvents(): HasMany { return $this->hasMany(CustomerLocationEvent::class); }
 

@@ -148,6 +148,17 @@ export interface Customer {
   mac_address: string | null;
   ip_address: string | null;
   notes: string | null;
+  referral_source?: {
+    id: string;
+    status: string;
+    referrer_customer_id: string;
+    referred_customer_id: string | null;
+    referrer?: {
+      id: string;
+      full_name: string;
+      account_number: string;
+    } | null;
+  } | null;
   created_at: string;
   updated_at: string;
 }
