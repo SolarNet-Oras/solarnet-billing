@@ -14,7 +14,6 @@ use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use App\Services\StaffProfilePhotoService;
 use App\Services\CashDenominationService;
-use App\Services\StaffPayrollService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -252,18 +251,6 @@ class StaffAttendanceController extends Controller
         return response()->json(['data' => $payroll->load(['user:id,name,email', 'releaser:id,name', 'financialEntry'])]);
     }
 
-    public function preparePayroll(Request $request, StaffPayrollService $service): JsonResponse
-    {
-        $data = $request->validate(['pay_date' => ['required', 'date']]);
-        $payDate = Carbon::parse($data['pay_date'], 'Asia/Manila')->startOfDay();
-        try {
-            $result = $service->process($payDate);
-        } catch (\InvalidArgumentException $exception) {
-            abort(422, $exception->getMessage());
-        }
-        return response()->json(['message' => 'Payroll cutoff prepared. Payslips are ready for review and release.', 'data' => $result]);
-    }
-
     public function releasePayroll(Request $request, StaffPayrollDisbursement $payroll, CashDenominationService $denominations): JsonResponse
     {
         $data = $request->validate([
@@ -287,6 +274,7 @@ class StaffAttendanceController extends Controller
             $locked = StaffPayrollDisbursement::with('user:id,name,email')->lockForUpdate()->findOrFail($payroll->id);
             abort_if($locked->status === 'released' || $locked->financial_entry_id, 409, 'This salary has already been released.');
             abort_unless($locked->status === 'scheduled', 422, 'Only a scheduled payroll can be released.');
+            abort_if(now('Asia/Manila')->startOfDay()->lt($locked->pay_date->copy()->startOfDay()), 422, 'Salary cannot be released before its scheduled payday.');
 
             $wallet = match ($data['payment_method']) {
                 'cash' => 'cash', 'gcash' => 'gcash', 'bank_bpi' => 'bpi', 'bank_landbank' => 'landbank',
