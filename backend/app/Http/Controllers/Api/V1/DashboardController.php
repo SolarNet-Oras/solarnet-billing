@@ -31,6 +31,8 @@ class DashboardController extends Controller
         $tickets = Ticket::with([
             'customer:id,account_number,full_name,address,notes,gps_coordinates,service_plan_id',
             'customer.servicePlan:id,name,download_speed,upload_speed,price',
+            'referral:id,referrer_customer_id,prospect_name,phone,email,address,status,reward_choice,reward_amount',
+            'referral.referrer:id,full_name,account_number',
             'assignedTechnician:id,name,email',
             'histories.user:id,name,email',
         ])
@@ -38,13 +40,16 @@ class DashboardController extends Controller
                 $query->where('assigned_to', $technicianId)
                     ->orWhere(function ($available) {
                         $available->whereNull('assigned_to')
-                            ->whereIn('ticket_type', ['installation', 'repair'])
-                            ->whereIn('workflow_status', ['unclaimed', 'open']);
+                            ->whereIn('workflow_status', ['unclaimed', 'open'])
+                            ->where(function ($visibleWork) {
+                                $visibleWork->whereIn('ticket_type', ['installation', 'repair'])
+                                    ->orWhereNotNull('referral_id');
+                            });
                     });
             })
             ->latest('updated_at')
             ->get([
-                'id', 'ticket_number', 'customer_id', 'assigned_to', 'subject', 'description',
+                'id', 'ticket_number', 'customer_id', 'referral_id', 'assigned_to', 'subject', 'description',
                 'status', 'priority', 'category', 'ticket_type', 'workflow_status',
                 'claimed_at', 'started_at', 'resolution_notes', 'repair_details',
                 'installation_mac', 'installation_notes', 'submitted_for_approval_at',

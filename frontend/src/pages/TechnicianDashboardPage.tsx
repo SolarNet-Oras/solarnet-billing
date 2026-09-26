@@ -36,6 +36,14 @@ type Ticket = {
   priority: string;
   assigned_to?: string | null;
   assigned_technician?: { id: string; name: string } | null;
+  referral?: {
+    prospect_name: string;
+    phone: string;
+    email?: string | null;
+    address: string;
+    status: string;
+    referrer?: { full_name: string; account_number: string } | null;
+  } | null;
   customer?: Client;
   client_notes?: string | null;
   installation_mac?: string | null;
@@ -190,7 +198,7 @@ export default function TechnicianDashboardPage() {
     const term = ticketQuery.trim().toLowerCase();
     return tickets.filter((ticket) => {
       if (isCompletedTicket(ticket)) return false;
-      const matchesText = !term || `${ticket.ticket_number} ${ticket.subject} ${ticket.customer?.full_name || ''} ${ticket.customer?.address || ''}`.toLowerCase().includes(term);
+      const matchesText = !term || `${ticket.ticket_number} ${ticket.subject} ${ticket.referral?.prospect_name || ticket.customer?.full_name || ''} ${ticket.referral?.address || ticket.customer?.address || ''}`.toLowerCase().includes(term);
       const matchesFilter = ticketFilter === 'all'
         || (ticketFilter === 'pending' && ['open', 'unclaimed', 'claimed'].includes(ticket.workflow_status))
         || ticket.ticket_type === ticketFilter
@@ -325,9 +333,11 @@ export default function TechnicianDashboardPage() {
         const repairForm = repairForms[ticket.id] || emptyRepairForm;
         const busy = ticketBusy === ticket.id;
         return <article key={ticket.id} className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex flex-col justify-between gap-3 md:flex-row"><div><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-bold text-primary">{ticket.ticket_number}</p><span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold">{ticket.ticket_type === 'installation' ? 'NEW INSTALLATION' : ticket.ticket_type.toUpperCase()}</span><span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{label(ticket.workflow_status)}</span></div><h2 className="mt-2 font-semibold">{ticket.subject}</h2></div><div className="text-xs text-muted-foreground md:text-right"><p>Created {new Date(ticket.created_at).toLocaleString('en-PH')}</p><p>Updated {new Date(ticket.updated_at).toLocaleString('en-PH')}</p></div></div>
+          <div className="flex flex-col justify-between gap-3 md:flex-row"><div><div className="flex flex-wrap items-center gap-2"><p className="text-xs font-bold text-primary">{ticket.ticket_number}</p><span className="rounded-full bg-muted px-2 py-1 text-[11px] font-semibold">{ticket.referral ? 'INSTALLATION APPLICATION' : ticket.ticket_type === 'installation' ? 'NEW INSTALLATION' : ticket.ticket_type.toUpperCase()}</span><span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{label(ticket.workflow_status)}</span></div><h2 className="mt-2 font-semibold">{ticket.subject}</h2></div><div className="text-xs text-muted-foreground md:text-right"><p>Created {new Date(ticket.created_at).toLocaleString('en-PH')}</p><p>Updated {new Date(ticket.updated_at).toLocaleString('en-PH')}</p></div></div>
           <p className="mt-3 text-sm text-muted-foreground">{ticket.description}</p>
-          <div className="mt-4 grid gap-2 rounded-xl bg-muted/40 p-4 text-sm md:grid-cols-3"><p><strong>Client:</strong> {ticket.customer?.full_name || 'No client'}</p><p><strong>Address:</strong> {ticket.customer?.address || 'No address'}</p><p><strong>Priority:</strong> <span className="capitalize">{ticket.priority}</span></p><p><strong>Technician:</strong> {ticket.assigned_technician?.name || 'Available to claim'}</p><p><strong>Type:</strong> {label(ticket.ticket_type)}</p><p><strong>Status:</strong> {label(ticket.workflow_status)}</p></div>
+          <div className="mt-4 grid gap-2 rounded-xl bg-muted/40 p-4 text-sm md:grid-cols-3"><p><strong>Client:</strong> {ticket.referral?.prospect_name || ticket.customer?.full_name || 'No client'}</p><p><strong>Address:</strong> {ticket.referral?.address || ticket.customer?.address || 'No address'}</p><p><strong>Priority:</strong> <span className="capitalize">{ticket.priority}</span></p><p><strong>Technician:</strong> {ticket.assigned_technician?.name || (ticket.referral ? 'Awaiting office assignment' : 'Available to claim')}</p><p><strong>Type:</strong> {ticket.referral ? 'Installation application' : label(ticket.ticket_type)}</p><p><strong>Status:</strong> {label(ticket.workflow_status)}</p></div>
+
+          {ticket.referral && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-950"><p className="font-semibold">Referral installation application</p><p className="mt-1">Contact: {ticket.referral.phone}{ticket.referral.email ? ` · ${ticket.referral.email}` : ''}</p><p className="mt-1">Referred by: {ticket.referral.referrer?.full_name || ticket.customer?.full_name || 'Customer'}{ticket.referral.referrer?.account_number ? ` (${ticket.referral.referrer.account_number})` : ''}</p><p className="mt-2 text-xs text-emerald-800">Visible for technician planning. Office staff must assign or convert it through the approved installation workflow before field completion.</p></div>}
 
           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-blue-950"><h3 className="font-semibold">Client signup notes</h3><p className="mt-1 text-xs text-blue-900/70">Reference information entered when this client applied.</p><p className="mt-2 whitespace-pre-line text-sm">{ticket.client_notes || ticket.customer?.notes || 'No client signup notes recorded.'}</p></div>
 

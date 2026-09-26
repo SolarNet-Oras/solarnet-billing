@@ -12,6 +12,7 @@ type TicketAlert = {
   workflow_status: string;
   created_at: string;
   customer?: { full_name?: string; address?: string } | null;
+  referral?: { prospect_name: string; address: string } | null;
 };
 
 const STORAGE_KEY = 'solarnet:technician-ticket-alerts';
@@ -45,7 +46,7 @@ export default function TechnicianTicketAlerts() {
             if ('Notification' in window && Notification.permission === 'granted') {
               const registration = await navigator.serviceWorker?.ready;
               await registration?.showNotification(`New ticket ${incoming.ticket_number}`, {
-                body: `${incoming.customer?.full_name || 'Customer'} — ${incoming.subject}`,
+                body: `${incoming.referral?.prospect_name || incoming.customer?.full_name || 'Customer'} — ${incoming.subject}`,
                 icon: '/solarnet-company-logo-192.png',
                 badge: '/solarnet-company-logo-192.png',
                 tag: `technician-ticket-${incoming.id}`,
@@ -79,7 +80,7 @@ export default function TechnicianTicketAlerts() {
   return (
     <aside role="alertdialog" aria-live="assertive" className="fixed bottom-5 right-4 z-[100] w-[calc(100vw-2rem)] max-w-sm animate-in slide-in-from-bottom-5 rounded-2xl border border-blue-400/50 bg-slate-950 p-4 text-white shadow-2xl shadow-blue-500/30">
       <button type="button" onClick={() => setAlert(null)} aria-label="Dismiss ticket alert" className="absolute right-3 top-3 rounded-lg p-1 text-slate-300 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
-      <div className="flex gap-3 pr-7"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 text-blue-300"><BellRing className="h-6 w-6 animate-pulse" /></span><div><p className="text-xs font-bold uppercase tracking-widest text-blue-300">New technician ticket</p><h2 className="mt-1 font-bold">{alert.ticket_number}</h2><p className="mt-1 text-sm text-slate-200">{alert.customer?.full_name || 'Customer'} · {alert.subject}</p>{alert.customer?.address && <p className="mt-1 text-xs text-slate-400">{alert.customer.address}</p>}</div></div>
+      <div className="flex gap-3 pr-7"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 text-blue-300"><BellRing className="h-6 w-6 animate-pulse" /></span><div><p className="text-xs font-bold uppercase tracking-widest text-blue-300">New technician ticket</p><h2 className="mt-1 font-bold">{alert.ticket_number}</h2><p className="mt-1 text-sm text-slate-200">{alert.referral?.prospect_name || alert.customer?.full_name || 'Customer'} · {alert.subject}</p>{(alert.referral?.address || alert.customer?.address) && <p className="mt-1 text-xs text-slate-400">{alert.referral?.address || alert.customer?.address}</p>}</div></div>
       <div className="mt-4 flex flex-wrap gap-2"><Link to="/dashboard" onClick={() => setAlert(null)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-2 text-sm font-bold hover:bg-blue-400">Open ticket <ExternalLink className="h-4 w-4" /></Link>{'Notification' in window && Notification.permission !== 'granted' && <button type="button" onClick={enableNotifications} className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold hover:bg-white/10">Enable phone alerts</button>}</div>
     </aside>
   );
