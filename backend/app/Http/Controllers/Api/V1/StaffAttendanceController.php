@@ -171,6 +171,7 @@ class StaffAttendanceController extends Controller
         $contributionService = app(PhilippinePayrollContributionService::class);
         $employees = $users->map(function (User $user) use ($records, $todayRecords, $profiles, $manager, $contributionService, $cutoff): array {
             $rows = $records->get($user->id, collect());
+            $serializedRows = $rows->map(fn (StaffAttendanceRecord $row): array => $this->attendanceRecordPayload($row))->values();
             $profile = $profiles->get($user->id);
             $daily = (float) ($profile?->daily_rate ?: (($profile?->monthly_salary ?? 0) / max(1, $profile?->work_days_per_month ?? 26)));
             $payableRows = $rows->whereIn('status', ['present', 'late']);
@@ -201,8 +202,8 @@ class StaffAttendanceController extends Controller
                 'attendance_reference_captured_at'=>$user->attendance_reference_captured_at,
                 'pin_configured'=>filled($user->attendance_pin_hash),
                 'roles'=>$user->roles->pluck('name')->values(),
-                'records'=>$rows->values(),
-                'today_record'=>$todayRecords->get($user->id),
+                'records'=>$serializedRows,
+                'today_record'=>($todayRecord = $todayRecords->get($user->id)) ? $this->attendanceRecordPayload($todayRecord) : null,
                 'compensation'=>$manager ? $profile : null,
                 'summary'=>[
                     'present_days'=>$presentDays, 'full_days'=>$fullDays, 'half_days'=>$halfDays, 'absent_days'=>$rows->where('status', 'absent')->count(),
@@ -257,6 +258,18 @@ class StaffAttendanceController extends Controller
             'installation_incentives'=>$installationIncentives,
             'employees'=>$employees,
         ]]);
+    }
+
+    private function attendanceRecordPayload(StaffAttendanceRecord $record): array
+    {
+        return [
+            ...$record->toArray(),
+            // A business date must remain the same Philippine calendar date;
+            // serializing its Manila midnight as UTC shifts it to yesterday.
+            'work_date' => $record->work_date?->toDateString(),
+            'clocked_in_at' => $record->clocked_in_at?->copy()->utc()->toIso8601String(),
+            'clocked_out_at' => $record->clocked_out_at?->copy()->utc()->toIso8601String(),
+        ];
     }
 
     public function payrollPayslip(StaffPayrollDisbursement $payroll): JsonResponse
