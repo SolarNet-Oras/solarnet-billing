@@ -161,7 +161,7 @@ class StaffAttendanceController extends Controller
         $profiles = StaffCompensation::query()->whereIn('user_id', $users->pluck('id'))->get()->keyBy('user_id');
 
         $contributionService = app(PhilippinePayrollContributionService::class);
-        $employees = $users->map(function (User $user) use ($records, $todayRecords, $profiles, $manager, $contributionService): array {
+        $employees = $users->map(function (User $user) use ($records, $todayRecords, $profiles, $manager, $contributionService, $cutoff): array {
             $rows = $records->get($user->id, collect());
             $profile = $profiles->get($user->id);
             $daily = (float) ($profile?->daily_rate ?: (($profile?->monthly_salary ?? 0) / max(1, $profile?->work_days_per_month ?? 26)));
@@ -178,7 +178,7 @@ class StaffAttendanceController extends Controller
             $sss = $profile?->sss_enabled ? $government['sss'] / 2 : 0;
             $philhealth = $profile?->philhealth_enabled ? $government['philhealth'] / 2 : 0;
             $pagibig = $profile?->pagibig_enabled ? $government['pagibig'] / 2 : 0;
-            $cashAdvance = (float) ($profile?->cash_advance_deduction ?? 0) / 2;
+            $cashAdvance = $cutoff === 'second' ? (float) ($profile?->cash_advance_deduction ?? 0) : 0;
             $otherDeductions = (float) ($profile?->monthly_deduction ?? 0) / 2;
             $deductions = $otherDeductions + $sss + $philhealth + $pagibig + $cashAdvance + $late;
 
