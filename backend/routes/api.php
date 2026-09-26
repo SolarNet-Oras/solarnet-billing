@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CustomerRegistrationImportController;
 use App\Http\Controllers\Api\V1\CustomerUpdateImportController;
 use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
+use App\Http\Controllers\Api\V1\CustomerReferralRewardController;
 use App\Http\Controllers\Api\V1\CustomerTroubleshootingController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HsgqOltController;
@@ -472,6 +473,8 @@ Route::prefix('v1')->group(function () {
         Route::post('tickets/{id}/installation/return', [TicketController::class, 'returnInstallation'])->middleware('role:super_admin|admin');
         Route::post('tickets/{id}/comments', [TicketController::class, 'addComment'])->middleware('permission:edit-tickets');
         Route::patch('tickets/{id}/status', [TicketController::class, 'updateStatus'])->middleware('permission:edit-tickets|close-tickets');
+        Route::post('customer-referrals/{referral}/cash-payout', [CustomerReferralRewardController::class, 'payCash'])
+            ->middleware('role:super_admin|admin|cashier|office_admin');
         
         // Report routes (require permission)
         Route::middleware(['permission:view-reports'])->group(function () {

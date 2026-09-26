@@ -1021,8 +1021,22 @@ class InvoiceService
             if ($remaining <= 0) break;
             $applied = min($remaining, (float) $credit->remaining_amount);
             if (! $credit->payment_id) {
-                // Legacy credit without a source receipt cannot fabricate new
-                // money. Leave it untouched for an explicit reconciliation.
+                // Referral rewards are company-authorized billing discounts,
+                // not customer cash receipts. Apply only these explicitly
+                // attributed credits; unknown legacy credits remain blocked.
+                if (str_starts_with((string) $credit->notes, 'Referral bonus ')) {
+                    $invoice->discount = round((float) $invoice->discount + $applied, 2);
+                    $invoice->save();
+                    $this->calculateInvoiceTotals($invoice->fresh());
+                    $credit->decrement('remaining_amount', $applied);
+                    $credit->refresh();
+                    $credit->update([
+                        'status' => (float) $credit->remaining_amount <= 0 ? 'fully_applied' : 'partially_applied',
+                        'applied_at' => (float) $credit->remaining_amount <= 0 ? now() : null,
+                    ]);
+                    $remaining = (float) $invoice->fresh()->balance;
+                    continue;
+                }
                 continue;
             }
             $allocation = PaymentAllocation::query()

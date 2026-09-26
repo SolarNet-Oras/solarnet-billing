@@ -21,6 +21,8 @@ export interface CustomerReferral {
   reward_amount: number;
   qualified_at: string | null;
   rewarded_at: string | null;
+  cash_paid_at: string | null;
+  cash_payout_reference: string | null;
   created_at: string;
 }
 

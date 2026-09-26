@@ -40,6 +40,19 @@ const emptyInstallationApplication = {
   location_accuracy_meters: undefined as number | undefined,
 };
 
+const referralCashDenominations = [
+  { key: 'bill-1000', denomination: 1000, kind: 'bill', label: '₱1,000 bill' },
+  { key: 'bill-500', denomination: 500, kind: 'bill', label: '₱500 bill' },
+  { key: 'bill-200', denomination: 200, kind: 'bill', label: '₱200 bill' },
+  { key: 'bill-100', denomination: 100, kind: 'bill', label: '₱100 bill' },
+  { key: 'bill-50', denomination: 50, kind: 'bill', label: '₱50 bill' },
+  { key: 'bill-20', denomination: 20, kind: 'bill', label: '₱20 bill' },
+  { key: 'coin-20', denomination: 20, kind: 'coin', label: '₱20 coin' },
+  { key: 'coin-10', denomination: 10, kind: 'coin', label: '₱10 coin' },
+  { key: 'coin-5', denomination: 5, kind: 'coin', label: '₱5 coin' },
+  { key: 'coin-1', denomination: 1, kind: 'coin', label: '₱1 coin' },
+] as const;
+
 const ReferralTag: React.FC<{ ticket: Ticket; compact?: boolean }> = ({ ticket, compact = false }) => {
   const referrer = ticket.referral?.referrer ?? ticket.customer?.referral_source?.referrer;
   if (!referrer) return null;
@@ -55,7 +68,7 @@ const ReferralTag: React.FC<{ ticket: Ticket; compact?: boolean }> = ({ ticket, 
 };
 
 const ticketCategoryLabel = (ticket: Ticket): string => {
-  if (ticket.referral) return 'New Installation';
+  if (ticket.referral) return 'Installation application';
   if (ticket.ticket_type === 'installation') return 'Installation application';
   if (ticket.ticket_type === 'repair') return 'Repair';
   if (ticket.ticket_type === 'maintenance') return 'Maintenance';
@@ -74,6 +87,7 @@ const TicketsPage: React.FC = () => {
   const canCreateTickets = user?.permissions?.includes('create-tickets')
     || roleNames.some((role) => ['super_admin', 'admin', 'office_admin', 'technician', 'noc'].includes(String(role)))
     || false;
+  const canPayReferralCash = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(String(role)));
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [installationApprovals, setInstallationApprovals] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -92,6 +106,15 @@ const TicketsPage: React.FC = () => {
   const [installationPlans, setInstallationPlans] = useState<InstallationPlanOption[]>([]);
   const [installationForm, setInstallationForm] = useState(emptyInstallationApplication);
   const [installationLocating, setInstallationLocating] = useState(false);
+  const [referralPayoutOpen, setReferralPayoutOpen] = useState(false);
+  const [referralPayoutReference, setReferralPayoutReference] = useState('');
+  const [referralCashCounts, setReferralCashCounts] = useState<Record<string, number>>({});
+  const [referralPayoutBusy, setReferralPayoutBusy] = useState(false);
+
+  const referralCashTotal = useMemo(() => referralCashDenominations.reduce(
+    (sum, item) => sum + item.denomination * (referralCashCounts[item.key] || 0),
+    0,
+  ), [referralCashCounts]);
 
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -364,6 +387,43 @@ const TicketsPage: React.FC = () => {
       const errors = error.response?.data?.errors;
       const firstError = errors ? Object.values(errors).flat()[0] : null;
       window.alert(String(firstError || error.response?.data?.message || 'Could not correct the pending installation MAC.'));
+    }
+  };
+
+  const releaseReferralCash = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const referral = selectedTicket?.referral;
+    if (!selectedTicket || !referral) return;
+
+    if (referralCashTotal !== Number(referral.reward_amount)) {
+      window.alert(`Cash denominations must total exactly ₱${Number(referral.reward_amount).toFixed(2)}.`);
+      return;
+    }
+
+    setReferralPayoutBusy(true);
+    try {
+      const cash_breakdown = referralCashDenominations.map((item) => ({
+        denomination: item.denomination,
+        kind: item.kind,
+        count: referralCashCounts[item.key] || 0,
+      }));
+      const response = await api.post(`/customer-referrals/${referral.id}/cash-payout`, {
+        reference: referralPayoutReference.trim(),
+        cash_breakdown,
+      });
+      const refreshed = await ticketService.getTicket(selectedTicket.id);
+      setSelectedTicket(refreshed);
+      setReferralPayoutOpen(false);
+      setReferralPayoutReference('');
+      setReferralCashCounts({});
+      await fetchTickets();
+      window.alert(response.data?.message || 'Referral cash reward released.');
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const firstError = errors ? Object.values(errors).flat()[0] : null;
+      window.alert(String(firstError || error.response?.data?.message || 'Could not release the referral reward.'));
+    } finally {
+      setReferralPayoutBusy(false);
     }
   };
 
@@ -941,8 +1001,27 @@ const TicketsPage: React.FC = () => {
                         <div><dt className="text-emerald-700">Status</dt><dd className="font-semibold capitalize text-emerald-950">{selectedTicket.referral.status.replaceAll('_', ' ')}</dd></div>
                         <div><dt className="text-emerald-700">Phone</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.phone}</dd></div>
                         <div><dt className="text-emerald-700">Email</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.email || 'Not provided'}</dd></div>
+                        <div><dt className="text-emerald-700">Reward</dt><dd className="font-semibold text-emerald-950">₱{Number(selectedTicket.referral.reward_amount).toFixed(2)} · {selectedTicket.referral.reward_choice?.replaceAll('_', ' ') || 'Not selected'}</dd></div>
+                        {selectedTicket.referral.cash_paid_at && <div><dt className="text-emerald-700">Cash released</dt><dd className="font-semibold text-emerald-950">{new Date(selectedTicket.referral.cash_paid_at).toLocaleString()} by {selectedTicket.referral.cash_payer?.name || 'authorized staff'}</dd></div>}
                         <div className="sm:col-span-2"><dt className="text-emerald-700">Address</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.address}</dd></div>
                       </dl>
+                      {canPayReferralCash && selectedTicket.referral.status === 'cash_claim_requested' && (
+                        <div className="mt-4 border-t border-emerald-200 pt-4">
+                          {!referralPayoutOpen ? (
+                            <button type="button" onClick={() => setReferralPayoutOpen(true)} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">Release ₱200 cash</button>
+                          ) : (
+                            <form onSubmit={releaseReferralCash} className="rounded-xl border border-emerald-300 bg-white p-4">
+                              <div className="flex items-start justify-between gap-3"><div><h4 className="font-bold text-emerald-950">Cash referral payout</h4><p className="mt-1 text-xs text-gray-600">Count the cash given to the referring customer. Saving records an attributed Daily Operations expense and updates the cash breakdown.</p></div><button type="button" onClick={() => setReferralPayoutOpen(false)} className="text-xs font-semibold text-gray-500">Cancel</button></div>
+                              <label className="mt-3 block text-sm font-medium text-gray-700">Claim reference / receipt<input required value={referralPayoutReference} onChange={(event) => setReferralPayoutReference(event.target.value)} placeholder="REFERRAL-CASH-..." className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {referralCashDenominations.map((item) => <label key={item.key} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm"><span>{item.label}</span><input type="number" min="0" step="1" value={referralCashCounts[item.key] || ''} onChange={(event) => setReferralCashCounts((current) => ({ ...current, [item.key]: Math.max(0, Number.parseInt(event.target.value || '0', 10) || 0) }))} className="w-20 rounded border border-gray-300 px-2 py-1 text-right" /></label>)}
+                              </div>
+                              <div className={`mt-3 rounded-lg p-3 text-sm font-bold ${referralCashTotal === Number(selectedTicket.referral.reward_amount) ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>Denomination total: ₱{referralCashTotal.toFixed(2)} / ₱{Number(selectedTicket.referral.reward_amount).toFixed(2)}</div>
+                              <button disabled={referralPayoutBusy || !referralPayoutReference.trim() || referralCashTotal !== Number(selectedTicket.referral.reward_amount)} className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-400">{referralPayoutBusy ? 'Recording payout…' : 'Confirm cash released'}</button>
+                            </form>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 

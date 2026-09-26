@@ -299,6 +299,9 @@ export interface Ticket {
     status: string;
     reward_choice?: 'cash' | 'billing_credit' | null;
     reward_amount: number;
+    cash_paid_at?: string | null;
+    cash_payout_reference?: string | null;
+    cash_payer?: { id: string; name: string } | null;
     referrer?: {
       id: string;
       full_name: string;

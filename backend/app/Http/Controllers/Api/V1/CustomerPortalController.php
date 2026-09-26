@@ -502,7 +502,7 @@ class CustomerPortalController extends Controller
         $referral = CustomerReferral::query()->whereKey($id)->where('referrer_customer_id', $customer->id)->firstOrFail();
         $referral = $service->chooseReward($customer, $referral, $validated['reward_choice']);
         $message = $referral->reward_choice === 'billing_credit'
-            ? 'Your ₱200 referral bonus was added as customer credit and will be deducted from a future invoice.'
+            ? 'Your ₱200 referral bonus was applied to your oldest open invoice. Any unused amount is reserved for a future invoice.'
             : 'Your ₱200 cash claim is recorded. Bring a valid ID and your SolarNet account number to the SolarNet office; staff must verify and release the cash.';
 
         return response()->json(['status' => 'success', 'message' => $message, 'data' => $this->referralPayload($referral)]);
@@ -521,6 +521,8 @@ class CustomerPortalController extends Controller
             'reward_amount' => (float) $referral->reward_amount,
             'qualified_at' => $referral->qualified_at?->toIso8601String(),
             'rewarded_at' => $referral->rewarded_at?->toIso8601String(),
+            'cash_paid_at' => $referral->cash_paid_at?->toIso8601String(),
+            'cash_payout_reference' => $referral->cash_payout_reference,
             'created_at' => $referral->created_at?->toIso8601String(),
         ];
     }
