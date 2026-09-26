@@ -7,6 +7,8 @@ use App\Models\FinancialEntry;
 use App\Models\DailyCashCount;
 use App\Models\Payment;
 use App\Models\TransactionDefinition;
+use App\Models\StaffCashAdvance;
+use App\Models\User;
 use App\Models\InstallationIncentivePool;
 use App\Services\CashDenominationService;
 use Illuminate\Http\JsonResponse;
@@ -162,6 +164,16 @@ class FinancialEntryController extends Controller
         return response()->json(['data' => $query->orderBy('sort_order')->get(['id', 'type', 'description', 'payment_method', 'effect_type', 'source_wallet', 'destination_wallet', 'active'])]);
     }
 
+    public function cashAdvanceEmployees(): JsonResponse
+    {
+        return response()->json(['data' => User::query()
+            ->where('is_active', true)
+            ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
+            ->whereHas('compensation')
+            ->orderBy('name')
+            ->get(['id', 'name'])]);
+    }
+
     public function createDefinition(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -228,9 +240,18 @@ class FinancialEntryController extends Controller
             'cash_breakdown.*.denomination' => ['required_with:cash_breakdown', 'integer', 'in:1000,500,200,100,50,20,10,5,1'],
             'cash_breakdown.*.kind' => ['required_with:cash_breakdown', 'in:bill,coin'],
             'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
+            'employee_id' => ['nullable', 'uuid', 'exists:users,id'],
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
+        $cashAdvanceEmployee = null;
+        if ($definition->type === 'C/A') {
+            abort_unless(filled($data['employee_id'] ?? null), 422, 'Select the employee receiving this cash advance.');
+            $cashAdvanceEmployee = User::query()->whereKey($data['employee_id'])->where('is_active', true)
+                ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
+                ->whereHas('compensation')->first();
+            abort_unless($cashAdvanceEmployee, 422, 'The selected employee is not eligible for payroll cash advances.');
+        }
         if ($definition->effect_type === 'cash_in' && $definition->source_wallet === null && in_array($definition->destination_wallet, ['cash', 'gcash', 'bpi', 'landbank'], true)) {
             abort_unless(
                 $request->user()?->hasAnyRole(['super_admin', 'admin', 'office_admin', 'cashier']),
@@ -247,20 +268,33 @@ class FinancialEntryController extends Controller
             $data['cash_breakdown'] = null;
         }
 
-        $entry = DB::transaction(function () use ($data, $definition, $request) {
+        $entry = DB::transaction(function () use ($data, $definition, $request, $cashAdvanceEmployee) {
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
-            return FinancialEntry::create([
+            $entry = FinancialEntry::create([
                 ...$data,
                 'type' => $definition->effect_type === 'expense' ? 'expense' : 'sale',
                 'category' => $definition->type,
-                'description' => $definition->description,
+                'description' => $definition->type === 'C/A' ? $cashAdvanceEmployee->name : $definition->description,
                 'payment_method' => $definition->payment_method,
                 'effect_type' => $definition->effect_type,
                 'source_wallet' => $definition->source_wallet,
                 'destination_wallet' => $definition->destination_wallet,
                 'recorded_by' => optional($request->user())->id,
             ]);
+            if ($definition->type === 'C/A') {
+                StaffCashAdvance::create([
+                    'user_id' => $data['employee_id'],
+                    'financial_entry_id' => $entry->id,
+                    'amount' => $data['amount'],
+                    'settled_amount' => 0,
+                    'status' => 'outstanding',
+                    'issued_at' => now('UTC'),
+                    'notes' => 'Created from Daily Operations '.$entry->id.'.',
+                ]);
+            }
+
+            return $entry;
         });
         return response()->json(['data' => $entry], $entry->wasRecentlyCreated ? 201 : 200);
     }

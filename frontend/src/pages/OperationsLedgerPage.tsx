@@ -24,6 +24,7 @@ type CashPosition = { amount: number; baseline_at?: string | null; breakdown: Ca
 type InstallationIncentive = { id:string; work_date:string; pool_amount:number; eligible_count:number; status:string; ticket?:{ticket_number:string;customer?:{full_name:string;account_number:string}}; allocations:Array<{id:string;share_amount:number;status:string;user?:{name:string}}> };
 type Data = { collections: Entry[]; cash_in: Entry[]; transfers: Entry[]; expenses: Entry[]; installation_incentives?:InstallationIncentive[]; wallets: Record<'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank', Wallet>; wallet_balance_as_of?: string; cash_count?: CashCount | null; cash_denomination_position?: CashPosition };
 type Definition = { id: string; type: string; description: string; payment_method: string; effect_type?: string | null; source_wallet?: string | null; destination_wallet?: string | null; active?: boolean };
+type CashAdvanceEmployee = { id:string; name:string };
 
 const CASH_DENOMINATIONS = [{ denomination: 1000, kind: 'bill' }, { denomination: 500, kind: 'bill' }, { denomination: 200, kind: 'bill' }, { denomination: 100, kind: 'bill' }, { denomination: 50, kind: 'bill' }, { denomination: 20, kind: 'bill' }, { denomination: 20, kind: 'coin' }, { denomination: 10, kind: 'coin' }, { denomination: 5, kind: 'coin' }, { denomination: 1, kind: 'coin' }] as const;
 const cashKey = (denomination: number, kind: string): string => `${denomination}_${kind}`;
@@ -64,6 +65,8 @@ export default function OperationsLedgerPage(): React.JSX.Element {
   const [cashPanelOpen, setCashPanelOpen] = useState(false);
   const [movementCashCounts, setMovementCashCounts] = useState<Record<number, number>>({});
   const [detailEntry, setDetailEntry] = useState<Entry | null>(null);
+  const [cashAdvanceEmployees, setCashAdvanceEmployees] = useState<CashAdvanceEmployee[]>([]);
+  const [cashAdvanceEmployeeId, setCashAdvanceEmployeeId] = useState('');
 
   const activeDefinitions = useMemo(() => definitions.filter((definition) => definition.active !== false), [definitions]);
   const isMoneyInDefinition = (definition: Definition): boolean => definition.effect_type === 'cash_in' && !definition.source_wallet && ['cash', 'gcash', 'bpi', 'landbank'].includes(String(definition.destination_wallet));
@@ -78,13 +81,15 @@ export default function OperationsLedgerPage(): React.JSX.Element {
 
   const load = async (): Promise<void> => {
     const periodParams = periodMode === 'month' ? { month } : { date };
-    const [ledger, master] = await Promise.allSettled([
+    const [ledger, master, advanceEmployees] = await Promise.allSettled([
       api.get('/financial-entries', { params: periodParams }),
       api.get('/transaction-definitions', { params: { include_inactive: canManageDropdowns && masterOpen } }),
+      api.get('/financial-entries/cash-advance-employees'),
     ]);
 
     if (ledger.status === 'fulfilled') setData(ledger.value.data.data);
     if (master.status === 'fulfilled') setDefinitions(master.value.data.data);
+    if (advanceEmployees.status === 'fulfilled') setCashAdvanceEmployees(advanceEmployees.value.data.data);
 
     if (ledger.status === 'rejected' && master.status === 'rejected') {
       setError('Could not load Daily Operations or its transaction dropdowns. Check this user\'s payment permissions.');
@@ -108,8 +113,9 @@ export default function OperationsLedgerPage(): React.JSX.Element {
     }
     setError(''); setIsSaving(true);
     try {
-      await api.post('/financial-entries', { transaction_definition_id: definitionId, amount: Number(amount), entry_date: date, reference: reference || null, idempotency_key: crypto.randomUUID(), cash_breakdown: movementTouchesCash ? movementBreakdown.map(({ denomination, kind, count }) => ({ denomination, kind, count })) : null });
+      await api.post('/financial-entries', { transaction_definition_id: definitionId, employee_id: type === 'C/A' ? cashAdvanceEmployeeId : null, amount: Number(amount), entry_date: date, reference: reference || null, idempotency_key: crypto.randomUUID(), cash_breakdown: movementTouchesCash ? movementBreakdown.map(({ denomination, kind, count }) => ({ denomination, kind, count })) : null });
       setType(''); setDescription(''); setDefinitionId(''); setAmount(''); setReference('');
+      setCashAdvanceEmployeeId('');
       setMovementCashCounts({});
       await load();
     } catch (requestError: any) { setError(requestError.response?.data?.message || 'Could not save this record.'); }
@@ -223,13 +229,14 @@ export default function OperationsLedgerPage(): React.JSX.Element {
       </div>
     </section>}
     <section className="grid gap-6 lg:grid-cols-3"><form onSubmit={save} className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Add daily record</h2><p className="mt-1 text-xs text-muted-foreground">Choose each field in order. Invalid combinations cannot be saved.</p><div className="mt-4 space-y-3">
-      <label className="block text-xs font-semibold text-muted-foreground">Type of transaction<select required value={type} onChange={(event) => { setType(event.target.value); setDescription(''); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground"><option value="">Select transaction type</option>{types.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-muted-foreground">Type of transaction<select required value={type} onChange={(event) => { setType(event.target.value); setDescription(''); setDefinitionId(''); setCashAdvanceEmployeeId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground"><option value="">Select transaction type</option>{types.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+      {type==='C/A'&&<label className="block text-xs font-semibold text-muted-foreground">Employee<select required value={cashAdvanceEmployeeId} onChange={event=>setCashAdvanceEmployeeId(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground"><option value="">Select employee</option>{cashAdvanceEmployees.map(employee=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select><span className="mt-1 block text-[11px] font-normal text-muted-foreground">The full outstanding balance is deducted from the 30th payroll, limited by available salary.</span></label>}
       <label className="block text-xs font-semibold text-muted-foreground">Description<select required disabled={!type} value={description} onChange={(event) => { setDescription(event.target.value); setDefinitionId(''); }} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{type ? 'Select description' : 'Select a type first'}</option>{descriptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label className="block text-xs font-semibold text-muted-foreground">Payment method<select required disabled={!description} value={definitionId} onChange={(event) => setDefinitionId(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-sm text-foreground disabled:opacity-50"><option value="">{description ? 'Select payment method' : 'Select a description first'}</option>{paymentOptions.map((option) => {const restricted=!canRecordAllDailyTransactions&&isMoneyInDefinition(option);return <option key={option.id} value={option.id} disabled={restricted}>{METHOD_LABELS[option.payment_method] ?? option.payment_method}{restricted?' — Office finance staff only':''}</option>})}</select>{!canRecordAllDailyTransactions&&paymentOptions.some(isMoneyInDefinition)&&<span className="mt-1 block text-[11px] font-normal text-muted-foreground">Money-in records require an Administrator, Office Administrator, Cashier, or Super Administrator.</span>}</label>
       <label className="block text-xs font-semibold text-muted-foreground">Amount<input required min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label>
       <label className="block text-xs font-semibold text-muted-foreground">Reference / OR number <span className="font-normal">(optional)</span><input value={reference} onChange={(event) => setReference(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background p-2 text-foreground" /></label>
       {cashMovementFields}
-      <button disabled={isSaving || !definitionId} className="w-full rounded-lg bg-primary p-2 font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? 'Saving…' : 'Save record'}</button>
+      <button disabled={isSaving || !definitionId || (type==='C/A'&&!cashAdvanceEmployeeId)} className="w-full rounded-lg bg-primary p-2 font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? 'Saving…' : 'Save record'}</button>
     </div></form><article className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Expenses</h2>{list(data?.expenses ?? [], 'No expenses for this day.')}</article><article className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Cash in</h2>{list(data?.cash_in ?? [], 'No cash-in records for this day.')}</article></section>
     <section className="grid gap-6 lg:grid-cols-2"><article className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Internal transfers</h2>{list(data?.transfers ?? [], 'No internal transfers for this day.')}</article><article className="rounded-2xl border border-border bg-card p-5"><h2 className="font-semibold text-foreground">Client payment collections</h2>{list(data?.collections ?? [], 'No client collections for this day.')}</article></section>
   </main></DashboardLayout>;

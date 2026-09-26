@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StaffAttendanceRecord;
 use App\Models\StaffAttendancePhotoAudit;
 use App\Models\StaffCompensation;
+use App\Models\StaffCashAdvance;
 use App\Models\StaffLiveLocation;
 use App\Models\StaffPayrollDisbursement;
 use App\Models\InstallationIncentivePool;
@@ -178,9 +179,13 @@ class StaffAttendanceController extends Controller
             $sss = $profile?->sss_enabled ? $government['sss'] / 2 : 0;
             $philhealth = $profile?->philhealth_enabled ? $government['philhealth'] / 2 : 0;
             $pagibig = $profile?->pagibig_enabled ? $government['pagibig'] / 2 : 0;
-            $cashAdvance = $cutoff === 'second' ? (float) ($profile?->cash_advance_deduction ?? 0) : 0;
             $otherDeductions = (float) ($profile?->monthly_deduction ?? 0) / 2;
-            $deductions = $otherDeductions + $sss + $philhealth + $pagibig + $cashAdvance + $late;
+            $gross = $base + $overtime + $allowance;
+            $nonAdvanceDeductions = $otherDeductions + $sss + $philhealth + $pagibig + $late;
+            $outstandingAdvance = (float) StaffCashAdvance::query()->where('user_id', $user->id)->where('status', 'outstanding')->get()
+                ->sum(fn (StaffCashAdvance $advance) => max(0, $advance->amount - $advance->settled_amount));
+            $cashAdvance = $cutoff === 'second' ? min($outstandingAdvance, max(0, $gross - $nonAdvanceDeductions)) : 0;
+            $deductions = $nonAdvanceDeductions + $cashAdvance;
 
             return [
                 'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email, 'phone'=>$user->phone,
@@ -204,8 +209,9 @@ class StaffAttendanceController extends Controller
                     'sss_deduction'=>round($sss, 2), 'philhealth_deduction'=>round($philhealth, 2),
                     'pagibig_deduction'=>round($pagibig, 2), 'cash_advance_deduction'=>round($cashAdvance, 2),
                     'other_deductions'=>round($otherDeductions, 2), 'deductions'=>round($deductions, 2),
-                    'gross_pay'=>round($base + $overtime + $allowance, 2),
-                    'net_pay'=>round(max(0, $base + $overtime + $allowance - $deductions), 2),
+                    'gross_pay'=>round($gross, 2),
+                    'cash_advance_balance'=>round($outstandingAdvance, 2),
+                    'net_pay'=>round(max(0, $gross - $deductions), 2),
                     'government_rule_version'=>$government['rule_version'],
                 ],
             ];
@@ -306,6 +312,26 @@ class StaffAttendanceController extends Controller
                 'released_by' => $request->user()->id,
                 'financial_entry_id' => $entry->id,
             ]);
+            $remainingAdvanceDeduction = (float) $locked->cash_advance_deduction;
+            $advanceIds = ($locked->calculation_snapshot ?? [])['cash_advance_ids'] ?? [];
+            $advances = StaffCashAdvance::query()->where('user_id', $locked->user_id)
+                ->whereIn('id', $advanceIds)->where('status', 'outstanding')->orderBy('issued_at')->lockForUpdate()->get();
+            foreach ($advances as $advance) {
+                if ($remainingAdvanceDeduction <= 0) break;
+                $outstanding = max(0, (float) $advance->amount - (float) $advance->settled_amount);
+                $applied = min($outstanding, $remainingAdvanceDeduction);
+                if ($applied <= 0) continue;
+                $settled = round((float) $advance->settled_amount + $applied, 2);
+                $isSettled = $settled >= round((float) $advance->amount, 2);
+                $advance->update([
+                    'settled_amount' => $settled,
+                    'status' => $isSettled ? 'settled' : 'outstanding',
+                    'payroll_disbursement_id' => $locked->id,
+                    'settled_at' => $isSettled ? now('UTC') : null,
+                ]);
+                $remainingAdvanceDeduction = round($remainingAdvanceDeduction - $applied, 2);
+            }
+            abort_if($remainingAdvanceDeduction > 0.009, 409, 'Cash advance balances changed after payroll preparation. Recalculate this payroll before release.');
             \App\Models\InstallationIncentiveAllocation::where('payroll_disbursement_id', $locked->id)->update(['status' => 'paid']);
 
             return $locked->fresh(['user:id,name,email', 'releaser:id,name', 'financialEntry']);
@@ -413,6 +439,7 @@ class StaffAttendanceController extends Controller
         ]);
         $user->update(['name'=>$data['employee_name'], 'email'=>$data['employee_email'], 'phone'=>$data['employee_phone'] ?? null]);
         unset($data['employee_name'], $data['employee_email'], $data['employee_phone']);
+        $data['cash_advance_deduction'] = 0;
         $profile = StaffCompensation::updateOrCreate(['user_id'=>$user->id], [...$data, 'updated_by'=>$request->user()->id]);
         return response()->json(['message'=>'Salary settings updated.', 'data'=>$profile]);
     }

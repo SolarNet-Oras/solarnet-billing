@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\StaffAttendanceRecord;
 use App\Models\StaffCompensation;
+use App\Models\StaffCashAdvance;
 use App\Models\StaffPayrollDisbursement;
 use App\Models\InstallationIncentiveAllocation;
 use App\Models\User;
@@ -103,13 +104,16 @@ class StaffPayrollService
         $sss = $profile->sss_enabled ? $government['sss'] / 2 : 0;
         $philhealth = $profile->philhealth_enabled ? $government['philhealth'] / 2 : 0;
         $pagibig = $profile->pagibig_enabled ? $government['pagibig'] / 2 : 0;
-        $releaseDay = min(30, Carbon::instance($payDate)->timezone('Asia/Manila')->daysInMonth);
-        $cashAdvance = Carbon::instance($payDate)->timezone('Asia/Manila')->day === $releaseDay
-            ? (float) $profile->cash_advance_deduction
-            : 0;
         $other = (float) $profile->monthly_deduction / 2;
         $gross = $base + $overtime + $allowance + $installationIncentive;
-        $deductions = $late + $sss + $philhealth + $pagibig + $cashAdvance + $other;
+        $nonAdvanceDeductions = $late + $sss + $philhealth + $pagibig + $other;
+        $releaseDay = min(30, Carbon::instance($payDate)->timezone('Asia/Manila')->daysInMonth);
+        $advances = StaffCashAdvance::query()->where('user_id', $user->id)->where('status', 'outstanding')->orderBy('issued_at')->get();
+        $outstandingAdvance = (float) $advances->sum(fn (StaffCashAdvance $advance) => max(0, $advance->amount - $advance->settled_amount));
+        $cashAdvance = Carbon::instance($payDate)->timezone('Asia/Manila')->day === $releaseDay
+            ? min($outstandingAdvance, max(0, $gross - $nonAdvanceDeductions))
+            : 0;
+        $deductions = $nonAdvanceDeductions + $cashAdvance;
         $money = fn ($value) => round(max(0, (float) $value), 2);
         return [
             'base_pay'=>$money($base), 'overtime_pay'=>$money($overtime), 'allowance'=>$money($allowance), 'installation_incentive'=>$money($installationIncentive), 'gross_pay'=>$money($gross),
@@ -117,7 +121,7 @@ class StaffPayrollService
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
             'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
             'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$approvedOvertimeMinutes,
-            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'required_daily_minutes'=>480, 'full_day_count'=>$fullDays, 'half_day_count'=>$halfDays, 'attendance_pay_rule'=>'480 minutes or more = full day; 1-479 minutes = half day; 0 minutes = no attendance pay', 'cash_advance_rule'=>'Full configured cash advance is deducted on the 30th payroll only; the 15th payroll deducts zero.', 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
+            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'required_daily_minutes'=>480, 'full_day_count'=>$fullDays, 'half_day_count'=>$halfDays, 'attendance_pay_rule'=>'480 minutes or more = full day; 1-479 minutes = half day; 0 minutes = no attendance pay', 'cash_advance_rule'=>'Outstanding employee cash advances are deducted on the 30th payroll up to available net salary; unpaid balance carries forward.', 'cash_advance_balance'=>$outstandingAdvance, 'cash_advance_ids'=>$advances->pluck('id')->values()->all(), 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
     }
 
