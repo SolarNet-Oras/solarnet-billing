@@ -139,8 +139,12 @@ class StaffAttendanceController extends Controller
     {
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         $month = preg_match('/^\d{4}-\d{2}$/', (string) $request->input('month')) ? $request->input('month') : now('Asia/Manila')->format('Y-m');
-        $start = Carbon::createFromFormat('Y-m-d', $month.'-01', 'Asia/Manila')->startOfMonth();
-        $end = $start->copy()->endOfMonth();
+        $monthStart = Carbon::createFromFormat('Y-m-d', $month.'-01', 'Asia/Manila')->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $cutoff = in_array($request->input('cutoff'), ['first', 'second'], true) ? $request->input('cutoff') : 'second';
+        [$start, $end] = $cutoff === 'first'
+            ? [$monthStart->copy()->subMonthNoOverflow()->day(21), $monthStart->copy()->day(4)]
+            : [$monthStart->copy()->day(5), $monthStart->copy()->day(20)];
         $manager = true;
         $canEditPayroll = true;
         $users = User::query()
@@ -170,13 +174,13 @@ class StaffAttendanceController extends Controller
             $late = ($daily / 480) * $rows->sum('late_minutes');
             $approvedOvertimeMinutes = (int) $rows->sum('approved_overtime_minutes');
             $overtime = ($daily / 8) * ((float) ($profile?->overtime_multiplier ?? 1.25)) * ($approvedOvertimeMinutes / 60);
-            $allowance = (float) ($profile?->monthly_allowance ?? 0);
+            $allowance = (float) ($profile?->monthly_allowance ?? 0) / 2;
             $government = $contributionService->employeeShares((float) ($profile?->monthly_salary ?? 0));
-            $sss = $profile?->sss_enabled ? $government['sss'] : 0;
-            $philhealth = $profile?->philhealth_enabled ? $government['philhealth'] : 0;
-            $pagibig = $profile?->pagibig_enabled ? $government['pagibig'] : 0;
-            $cashAdvance = (float) ($profile?->cash_advance_deduction ?? 0);
-            $otherDeductions = (float) ($profile?->monthly_deduction ?? 0);
+            $sss = $profile?->sss_enabled ? $government['sss'] / 2 : 0;
+            $philhealth = $profile?->philhealth_enabled ? $government['philhealth'] / 2 : 0;
+            $pagibig = $profile?->pagibig_enabled ? $government['pagibig'] / 2 : 0;
+            $cashAdvance = (float) ($profile?->cash_advance_deduction ?? 0) / 2;
+            $otherDeductions = (float) ($profile?->monthly_deduction ?? 0) / 2;
             $deductions = $otherDeductions + $sss + $philhealth + $pagibig + $cashAdvance + $late;
 
             return [
@@ -210,7 +214,7 @@ class StaffAttendanceController extends Controller
 
         $payrollRuns = Schema::hasTable('staff_payroll_disbursements')
             ? StaffPayrollDisbursement::with('user:id,name,email')
-                ->whereBetween('pay_date', [$start->toDateString(), $end->toDateString()])
+                ->whereBetween('pay_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                 ->orderByDesc('pay_date')->orderBy('created_at')->get()
             : collect();
         $installationIncentives = Schema::hasTable('installation_incentive_pools')
@@ -218,12 +222,15 @@ class StaffAttendanceController extends Controller
                 'ticket:id,ticket_number,customer_id,registered_at',
                 'ticket.customer:id,full_name,account_number',
                 'allocations.user:id,name',
-            ])->whereBetween('work_date', [$start->toDateString(), $end->toDateString()])
+            ])->whereBetween('work_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                 ->latest('work_date')->get()
             : collect();
 
         return response()->json(['data'=>[
             'month'=>$month,
+            'selected_cutoff'=>$cutoff,
+            'cutoff_start'=>$start->toDateString(),
+            'cutoff_end'=>$end->toDateString(),
             'can_manage_payroll'=>$canEditPayroll,
             'payroll_policy'=>[
                 'first_cutoff'=>'21st of previous month through 4th',
