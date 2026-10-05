@@ -203,7 +203,7 @@ class RemittanceController extends Controller
             'signature_signer_name' => 'nullable|string|max:120',
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
-        abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may record payment only for a due invoice.');
+        abort_unless($invoice->isDueAndCollectible(), 422, 'Collectors may record payment only for an unpaid invoice that is due today or overdue.');
         $customerOutstanding = (float) Invoice::query()
             ->where('customer_id', $invoice->customer_id)
             ->unpaid()
@@ -249,7 +249,7 @@ class RemittanceController extends Controller
     public function startGcashCheckout(string $invoiceId, PaymongoService $paymongo): JsonResponse
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
-        abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'Collectors may request online payment only for a due invoice.');
+        abort_unless($invoice->isDueAndCollectible(), 422, 'Collectors may request online payment only for an unpaid invoice that is due today or overdue.');
 
         try {
             return response()->json(['message' => 'PayMongo GCash checkout created.', 'checkout' => $paymongo->createGcashCheckout($invoice)]);
@@ -269,7 +269,7 @@ class RemittanceController extends Controller
     public function startQrPhPayment(string $invoiceId, PaymongoService $paymongo): JsonResponse
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
-        abort_unless($invoice->balance > 0 && $invoice->due_date->lte(today()), 422, 'QR Ph is available for due invoices only.');
+        abort_unless($invoice->isDueAndCollectible(), 422, 'QR Ph is available only for an unpaid invoice that is due today or overdue.');
         try {
             return response()->json(['message' => 'PayMongo QR Ph payment created.', 'payment' => $paymongo->createQrPhPayment($invoice)]);
         } catch (\RuntimeException $e) {

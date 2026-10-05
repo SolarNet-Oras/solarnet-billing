@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -104,6 +106,19 @@ class Invoice extends Model
     public function isPaid(): bool
     {
         return $this->status === 'paid' && $this->balance <= 0;
+    }
+
+    /** Collector worklists and payment actions share this exact boundary. */
+    public function isDueAndCollectible(?CarbonInterface $at = null): bool
+    {
+        $today = ($at ? Carbon::instance($at) : now(config('app.timezone', 'Asia/Manila')))
+            ->setTimezone(config('app.timezone', 'Asia/Manila'))
+            ->startOfDay();
+
+        return (float) $this->balance > 0
+            && in_array($this->status, ['sent', 'partial', 'overdue'], true)
+            && $this->due_date !== null
+            && $this->due_date->copy()->startOfDay()->lte($today);
     }
 
     /**
