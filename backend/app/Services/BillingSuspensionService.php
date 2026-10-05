@@ -146,7 +146,12 @@ class BillingSuspensionService
                     // A previously automated restriction is removed as soon
                     // as a customer is assigned to a Company Owned plan.
                     if ($customer->suspension_source === 'automation') {
-                        $result = $this->restoreCustomer($customer, 'company_owned_plan');
+                        // A stale router heartbeat must not prevent the
+                        // reconciliation job from attempting a confirmed
+                        // restoration. The RouterOS operation itself remains
+                        // the authority: status changes to active only after
+                        // both queue and address-list restoration succeed.
+                        $result = $this->restoreCustomer($customer, 'company_owned_plan', true);
                         if ($result['success'] ?? false) $summary['restored']++;
                     }
                     $summary['skipped_company_owned']++;
@@ -161,7 +166,7 @@ class BillingSuspensionService
                 }
 
                 if ($customer->suspension_source === 'automation' && !$billingState['should_suspend']) {
-                    $result = $this->restoreCustomer($customer, 'payment_confirmed');
+                    $result = $this->restoreCustomer($customer, 'billing_no_longer_overdue', true);
                     if ($result['success'] ?? false) $summary['restored']++;
                 }
             } catch (\Throwable $e) {
@@ -568,16 +573,22 @@ class BillingSuspensionService
             ];
         }
 
+        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
+        $latestSuspensionEligibleDueDate = $now->copy()->subDays($graceDays + 1);
+
+        // Select the trigger from invoices that are actually old enough to
+        // suspend service. A future/not-yet-due open invoice must never be
+        // treated as the reason for a restriction, even if its stored status
+        // is stale or incorrect.
         $triggeringInvoice = Invoice::unpaid()
             ->where('customer_id', $customer->id)
+            ->whereDate('due_date', '<=', $latestSuspensionEligibleDueDate->toDateString())
             ->orderBy('due_date')
             ->orderBy('id')
             ->first();
         $outstanding = round((float) Invoice::unpaid()
             ->where('customer_id', $customer->id)
             ->sum('balance'), 2);
-        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
-
         if (!$triggeringInvoice) {
             return [
                 'outstanding_balance' => $outstanding,
