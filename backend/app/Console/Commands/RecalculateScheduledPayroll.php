@@ -57,11 +57,20 @@ class RecalculateScheduledPayroll extends Command
             return self::SUCCESS;
         }
 
-        if ($runs->contains(fn (StaffPayrollDisbursement $run) => $run->status !== 'scheduled' || $run->released_at || $run->financial_entry_id)) {
-            $this->error('Recalculation stopped. At least one payroll is released or accounting-linked. No record was changed.');
+        $recalculableRuns = $runs->filter(fn (StaffPayrollDisbursement $run) => $run->status === 'scheduled' && ! $run->released_at && ! $run->financial_entry_id);
+        $protectedRuns = $runs->diff($recalculableRuns);
 
-            return self::FAILURE;
+        if ($protectedRuns->isNotEmpty()) {
+            $this->warn($protectedRuns->count().' released or accounting-linked payroll record(s) will be preserved.');
         }
+
+        if ($recalculableRuns->isEmpty()) {
+            $this->warn('No unreleased scheduled payroll snapshots are eligible for recalculation.');
+
+            return self::SUCCESS;
+        }
+
+        $this->info($recalculableRuns->count().' unreleased scheduled payroll record(s) are eligible for recalculation.');
 
         if ($this->option('confirm') !== self::CONFIRMATION) {
             $this->warn('Preview only. No payroll record was changed.');
@@ -70,8 +79,19 @@ class RecalculateScheduledPayroll extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($runs): void {
-            $ids = $runs->pluck('id');
+        DB::transaction(function () use ($recalculableRuns): void {
+            $ids = $recalculableRuns->pluck('id');
+            $lockedRuns = StaffPayrollDisbursement::query()
+                ->whereIn('id', $ids)
+                ->lockForUpdate()
+                ->get();
+
+            if (
+                $lockedRuns->count() !== $ids->count()
+                || $lockedRuns->contains(fn (StaffPayrollDisbursement $run) => $run->status !== 'scheduled' || $run->released_at || $run->financial_entry_id)
+            ) {
+                throw new \RuntimeException('An eligible payroll changed after preview; recalculation stopped without changing payroll.');
+            }
 
             InstallationIncentiveAllocation::query()
                 ->whereIn('payroll_disbursement_id', $ids)
