@@ -82,6 +82,29 @@ class BillingSuspensionEligibilityTest extends TestCase
         $this->assertSame('2026-10-07', $afterGrace['suspension_at']->toDateString());
     }
 
+    public function test_late_generated_catch_up_invoice_gets_five_days_after_issue(): void
+    {
+        Carbon::setTestNow('2026-10-05 08:00:00');
+        $this->setGraceDays(5);
+        $customer = $this->customer('Late Catch Up', '2000000005');
+        $invoice = $this->invoice(
+            $customer,
+            '2026-09-12',
+            'overdue',
+            '2026-10-05',
+        );
+
+        $schedule = app(BillingSuspensionService::class)
+            ->gracePeriodSchedule($customer);
+
+        $this->assertSame($invoice->id, $schedule['triggering_invoice']->id);
+        $this->assertSame('2026-09-12', $schedule['oldest_due_date']->toDateString());
+        $this->assertSame('2026-10-06', $schedule['grace_period_start']->toDateString());
+        $this->assertSame('2026-10-10', $schedule['grace_period_end']->toDateString());
+        $this->assertSame('2026-10-11', $schedule['suspension_at']->toDateString());
+        $this->assertFalse($schedule['should_suspend']);
+    }
+
     private function setGraceDays(int $days): void
     {
         Setting::put('billing.auto_suspend_days', $days, 'int');
@@ -101,14 +124,19 @@ class BillingSuspensionEligibilityTest extends TestCase
         ]);
     }
 
-    private function invoice(Customer $customer, string $dueDate, string $status): Invoice
+    private function invoice(
+        Customer $customer,
+        string $dueDate,
+        string $status,
+        ?string $issueDate = null,
+    ): Invoice
     {
         $due = Carbon::parse($dueDate);
 
         return Invoice::create([
             'customer_id' => $customer->id,
             'invoice_number' => 'INV-TEST-'.$customer->account_number,
-            'issue_date' => $due->copy()->subDays(7)->toDateString(),
+            'issue_date' => $issueDate ?? $due->copy()->subDays(7)->toDateString(),
             'due_date' => $dueDate,
             'billing_period_start' => $due->copy()->subMonthNoOverflow()->toDateString(),
             'billing_period_end' => $dueDate,

@@ -600,7 +600,11 @@ class BillingSuspensionService
             ];
         }
 
-        $dates = self::gracePeriodDates($triggeringInvoice->due_date, $graceDays);
+        $dates = self::gracePeriodDates(
+            $triggeringInvoice->due_date,
+            $graceDays,
+            $triggeringInvoice->issue_date,
+        );
 
         return [
             'outstanding_balance' => $outstanding,
@@ -625,18 +629,31 @@ class BillingSuspensionService
      *
      * @return array{due_date: Carbon, grace_period_start: Carbon, grace_period_end: Carbon, suspension_at: Carbon}
      */
-    public static function gracePeriodDates(CarbonInterface $dueDate, int $graceDays): array
+    public static function gracePeriodDates(
+        CarbonInterface $dueDate,
+        int $graceDays,
+        ?CarbonInterface $issuedAt = null,
+    ): array
     {
         $due = Carbon::instance($dueDate)
             ->setTimezone(config('app.timezone', 'Asia/Manila'))
             ->startOfDay();
+        $issued = $issuedAt
+            ? Carbon::instance($issuedAt)
+                ->setTimezone(config('app.timezone', 'Asia/Manila'))
+                ->startOfDay()
+            : null;
+        // A catch-up invoice may be issued after its historical due date.
+        // Customers must still receive the configured number of complete
+        // grace days after the invoice actually exists and can be delivered.
+        $graceAnchor = $issued && $issued->gt($due) ? $issued : $due;
         $graceDays = max(0, $graceDays);
 
         return [
             'due_date' => $due,
-            'grace_period_start' => $due->copy()->addDay(),
-            'grace_period_end' => $due->copy()->addDays($graceDays),
-            'suspension_at' => $due->copy()->addDays($graceDays + 1),
+            'grace_period_start' => $graceAnchor->copy()->addDay(),
+            'grace_period_end' => $graceAnchor->copy()->addDays($graceDays),
+            'suspension_at' => $graceAnchor->copy()->addDays($graceDays + 1),
         ];
     }
 
