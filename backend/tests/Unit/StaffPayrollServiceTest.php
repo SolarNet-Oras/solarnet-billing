@@ -9,6 +9,13 @@ use PHPUnit\Framework\TestCase;
 
 class StaffPayrollServiceTest extends TestCase
 {
+    public function test_final_net_salary_with_centavos_rounds_up_to_the_next_peso(): void
+    {
+        $this->assertSame(2808.0, StaffPayrollService::roundNetPayUp(2807.69));
+        $this->assertSame(2808.0, StaffPayrollService::roundNetPayUp(2808.00));
+        $this->assertSame(0.0, StaffPayrollService::roundNetPayUp(-1));
+    }
+
     public function test_fifteenth_uses_previous_twenty_first_through_current_fourth(): void
     {
         $service = new StaffPayrollService(new PhilippinePayrollContributionService());

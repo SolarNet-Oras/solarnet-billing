@@ -18,6 +18,14 @@ class StaffPayrollService
 {
     public function __construct(private PhilippinePayrollContributionService $contributions) {}
 
+    /** Round a final salary with centavos upward to the next whole peso. */
+    public static function roundNetPayUp(float $amount): float
+    {
+        $centavos = (int) round(max(0, $amount) * 100);
+
+        return (float) ceil($centavos / 100);
+    }
+
     public function periodFor(CarbonInterface $payDate): array
     {
         $date = Carbon::instance($payDate)->timezone('Asia/Manila')->startOfDay();
@@ -114,14 +122,17 @@ class StaffPayrollService
             ? min($outstandingAdvance, max(0, $gross - $nonAdvanceDeductions))
             : 0;
         $deductions = $nonAdvanceDeductions + $cashAdvance;
+        $netPayBeforeRounding = round(max(0, $gross - $deductions), 2);
+        $netPay = self::roundNetPayUp($netPayBeforeRounding);
+        $netPayRoundingAdjustment = round($netPay - $netPayBeforeRounding, 2);
         $money = fn ($value) => round(max(0, (float) $value), 2);
         return [
             'base_pay'=>$money($base), 'overtime_pay'=>$money($overtime), 'allowance'=>$money($allowance), 'installation_incentive'=>$money($installationIncentive), 'gross_pay'=>$money($gross),
             'late_deduction'=>$money($late), 'sss_deduction'=>$money($sss), 'philhealth_deduction'=>$money($philhealth),
             'pagibig_deduction'=>$money($pagibig), 'cash_advance_deduction'=>$money($cashAdvance), 'other_deductions'=>$money($other),
-            'total_deductions'=>$money($deductions), 'net_pay'=>$money($gross - $deductions), 'present_days'=>$present,
+            'total_deductions'=>$money($deductions), 'net_pay'=>$netPay, 'present_days'=>$present,
             'worked_minutes'=>$rows->sum('worked_minutes'), 'overtime_minutes'=>$approvedOvertimeMinutes,
-            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'required_daily_minutes'=>480, 'full_day_count'=>$fullDays, 'half_day_count'=>$halfDays, 'attendance_pay_rule'=>'480 minutes or more = full day; 1-479 minutes = half day; 0 minutes = no attendance pay', 'cash_advance_rule'=>'Outstanding employee cash advances are deducted on the 30th payroll up to available net salary; unpaid balance carries forward.', 'cash_advance_balance'=>$outstandingAdvance, 'cash_advance_ids'=>$advances->pluck('id')->values()->all(), 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
+            'calculation_snapshot'=>['daily_rate'=>$daily, 'monthly_salary'=>$profile->monthly_salary, 'required_daily_minutes'=>480, 'full_day_count'=>$fullDays, 'half_day_count'=>$halfDays, 'attendance_pay_rule'=>'480 minutes or more = full day; 1-479 minutes = half day; 0 minutes = no attendance pay', 'cash_advance_rule'=>'Outstanding employee cash advances are deducted on the 30th payroll up to available net salary; unpaid balance carries forward.', 'net_pay_before_rounding'=>$netPayBeforeRounding, 'net_pay_rounding_adjustment'=>$netPayRoundingAdjustment, 'net_pay_rounding_rule'=>'A final net salary with centavos is rounded upward to the next whole peso.', 'cash_advance_balance'=>$outstandingAdvance, 'cash_advance_ids'=>$advances->pluck('id')->values()->all(), 'rule_version'=>$government['rule_version'], 'attendance_record_ids'=>$rows->pluck('id')->values()->all(), 'installation_incentive_period'=>[$incentiveStart->toDateString(), $incentiveEnd->toDateString()], 'installation_incentive_allocation_ids'=>$incentives->pluck('id')->values()->all()],
         ];
     }
 
@@ -142,12 +153,16 @@ class StaffPayrollService
     private function emailPayslip(StaffPayrollDisbursement $payroll, User $user): void
     {
         $peso = fn ($value) => 'PHP '.number_format((float) $value, 2);
+        $roundingAdjustment = max(0, round((float) $payroll->net_pay - max(0, (float) $payroll->gross_pay - (float) $payroll->total_deductions), 2));
         $rows = [
             ['Base attendance pay', $payroll->base_pay], ['Overtime pay', $payroll->overtime_pay], ['Allowance', $payroll->allowance], ['Installation incentives', $payroll->installation_incentive],
             ['Gross pay', $payroll->gross_pay], ['Late deduction', -$payroll->late_deduction], ['SSS', -$payroll->sss_deduction],
             ['PhilHealth', -$payroll->philhealth_deduction], ['Pag-IBIG', -$payroll->pagibig_deduction],
             ['Cash advance', -$payroll->cash_advance_deduction], ['Other deductions', -$payroll->other_deductions],
         ];
+        if ($roundingAdjustment > 0) {
+            $rows[] = ['Net-pay rounding adjustment', $roundingAdjustment];
+        }
         $details = collect($rows)->map(fn ($row) => '<tr><td style="padding:7px;border-bottom:1px solid #e5e7eb">'.e($row[0]).'</td><td style="padding:7px;border-bottom:1px solid #e5e7eb;text-align:right">'.e($peso($row[1])).'</td></tr>')->implode('');
         $html = '<div style="font-family:Arial,sans-serif;max-width:650px;margin:auto;color:#172033"><h2>SolarNet Payroll Payslip</h2><p>Hello '.e($user->name).',</p><p>Your semi-monthly payroll for <strong>'.e($payroll->cutoff_start->format('M j, Y')).' to '.e($payroll->cutoff_end->format('M j, Y')).'</strong> was processed for release on <strong>'.e($payroll->pay_date->format('M j, Y')).'</strong>.</p><table style="width:100%;border-collapse:collapse">'.$details.'<tr><td style="padding:10px;font-weight:bold">Net pay</td><td style="padding:10px;text-align:right;font-weight:bold;color:#047857">'.e($peso($payroll->net_pay)).'</td></tr></table><p style="font-size:12px;color:#64748b">Present days: '.e((string) $payroll->present_days).' · Worked hours: '.e(number_format($payroll->worked_minutes / 60, 2)).' · Payroll ID: '.e($payroll->id).'</p></div>';
         Mail::html($html, fn ($message) => $message->to($user->email, $user->name)->subject('SolarNet payslip - '.$payroll->pay_date->format('F j, Y')));

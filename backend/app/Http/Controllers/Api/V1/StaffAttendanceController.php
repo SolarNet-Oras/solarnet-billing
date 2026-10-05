@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use App\Services\StaffProfilePhotoService;
 use App\Services\CashDenominationService;
+use App\Services\StaffPayrollService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -194,6 +195,8 @@ class StaffAttendanceController extends Controller
                 ->sum(fn (StaffCashAdvance $advance) => max(0, $advance->amount - $advance->settled_amount));
             $cashAdvance = $cutoff === 'second' ? min($outstandingAdvance, max(0, $gross - $nonAdvanceDeductions)) : 0;
             $deductions = $nonAdvanceDeductions + $cashAdvance;
+            $netPayBeforeRounding = round(max(0, $gross - $deductions), 2);
+            $netPay = StaffPayrollService::roundNetPayUp($netPayBeforeRounding);
 
             return [
                 'id'=>$user->id, 'name'=>$user->name, 'email'=>$user->email, 'phone'=>$user->phone,
@@ -219,7 +222,9 @@ class StaffAttendanceController extends Controller
                     'other_deductions'=>round($otherDeductions, 2), 'deductions'=>round($deductions, 2),
                     'gross_pay'=>round($gross, 2),
                     'cash_advance_balance'=>round($outstandingAdvance, 2),
-                    'net_pay'=>round(max(0, $gross - $deductions), 2),
+                    'net_pay_before_rounding'=>$netPayBeforeRounding,
+                    'net_pay_rounding_adjustment'=>round($netPay - $netPayBeforeRounding, 2),
+                    'net_pay'=>$netPay,
                     'government_rule_version'=>$government['rule_version'],
                 ],
             ];
