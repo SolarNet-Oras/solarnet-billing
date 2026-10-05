@@ -45,7 +45,7 @@ class SendInvoiceReminders extends Command
             return ['skipped' => true, 'reason' => 'automation.enabled=false'];
         }
 
-        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
+        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 5));
 
         $today = now(BillingSmsReminderService::TIMEZONE)->startOfDay();
         $details = [];

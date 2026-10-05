@@ -25,12 +25,12 @@ class BillingSuspensionEligibilityTest extends TestCase
         Carbon::setTestNow('2026-10-05 08:00:00');
         $this->setGraceDays(15);
         $customer = $this->customer('Future Invoice', '2000000001');
-        $this->invoice($customer, '2026-10-10', 'overdue');
+        $invoice = $this->invoice($customer, '2026-10-10', 'overdue');
 
         $schedule = app(BillingSuspensionService::class)->gracePeriodSchedule($customer);
 
         $this->assertFalse($schedule['should_suspend']);
-        $this->assertNull($schedule['triggering_invoice']);
+        $this->assertSame($invoice->id, $schedule['triggering_invoice']->id);
         $this->assertSame(800.0, $schedule['outstanding_balance']);
     }
 
@@ -39,12 +39,12 @@ class BillingSuspensionEligibilityTest extends TestCase
         Carbon::setTestNow('2026-10-05 08:00:00');
         $this->setGraceDays(15);
         $customer = $this->customer('Grace Invoice', '2000000002');
-        $this->invoice($customer, '2026-09-25', 'overdue');
+        $invoice = $this->invoice($customer, '2026-09-25', 'overdue');
 
         $schedule = app(BillingSuspensionService::class)->gracePeriodSchedule($customer);
 
         $this->assertFalse($schedule['should_suspend']);
-        $this->assertNull($schedule['triggering_invoice']);
+        $this->assertSame($invoice->id, $schedule['triggering_invoice']->id);
     }
 
     public function test_invoice_past_full_grace_period_triggers_suspension(): void
@@ -59,6 +59,27 @@ class BillingSuspensionEligibilityTest extends TestCase
         $this->assertTrue($schedule['should_suspend']);
         $this->assertSame($invoice->id, $schedule['triggering_invoice']->id);
         $this->assertSame('2026-10-05', $schedule['suspension_at']->toDateString());
+    }
+
+    public function test_five_complete_grace_days_are_honored_before_suspension(): void
+    {
+        $this->setGraceDays(5);
+        $customer = $this->customer('Five Day Grace', '2000000004');
+        $this->invoice($customer, '2026-10-01', 'overdue');
+
+        Carbon::setTestNow('2026-10-06 23:59:59');
+        $duringGrace = app(BillingSuspensionService::class)
+            ->gracePeriodSchedule($customer);
+
+        $this->assertFalse($duringGrace['should_suspend']);
+        $this->assertSame('2026-10-06', $duringGrace['grace_period_end']->toDateString());
+
+        Carbon::setTestNow('2026-10-07 00:00:00');
+        $afterGrace = app(BillingSuspensionService::class)
+            ->gracePeriodSchedule($customer);
+
+        $this->assertTrue($afterGrace['should_suspend']);
+        $this->assertSame('2026-10-07', $afterGrace['suspension_at']->toDateString());
     }
 
     private function setGraceDays(int $days): void

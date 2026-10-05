@@ -38,7 +38,7 @@ class SettingsController extends Controller
         'billing.invoice_generation_catch_up_days' => ['cast' => 'int', 'group' => 'billing', 'label' => 'Recover missed invoice cycles (days)', 'default' => 35],
         'billing.late_fee_percent'    => ['cast' => 'float', 'group' => 'billing', 'label' => 'Late-fee %',               'default' => 5.0],
         'billing.invoice_prefix'      => ['cast' => 'string','group' => 'billing', 'label' => 'Invoice Number Prefix',    'default' => 'SLR-'],
-        'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'suspension', 'label' => 'Grace period (days overdue)', 'default' => 15],
+        'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'suspension', 'label' => 'Grace period (full days after due date)', 'default' => 5],
         'billing.sms_reminder_enabled' => ['cast' => 'bool', 'group' => 'billing', 'label' => 'Billing SMS reminder (one time, 7 days before due)', 'default' => true],
 
         // AI

@@ -105,7 +105,7 @@ class BillingSuspensionService
             ];
         }
 
-        $graceDays = (int) Setting::get('billing.auto_suspend_days', 15);
+        $graceDays = (int) Setting::get('billing.auto_suspend_days', 5);
         $cutoff = now(config('app.timezone', 'Asia/Manila'))->subDays($graceDays)->startOfDay();
 
         $customers = Customer::query()
@@ -564,7 +564,7 @@ class BillingSuspensionService
                 'outstanding_balance' => 0.0,
                 'triggering_invoice' => null,
                 'oldest_due_date' => null,
-                'grace_days' => max(0, (int) Setting::get('billing.auto_suspend_days', 15)),
+                'grace_days' => max(0, (int) Setting::get('billing.auto_suspend_days', 5)),
                 'grace_period_start' => null,
                 'grace_period_end' => null,
                 'suspension_at' => null,
@@ -573,16 +573,13 @@ class BillingSuspensionService
             ];
         }
 
-        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 15));
-        $latestSuspensionEligibleDueDate = $now->copy()->subDays($graceDays + 1);
-
-        // Select the trigger from invoices that are actually old enough to
-        // suspend service. A future/not-yet-due open invoice must never be
-        // treated as the reason for a restriction, even if its stored status
-        // is stale or incorrect.
+        $graceDays = max(0, (int) Setting::get('billing.auto_suspend_days', 5));
+        // Keep the oldest open invoice visible throughout its normal and
+        // grace periods so reminders can show the correct dates. Eligibility
+        // is decided exclusively by suspension_at below; merely storing an
+        // "overdue" status can never bypass the five complete grace days.
         $triggeringInvoice = Invoice::unpaid()
             ->where('customer_id', $customer->id)
-            ->whereDate('due_date', '<=', $latestSuspensionEligibleDueDate->toDateString())
             ->orderBy('due_date')
             ->orderBy('id')
             ->first();
