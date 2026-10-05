@@ -103,11 +103,15 @@ class BillingSuspensionEligibilityTest extends TestCase
 
     private function invoice(Customer $customer, string $dueDate, string $status): Invoice
     {
+        $due = Carbon::parse($dueDate);
+
         return Invoice::create([
             'customer_id' => $customer->id,
             'invoice_number' => 'INV-TEST-'.$customer->account_number,
-            'issue_date' => Carbon::parse($dueDate)->subDays(7)->toDateString(),
+            'issue_date' => $due->copy()->subDays(7)->toDateString(),
             'due_date' => $dueDate,
+            'billing_period_start' => $due->copy()->subMonthNoOverflow()->toDateString(),
+            'billing_period_end' => $dueDate,
             'subtotal' => 800,
             'tax' => 0,
             'discount' => 0,
