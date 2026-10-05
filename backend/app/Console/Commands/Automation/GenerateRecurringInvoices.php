@@ -51,10 +51,21 @@ class GenerateRecurringInvoices extends Command
         $billingDate = $dateOption
             ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()
             : now($timezone)->startOfDay();
-        $leadDays = max(0, (int) Setting::get('billing.invoice_generation_days_before_due', 7));
+        $leadDays = max(0, min(90, (int) Setting::get('billing.invoice_generation_days_before_due', 7)));
+        // Revisit recent cycle dates on every run. The recurring-cycle check
+        // makes this idempotent while repairing invoices missed during cron
+        // downtime, deployments, or stale scheduler locks.
+        $catchUpDays = max(
+            $leadDays,
+            min(90, (int) Setting::get('billing.invoice_generation_catch_up_days', 35)),
+        );
         $dryRun = (bool) $this->option('dry-run');
 
-        $customers = Customer::active()
+        // Suspension restricts network access; it does not terminate the
+        // subscription. Suspended subscribers must continue receiving their
+        // monthly invoices so their account can be settled and restored.
+        $customers = Customer::query()
+            ->whereIn('status', ['active', 'suspended'])
             ->whereNotNull('installation_date')
             ->whereDate('installation_date', '<=', $billingDate)
             ->with('servicePlan')
@@ -69,7 +80,7 @@ class GenerateRecurringInvoices extends Command
             ) === $cycleDate->day);
         */
 
-        $cycleDates = collect(range(0, $leadDays))
+        $cycleDates = collect(range(-$catchUpDays, $leadDays))
             ->map(fn (int $offset) => $billingDate->copy()->addDays($offset));
 
         $generated = [];
@@ -77,12 +88,21 @@ class GenerateRecurringInvoices extends Command
         $covered = 0;
         $errors = [];
         $candidates = 0;
+        $skipReasons = [
+            'existing_recurring_invoice' => 0,
+            'company_owned_plan' => 0,
+            'not_billable' => 0,
+        ];
+        $ineligible = [];
         foreach ($cycleDates as $cycleDate) {
           foreach ($customers as $customer) {
+            if ($customer->installation_date->copy()->startOfDay()->gt($cycleDate)) continue;
             if (min($customer->billingCycleDay(), $cycleDate->daysInMonth) !== $cycleDate->day) continue;
             $candidates++;
             if ($customer->hasCompanyOwnedPlan()) {
                 $skipped++;
+                $skipReasons['company_owned_plan']++;
+                $ineligible[] = $this->skipDetail($customer, $cycleDate, 'company_owned_plan');
                 continue;
             }
             // The recurring-cycle key is authoritative. Do not use a generic
@@ -91,12 +111,15 @@ class GenerateRecurringInvoices extends Command
                 ->whereDate('recurring_cycle_date', $cycleDate)
                 ->exists()) {
                 $skipped++;
+                $skipReasons['existing_recurring_invoice']++;
                 continue;
             }
 
             // Do not generate an empty invoice for a client without a billable plan/fee.
             if (!$customer->servicePlan && (float) $customer->monthly_fee <= 0) {
                 $skipped++;
+                $skipReasons['not_billable']++;
+                $ineligible[] = $this->skipDetail($customer, $cycleDate, 'not_billable');
                 continue;
             }
 
@@ -123,14 +146,28 @@ class GenerateRecurringInvoices extends Command
 
         return [
             'run_date' => $billingDate->toDateString(),
-            'billing_cycle_window' => [$billingDate->toDateString(), $billingDate->copy()->addDays($leadDays)->toDateString()],
+            'billing_cycle_window' => [$billingDate->copy()->subDays($catchUpDays)->toDateString(), $billingDate->copy()->addDays($leadDays)->toDateString()],
+            'catch_up_days' => $catchUpDays,
+            'lead_days' => $leadDays,
             'dry_run' => $dryRun,
             'candidates' => $candidates,
             'generated' => count($generated),
             'covered_by_advance' => $covered,
             'skipped' => $skipped,
+            'skip_reasons' => $skipReasons,
+            'ineligible_details' => $ineligible,
             'errors' => $errors,
             'details' => $generated,
+        ];
+    }
+
+    private function skipDetail(Customer $customer, Carbon $cycleDate, string $reason): array
+    {
+        return [
+            'customer' => $customer->full_name,
+            'account_number' => $customer->account_number,
+            'due_date' => $cycleDate->toDateString(),
+            'reason' => $reason,
         ];
     }
 }

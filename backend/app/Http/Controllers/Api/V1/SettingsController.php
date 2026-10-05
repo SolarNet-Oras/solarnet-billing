@@ -35,6 +35,7 @@ class SettingsController extends Controller
         'billing.vat_percent'         => ['cast' => 'float', 'group' => 'billing', 'label' => 'VAT %',                    'default' => 12.0],
         'billing.due_days'            => ['cast' => 'int',   'group' => 'billing', 'label' => 'Invoice Due (days)',       'default' => 7],
         'billing.invoice_generation_days_before_due' => ['cast' => 'int', 'group' => 'billing', 'label' => 'Generate invoice (days before due)', 'default' => 7],
+        'billing.invoice_generation_catch_up_days' => ['cast' => 'int', 'group' => 'billing', 'label' => 'Recover missed invoice cycles (days)', 'default' => 35],
         'billing.late_fee_percent'    => ['cast' => 'float', 'group' => 'billing', 'label' => 'Late-fee %',               'default' => 5.0],
         'billing.invoice_prefix'      => ['cast' => 'string','group' => 'billing', 'label' => 'Invoice Number Prefix',    'default' => 'SLR-'],
         'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'suspension', 'label' => 'Grace period (days overdue)', 'default' => 15],
@@ -126,6 +127,9 @@ class SettingsController extends Controller
             }
             if ($key === 'billing.invoice_generation_days_before_due' && (!is_numeric($value) || (int) $value < 0 || (int) $value > 90)) {
                 return response()->json(['status' => 'error', 'message' => 'Invoice generation lead time must be between 0 and 90 days.'], 422);
+            }
+            if ($key === 'billing.invoice_generation_catch_up_days' && (!is_numeric($value) || (int) $value < 7 || (int) $value > 90)) {
+                return response()->json(['status' => 'error', 'message' => 'Invoice catch-up window must be between 7 and 90 days.'], 422);
             }
             if ($key === 'network.suspended_speed_kbps' && (!is_numeric($value) || (int) $value < 64 || (int) $value > 1000000)) {
                 return response()->json(['status' => 'error', 'message' => 'Suspended speed must be between 64 and 1,000,000 kbps.'], 422);
