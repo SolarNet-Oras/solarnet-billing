@@ -12,7 +12,7 @@ class RecurringInvoiceCatchUpTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_dry_run_recovers_missed_cycles_and_keeps_the_forward_window(): void
+    public function test_dry_run_recovers_only_full_post_installation_cycles_and_keeps_the_forward_window(): void
     {
         $customer = $this->customer('Catch-up Customer', '1000000001', '2026-09-02', 2);
 
@@ -27,15 +27,16 @@ class RecurringInvoiceCatchUpTest extends TestCase
             ->where('account_number', $customer->account_number)
             ->pluck('due_date');
 
-        $this->assertContains('2026-09-02', $dueDates);
+        $this->assertNotContains('2026-09-02', $dueDates);
         $this->assertContains('2026-10-02', $dueDates);
         $this->assertSame(['2026-08-31', '2026-10-12'], $summary['billing_cycle_window']);
         $this->assertSame(35, $summary['catch_up_days']);
+        $this->assertSame(1, $summary['skip_reasons']['before_first_full_service_cycle']);
     }
 
-    public function test_existing_cycle_is_skipped_and_pre_installation_cycle_is_excluded(): void
+    public function test_existing_valid_cycle_is_skipped(): void
     {
-        $customer = $this->customer('New Customer', '1000000002', '2026-10-02', 2);
+        $customer = $this->customer('New Customer', '1000000002', '2026-09-02', 2);
 
         Invoice::create([
             'customer_id' => $customer->id,
@@ -86,6 +87,31 @@ class RecurringInvoiceCatchUpTest extends TestCase
             ->pluck('due_date');
 
         $this->assertContains('2026-10-05', $dueDates);
+    }
+
+    public function test_new_customer_is_not_back_billed_for_service_before_installation(): void
+    {
+        $customer = $this->customer('Recently Installed', '1000000004', '2026-09-03', 5);
+
+        $this->artisan('automation:generate-recurring-invoices', [
+            '--date' => '2026-10-05',
+            '--dry-run' => true,
+            '--triggered-by' => 'manual',
+        ])->assertSuccessful();
+
+        $summary = AutomationLog::latest('started_at')->firstOrFail()->summary;
+        $dueDates = collect($summary['details'])
+            ->where('account_number', $customer->account_number)
+            ->pluck('due_date');
+
+        $this->assertNotContains('2026-09-05', $dueDates);
+        $this->assertContains('2026-10-05', $dueDates);
+        $this->assertContains(
+            'before_first_full_service_cycle',
+            collect($summary['ineligible_details'])
+                ->where('account_number', $customer->account_number)
+                ->pluck('reason')
+        );
     }
 
     private function customer(string $name, string $account, string $installed, int $cycleDay): Customer

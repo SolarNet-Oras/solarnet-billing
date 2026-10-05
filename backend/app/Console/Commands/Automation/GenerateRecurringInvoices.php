@@ -92,6 +92,7 @@ class GenerateRecurringInvoices extends Command
             'existing_recurring_invoice' => 0,
             'company_owned_plan' => 0,
             'not_billable' => 0,
+            'before_first_full_service_cycle' => 0,
         ];
         $ineligible = [];
         foreach ($cycleDates as $cycleDate) {
@@ -99,6 +100,13 @@ class GenerateRecurringInvoices extends Command
             if ($customer->installation_date->copy()->startOfDay()->gt($cycleDate)) continue;
             if (min($customer->billingCycleDay(), $cycleDate->daysInMonth) !== $cycleDate->day) continue;
             $candidates++;
+            $periodStart = $cycleDate->copy()->subMonthNoOverflow()->startOfDay();
+            if ($periodStart->lt($customer->installation_date->copy()->startOfDay())) {
+                $skipped++;
+                $skipReasons['before_first_full_service_cycle']++;
+                $ineligible[] = $this->skipDetail($customer, $cycleDate, 'before_first_full_service_cycle');
+                continue;
+            }
             if ($customer->hasCompanyOwnedPlan()) {
                 $skipped++;
                 $skipReasons['company_owned_plan']++;
@@ -127,7 +135,7 @@ class GenerateRecurringInvoices extends Command
                 if (!$dryRun) {
                     $invoice = $invoices->generateInvoice(
                         $customer,
-                        $cycleDate->copy()->subMonthNoOverflow(),
+                        $periodStart,
                         $cycleDate,
                         [],
                         $billingDate,

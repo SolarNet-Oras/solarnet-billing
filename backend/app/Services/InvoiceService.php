@@ -205,7 +205,14 @@ class InvoiceService
                            ->filter(fn (Customer $customer) => min(
                                $customer->billingCycleDay(),
                                $billingDate->daysInMonth,
-                           ) === $billingDate->day);
+                           ) === $billingDate->day)
+                           // Never charge a newly installed customer for a
+                           // recurring period that began before installation.
+                           ->filter(fn (Customer $customer) => $billingDate
+                               ->copy()
+                               ->subMonthNoOverflow()
+                               ->startOfDay()
+                               ->gte($customer->installation_date->copy()->startOfDay()));
 
         $results = [
             'total' => $customers->count(),
