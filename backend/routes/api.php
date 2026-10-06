@@ -378,6 +378,7 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['permission:view-invoices'])->group(function () {
             Route::get('invoices', [InvoiceController::class, 'index']);
             Route::get('invoices-statistics', [InvoiceController::class, 'statistics']);
+            Route::get('invoices-open-print', [InvoiceController::class, 'openForPrint']);
             Route::get('invoices/{id}', [InvoiceController::class, 'show']);
         });
         Route::get('invoices/{id}/pdf', [InvoiceController::class, 'downloadPdf'])->middleware('permission:download-invoices');

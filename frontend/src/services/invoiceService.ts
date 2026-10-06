@@ -87,6 +87,16 @@ export const invoiceService = {
     return response.data;
   },
 
+  getOpenInvoicesForPrint: async (): Promise<{
+    generated_at: string;
+    count: number;
+    total_balance: number;
+    data: Invoice[];
+  }> => {
+    const response = await api.get('/invoices-open-print');
+    return response.data;
+  },
+
   recordAdvancePayment: async (
     data: RecordPaymentRequest & { customer_id: string }
   ): Promise<{ message: string; payment: Payment }> => {

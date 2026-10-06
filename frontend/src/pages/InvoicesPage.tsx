@@ -13,6 +13,7 @@ import {
   AlertCircle,
   XCircle,
   Smartphone,
+  Printer,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
@@ -30,6 +31,7 @@ const paymentMethodLabels: Record<Payment['payment_method'], string> = {
 };
 
 const newPaymentAttemptId = () => `OFFICE-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+const escapePrintText = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] ?? character);
 
 const localDateValue = (date: Date) => {
   const year = date.getFullYear();
@@ -76,6 +78,7 @@ const InvoicesPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalInvoices, setTotalInvoices] = useState(0);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+  const [printingOpenInvoices, setPrintingOpenInvoices] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const paymentSubmissionInFlight = useRef(false);
   const paymentAttemptId = useRef(newPaymentAttemptId());
@@ -259,6 +262,47 @@ const InvoicesPage: React.FC = () => {
     }
   };
 
+  const printOpenInvoices = async () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.alert('Allow pop-ups for this site to print all open invoices.');
+      return;
+    }
+    printWindow.opener = null;
+
+    setPrintingOpenInvoices(true);
+    printWindow.document.write('<p style="font-family:Arial,sans-serif;padding:24px">Preparing open invoices…</p>');
+
+    try {
+      const report = await invoiceService.getOpenInvoicesForPrint();
+      const date = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+      const rows = report.data.map((invoice, index) => `<tr>
+        <td>${index + 1}</td>
+        <td>${escapePrintText(invoice.invoice_number)}</td>
+        <td><strong>${escapePrintText(invoice.customer?.full_name ?? 'Unknown customer')}</strong><br><small>${escapePrintText(invoice.customer?.account_number ?? '')}</small></td>
+        <td>${escapePrintText(invoice.customer?.address ?? '')}</td>
+        <td>${date(invoice.issue_date)}</td>
+        <td>${date(invoice.due_date)}</td>
+        <td class="money">${escapePrintText(formatPHP(invoice.total))}</td>
+        <td class="money">${escapePrintText(formatPHP(invoice.balance))}</td>
+        <td>${escapePrintText(invoice.status.toUpperCase())}</td>
+      </tr>`).join('');
+      const generatedAt = new Date(report.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+
+      printWindow.document.open();
+      printWindow.document.write(`<!doctype html><html><head><title>SolarNet Open Invoices</title><style>
+        @page{size:landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0}h1{margin:0 0 4px;font-size:20px}.meta{color:#526077;font-size:11px;margin-bottom:14px}.summary{display:flex;gap:24px;margin-bottom:14px;padding:10px 12px;background:#eef6ff;border:1px solid #cfe2ff;border-radius:6px;font-size:12px}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #cbd5e1;padding:5px;vertical-align:top}th{background:#e2e8f0;text-align:left;text-transform:uppercase;font-size:8px}.money{text-align:right;white-space:nowrap}small{color:#64748b}.empty{text-align:center;padding:30px;color:#64748b}.footer{margin-top:10px;font-size:9px;color:#64748b}@media print{button{display:none}}
+      </style></head><body><h1>SolarNet Internet · Open Invoices</h1><div class="meta">Generated ${escapePrintText(generatedAt)} · Includes only invoices with an outstanding balance; paid and cancelled invoices are excluded.</div><div class="summary"><div>Open invoices<br><strong>${report.count}</strong></div><div>Total outstanding balance<br><strong>${escapePrintText(formatPHP(report.total_balance))}</strong></div></div><table><thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Address</th><th>Issued</th><th>Due</th><th>Total</th><th>Balance</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="9" class="empty">No open invoices found.</td></tr>'}</tbody></table><div class="footer">SolarNet open-invoice receivables register</div><script>window.addEventListener('load',()=>{window.print()})<\/script></body></html>`);
+      printWindow.document.close();
+    } catch (error) {
+      printWindow.close();
+      console.error('Error preparing open-invoice print report:', error);
+      window.alert('Could not prepare the open-invoice print report. Please try again.');
+    } finally {
+      setPrintingOpenInvoices(false);
+    }
+  };
+
   const handleMarkAsSent = async (invoiceId: string) => {
     try {
       await invoiceService.markAsSent(invoiceId);
@@ -401,6 +445,14 @@ const InvoicesPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void printOpenInvoices()}
+            disabled={printingOpenInvoices}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            {printingOpenInvoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            {printingOpenInvoices ? 'Preparing…' : 'Print Open Invoices'}
+          </button>
           <button
             onClick={() => {
               resetPaymentForm();

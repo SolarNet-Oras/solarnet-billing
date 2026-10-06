@@ -102,6 +102,28 @@ class InvoiceController extends Controller
         return response()->json($invoices);
     }
 
+    /** Return every currently open invoice for the printable receivables register. */
+    public function openForPrint(): JsonResponse
+    {
+        $invoices = Invoice::query()
+            ->with('customer:id,full_name,account_number,address')
+            ->where('balance', '>', 0)
+            ->whereIn('status', ['draft', 'sent', 'partial', 'overdue'])
+            ->orderBy('due_date')
+            ->orderBy('invoice_number')
+            ->get([
+                'id', 'invoice_number', 'customer_id', 'issue_date', 'due_date',
+                'total', 'paid_amount', 'balance', 'status',
+            ]);
+
+        return response()->json([
+            'generated_at' => now('Asia/Manila')->toIso8601String(),
+            'count' => $invoices->count(),
+            'total_balance' => round((float) $invoices->sum('balance'), 2),
+            'data' => $invoices,
+        ]);
+    }
+
     /**
      * Get a single invoice
      */
