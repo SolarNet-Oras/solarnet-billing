@@ -37,7 +37,11 @@ class InvoiceController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Invoice::with(['customer', 'items', 'payments.paymongoCheckout']);
+        $query = Invoice::with([
+            'customer', 'items',
+            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds',
+            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds',
+        ]);
 
         if ($request->filled('q')) {
             $search = trim($request->string('q')->toString());
@@ -94,6 +98,7 @@ class InvoiceController extends Controller
         $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
         $invoices = $query->paginate($perPage)->withQueryString();
         $invoices->getCollection()->each(function (Invoice $invoice): void {
+            $this->appendPaymentHistory($invoice);
             $invoice->setAttribute('payment_url', (float) $invoice->balance > 0 && $invoice->status !== 'cancelled'
                 ? $this->paymentLinks->url($invoice)
                 : null);
@@ -106,7 +111,11 @@ class InvoiceController extends Controller
     public function openForPrint(): JsonResponse
     {
         $invoices = Invoice::query()
-            ->with('customer:id,full_name,account_number,address')
+            ->with([
+                'customer:id,full_name,account_number,address',
+                'payments.allocations', 'payments.refunds',
+                'paymentAllocations.payment.refunds',
+            ])
             ->where('balance', '>', 0)
             ->whereIn('status', ['draft', 'sent', 'partial', 'overdue'])
             ->orderBy('due_date')
@@ -115,6 +124,8 @@ class InvoiceController extends Controller
                 'id', 'invoice_number', 'customer_id', 'issue_date', 'due_date',
                 'total', 'paid_amount', 'balance', 'status',
             ]);
+
+        $invoices->each(fn (Invoice $invoice) => $this->appendPaymentHistory($invoice));
 
         return response()->json([
             'generated_at' => now('Asia/Manila')->toIso8601String(),
@@ -129,10 +140,54 @@ class InvoiceController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $invoice = Invoice::with(['customer', 'items', 'payments.paymongoCheckout'])
+        $invoice = Invoice::with([
+            'customer', 'items',
+            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds',
+            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds',
+        ])
                          ->findOrFail($id);
 
+        $this->appendPaymentHistory($invoice);
+
         return response()->json($invoice);
+    }
+
+    /**
+     * Add the authoritative payment timestamps for this invoice. Allocations
+     * take precedence over the payment's original/direct invoice pointer.
+     */
+    private function appendPaymentHistory(Invoice $invoice): void
+    {
+        $allocatedPayments = $invoice->paymentAllocations
+            ->pluck('payment')
+            ->filter();
+        $legacyDirectPayments = $invoice->payments
+            ->filter(fn ($payment) => $payment->allocations->isEmpty());
+
+        $history = $allocatedPayments
+            ->concat($legacyDirectPayments)
+            ->unique('id')
+            ->sortBy('created_at')
+            ->values()
+            ->map(function ($payment) use ($invoice): array {
+                $allocatedAmount = $invoice->paymentAllocations
+                    ->where('payment_id', $payment->id)
+                    ->sum('amount');
+
+                return [
+                    'id' => $payment->id,
+                    'payment_number' => $payment->payment_number,
+                    'payment_method' => $payment->payment_method,
+                    'payment_date' => $payment->payment_date?->toDateString(),
+                    'recorded_at' => $payment->created_at?->copy()->utc()->toIso8601String(),
+                    'recorded_at_manila' => $payment->created_at?->copy()->timezone('Asia/Manila')->format('M j, Y h:i A'),
+                    'amount' => (float) $payment->amount,
+                    'allocated_amount' => round((float) $allocatedAmount, 2),
+                    'refunded_amount' => round((float) $payment->refunds->sum('amount'), 2),
+                ];
+            });
+
+        $invoice->setAttribute('payment_history', $history->all());
     }
 
     /**

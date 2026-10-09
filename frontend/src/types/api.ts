@@ -436,7 +436,8 @@ export interface Invoice {
   sent_at: string | null;
   paid_at: string | null;
   items?: InvoiceItem[];
-  payments?: Payment[];
+    payments?: Payment[];
+    payment_history?: InvoicePaymentHistory[];
   payment_url?: string | null;
   created_at: string;
   updated_at: string;
@@ -487,6 +488,18 @@ export interface RecordPaymentRequest {
   cash_breakdown?: Array<{ denomination: number; count: number }>;
   cash_change_breakdown?: Array<{ denomination: number; count: number }>;
   cash_change_to_advance?: boolean;
+}
+
+export interface InvoicePaymentHistory {
+  id: string;
+  payment_number: string;
+  payment_method: Payment['payment_method'];
+  payment_date: string | null;
+  recorded_at: string | null;
+  recorded_at_manila: string | null;
+  amount: number;
+  allocated_amount: number;
+  refunded_amount: number;
 }
 
 export interface InvoiceStatistics {

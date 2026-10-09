@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
-import type { Invoice, Customer, Payment } from '../types/api';
+import type { Invoice, Customer, Payment, InvoicePaymentHistory } from '../types/api';
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
 
@@ -52,11 +52,15 @@ const nextCustomerCycle = (customer: Customer, paymentDate: string) => {
   return localDateValue(candidate);
 };
 
-function PaymentMethod({ methods }: { methods: Payment[] }): React.JSX.Element {
-  if (methods.length === 0) return <span className="text-gray-400">Not paid</span>;
-
-  const labels = [...new Set(methods.map((payment) => payment.paymongo_checkout ? 'QR Ph' : (paymentMethodLabels[payment.payment_method] ?? payment.payment_method)))];
+function InvoicePaymentMethod({ history }: { history: InvoicePaymentHistory[] }): React.JSX.Element {
+  if (history.length === 0) return <span className="text-gray-400">Not paid</span>;
+  const labels = [...new Set(history.map((payment) => paymentMethodLabels[payment.payment_method] ?? payment.payment_method))];
   return <span className="font-medium">{labels.join(', ')}</span>;
+}
+
+function InvoicePaymentDateTime({ history }: { history: InvoicePaymentHistory[] }): React.JSX.Element {
+  if (history.length === 0) return <span className="text-gray-400">Not paid</span>;
+  return <div className="space-y-1">{history.map((payment) => <div key={payment.id} className="whitespace-nowrap"><span className="font-medium text-gray-700">{payment.recorded_at_manila ?? 'Time unavailable'}</span><span className="block text-xs text-gray-500">{payment.payment_number}{payment.refunded_amount > 0 ? ` · Refunded ${formatPHP(payment.refunded_amount)}` : ''}</span></div>)}</div>;
 }
 
 const InvoicesPage: React.FC = () => {
@@ -285,6 +289,7 @@ const InvoicesPage: React.FC = () => {
         <td>${date(invoice.due_date)}</td>
         <td class="money">${escapePrintText(formatPHP(invoice.total))}</td>
         <td class="money">${escapePrintText(formatPHP(invoice.balance))}</td>
+        <td>${(invoice.payment_history ?? []).map((payment) => `${escapePrintText(payment.recorded_at_manila ?? 'Time unavailable')}<br><small>${escapePrintText(payment.payment_number)}</small>`).join('<br>') || 'Not paid'}</td>
         <td>${escapePrintText(invoice.status.toUpperCase())}</td>
       </tr>`).join('');
       const generatedAt = new Date(report.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
@@ -292,7 +297,7 @@ const InvoicesPage: React.FC = () => {
       printWindow.document.open();
       printWindow.document.write(`<!doctype html><html><head><title>SolarNet Open Invoices</title><style>
         @page{size:landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0}h1{margin:0 0 4px;font-size:20px}.meta{color:#526077;font-size:11px;margin-bottom:14px}.summary{display:flex;gap:24px;margin-bottom:14px;padding:10px 12px;background:#eef6ff;border:1px solid #cfe2ff;border-radius:6px;font-size:12px}.summary strong{font-size:15px}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #cbd5e1;padding:5px;vertical-align:top}th{background:#e2e8f0;text-align:left;text-transform:uppercase;font-size:8px}.money{text-align:right;white-space:nowrap}small{color:#64748b}.empty{text-align:center;padding:30px;color:#64748b}.footer{margin-top:10px;font-size:9px;color:#64748b}@media print{button{display:none}}
-      </style></head><body><h1>SolarNet Internet · Open Invoices</h1><div class="meta">Generated ${escapePrintText(generatedAt)} · Includes only invoices with an outstanding balance; paid and cancelled invoices are excluded.</div><div class="summary"><div>Open invoices<br><strong>${report.count}</strong></div><div>Total outstanding balance<br><strong>${escapePrintText(formatPHP(report.total_balance))}</strong></div></div><table><thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Address</th><th>Issued</th><th>Due</th><th>Total</th><th>Balance</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="9" class="empty">No open invoices found.</td></tr>'}</tbody></table><div class="footer">SolarNet open-invoice receivables register</div><script>window.addEventListener('load',()=>{window.print()})<\/script></body></html>`);
+      </style></head><body><h1>SolarNet Internet · Open Invoices</h1><div class="meta">Generated ${escapePrintText(generatedAt)} · Includes only invoices with an outstanding balance; paid and cancelled invoices are excluded.</div><div class="summary"><div>Open invoices<br><strong>${report.count}</strong></div><div>Total outstanding balance<br><strong>${escapePrintText(formatPHP(report.total_balance))}</strong></div></div><table><thead><tr><th>#</th><th>Invoice</th><th>Customer</th><th>Address</th><th>Issued</th><th>Due</th><th>Total</th><th>Balance</th><th>Payment date & time</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="10" class="empty">No open invoices found.</td></tr>'}</tbody></table><div class="footer">SolarNet open-invoice receivables register</div><script>window.addEventListener('load',()=>{window.print()})<\/script></body></html>`);
       printWindow.document.close();
     } catch (error) {
       printWindow.close();
@@ -480,7 +485,7 @@ const InvoicesPage: React.FC = () => {
           Swipe or scroll left and right to view every invoice field and action.
         </div>
         <div className="w-full overflow-x-auto overscroll-x-contain [touch-action:pan-x_pan-y] [scrollbar-gutter:stable]" role="region" aria-label="Scrollable invoice records" tabIndex={0}>
-        <table className="min-w-[1050px] w-full">
+        <table className="min-w-[1280px] w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -505,6 +510,9 @@ const InvoicesPage: React.FC = () => {
                 Payment Method
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Payment Date &amp; Time
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -515,13 +523,13 @@ const InvoicesPage: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                   Loading invoices...
                 </td>
               </tr>
             ) : filteredInvoices.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                   No invoices found
                 </td>
               </tr>
@@ -548,7 +556,10 @@ const InvoicesPage: React.FC = () => {
                     {formatPHP(invoice.balance)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    <PaymentMethod methods={invoice.payments ?? []} />
+                    <InvoicePaymentMethod history={invoice.payment_history ?? []} />
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-700">
+                    <InvoicePaymentDateTime history={invoice.payment_history ?? []} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(invoice.status)}
@@ -1002,6 +1013,10 @@ const InvoicesPage: React.FC = () => {
                   <div>
                     <label className="text-sm font-medium text-gray-600">Due Date</label>
                     <p className="text-sm text-gray-900">{new Date(selectedInvoice.due_date).toLocaleDateString()}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-sm font-medium text-gray-600">Payment Date &amp; Time</label>
+                    <div className="mt-1 text-sm text-gray-900"><InvoicePaymentDateTime history={selectedInvoice.payment_history ?? []} /></div>
                   </div>
                 </div>
 
