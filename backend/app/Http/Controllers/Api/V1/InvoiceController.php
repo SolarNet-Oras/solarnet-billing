@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\ActivityLog;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\InvoicePaymentLinkService;
@@ -13,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class InvoiceController extends Controller
@@ -39,8 +41,8 @@ class InvoiceController extends Controller
     {
         $query = Invoice::with([
             'customer', 'items',
-            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds',
-            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds',
+            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds', 'payments.receiver:id,name', 'payments.collector:id,name',
+            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds', 'paymentAllocations.payment.receiver:id,name', 'paymentAllocations.payment.collector:id,name',
         ]);
 
         if ($request->filled('q')) {
@@ -103,6 +105,7 @@ class InvoiceController extends Controller
                 ? $this->paymentLinks->url($invoice)
                 : null);
         });
+        $this->appendInvoiceActivity($invoices->getCollection());
 
         return response()->json($invoices);
     }
@@ -113,8 +116,8 @@ class InvoiceController extends Controller
         $invoices = Invoice::query()
             ->with([
                 'customer:id,full_name,account_number,address',
-                'payments.allocations', 'payments.refunds',
-                'paymentAllocations.payment.refunds',
+                'payments.allocations', 'payments.refunds', 'payments.paymongoCheckout', 'payments.receiver:id,name', 'payments.collector:id,name',
+                'paymentAllocations.payment.refunds', 'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.receiver:id,name', 'paymentAllocations.payment.collector:id,name',
             ])
             ->where('balance', '>', 0)
             ->whereIn('status', ['draft', 'sent', 'partial', 'overdue'])
@@ -126,6 +129,7 @@ class InvoiceController extends Controller
             ]);
 
         $invoices->each(fn (Invoice $invoice) => $this->appendPaymentHistory($invoice));
+        $this->appendInvoiceActivity($invoices);
 
         return response()->json([
             'generated_at' => now('Asia/Manila')->toIso8601String(),
@@ -142,12 +146,13 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::with([
             'customer', 'items',
-            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds',
-            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds',
+            'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds', 'payments.receiver:id,name', 'payments.collector:id,name',
+            'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds', 'paymentAllocations.payment.receiver:id,name', 'paymentAllocations.payment.collector:id,name',
         ])
                          ->findOrFail($id);
 
         $this->appendPaymentHistory($invoice);
+        $this->appendInvoiceActivity(collect([$invoice]));
 
         return response()->json($invoice);
     }
@@ -184,10 +189,57 @@ class InvoiceController extends Controller
                     'amount' => (float) $payment->amount,
                     'allocated_amount' => round((float) $allocatedAmount, 2),
                     'refunded_amount' => round((float) $payment->refunds->sum('amount'), 2),
+                    'transacted_by' => $payment->receiver?->name
+                        ?? $payment->collector?->name
+                        ?? ($payment->paymongoCheckout ? 'Customer via PayMongo' : 'Staff record unavailable'),
+                    'transaction_source' => $payment->receiver
+                        ? 'office'
+                        : ($payment->collector ? 'collector' : ($payment->paymongoCheckout ? 'online' : 'unknown')),
                 ];
             });
 
         $invoice->setAttribute('payment_history', $history->all());
+    }
+
+    /** Attach successful authenticated discount and cancellation audit events. */
+    private function appendInvoiceActivity($invoices): void
+    {
+        if ($invoices->isEmpty() || ! Schema::hasTable('activity_logs')) {
+            $invoices->each(fn (Invoice $invoice) => $invoice->setAttribute('invoice_activity', []));
+            return;
+        }
+
+        $logs = ActivityLog::query()
+            ->whereIn('subject_id', $invoices->pluck('id'))
+            ->where('category', 'invoices')
+            ->where('response_status', '<', 400)
+            ->whereIn('method', ['PUT', 'PATCH', 'DELETE'])
+            ->oldest('created_at')
+            ->get()
+            ->groupBy('subject_id');
+
+        $invoices->each(function (Invoice $invoice) use ($logs): void {
+            $events = collect($logs->get($invoice->id, collect()))
+                ->flatMap(function (ActivityLog $log): array {
+                    $changes = is_array($log->changes) ? $log->changes : [];
+                    $base = [
+                        'actor_name' => $log->actor_name ?: 'Staff record unavailable',
+                        'occurred_at' => $log->created_at?->copy()->utc()->toIso8601String(),
+                        'occurred_at_manila' => $log->created_at?->copy()->timezone('Asia/Manila')->format('M j, Y h:i A'),
+                    ];
+                    $events = [];
+                    if (array_key_exists('discount', $changes)) {
+                        $events[] = [...$base, 'type' => 'discount', 'value' => (float) $changes['discount']];
+                    }
+                    if (($changes['status'] ?? null) === 'cancelled' || $log->method === 'DELETE') {
+                        $events[] = [...$base, 'type' => 'cancellation', 'reason' => $changes['correction_reason'] ?? null];
+                    }
+                    return $events;
+                })
+                ->values();
+
+            $invoice->setAttribute('invoice_activity', $events->all());
+        });
     }
 
     /**

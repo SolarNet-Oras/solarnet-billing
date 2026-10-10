@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService from '../services/invoiceService';
-import type { Invoice, Customer, Payment, InvoicePaymentHistory } from '../types/api';
+import type { Invoice, Customer, Payment, InvoicePaymentHistory, InvoiceActivity } from '../types/api';
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
 
@@ -58,9 +58,10 @@ function InvoicePaymentMethod({ history }: { history: InvoicePaymentHistory[] })
   return <span className="font-medium">{labels.join(', ')}</span>;
 }
 
-function InvoicePaymentDateTime({ history }: { history: InvoicePaymentHistory[] }): React.JSX.Element {
-  if (history.length === 0) return <span className="text-gray-400">Not paid</span>;
-  return <div className="space-y-1">{history.map((payment) => <div key={payment.id} className="whitespace-nowrap"><span className="font-medium text-gray-700">{payment.recorded_at_manila ?? 'Time unavailable'}</span><span className="block text-xs text-gray-500">{payment.payment_number}{payment.refunded_amount > 0 ? ` · Refunded ${formatPHP(payment.refunded_amount)}` : ''}</span></div>)}</div>;
+function InvoicePaymentDateTime({ history, activity = [], discount = 0, status }: { history: InvoicePaymentHistory[]; activity?: InvoiceActivity[]; discount?: number; status?: Invoice['status'] }): React.JSX.Element {
+  const discounts = activity.filter((event) => event.type === 'discount');
+  const cancellations = activity.filter((event) => event.type === 'cancellation');
+  return <div className="space-y-2">{history.length === 0 && <span className="text-gray-400">Not paid</span>}{history.map((payment) => <div key={payment.id} className="whitespace-nowrap"><span className="font-medium text-gray-700">{payment.recorded_at_manila ?? 'Time unavailable'}</span><span className="block text-xs text-gray-500">{payment.payment_number}{payment.refunded_amount > 0 ? ` · Refunded ${formatPHP(payment.refunded_amount)}` : ''}</span><span className="block text-xs text-blue-700">Transacted by {payment.transacted_by}</span></div>)}{discount > 0 && (discounts.length ? discounts.map((event, index) => <div key={`discount-${index}`} className="text-xs text-amber-700">Discount {formatPHP(event.value ?? discount)} by {event.actor_name}<span className="block text-gray-500">{event.occurred_at_manila ?? 'Time unavailable'}</span></div>) : <div className="text-xs text-amber-700">Discount {formatPHP(discount)} · staff record unavailable</div>)}{status === 'cancelled' && (cancellations.length ? cancellations.map((event, index) => <div key={`cancel-${index}`} className="text-xs text-rose-700">Cancelled by {event.actor_name}<span className="block text-gray-500">{event.occurred_at_manila ?? 'Time unavailable'}</span></div>) : <div className="text-xs text-rose-700">Cancelled · staff record unavailable</div>)}</div>;
 }
 
 const InvoicesPage: React.FC = () => {
@@ -289,7 +290,7 @@ const InvoicesPage: React.FC = () => {
         <td>${date(invoice.due_date)}</td>
         <td class="money">${escapePrintText(formatPHP(invoice.total))}</td>
         <td class="money">${escapePrintText(formatPHP(invoice.balance))}</td>
-        <td>${(invoice.payment_history ?? []).map((payment) => `${escapePrintText(payment.recorded_at_manila ?? 'Time unavailable')}<br><small>${escapePrintText(payment.payment_number)}</small>`).join('<br>') || 'Not paid'}</td>
+        <td>${(invoice.payment_history ?? []).map((payment) => `${escapePrintText(payment.recorded_at_manila ?? 'Time unavailable')}<br><small>${escapePrintText(payment.payment_number)} · By ${escapePrintText(payment.transacted_by)}</small>`).join('<br>') || 'Not paid'}</td>
         <td>${escapePrintText(invoice.status.toUpperCase())}</td>
       </tr>`).join('');
       const generatedAt = new Date(report.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
@@ -559,7 +560,7 @@ const InvoicesPage: React.FC = () => {
                     <InvoicePaymentMethod history={invoice.payment_history ?? []} />
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-700">
-                    <InvoicePaymentDateTime history={invoice.payment_history ?? []} />
+                    <InvoicePaymentDateTime history={invoice.payment_history ?? []} activity={invoice.invoice_activity ?? []} discount={invoice.discount} status={invoice.status} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(invoice.status)}
@@ -1016,7 +1017,7 @@ const InvoicesPage: React.FC = () => {
                   </div>
                   <div className="col-span-2">
                     <label className="text-sm font-medium text-gray-600">Payment Date &amp; Time</label>
-                    <div className="mt-1 text-sm text-gray-900"><InvoicePaymentDateTime history={selectedInvoice.payment_history ?? []} /></div>
+                    <div className="mt-1 text-sm text-gray-900"><InvoicePaymentDateTime history={selectedInvoice.payment_history ?? []} activity={selectedInvoice.invoice_activity ?? []} discount={selectedInvoice.discount} status={selectedInvoice.status} /></div>
                   </div>
                 </div>
 

@@ -438,6 +438,7 @@ export interface Invoice {
   items?: InvoiceItem[];
     payments?: Payment[];
     payment_history?: InvoicePaymentHistory[];
+    invoice_activity?: InvoiceActivity[];
   payment_url?: string | null;
   created_at: string;
   updated_at: string;
@@ -500,6 +501,17 @@ export interface InvoicePaymentHistory {
   amount: number;
   allocated_amount: number;
   refunded_amount: number;
+  transacted_by: string;
+  transaction_source: 'office' | 'collector' | 'online' | 'unknown';
+}
+
+export interface InvoiceActivity {
+  type: 'discount' | 'cancellation';
+  actor_name: string;
+  occurred_at: string | null;
+  occurred_at_manila: string | null;
+  value?: number;
+  reason?: string | null;
 }
 
 export interface InvoiceStatistics {
