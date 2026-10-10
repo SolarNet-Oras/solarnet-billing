@@ -22,27 +22,27 @@ class SolarNetEmailRenderer
 
         return $this->render([
             'notice' => 'AUTOMATED BILLING NOTICE',
-            'headline' => 'Your monthly invoice is ready.',
+            'headline' => 'Your monthly billing statement is ready.',
             'intro' => 'Your latest SolarNet bill is ready to review. Please settle it on or before the due date to keep your service uninterrupted.',
             'customer' => $customer,
             'customer_card_title' => 'Customer account',
-            'summary_title' => 'Invoice summary',
+            'summary_title' => 'Billing statement summary',
             'summary_rows' => [
-                ['label' => 'Invoice number', 'value' => $invoice->invoice_number],
+                ['label' => 'Statement number', 'value' => $invoice->invoice_number],
                 ['label' => 'Due date', 'value' => $this->date($invoice->due_date)],
                 ['label' => 'Billing period', 'value' => $this->dateRange($invoice->billing_period_start, $invoice->billing_period_end)],
             ],
             'detail_rows' => [
                 ['label' => 'Service plan', 'value' => $customer?->servicePlan?->name ?? 'SolarNet Internet'],
-                ['label' => 'Invoice status', 'value' => 'Ready for payment'],
+                ['label' => 'Statement status', 'value' => 'Ready for payment'],
             ],
             'amount_label' => 'Amount due',
             'amount' => $this->money((float) $invoice->balance),
             'cta_label' => 'VIEW & PAY ONLINE',
             'cta_url' => app(InvoicePaymentLinkService::class)->url($invoice),
-            'payment_note' => 'Use the secure SolarNet portal to review this invoice and complete payment. Online checkout is handled through PayMongo.',
-            'reminder' => 'A PDF copy of this invoice is attached for your records. If you have already paid, please allow time for the payment to post.',
-            'features' => ['Account-specific invoice', 'Secure online payment', 'SolarNet billing support'],
+            'payment_note' => 'Use the secure SolarNet portal to review this billing statement and complete payment. Online checkout is handled through PayMongo.',
+            'reminder' => 'A PDF copy of this billing statement is attached for your records. It is not valid for claim of input tax. If you have already paid, please allow time for the payment to post.',
+            'features' => ['Account-specific billing statement', 'Secure online payment', 'SolarNet billing support'],
         ]);
     }
 

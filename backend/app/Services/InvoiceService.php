@@ -404,13 +404,13 @@ class InvoiceService
         }
 
         try {
-            $subject = "Your SolarNet invoice {$invoice->invoice_number}";
+            $subject = "Your SolarNet billing statement {$invoice->invoice_number}";
             $html = app(SolarNetEmailRenderer::class)->initialInvoice($invoice);
             $pdf = $this->generatePdf($invoice)->output();
             Mail::html($html, function (Message $message) use ($customer, $subject, $pdf, $invoice) {
                 $message->to($customer->email, $customer->full_name)
                     ->subject($subject)
-                    ->attachData($pdf, "invoice-{$invoice->invoice_number}.pdf", ['mime' => 'application/pdf']);
+                    ->attachData($pdf, "billing-statement-{$invoice->invoice_number}.pdf", ['mime' => 'application/pdf']);
             });
 
             $this->recordInitialEmailState($invoice, 'sent', null, true);
@@ -474,14 +474,16 @@ class InvoiceService
     }
 
     /**
-     * Generate unique invoice number
-     * Format: INV-YYYYMM-XXXX
+     * Generate a unique billing-statement number.
+     * Format: SLR-YYYYMM-XXXX (or the configured billing prefix).
      * 
      * @return string
      */
     protected function generateInvoiceNumber(): string
     {
-        $prefix = 'INV-' . now()->format('Ym') . '-';
+        $configuredPrefix = trim((string) Setting::get('billing.invoice_prefix', 'SLR-'));
+        $documentPrefix = strtoupper(rtrim($configuredPrefix !== '' ? $configuredPrefix : 'SLR', '-'));
+        $prefix = $documentPrefix . '-' . now()->format('Ym') . '-';
         $lastInvoice = Invoice::where('invoice_number', 'like', $prefix . '%')
                               ->orderBy('invoice_number', 'desc')
                               ->first();

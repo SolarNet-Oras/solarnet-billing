@@ -498,7 +498,7 @@ class InvoiceController extends Controller
 
         $pdf = $this->invoiceService->generatePdf($invoice);
 
-        return $pdf->download("invoice-{$invoice->invoice_number}.pdf");
+        return $pdf->download("billing-statement-{$invoice->invoice_number}.pdf");
     }
 
     /**

@@ -61,5 +61,9 @@ class InvoicePdfTemplateTest extends TestCase
 
         $this->assertStringContainsString('Website: https://solarnetportal.com', $html);
         $this->assertStringContainsString('Tax ID: TIN-123', $html);
+        $this->assertStringContainsString('BILLING STATEMENT', $html);
+        $this->assertStringContainsString('Statement #:', $html);
+        $this->assertStringContainsString('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.', $html);
+        $this->assertStringNotContainsString('<div class="invoice-title">INVOICE</div>', $html);
     }
 }

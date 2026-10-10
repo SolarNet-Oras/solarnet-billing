@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice {{ $invoice->invoice_number }}</title>
+    <title>Billing Statement {{ $invoice->invoice_number }}</title>
     <style>
         * {
             margin: 0;
@@ -171,6 +171,23 @@
             font-size: 10px;
             color: #475569;
         }
+        .bir-notice {
+            clear: both;
+            margin-top: 18px;
+            padding: 12px 14px;
+            border: 1px solid #dc2626;
+            background-color: #fef2f2;
+            color: #7f1d1d;
+            font-size: 9px;
+            line-height: 1.45;
+            text-align: center;
+        }
+        .bir-notice strong {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 11px;
+            letter-spacing: .2px;
+        }
         .clearfix::after {
             content: "";
             display: table;
@@ -202,9 +219,9 @@
                     </div>
                 </td>
                 <td style="width: 40%; text-align: right; vertical-align: top;">
-                    <div class="invoice-title">INVOICE</div>
+                    <div class="invoice-title">BILLING STATEMENT</div>
                     <div class="invoice-meta">
-                        <div><strong>Invoice #:</strong> {{ $invoice->invoice_number }}</div>
+                        <div><strong>Statement #:</strong> {{ $invoice->invoice_number }}</div>
                         <div><strong>Issue Date:</strong> {{ $invoice->issue_date->format('M d, Y') }}</div>
                         <div><strong>Due Date:</strong> {{ $invoice->due_date->format('M d, Y') }}</div>
                         <div>
@@ -237,7 +254,7 @@
             </td>
             <td>
                 <div class="invoice-details">
-                    <div class="section-title">Invoice Details</div>
+                    <div class="section-title">Statement Details</div>
                     <strong>Billing Period:</strong><br>
                     {{ $invoice->billing_period_start->format('M d, Y') }} to {{ $invoice->billing_period_end->format('M d, Y') }}<br><br>
                     @if($invoice->customer->servicePlan)
@@ -342,14 +359,20 @@
     @endif
 
     <div class="payment-terms">
-        <strong>Payment Terms:</strong> Payment is due within {{ $invoice->issue_date->diffInDays($invoice->due_date) }} days from the invoice date.
+        <strong>Payment Terms:</strong> Payment is due within {{ $invoice->issue_date->diffInDays($invoice->due_date) }} days from the statement date.
         Please make payment via any of the following methods: Cash, Bank Transfer, Credit/Debit Card, or Mobile Money.
-        Include your invoice number ({{ $invoice->invoice_number }}) as reference when making payment.
+        Include your statement number ({{ $invoice->invoice_number }}) as reference when making payment.
+    </div>
+
+    <div class="bir-notice">
+        <strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong>
+        This Billing Statement is a request for payment and is not a BIR-registered Sales Invoice or Official Receipt.
+        It must not be used to claim input VAT or any tax credit. The applicable BIR-compliant document will be issued separately when required.
     </div>
 
     <div class="footer">
         Thank you for your business!<br>
-        This is a computer-generated invoice. For any queries, please contact {{ $company['email'] }}
+        This is a computer-generated billing statement. For any queries, please contact {{ $company['email'] }}
     </div>
 </body>
 </html>
