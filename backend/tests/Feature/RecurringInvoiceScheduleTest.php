@@ -29,7 +29,8 @@ class RecurringInvoiceScheduleTest extends TestCase
 
         $this->runScheduler('2026-10-12');
 
-        $this->assertDatabaseHas('invoices', ['customer_id' => $dueInSeven->id, 'due_date' => '2026-10-19']);
+        $invoice = Invoice::where('customer_id', $dueInSeven->id)->sole();
+        $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
         foreach ([$dueInEight, $dueInSix, $dueToday, $passed] as $customer) {
             $this->assertDatabaseMissing('invoices', ['customer_id' => $customer->id]);
         }
@@ -44,11 +45,9 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->runScheduler('2026-10-13');
 
         $this->assertSame(1, Invoice::where('customer_id', $customer->id)->count());
-        $this->assertDatabaseHas('invoices', [
-            'customer_id' => $customer->id,
-            'recurring_cycle_date' => '2026-10-19',
-            'scheduled_generation_date' => '2026-10-12',
-        ]);
+        $invoice = Invoice::where('customer_id', $customer->id)->sole();
+        $this->assertSame('2026-10-19', $invoice->recurring_cycle_date->toDateString());
+        $this->assertSame('2026-10-12', $invoice->scheduled_generation_date->toDateString());
     }
 
     public function test_manual_invoice_for_the_same_period_prevents_automatic_duplicate(): void
@@ -87,7 +86,8 @@ class RecurringInvoiceScheduleTest extends TestCase
     {
         $customer = $this->customer('Leap Customer', '1000000014', '2027-01-31', 31);
         $this->runScheduler('2028-02-22');
-        $this->assertDatabaseHas('invoices', ['customer_id' => $customer->id, 'due_date' => '2028-02-29']);
+        $invoice = Invoice::where('customer_id', $customer->id)->sole();
+        $this->assertSame('2028-02-29', $invoice->due_date->toDateString());
     }
 
     public function test_midnight_boundary_uses_asia_manila_calendar_date(): void
@@ -97,12 +97,14 @@ class RecurringInvoiceScheduleTest extends TestCase
 
         Carbon::setTestNow(Carbon::create(2026, 10, 11, 23, 59, 59, 'Asia/Manila'));
         $this->artisan('automation:generate-recurring-invoices')->assertSuccessful();
-        $this->assertDatabaseHas('invoices', ['customer_id' => $dueEighteenth->id, 'due_date' => '2026-10-18']);
+        $invoice = Invoice::where('customer_id', $dueEighteenth->id)->sole();
+        $this->assertSame('2026-10-18', $invoice->due_date->toDateString());
         $this->assertDatabaseMissing('invoices', ['customer_id' => $dueNineteenth->id]);
 
         Carbon::setTestNow(Carbon::create(2026, 10, 12, 0, 0, 0, 'Asia/Manila'));
         $this->artisan('automation:generate-recurring-invoices')->assertSuccessful();
-        $this->assertDatabaseHas('invoices', ['customer_id' => $dueNineteenth->id, 'due_date' => '2026-10-19']);
+        $invoice = Invoice::where('customer_id', $dueNineteenth->id)->sole();
+        $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
     }
 
     private function runScheduler(string $date): void

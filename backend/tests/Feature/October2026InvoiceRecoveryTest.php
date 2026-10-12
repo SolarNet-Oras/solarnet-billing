@@ -55,13 +55,11 @@ class October2026InvoiceRecoveryTest extends TestCase
         $this->artisan('billing:recover-october-2026', $arguments)->assertSuccessful();
 
         $this->assertSame(1, Invoice::where('customer_id', $customer->id)->count());
-        $this->assertDatabaseHas('invoices', [
-            'customer_id' => $customer->id,
-            'due_date' => '2026-10-19',
-            'recurring_cycle_date' => '2026-10-19',
-            'scheduled_generation_date' => '2026-10-12',
-            'generation_source' => 'AUTOMATION_RECOVERY',
-        ]);
+        $invoice = Invoice::where('customer_id', $customer->id)->sole();
+        $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
+        $this->assertSame('2026-10-19', $invoice->recurring_cycle_date->toDateString());
+        $this->assertSame('2026-10-12', $invoice->scheduled_generation_date->toDateString());
+        $this->assertSame('AUTOMATION_RECOVERY', $invoice->generation_source);
     }
 
     public function test_existing_manual_cycle_is_reported_and_never_modified(): void
