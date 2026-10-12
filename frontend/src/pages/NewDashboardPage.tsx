@@ -62,6 +62,7 @@ interface DashboardMetrics {
   total_paid: number;
   partial_paid: number;
   collectible: number;
+  billing_period: { month: string; label: string; start: string; end: string; timezone: string };
   collection_rate: number;
   online_users: number;
   offline_users: number;
@@ -437,21 +438,24 @@ const NewDashboardPageContent: React.FC = () => {
       <div className="mx-auto flex max-w-7xl flex-col gap-6 pb-10">
         {!collector && <section>
           <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
             <div className="flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-primary" />
             <h2 className="text-sm font-bold uppercase tracking-[0.14em] text-foreground">Client & billing overview</h2>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">Billing cards: {metrics?.billing_period?.label ?? 'current month'} · Client and service-status cards: all clients</p>
             </div>
             <button type="button" onClick={() => fetchMetrics(true)} disabled={refreshing} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-70"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />Refresh data</button>
           </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <MetricTile label="All clients" value={metrics?.total_subscribers ?? 0} Icon={Users} tone="bg-primary" />
-            <MetricTile label="Paid" value={metrics?.paid_invoices ?? 0} Icon={CheckCircle2} tone="bg-emerald-500" />
-            <MetricTile label="Unpaid" value={metrics?.unpaid_invoices ?? 0} Icon={CircleAlert} tone="bg-rose-500" />
-            <MetricTile label="Partial" value={metrics?.partial_invoices ?? 0} Icon={CreditCard} tone="bg-amber-500" />
+            <MetricTile label={`Paid · ${metrics?.billing_period?.label ?? 'This month'}`} value={metrics?.paid_invoices ?? 0} Icon={CheckCircle2} tone="bg-emerald-500" />
+            <MetricTile label={`Unpaid · ${metrics?.billing_period?.label ?? 'This month'}`} value={metrics?.unpaid_invoices ?? 0} Icon={CircleAlert} tone="bg-rose-500" />
+            <MetricTile label={`Partial · ${metrics?.billing_period?.label ?? 'This month'}`} value={metrics?.partial_invoices ?? 0} Icon={CreditCard} tone="bg-amber-500" />
             <MetricTile label="Active" value={metrics?.active_subscribers ?? 0} Icon={Wifi} tone="bg-cyan-500" />
             <MetricTile label="Suspended" value={metrics?.suspended_subscribers ?? 0} Icon={ShieldCheck} tone="bg-orange-500" />
             <MetricTile label="Disconnected" value={metrics?.expired_subscribers ?? 0} Icon={CircleOff} tone="bg-slate-600" />
-            <MetricTile label="Collectible" value={peso(metrics?.collectible ?? 0)} Icon={Banknote} tone="bg-violet-600" />
+            <MetricTile label={`Collectible · ${metrics?.billing_period?.label ?? 'This month'}`} value={peso(metrics?.collectible ?? 0)} Icon={Banknote} tone="bg-violet-600" />
           </div>
         </section>}
 

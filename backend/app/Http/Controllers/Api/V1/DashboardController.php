@@ -96,9 +96,11 @@ class DashboardController extends Controller
      */
     public function metrics(): JsonResponse
     {
-        $today       = Carbon::today();
-        $monthStart  = Carbon::now()->startOfMonth();
-        $prevMonth   = Carbon::now()->subMonthNoOverflow();
+        $manilaNow   = Carbon::now('Asia/Manila');
+        $today       = $manilaNow->copy()->startOfDay();
+        $monthStart  = $manilaNow->copy()->startOfMonth();
+        $monthEnd    = $manilaNow->copy()->endOfMonth();
+        $prevMonth   = $manilaNow->copy()->subMonthNoOverflow();
         $prevMonthS  = $prevMonth->copy()->startOfMonth();
         $prevMonthE  = $prevMonth->copy()->endOfMonth();
 
@@ -129,7 +131,11 @@ class DashboardController extends Controller
         $revChangePct   = $this->percentChange($prevMonthRev, $monthRevenue);
 
         // ---- Invoices ----
-        $invoiceTotals = Invoice::query()->selectRaw(
+        // Billing cards describe this Manila calendar month only. Customer
+        // population and service-status cards above remain all-time/current.
+        $invoiceTotals = Invoice::query()
+            ->whereBetween('issue_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->selectRaw(
             'SUM(CASE WHEN status IN (?, ?) AND balance > 0 THEN 1 ELSE 0 END) AS pending_count,
              SUM(CASE WHEN due_date <= ? AND balance > 0 AND status IN (?, ?, ?) THEN 1 ELSE 0 END) AS overdue_count,
              SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS paid_count,
@@ -212,6 +218,13 @@ class DashboardController extends Controller
                 'partial_paid'          => round($partialPaid, 2),
                 'collectible'           => round($collectible, 2),
                 'collection_rate'       => $collectionRate,
+                'billing_period'        => [
+                    'month' => $monthStart->format('Y-m'),
+                    'label' => $monthStart->format('F Y'),
+                    'start' => $monthStart->toDateString(),
+                    'end' => $monthEnd->toDateString(),
+                    'timezone' => 'Asia/Manila',
+                ],
 
                 // Tickets
                 'open_tickets'    => $openTickets,
