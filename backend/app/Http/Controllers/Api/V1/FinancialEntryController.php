@@ -277,23 +277,18 @@ class FinancialEntryController extends Controller
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
 
-            // Manual GCash entries are bookkeeping only: they never call
-            // PayMongo. For spending control, Direct GCash is merged with the
-            // provider's live cash-out-available amount (pending is excluded).
+            // A manual GCash entry is bookkeeping only and never calls or
+            // reserves PayMongo. It may use only non-negative Direct GCash;
+            // real PayMongo spending must occur at the provider.
             if ($definition->source_wallet === 'gcash') {
                 if (DB::getDriverName() === 'pgsql') {
                     DB::select("select pg_advisory_xact_lock(hashtext('solarnet-direct-gcash-ledger'))");
                 }
-                $directGcash = $this->directGcashLedgerBalance();
-                $position = app(PaymongoAccountPositionService::class)->snapshot();
-                $paymongoAvailable = $position['status'] === 'available'
-                    ? (float) ($position['available'] ?? 0)
-                    : 0.0;
-                $available = round(max(0, $directGcash + $paymongoAvailable), 2);
+                $available = round(max(0, $this->directGcashLedgerBalance()), 2);
                 if (round((float) $data['amount'], 2) > $available) {
                     throw ValidationException::withMessages([
                         'amount' => sprintf(
-                            'GCash + PayMongo has only ₱%s virtually available. Use the official PayMongo dashboard for any real provider transfer.',
+                            'Direct GCash has only ₱%s available. Use the official PayMongo dashboard to spend PayMongo funds.',
                             number_format($available, 2),
                         ),
                     ]);
