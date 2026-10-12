@@ -16,13 +16,17 @@ return new class extends Migration {
             Schema::table('staff_payroll_disbursements', fn (Blueprint $table) => $table->timestamp('released_at')->nullable()->after('prepared_at'));
         }
         DB::table('staff_payroll_disbursements')->where('status', 'processed')->update(['status'=>'scheduled']);
-        DB::statement("ALTER TABLE staff_payroll_disbursements ALTER COLUMN status SET DEFAULT 'scheduled'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE staff_payroll_disbursements ALTER COLUMN status SET DEFAULT 'scheduled'");
+        }
     }
 
     public function down(): void
     {
         if (! Schema::hasTable('staff_payroll_disbursements')) return;
-        DB::statement("ALTER TABLE staff_payroll_disbursements ALTER COLUMN status SET DEFAULT 'processed'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE staff_payroll_disbursements ALTER COLUMN status SET DEFAULT 'processed'");
+        }
         DB::table('staff_payroll_disbursements')->where('status', 'scheduled')->update(['status'=>'processed']);
         if (Schema::hasColumn('staff_payroll_disbursements', 'released_at')) {
             Schema::table('staff_payroll_disbursements', fn (Blueprint $table) => $table->dropColumn('released_at'));

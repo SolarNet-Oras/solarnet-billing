@@ -29,6 +29,13 @@ return new class extends Migration
             $table->foreign('router_id')->references('id')->on('routers')->nullOnDelete();
         });
 
+        // SQLite has no schemas. The application-owned approval table above is
+        // still useful in tests; the external FreeRADIUS PostgreSQL tables are
+        // intentionally omitted from an in-memory SQLite database.
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // FreeRADIUS receives only its standard SQL tables in a dedicated
         // PostgreSQL schema. The application tables remain in `public`.
         DB::statement('CREATE SCHEMA IF NOT EXISTS radius');
@@ -124,8 +131,10 @@ return new class extends Migration
 
     public function down(): void
     {
-        foreach (['radpostauth', 'radacct', 'radusergroup', 'radgroupreply', 'radgroupcheck', 'radreply', 'radcheck', 'nas'] as $tableName) {
-            Schema::dropIfExists("radius.{$tableName}");
+        if (DB::getDriverName() !== 'sqlite') {
+            foreach (['radpostauth', 'radacct', 'radusergroup', 'radgroupreply', 'radgroupcheck', 'radreply', 'radcheck', 'nas'] as $tableName) {
+                Schema::dropIfExists("radius.{$tableName}");
+            }
         }
         Schema::dropIfExists('radius_nas_clients');
         // Do not drop the schema: an administrator may later place approved

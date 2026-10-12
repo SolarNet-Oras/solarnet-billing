@@ -8,7 +8,13 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        DB::statement('ALTER TABLE tickets ALTER COLUMN customer_id DROP NOT NULL');
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('tickets', function (Blueprint $table): void {
+                $table->uuid('customer_id')->nullable()->change();
+            });
+        } else {
+            DB::statement('ALTER TABLE tickets ALTER COLUMN customer_id DROP NOT NULL');
+        }
         Schema::table('tickets', function (Blueprint $table): void {
             $table->uuid('router_id')->nullable()->after('customer_id');
             $table->uuid('sms_advisory_campaign_id')->nullable()->after('router_id');
@@ -31,6 +37,12 @@ return new class extends Migration {
             $table->dropIndex(['ticket_type', 'router_id']);
             $table->dropColumn(['router_id', 'sms_advisory_campaign_id', 'scheduled_start_at', 'scheduled_end_at']);
         });
-        DB::statement('ALTER TABLE tickets ALTER COLUMN customer_id SET NOT NULL');
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('tickets', function (Blueprint $table): void {
+                $table->uuid('customer_id')->nullable(false)->change();
+            });
+        } else {
+            DB::statement('ALTER TABLE tickets ALTER COLUMN customer_id SET NOT NULL');
+        }
     }
 };
