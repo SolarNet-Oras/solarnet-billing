@@ -710,7 +710,7 @@ class CustomerPortalController extends Controller
         $paymentIntentId = data_get($resource, 'attributes.payment_intent_id')
             ?? data_get($resource, 'attributes.payment_intent.data.id')
             ?? data_get($resource, 'attributes.payment_intent.id');
-        if (in_array($eventType, ['transfer.outward.successful', 'transfer.outward.failed'], true)) {
+        if (str_starts_with($eventType, 'transfer.outward.')) {
             $transfers->receive((array) $resource, $eventId, $eventType);
             return response()->json(['status' => 'ok']);
         }

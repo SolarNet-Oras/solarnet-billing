@@ -18,8 +18,12 @@ class PaymongoOutwardTransferService
         if ($providerId === '' || !str_starts_with($providerId, 'tr_')) return;
 
         DB::transaction(function () use ($attributes, $providerId, $eventId, $eventType): void {
-            $account = (string) data_get($attributes, 'receiver.bank_account_number', '');
-            $status = str_contains($eventType, 'successful') ? 'succeeded' : (str_contains($eventType, 'failed') ? 'failed' : strtolower((string) data_get($attributes, 'status', 'pending')));
+            $account = (string) (data_get($attributes, 'receiver.bank_account_number')
+                ?: data_get($attributes, 'destination_account.account_number')
+                ?: '');
+            $status = (str_contains($eventType, 'successful') || str_contains($eventType, 'succeeded'))
+                ? 'succeeded'
+                : (str_contains($eventType, 'failed') ? 'failed' : strtolower((string) data_get($attributes, 'status', 'pending')));
             $transfer = PaymongoOutwardTransfer::query()->lockForUpdate()->firstOrNew(['provider_transfer_id' => $providerId]);
             $transfer->fill([
                 'webhook_event_id' => $eventId ?: $transfer->webhook_event_id,
@@ -45,6 +49,12 @@ class PaymongoOutwardTransferService
                 'type' => 'expense', 'description' => 'PayMongo Send Funds', 'category' => 'PayMongo outward transfer',
                 'amount' => $totalDebit, 'entry_date' => optional($transfer->provider_updated_at)->toDateString() ?: now()->toDateString(),
                 'payment_method' => 'paymongo', 'effect_type' => 'expense', 'source_wallet' => 'paymongo',
+                'external_recipient_name' => $transfer->recipient_name,
+                'external_recipient_institution' => $transfer->recipient_institution,
+                'external_recipient_account_last4' => $transfer->recipient_account_last4,
+                'provider_transaction_id' => $transfer->provider_transfer_id,
+                'provider_reference_number' => $transfer->provider_reference_number,
+                'provider_fee' => $transfer->fee,
                 'reference' => $transfer->reference_number ?: $providerId,
                 'notes' => trim(implode(' | ', array_filter([
                     'Provider-confirmed outward transfer', $transfer->rail, $transfer->recipient_name,
