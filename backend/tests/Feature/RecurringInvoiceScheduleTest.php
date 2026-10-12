@@ -102,12 +102,13 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->assertDatabaseMissing('invoices', ['customer_id' => $dueNineteenth->id]);
     }
 
-    public function test_exact_midnight_uses_the_new_manila_date(): void
+    public function test_scheduled_run_after_midnight_uses_the_new_manila_date(): void
     {
         $dueEighteenth = $this->customer('Previous Date', '1000000017', '2026-01-01', 18);
-        $dueNineteenth = $this->customer('Exact Midnight', '1000000018', '2026-01-01', 19);
+        $dueNineteenth = $this->customer('After Midnight', '1000000018', '2026-01-01', 19);
 
-        Carbon::setTestNow(Carbon::create(2026, 10, 12, 0, 0, 0, 'Asia/Manila'));
+        // Production runs this command at 00:05 Asia/Manila.
+        Carbon::setTestNow(Carbon::create(2026, 10, 12, 0, 5, 0, 'Asia/Manila'));
         $this->artisan('automation:generate-recurring-invoices')->assertSuccessful();
         $invoice = Invoice::where('customer_id', $dueNineteenth->id)->sole();
         $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
