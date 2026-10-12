@@ -15,11 +15,12 @@ Artisan::command('inspire', function () {
 // ------------------------------------------------------------------
 $tz = env('APP_TIMEZONE', 'Asia/Manila');
 
-// 00:05 — create the current month's invoice on every client's billing anniversary.
+// 00:05 — create only invoices due exactly seven Manila calendar days later.
+// Missed dates are never caught up by this recurring schedule.
 Schedule::command('automation:generate-recurring-invoices')
     ->dailyAt('00:05')
     ->timezone($tz)
-    ->withoutOverlapping()
+    ->withoutOverlapping(30)
     ->runInBackground();
 
 // 02:00 — flip past-due invoices to overdue

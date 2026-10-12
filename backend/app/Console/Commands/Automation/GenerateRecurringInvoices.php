@@ -11,10 +11,7 @@ use App\Services\InvoiceService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 
-/**
- * Creates one sent invoice each month on the customer's configured billing
- * anniversary. Older records still fall back to installation-day.
- */
+/** Generate only the cycle due exactly seven Manila calendar days later. */
 class GenerateRecurringInvoices extends Command
 {
     protected $signature = 'automation:generate-recurring-invoices
@@ -23,7 +20,7 @@ class GenerateRecurringInvoices extends Command
                             {--triggered-by=schedule}
                             {--user-id=}';
 
-    protected $description = 'Generate monthly invoices on each customer billing-cycle anniversary';
+    protected $description = 'Generate invoices exactly seven Manila calendar days before their due date';
 
     public function handle(InvoiceService $invoices): int
     {
@@ -51,23 +48,17 @@ class GenerateRecurringInvoices extends Command
         $billingDate = $dateOption
             ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()
             : now($timezone)->startOfDay();
-        $leadDays = max(0, min(90, (int) Setting::get('billing.invoice_generation_days_before_due', 7)));
-        // Revisit recent cycle dates on every run. The recurring-cycle check
-        // makes this idempotent while repairing invoices missed during cron
-        // downtime, deployments, or stale scheduler locks.
-        $catchUpDays = max(
-            $leadDays,
-            min(90, (int) Setting::get('billing.invoice_generation_catch_up_days', 35)),
-        );
+        // This is deliberately fixed at seven days. Recovery of a missed run
+        // belongs to a separately confirmed command, never this scheduler.
+        $leadDays = 7;
         $dryRun = (bool) $this->option('dry-run');
+        if ($dateOption && app()->environment('production') && ! $dryRun && ! $billingDate->isSameDay(now($timezone))) {
+            throw new \LogicException('Production recurring billing may run only for today in Asia/Manila. Use the guarded recovery command for an approved missed date.');
+        }
+        $cycleDate = $billingDate->copy()->addDays($leadDays);
 
-        // Suspension restricts network access; it does not terminate the
-        // subscription. Suspended subscribers must continue receiving their
-        // monthly invoices so their account can be settled and restored.
         $customers = Customer::query()
-            ->whereIn('status', ['active', 'suspended'])
-            ->whereNotNull('installation_date')
-            ->whereDate('installation_date', '<=', $billingDate)
+            ->where('status', 'active')
             ->with('servicePlan')
             ->get();
         /*
@@ -80,9 +71,6 @@ class GenerateRecurringInvoices extends Command
             ) === $cycleDate->day);
         */
 
-        $cycleDates = collect(range(-$catchUpDays, $leadDays))
-            ->map(fn (int $offset) => $billingDate->copy()->addDays($offset));
-
         $generated = [];
         $skipped = 0;
         $covered = 0;
@@ -93,10 +81,22 @@ class GenerateRecurringInvoices extends Command
             'company_owned_plan' => 0,
             'not_billable' => 0,
             'before_first_full_service_cycle' => 0,
+            'invalid_billing_schedule' => 0,
         ];
         $ineligible = [];
-        foreach ($cycleDates as $cycleDate) {
-          foreach ($customers as $customer) {
+        foreach ($customers as $customer) {
+            if (! $customer->installation_date || ! $customer->billingCycleDay()) {
+                $skipped++;
+                $skipReasons['invalid_billing_schedule']++;
+                $ineligible[] = [
+                    'customer' => $customer->full_name,
+                    'customer_id' => $customer->id,
+                    'account_number' => $customer->account_number,
+                    'reason' => 'invalid_billing_schedule',
+                ];
+                continue;
+            }
+            if ($customer->installation_date->copy()->startOfDay()->gt($billingDate)) continue;
             if ($customer->installation_date->copy()->startOfDay()->gt($cycleDate)) continue;
             if (min($customer->billingCycleDay(), $cycleDate->daysInMonth) !== $cycleDate->day) continue;
             $candidates++;
@@ -113,13 +113,21 @@ class GenerateRecurringInvoices extends Command
                 $ineligible[] = $this->skipDetail($customer, $cycleDate, 'company_owned_plan');
                 continue;
             }
-            // The recurring-cycle key is authoritative. Do not use a generic
-            // due date here: an early/manual invoice may legitimately share it.
+            // A manual invoice for this exact service period also owns the
+            // cycle and must prevent a second automatic charge.
             if (Invoice::where('customer_id', $customer->id)
-                ->whereDate('recurring_cycle_date', $cycleDate)
+                ->where(function ($query) use ($cycleDate, $periodStart): void {
+                    $query->whereDate('recurring_cycle_date', $cycleDate)
+                        ->orWhere(function ($query) use ($cycleDate, $periodStart): void {
+                            $query->whereDate('due_date', $cycleDate)
+                                ->whereDate('billing_period_start', $periodStart)
+                                ->whereDate('billing_period_end', $cycleDate);
+                        });
+                })
                 ->exists()) {
                 $skipped++;
                 $skipReasons['existing_recurring_invoice']++;
+                $ineligible[] = $this->skipDetail($customer, $cycleDate, 'existing_cycle_invoice');
                 continue;
             }
 
@@ -142,20 +150,28 @@ class GenerateRecurringInvoices extends Command
                         $cycleDate,
                         $cycleDate,
                         'recurring',
+                        $billingDate,
                     );
                     $invoices->markAsSent($invoice);
                 }
-                $generated[] = ['customer' => $customer->full_name, 'account_number' => $customer->account_number, 'due_date' => $cycleDate->toDateString()];
+                $generated[] = [
+                    'customer' => $customer->full_name,
+                    'customer_id' => $customer->id,
+                    'account_number' => $customer->account_number,
+                    'scheduled_generation_date' => $billingDate->toDateString(),
+                    'billing_cycle' => $periodStart->toDateString().' to '.$cycleDate->toDateString(),
+                    'due_date' => $cycleDate->toDateString(),
+                    'action' => $dryRun ? 'would_create' : 'created',
+                ];
             } catch (\Throwable $e) {
                 $errors[] = ['customer_id' => $customer->id, 'due_date' => $cycleDate->toDateString(), 'error' => $e->getMessage()];
             }
-          }
         }
 
         return [
             'run_date' => $billingDate->toDateString(),
-            'billing_cycle_window' => [$billingDate->copy()->subDays($catchUpDays)->toDateString(), $billingDate->copy()->addDays($leadDays)->toDateString()],
-            'catch_up_days' => $catchUpDays,
+            'scheduled_generation_date' => $billingDate->toDateString(),
+            'eligible_due_date' => $cycleDate->toDateString(),
             'lead_days' => $leadDays,
             'dry_run' => $dryRun,
             'candidates' => $candidates,

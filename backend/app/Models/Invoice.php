@@ -23,6 +23,7 @@ class Invoice extends Model
         'billing_period_end',
         'recurring_cycle_date',
         'generation_source',
+        'scheduled_generation_date',
         'subtotal',
         'tax',
         'discount',
@@ -46,6 +47,7 @@ class Invoice extends Model
         'billing_period_start' => 'date',
         'billing_period_end' => 'date',
         'recurring_cycle_date' => 'date',
+        'scheduled_generation_date' => 'date',
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'discount' => 'decimal:2',
@@ -128,7 +130,7 @@ class Invoice extends Model
      */
     public function allowsAutomaticBillingNotifications(): bool
     {
-        return $this->generation_source === 'recurring';
+        return in_array($this->generation_source, ['recurring', 'AUTOMATION_RECOVERY'], true);
     }
 
     public function scopeOverdue($query)

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\AutomationLog;
+use App\Models\Setting;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -55,7 +57,7 @@ class AutomationController extends Controller
 
         $labels = [
             AutomationLog::JOB_UPDATE_OVERDUE    => 'Update overdue invoice statuses',
-            AutomationLog::JOB_RECURRING_INVOICES => 'Generate monthly invoices on billing date',
+            AutomationLog::JOB_RECURRING_INVOICES => 'Generate invoices exactly 7 days before due date',
             AutomationLog::JOB_DB_BACKUP         => 'PostgreSQL backup (gzipped)',
             AutomationLog::JOB_INVOICE_REMINDERS => 'Send payment reminders',
             AutomationLog::JOB_AUTO_SUSPEND      => 'Auto-suspend overdue customers',
@@ -64,11 +66,26 @@ class AutomationController extends Controller
         $data = [];
         foreach (self::RUNNABLE as $key => $cmd) {
             $last = AutomationLog::where('job', $key)->orderByDesc('created_at')->first();
+            $lastSuccess = AutomationLog::where('job', $key)
+                ->where('status', AutomationLog::STATUS_SUCCESS)
+                ->orderByDesc('created_at')->first();
+            $lastFailure = AutomationLog::where('job', $key)
+                ->whereIn('status', [AutomationLog::STATUS_ERROR, AutomationLog::STATUS_PARTIAL])
+                ->orderByDesc('created_at')->first();
+            $nextRun = $key === AutomationLog::JOB_RECURRING_INVOICES
+                ? $this->nextDailyRun('00:05')
+                : null;
             $data[] = [
                 'job'      => $key,
                 'label'    => $labels[$key],
                 'command'  => $cmd,
                 'schedule' => $schedule[$key],
+                'enabled' => (bool) Setting::get('automation.enabled', true)
+                    && ($key !== AutomationLog::JOB_RECURRING_INVOICES
+                        || (bool) Setting::get('automation.recurring_billing_enabled', true)),
+                'next_scheduled_execution' => $nextRun?->toIso8601String(),
+                'last_successful_execution' => $lastSuccess?->finished_at?->toIso8601String(),
+                'last_failed_execution' => $lastFailure?->finished_at?->toIso8601String(),
                 'last_run' => $last ? [
                     'id'          => $last->id,
                     'status'      => $last->status,
@@ -82,6 +99,14 @@ class AutomationController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    private function nextDailyRun(string $time): Carbon
+    {
+        $timezone = 'Asia/Manila';
+        $now = now($timezone);
+        $next = Carbon::parse($now->toDateString().' '.$time, $timezone);
+        return $next->lte($now) ? $next->addDay() : $next;
     }
 
     /**

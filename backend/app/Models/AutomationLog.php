@@ -14,6 +14,7 @@ class AutomationLog extends Model
     public const JOB_DB_BACKUP         = 'db_backup';
     public const JOB_UPDATE_OVERDUE    = 'update_overdue';
     public const JOB_RECURRING_INVOICES = 'recurring_invoices';
+    public const JOB_OCTOBER_2026_INVOICE_RECOVERY = 'october_2026_invoice_recovery';
 
     public const STATUS_SUCCESS = 'success';
     public const STATUS_PARTIAL = 'partial';

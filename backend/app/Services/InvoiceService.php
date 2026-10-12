@@ -82,12 +82,13 @@ class InvoiceService
         ?Carbon $dueDate = null,
         ?Carbon $recurringCycleDate = null,
         string $generationSource = 'manual',
+        ?Carbon $scheduledGenerationDate = null,
     ): Invoice {
         if ($customer->hasCompanyOwnedPlan()) {
             throw new \LogicException('Company Owned plans are excluded from invoices and recurring billing.');
         }
         try {
-            return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate, $generationSource) {
+            return DB::transaction(function () use ($customer, $billingPeriodStart, $billingPeriodEnd, $additionalItems, $issueDate, $dueDate, $recurringCycleDate, $generationSource, $scheduledGenerationDate) {
             if ($recurringCycleDate) {
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
@@ -113,6 +114,7 @@ class InvoiceService
                 'billing_period_end' => $billingPeriodEnd,
                 'recurring_cycle_date' => $recurringCycleDate,
                 'generation_source' => $generationSource,
+                'scheduled_generation_date' => $scheduledGenerationDate,
                 'status' => 'draft',
             ]);
 
@@ -194,7 +196,7 @@ class InvoiceService
             ->copy()
             ->setTimezone(config('app.timezone', 'Asia/Manila'))
             ->startOfDay();
-        $leadDays = (int) Setting::get('billing.invoice_generation_days_before_due', 7);
+        $leadDays = 7;
         $billingDate = $runDate->copy()->addDays($leadDays);
 
         $customers = Customer::where('status', 'active')
@@ -235,8 +237,16 @@ class InvoiceService
 
                 // The recurring-cycle date is an idempotency key. A one-off
                 // invoice must not prevent the normal monthly cycle.
+                $periodStart = $billingDate->copy()->subMonthNoOverflow()->startOfDay();
                 $existingInvoice = Invoice::where('customer_id', $customer->id)
-                    ->whereDate('recurring_cycle_date', $billingDate)
+                    ->where(function ($query) use ($billingDate, $periodStart): void {
+                        $query->whereDate('recurring_cycle_date', $billingDate)
+                            ->orWhere(function ($query) use ($billingDate, $periodStart): void {
+                                $query->whereDate('due_date', $billingDate)
+                                    ->whereDate('billing_period_start', $periodStart)
+                                    ->whereDate('billing_period_end', $billingDate);
+                            });
+                    })
                     ->first();
 
                 if ($existingInvoice) {
@@ -246,13 +256,14 @@ class InvoiceService
 
                 $invoice = $this->generateInvoice(
                     $customer,
-                    $billingDate->copy()->subMonthNoOverflow(),
+                    $periodStart,
                     $billingDate,
                     [],
                     $runDate,
                     $billingDate,
                     $billingDate,
                     'recurring',
+                    $runDate,
                 );
                 $this->markAsSent($invoice);
                 $results['generated']++;
@@ -309,7 +320,9 @@ class InvoiceService
         }
 
         $invoice->update([
-            'status' => 'sent',
+            // Credit/payment allocation reconciliation may already have made
+            // this paid, partial, or overdue. Delivery must not erase that.
+            'status' => $invoice->status === 'draft' ? 'sent' : $invoice->status,
             'sent_at' => now(),
         ]);
 
