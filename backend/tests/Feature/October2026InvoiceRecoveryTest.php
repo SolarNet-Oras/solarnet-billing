@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\AutomationLog;
 use App\Models\Customer;
 use App\Models\Invoice;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class October2026InvoiceRecoveryTest extends TestCase

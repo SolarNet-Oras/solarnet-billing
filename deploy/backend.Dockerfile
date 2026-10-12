@@ -4,11 +4,11 @@ FROM php:8.4-fpm-alpine
 RUN apk add --no-cache \
     git curl bash zip unzip \
     libpng-dev libzip-dev libxml2-dev \
-    postgresql-dev postgresql-client oniguruma-dev icu-dev net-snmp-dev \
+    postgresql-dev postgresql-client sqlite-dev oniguruma-dev icu-dev net-snmp-dev \
     linux-headers \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS pcre-dev \
  && docker-php-ext-install \
-      pdo pdo_pgsql pgsql \
+      pdo pdo_pgsql pgsql pdo_sqlite \
       mbstring zip exif pcntl bcmath gd intl soap opcache sockets snmp \
  && pecl install redis \
  && docker-php-ext-enable redis \

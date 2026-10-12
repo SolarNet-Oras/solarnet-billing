@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\AutomationLog;
 use App\Models\Customer;
 use App\Models\Invoice;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class RecurringInvoiceScheduleTest extends TestCase
@@ -74,7 +74,7 @@ class RecurringInvoiceScheduleTest extends TestCase
     public function test_inactive_and_non_billable_customers_are_skipped(): void
     {
         $inactive = $this->customer('Inactive', '1000000012', '2026-01-01', 19);
-        $inactive->update(['status' => 'inactive']);
+        $inactive->update(['status' => 'pending']);
         $free = $this->customer('No Amount', '1000000013', '2026-01-01', 19, 0);
 
         $this->runScheduler('2026-10-12');
