@@ -43,7 +43,10 @@ class GenerateRecurringInvoices extends Command
             return ['skipped' => true, 'reason' => 'Recurring billing automation is disabled'];
         }
 
-        $timezone = config('app.timezone', 'Asia/Manila');
+        // Billing cycles are Philippine business dates. Do not inherit the
+        // application's storage timezone (production may intentionally use
+        // UTC for timestamps), or a 00:05 Manila run becomes the prior date.
+        $timezone = 'Asia/Manila';
         $dateOption = $this->option('date');
         $billingDate = $dateOption
             ? Carbon::createFromFormat('Y-m-d', $dateOption, $timezone)->startOfDay()

@@ -19,7 +19,7 @@ $tz = env('APP_TIMEZONE', 'Asia/Manila');
 // Missed dates are never caught up by this recurring schedule.
 Schedule::command('automation:generate-recurring-invoices')
     ->dailyAt('00:05')
-    ->timezone($tz)
+    ->timezone('Asia/Manila')
     ->withoutOverlapping(30)
     ->runInBackground();
 
