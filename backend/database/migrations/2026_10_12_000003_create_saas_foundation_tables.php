@@ -54,7 +54,7 @@ return new class extends Migration {
 
         Schema::create('tenant_subscriptions', function (Blueprint $table): void {
             $table->uuid('id')->primary();
-            $table->foreignUuid('tenant_id')->constrained()->cascadeOnDelete()->unique();
+            $table->foreignUuid('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('plan_id')->nullable()->constrained('saas_subscription_plans')->nullOnDelete();
             $table->string('status')->default('trialing')->index();
             $table->timestampTz('trial_starts_at')->nullable();
@@ -68,6 +68,7 @@ return new class extends Migration {
             $table->string('payment_reference')->nullable();
             $table->json('metadata')->nullable();
             $table->timestamps();
+            $table->unique('tenant_id');
         });
 
         Schema::create('tenant_subscription_payments', function (Blueprint $table): void {
