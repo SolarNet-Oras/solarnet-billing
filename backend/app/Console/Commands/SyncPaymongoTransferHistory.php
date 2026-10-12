@@ -14,6 +14,7 @@ class SyncPaymongoTransferHistory extends Command
     protected $signature = 'paymongo:sync-transfer-history
                             {--from= : First provider transaction date, YYYY-MM-DD}
                             {--to= : Last provider transaction date, YYYY-MM-DD}
+                            {--exclude=* : Provider transfer ID already recorded manually; may be repeated}
                             {--execute : Persist history and create missing Daily Operations expenses}
                             {--confirm= : Exact execution confirmation phrase}';
 
@@ -29,6 +30,10 @@ class SyncPaymongoTransferHistory extends Command
         }
 
         $execute = (bool) $this->option('execute');
+        $excludedIds = collect((array) $this->option('exclude'))
+            ->filter(fn ($id) => is_string($id) && $id !== '')
+            ->unique()
+            ->values();
         if ($execute && ! hash_equals(self::CONFIRMATION, (string) $this->option('confirm'))) {
             $this->error('Execution stopped. Use --confirm="'.self::CONFIRMATION.'".');
             return self::FAILURE;
@@ -48,11 +53,14 @@ class SyncPaymongoTransferHistory extends Command
             $status = $history->status($resource);
             $existing = PaymongoOutwardTransfer::where('provider_transfer_id', $id)->first();
             $successful = in_array($status, ['successful', 'succeeded', 'success', 'completed'], true);
-            $action = $existing?->financial_entry_id
-                ? 'already_recorded'
-                : ($successful ? ($execute ? 'imported' : 'would_import') : 'skipped_not_successful');
+            $excluded = $excludedIds->contains($id);
+            $action = $excluded
+                ? 'excluded_manually_recorded'
+                : ($existing?->financial_entry_id
+                    ? 'already_recorded'
+                    : ($successful ? ($execute ? 'imported' : 'would_import') : 'skipped_not_successful'));
 
-            if ($execute && ! $existing?->financial_entry_id) {
+            if ($execute && ! $excluded && ! $existing?->financial_entry_id) {
                 $eventType = $successful ? 'transfer.outward.succeeded' : 'transfer.outward.'.$status;
                 $transfers->receive($resource, 'history_'.$id, $eventType);
                 if (PaymongoOutwardTransfer::where('provider_transfer_id', $id)->whereNotNull('financial_entry_id')->exists()) $imported++;
@@ -80,6 +88,7 @@ class SyncPaymongoTransferHistory extends Command
             'provider_outgoing_transactions' => count($resources),
             'successful_missing' => collect($details)->where('action', $execute ? 'imported' : 'would_import')->count(),
             'already_recorded' => collect($details)->where('action', 'already_recorded')->count(),
+            'excluded_manually_recorded' => collect($details)->where('action', 'excluded_manually_recorded')->count(),
             'imported_daily_operations' => $imported,
             'details' => $details,
         ];

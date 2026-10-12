@@ -77,6 +77,30 @@ class PaymongoOutwardTransferLedgerTest extends TestCase
         $this->assertDatabaseCount('financial_entries', 1);
     }
 
+    public function test_history_sync_can_exclude_a_manually_recorded_provider_transfer(): void
+    {
+        config()->set('services.paymongo.secret_key', 'sk_test_history');
+        config()->set('services.paymongo.base_url', 'https://api.paymongo.test/v1');
+        $resource = $this->resource('succeeded');
+        $resource['attributes']['type'] = 'send_money';
+        $resource['attributes']['updated_at'] = Carbon::create(2026, 10, 12, 10, 0, 0, 'Asia/Manila')->timestamp;
+        Http::fake([
+            'https://api.paymongo.test/v2/wallets*' => Http::response(['data' => [['id' => 'wallet_test', 'is_default' => true]]]),
+            'https://api.paymongo.test/v1/wallets/wallet_test/transactions*' => Http::response(['data' => [$resource]]),
+        ]);
+
+        $this->artisan('paymongo:sync-transfer-history', [
+            '--from' => '2026-10-01',
+            '--to' => '2026-10-12',
+            '--exclude' => ['tr_test_123'],
+            '--execute' => true,
+            '--confirm' => 'IMPORT PAYMONGO TRANSFER HISTORY',
+        ])->assertSuccessful();
+
+        $this->assertDatabaseCount('paymongo_outward_transfers', 0);
+        $this->assertDatabaseCount('financial_entries', 0);
+    }
+
     private function resource(string $status): array
     {
         return [
