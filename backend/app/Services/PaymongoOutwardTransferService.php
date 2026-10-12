@@ -15,7 +15,7 @@ class PaymongoOutwardTransferService
     {
         $attributes = data_get($resource, 'attributes', $resource);
         $providerId = (string) (data_get($resource, 'id') ?: data_get($attributes, 'transfer_id'));
-        if ($providerId === '' || !str_starts_with($providerId, 'tr_')) return;
+        if ($providerId === '') return;
 
         DB::transaction(function () use ($attributes, $providerId, $eventId, $eventType): void {
             $account = (string) (data_get($attributes, 'receiver.bank_account_number')
