@@ -61,10 +61,15 @@ class SyncPaymongoTransferHistory extends Command
             $details[] = [
                 'provider_transfer_id' => $id,
                 'status' => $status,
+                'provider_created_at' => $this->providerTimestamp(data_get($resource, 'attributes.created_at')),
+                'provider_updated_at' => $this->providerTimestamp(data_get($resource, 'attributes.updated_at')),
                 'amount' => ((int) data_get($resource, 'attributes.amount', 0)) / 100,
                 'fee' => ((int) data_get($resource, 'attributes.fee', 0)) / 100,
+                'reference_number' => data_get($resource, 'attributes.reference_number'),
+                'provider_reference_number' => data_get($resource, 'attributes.provider_reference_number'),
                 'recipient' => data_get($resource, 'attributes.receiver.bank_account_name') ?: data_get($resource, 'attributes.destination_account.name'),
                 'institution' => data_get($resource, 'attributes.receiver.bank_name') ?: data_get($resource, 'attributes.destination_account.bank_name'),
+                'recipient_account_last4' => $this->accountLast4($resource),
                 'action' => $action,
             ];
         }
@@ -80,5 +85,22 @@ class SyncPaymongoTransferHistory extends Command
         ];
         $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         return self::SUCCESS;
+    }
+
+    private function providerTimestamp(mixed $value): ?string
+    {
+        if (! $value) return null;
+        $date = is_numeric($value)
+            ? \Illuminate\Support\Carbon::createFromTimestamp((int) $value)
+            : \Illuminate\Support\Carbon::parse($value);
+        return $date->timezone('Asia/Manila')->toIso8601String();
+    }
+
+    private function accountLast4(array $resource): ?string
+    {
+        $account = (string) (data_get($resource, 'attributes.receiver.bank_account_number')
+            ?: data_get($resource, 'attributes.destination_account.account_number')
+            ?: '');
+        return $account === '' ? null : substr($account, -4);
     }
 }
