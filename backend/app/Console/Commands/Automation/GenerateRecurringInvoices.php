@@ -8,8 +8,8 @@ use App\Models\Invoice;
 use App\Models\Setting;
 use App\Services\Automation\AutomationRunner;
 use App\Services\InvoiceService;
-use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 
 /** Generate only the cycle due exactly seven Manila calendar days later. */
 class GenerateRecurringInvoices extends Command
