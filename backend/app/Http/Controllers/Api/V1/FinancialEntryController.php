@@ -11,6 +11,7 @@ use App\Models\StaffCashAdvance;
 use App\Models\User;
 use App\Models\InstallationIncentivePool;
 use App\Services\CashDenominationService;
+use App\Services\PaymongoAccountPositionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,9 @@ class FinancialEntryController extends Controller
             'transfers' => $entries->where('effect_type', 'transfer')->values(),
             'expenses' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'expense')->values(),
             'wallets' => $wallets,
+            // Provider-reported money is kept separate from the accounting
+            // ledger. In particular, pending settlement is not cash-outable.
+            'paymongo_account_position' => app(PaymongoAccountPositionService::class)->snapshot(),
             'cash_count' => $cashCount,
             'cash_denomination_position' => app(CashDenominationService::class)->livePosition(),
             'installation_incentives' => $installationIncentives,
