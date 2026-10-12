@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 class FinancialEntryController extends Controller
 {
@@ -275,6 +276,25 @@ class FinancialEntryController extends Controller
         $entry = DB::transaction(function () use ($data, $definition, $request, $cashAdvanceEmployee) {
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
+
+            // A manually recorded GCash expense/transfer affects only the
+            // Direct GCash ledger. It must never consume PayMongo funds or
+            // call the provider, and it cannot overdraw the internal wallet.
+            if ($definition->source_wallet === 'gcash') {
+                if (DB::getDriverName() === 'pgsql') {
+                    DB::select("select pg_advisory_xact_lock(hashtext('solarnet-direct-gcash-ledger'))");
+                }
+                $available = $this->directGcashBalance();
+                if (round((float) $data['amount'], 2) > $available) {
+                    throw ValidationException::withMessages([
+                        'amount' => sprintf(
+                            'Direct GCash has only ₱%s available. PayMongo funds are separate and cannot be used by a Daily Operations entry.',
+                            number_format($available, 2),
+                        ),
+                    ]);
+                }
+            }
+
             $entry = FinancialEntry::create([
                 ...$data,
                 'type' => $definition->effect_type === 'expense' ? 'expense' : 'sale',
@@ -369,5 +389,33 @@ class FinancialEntryController extends Controller
             'paymongo' => 'paymongo',
             default => 'other',
         };
+    }
+
+    /** Current internal Direct GCash ledger; PayMongo is intentionally excluded. */
+    private function directGcashBalance(): float
+    {
+        $collections = Payment::query()
+            ->whereDate('payment_date', '<=', now()->toDateString())
+            ->whereDoesntHave('paymongoCheckout')
+            ->whereIn('payment_method', ['gcash', 'ewallet', 'e_wallet', 'mobile_money', 'maya', 'paymaya'])
+            ->sum('amount');
+
+        $cashIn = 0.0;
+        $transfersIn = 0.0;
+        $transfersOut = 0.0;
+        $expenses = 0.0;
+
+        FinancialEntry::query()->whereDate('entry_date', '<=', now()->toDateString())
+            ->get(['type', 'amount', 'payment_method', 'effect_type', 'source_wallet', 'destination_wallet'])
+            ->each(function (FinancialEntry $entry) use (&$cashIn, &$transfersIn, &$transfersOut, &$expenses): void {
+                $amount = (float) $entry->amount;
+                $effect = $entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in');
+                if ($effect === 'expense' && ($entry->source_wallet ?: $this->walletFor($entry->payment_method)) === 'gcash') $expenses += $amount;
+                if ($effect === 'transfer' && $entry->source_wallet === 'gcash') $transfersOut += $amount;
+                if ($effect === 'transfer' && $entry->destination_wallet === 'gcash') $transfersIn += $amount;
+                if ($effect === 'cash_in' && ($entry->destination_wallet ?: $this->walletFor($entry->payment_method)) === 'gcash') $cashIn += $amount;
+            });
+
+        return round(max(0, (float) $collections + $cashIn + $transfersIn - $transfersOut - $expenses), 2);
     }
 }
