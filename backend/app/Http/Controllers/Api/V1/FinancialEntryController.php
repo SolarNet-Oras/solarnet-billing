@@ -277,18 +277,23 @@ class FinancialEntryController extends Controller
             $existing = FinancialEntry::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) return $existing;
 
-            // A manually recorded GCash expense/transfer affects only the
-            // Direct GCash ledger. It must never consume PayMongo funds or
-            // call the provider, and it cannot overdraw the internal wallet.
+            // Manual GCash entries are bookkeeping only: they never call
+            // PayMongo. For spending control, Direct GCash is merged with the
+            // provider's live cash-out-available amount (pending is excluded).
             if ($definition->source_wallet === 'gcash') {
                 if (DB::getDriverName() === 'pgsql') {
                     DB::select("select pg_advisory_xact_lock(hashtext('solarnet-direct-gcash-ledger'))");
                 }
-                $available = $this->directGcashBalance();
+                $directGcash = $this->directGcashLedgerBalance();
+                $position = app(PaymongoAccountPositionService::class)->snapshot();
+                $paymongoAvailable = $position['status'] === 'available'
+                    ? (float) ($position['available'] ?? 0)
+                    : 0.0;
+                $available = round(max(0, $directGcash + $paymongoAvailable), 2);
                 if (round((float) $data['amount'], 2) > $available) {
                     throw ValidationException::withMessages([
                         'amount' => sprintf(
-                            'Direct GCash has only ₱%s available. PayMongo funds are separate and cannot be used by a Daily Operations entry.',
+                            'GCash + PayMongo has only ₱%s virtually available. Use the official PayMongo dashboard for any real provider transfer.',
                             number_format($available, 2),
                         ),
                     ]);
@@ -391,8 +396,8 @@ class FinancialEntryController extends Controller
         };
     }
 
-    /** Current internal Direct GCash ledger; PayMongo is intentionally excluded. */
-    private function directGcashBalance(): float
+    /** Current internal Direct GCash ledger; may be negative before merging. */
+    private function directGcashLedgerBalance(): float
     {
         $collections = Payment::query()
             ->whereDate('payment_date', '<=', now()->toDateString())
@@ -416,6 +421,6 @@ class FinancialEntryController extends Controller
                 if ($effect === 'cash_in' && ($entry->destination_wallet ?: $this->walletFor($entry->payment_method)) === 'gcash') $cashIn += $amount;
             });
 
-        return round(max(0, (float) $collections + $cashIn + $transfersIn - $transfersOut - $expenses), 2);
+        return round((float) $collections + $cashIn + $transfersIn - $transfersOut - $expenses, 2);
     }
 }

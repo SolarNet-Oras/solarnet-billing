@@ -91,7 +91,8 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   const paymongoUsableBalance = data?.paymongo_account_position?.status === 'available'
     ? (data.paymongo_account_position.available ?? 0)
     : (wallets?.paymongo.balance ?? 0);
-  const totalWalletMovement = (wallets?.cash.balance ?? 0) + Math.max(0, wallets?.gcash.balance ?? 0) + paymongoUsableBalance + (wallets?.bpi.balance ?? 0) + (wallets?.landbank.balance ?? 0);
+  const mergedGcashPaymongoAvailable = Math.max(0, (wallets?.gcash.balance ?? 0) + paymongoUsableBalance);
+  const totalWalletMovement = (wallets?.cash.balance ?? 0) + mergedGcashPaymongoAvailable + (wallets?.bpi.balance ?? 0) + (wallets?.landbank.balance ?? 0);
   const refreshedAt = data?.generated_at ? new Date(data.generated_at).toLocaleString('en-PH') : null;
   const roleNames = [user?.role, ...(user?.roles ?? []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canReviewRemittances = roleNames.some((role) => ['super_admin', 'admin', 'cashier', 'office_admin'].includes(role as string));
@@ -193,7 +194,7 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
                   balance: base.balance + provider.balance,
                 } : base;
                 const livePaymongoAvailable = data?.paymongo_account_position?.status === 'available' ? data.paymongo_account_position.available : null;
-                const usableBalance = key === 'gcash' && livePaymongoAvailable !== null ? availableBaseBalance + livePaymongoAvailable : wallet.balance;
+                const usableBalance = key === 'gcash' && livePaymongoAvailable !== null ? Math.max(0, base.balance + livePaymongoAvailable) : wallet.balance;
                 return <article key={key} className="rounded-xl border border-border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}{key === 'gcash' ? ' available' : ''}</p><p className={`mt-1 text-xl font-bold ${accent}`}>{formatPHP(usableBalance)}</p>{key === 'gcash' && livePaymongoAvailable !== null && <p className="mt-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">Direct GCash + PayMongo available to cash out</p>}<dl className="mt-3 space-y-1 text-xs text-muted-foreground"><div className="flex justify-between gap-3"><dt>Collections</dt><dd>{formatPHP(wallet.collections)}</dd></div><div className="flex justify-between gap-3"><dt>Provider fees</dt><dd>−{formatPHP(wallet.processing_fees)}</dd></div><div className="flex justify-between gap-3"><dt>In / transfer in</dt><dd>{formatPHP(wallet.cash_in + wallet.transfers_in)}</dd></div><div className="flex justify-between gap-3"><dt>Expenses / transfer out</dt><dd>{formatPHP(wallet.expenses + wallet.transfers_out)}</dd></div></dl>{key === 'gcash' && <><div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted p-2 text-[11px]"><div><span className="text-muted-foreground">Direct GCash available</span><p className="font-semibold text-foreground">{formatPHP(availableBaseBalance)}</p></div><div><span className="text-muted-foreground">PayMongo net ledger</span><p className="font-semibold text-foreground">{formatPHP(provider?.balance)}</p></div></div><PaymongoPosition position={data?.paymongo_account_position} /></>}</article>;
               })}
             </div>
