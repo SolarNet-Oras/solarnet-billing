@@ -95,8 +95,12 @@ class RecurringInvoiceScheduleTest extends TestCase
         $dueEighteenth = $this->customer('Before Midnight', '1000000015', '2026-01-01', 18);
         $dueNineteenth = $this->customer('After Midnight', '1000000016', '2026-01-01', 19);
 
-        Carbon::setTestNow(Carbon::create(2026, 10, 11, 23, 59, 59, 'Asia/Manila'));
+        $this->travelTo(Carbon::create(2026, 10, 11, 23, 59, 59, 'Asia/Manila'));
         $this->artisan('automation:generate-recurring-invoices')->assertSuccessful();
+        $this->assertSame(
+            '2026-10-11',
+            AutomationLog::latest('started_at')->firstOrFail()->summary['run_date']
+        );
         $invoice = Invoice::where('customer_id', $dueEighteenth->id)->sole();
         $this->assertSame('2026-10-18', $invoice->due_date->toDateString());
         $this->assertDatabaseMissing('invoices', ['customer_id' => $dueNineteenth->id]);
@@ -108,8 +112,12 @@ class RecurringInvoiceScheduleTest extends TestCase
         $dueNineteenth = $this->customer('After Midnight', '1000000018', '2026-01-01', 19);
 
         // Production runs this command at 00:05 Asia/Manila.
-        Carbon::setTestNow(Carbon::create(2026, 10, 12, 0, 5, 0, 'Asia/Manila'));
+        $this->travelTo(Carbon::create(2026, 10, 12, 0, 5, 0, 'Asia/Manila'));
         $this->artisan('automation:generate-recurring-invoices')->assertSuccessful();
+        $this->assertSame(
+            '2026-10-12',
+            AutomationLog::latest('started_at')->firstOrFail()->summary['run_date']
+        );
         $invoice = Invoice::where('customer_id', $dueNineteenth->id)->sole();
         $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
         $this->assertDatabaseMissing('invoices', ['customer_id' => $dueEighteenth->id]);
