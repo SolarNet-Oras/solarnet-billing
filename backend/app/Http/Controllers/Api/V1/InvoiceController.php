@@ -218,7 +218,7 @@ class InvoiceController extends Controller
             ->whereIn('subject_id', $invoices->pluck('id'))
             ->where('category', 'invoices')
             ->where('response_status', '<', 400)
-            ->whereIn('method', ['PUT', 'PATCH', 'DELETE'])
+            ->whereIn('method', ['POST', 'PUT', 'PATCH', 'DELETE'])
             ->oldest('created_at')
             ->get()
             ->groupBy('subject_id');
@@ -305,6 +305,31 @@ class InvoiceController extends Controller
         // due date, discount, and notes are stored. This sends the one-time
         // PDF email without risking an incomplete attachment.
         $this->invoiceService->markAsSent($invoice->fresh(['customer', 'items', 'payments']));
+
+        // The create route has no invoice identifier in its URL, so attach a
+        // creation-time discount directly to the new invoice for audit display.
+        if ((float) $invoice->discount > 0 && Schema::hasTable('activity_logs')) {
+            $actor = $request->user();
+            ActivityLog::create([
+                'actor_id' => $actor?->getKey(),
+                'actor_name' => $actor?->name ?? $actor?->email ?? 'Authenticated user',
+                'actor_type' => $actor ? class_basename($actor) : 'User',
+                'category' => 'invoices',
+                'action' => 'InvoiceController / storeDiscount',
+                'method' => 'POST',
+                'path' => '/api/v1/invoices',
+                'subject_type' => 'Invoice',
+                'subject_id' => (string) $invoice->id,
+                'response_status' => 201,
+                'changes' => [
+                    'invoice_number' => $invoice->invoice_number,
+                    'discount' => (float) $invoice->discount,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => mb_substr((string) $request->userAgent(), 0, 500),
+                'duration_ms' => 0,
+            ]);
+        }
 
         return response()->json([
             'message' => 'Invoice generated successfully',

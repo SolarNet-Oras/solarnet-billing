@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
 use App\Models\DhcpLease;
 use App\Models\ServicePlan;
+use App\Models\ActivityLog;
 use App\Services\CustomerAccountService;
 use App\Services\CustomerAccountReconciliationService;
 use App\Services\BillingSuspensionService;
@@ -20,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -974,7 +976,7 @@ class CustomerController extends Controller
             }
         }
 
-        $summary = DB::transaction(function () use ($customerIds, $validated, $action) {
+        $summary = DB::transaction(function () use ($customerIds, $validated, $action, $request) {
             $customers = Customer::query()
                 ->whereIn('id', $customerIds)
                 ->with('servicePlan')
@@ -1125,6 +1127,31 @@ class CustomerController extends Controller
                     $invoice->refresh();
                     if ((float) $invoice->balance <= 0) {
                         $invoice->update(['status' => 'paid', 'paid_at' => $invoice->paid_at ?? now()]);
+                    }
+
+                    if (Schema::hasTable('activity_logs')) {
+                        $actor = $request->user();
+                        ActivityLog::create([
+                            'actor_id' => $actor?->getKey(),
+                            'actor_name' => $actor?->name ?? $actor?->email ?? 'Authenticated user',
+                            'actor_type' => $actor ? class_basename($actor) : 'User',
+                            'category' => 'invoices',
+                            'action' => 'CustomerController / bulkSetupInvoiceDiscount',
+                            'method' => 'PATCH',
+                            'path' => '/api/v1/customers/bulk-setup',
+                            'subject_type' => 'Invoice',
+                            'subject_id' => (string) $invoice->id,
+                            'response_status' => 200,
+                            'changes' => [
+                                'invoice_number' => $invoice->invoice_number,
+                                'customer_id' => $customer->id,
+                                'discount' => $additionalDiscount,
+                                'discount_total' => (float) $invoice->fresh()->discount,
+                            ],
+                            'ip_address' => $request->ip(),
+                            'user_agent' => mb_substr((string) $request->userAgent(), 0, 500),
+                            'duration_ms' => 0,
+                        ]);
                     }
 
                     $updatedInvoices++;
