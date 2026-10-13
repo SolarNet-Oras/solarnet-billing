@@ -369,6 +369,7 @@ const InvoicesPage: React.FC = () => {
       partial: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: Clock },
       paid: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircle },
       overdue: { bg: 'bg-red-100', text: 'text-red-800', icon: AlertCircle },
+      discounted: { bg: 'bg-amber-100', text: 'text-amber-800', icon: PhilippinePeso },
       cancelled: { bg: 'bg-gray-100', text: 'text-gray-600', icon: XCircle },
     };
 
@@ -383,6 +384,12 @@ const InvoicesPage: React.FC = () => {
     );
   };
 
+  const invoiceDisplayStatus = (invoice: Invoice): string => {
+    if (invoice.status === 'cancelled') return 'cancelled';
+    if (Number(invoice.discount) > 0 && Number(invoice.paid_amount) <= 0) return 'discounted';
+    return invoice.status;
+  };
+
   const filteredInvoices = invoices;
 
   return (
@@ -392,22 +399,27 @@ const InvoicesPage: React.FC = () => {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
         <p className="text-sm text-gray-600 mt-1">Manage customer invoices and billing</p>
+        <div className="relative mt-4 w-full max-w-2xl">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            placeholder="Search customer name, account number, or invoice number…"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label="Search invoices by customer name, account number, or invoice number"
+          />
+          {searchTerm.trim() && (
+            <p className="mt-1 text-xs text-gray-500">
+              Showing names containing “{searchTerm.trim()}” — for example, “Gina” also matches “Regina”.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Actions Bar */}
       <div className="mb-6 flex flex-col sm:flex-row justify-between gap-4">
-        <div className="flex gap-3">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search invoices..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white pl-10 pr-4 py-2 text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-          </div>
-
+        <div className="flex flex-wrap gap-3">
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
@@ -420,6 +432,7 @@ const InvoicesPage: React.FC = () => {
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
             <option value="unpaid">Unpaid</option>
+            <option value="cancelled">Cancelled</option>
           </select>
 
           <select
@@ -563,7 +576,7 @@ const InvoicesPage: React.FC = () => {
                     <InvoicePaymentDateTime history={invoice.payment_history ?? []} activity={invoice.invoice_activity ?? []} discount={invoice.discount} status={invoice.status} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {getStatusBadge(invoice.status)}
+                    {getStatusBadge(invoiceDisplayStatus(invoice))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end gap-2">
