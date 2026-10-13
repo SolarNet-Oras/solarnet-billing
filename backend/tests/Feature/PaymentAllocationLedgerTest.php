@@ -107,7 +107,10 @@ class PaymentAllocationLedgerTest extends TestCase
 
         $this->assertSame('800.00', $cancelled->fresh()->balance);
         $this->assertSame('0.00', $current->fresh()->balance);
-        $this->assertSame('200.00', $payment->fresh()->customer->credits()->sum('remaining_amount'));
+        $this->assertSame(
+            '200.00',
+            number_format((float) $payment->fresh()->customer->credits()->sum('remaining_amount'), 2, '.', '')
+        );
     }
 
     public function test_refunded_cash_preserves_the_receipt_and_remittance_but_reopens_the_invoice(): void
