@@ -894,6 +894,7 @@ class CustomerController extends Controller
             'previous_balance' => 'nullable|numeric|gt:0|max:1000000',
             'previous_balance_due_date' => 'nullable|date',
             'discount_amount' => 'nullable|numeric|gt:0|max:1000000',
+            'invoice_number' => 'nullable|string|max:50',
             'status' => 'nullable|in:active,suspended,expired,pending',
             'address_updates' => 'nullable|array|min:1|max:500',
             'address_updates.*.customer_id' => 'required|uuid|exists:customers,id',
@@ -938,6 +939,22 @@ class CustomerController extends Controller
                 'status' => 'error',
                 'message' => 'previous_balance_due_date is required when recording a previous bill balance.',
             ], 422);
+        }
+        if ($action === 'discount') {
+            if (count($validated['customer_ids']) !== 1) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Select exactly one client when discounting an invoice.',
+                ], 422);
+            }
+
+            $validated['invoice_number'] = strtoupper(trim((string) ($validated['invoice_number'] ?? '')));
+            if ($validated['invoice_number'] === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'The exact invoice number is required for a discount.',
+                ], 422);
+            }
         }
 
         $customerIds = array_values(array_unique($validated['customer_ids']));
@@ -1084,45 +1101,38 @@ class CustomerController extends Controller
                 }
 
                 if ($action === 'discount') {
-                    $openInvoices = $customer->invoices()
+                    $invoice = $customer->invoices()
+                        ->where('invoice_number', $validated['invoice_number'])
                         ->unpaid()
                         ->with('items')
                         ->lockForUpdate()
-                        ->get();
-                    if ($openInvoices->isEmpty()) {
-                        $skipped[] = "{$customer->account_number}: no open invoice can receive a discount.";
+                        ->first();
+                    if (! $invoice) {
+                        $skipped[] = "{$customer->account_number}: invoice {$validated['invoice_number']} does not belong to this client or is not open.";
                         continue;
                     }
 
-                    $discounted = 0;
-                    foreach ($openInvoices as $invoice) {
-                        $gross = round((float) $invoice->items->sum('total'), 2);
-                        $remainingDiscountRoom = max(0, $gross - (float) $invoice->paid_amount - (float) $invoice->discount);
-                        $additionalDiscount = min((float) $validated['discount_amount'], $remainingDiscountRoom);
-                        if ($additionalDiscount <= 0) {
-                            continue;
-                        }
-
-                        $invoice->update(['discount' => round((float) $invoice->discount + $additionalDiscount, 2)]);
-                        $this->invoiceService->calculateInvoiceTotals($invoice->fresh(['items']));
-                        $invoice->refresh();
-                        if ((float) $invoice->balance <= 0) {
-                            $invoice->update(['status' => 'paid', 'paid_at' => $invoice->paid_at ?? now()]);
-                        }
-                        $discounted++;
-                    }
-
-                    if ($discounted === 0) {
-                        $skipped[] = "{$customer->account_number}: the selected discount exceeds no remaining open balance.";
+                    $gross = round((float) $invoice->items->sum('total'), 2);
+                    $remainingDiscountRoom = round(max(0, $gross - (float) $invoice->paid_amount - (float) $invoice->discount), 2);
+                    $additionalDiscount = round((float) $validated['discount_amount'], 2);
+                    if ($additionalDiscount > $remainingDiscountRoom) {
+                        $skipped[] = "{$customer->account_number}: discount exceeds the remaining discountable balance of ₱" . number_format($remainingDiscountRoom, 2) . " on {$invoice->invoice_number}.";
                         continue;
                     }
 
-                    $updatedInvoices += $discounted;
+                    $invoice->update(['discount' => round((float) $invoice->discount + $additionalDiscount, 2)]);
+                    $this->invoiceService->calculateInvoiceTotals($invoice->fresh(['items']));
+                    $invoice->refresh();
+                    if ((float) $invoice->balance <= 0) {
+                        $invoice->update(['status' => 'paid', 'paid_at' => $invoice->paid_at ?? now()]);
+                    }
+
+                    $updatedInvoices++;
                     $results[] = [
                         'customer_id' => $customer->id,
                         'account_number' => $customer->account_number,
                         'status' => 'updated',
-                        'message' => "Discount added to {$discounted} open invoice(s).",
+                        'message' => '₱' . number_format($additionalDiscount, 2) . " discount added only to {$invoice->invoice_number}.",
                     ];
                     continue;
                 }

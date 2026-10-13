@@ -38,6 +38,7 @@ const CustomersPage: React.FC = () => {
   const [setupPreviousBalance, setSetupPreviousBalance] = useState<string>('');
   const [setupPreviousBalanceDueDate, setSetupPreviousBalanceDueDate] = useState<string>('');
   const [setupDiscount, setSetupDiscount] = useState<string>('');
+  const [setupDiscountInvoiceNumber, setSetupDiscountInvoiceNumber] = useState<string>('');
   const [setupStatus, setSetupStatus] = useState<'active' | 'suspended' | 'expired' | 'pending'>('active');
   const [setupSharedAddress, setSetupSharedAddress] = useState<string>('');
   const [setupSubmitting, setSetupSubmitting] = useState<boolean>(false);
@@ -264,8 +265,11 @@ const CustomersPage: React.FC = () => {
         if (clientSetupAction === 'previous_balance' && (!setupPreviousBalance || !setupPreviousBalanceDueDate)) {
           throw new Error('Enter the previous balance and its due date.');
         }
-        if (clientSetupAction === 'discount' && !setupDiscount) {
-          throw new Error('Enter the discount amount.');
+        if (clientSetupAction === 'discount' && selectedCustomerIds.length !== 1) {
+          throw new Error('Select exactly one client when discounting an invoice.');
+        }
+        if (clientSetupAction === 'discount' && (!setupDiscount || !setupDiscountInvoiceNumber.trim())) {
+          throw new Error('Enter the exact invoice number and discount amount.');
         }
         if (clientSetupAction === 'address_updates' && !setupSharedAddress.trim()) {
           throw new Error('Enter the address to apply to the selected clients.');
@@ -285,7 +289,10 @@ const CustomersPage: React.FC = () => {
             previous_balance: Number(setupPreviousBalance),
             previous_balance_due_date: setupPreviousBalanceDueDate,
           } : {}),
-          ...(clientSetupAction === 'discount' ? { discount_amount: Number(setupDiscount) } : {}),
+          ...(clientSetupAction === 'discount' ? {
+            invoice_number: setupDiscountInvoiceNumber.trim().toUpperCase(),
+            discount_amount: Number(setupDiscount),
+          } : {}),
           ...(clientSetupAction === 'status' ? { status: setupStatus } : {}),
           ...(clientSetupAction === 'address_updates' ? {
             address_updates: selectedSetupCustomers.map((customer) => ({
@@ -302,6 +309,7 @@ const CustomersPage: React.FC = () => {
 
       setSelectedIds(new Set());
       setSetupSharedAddress('');
+      setSetupDiscountInvoiceNumber('');
       setClientSetupOpen(false);
       await fetchCustomers();
     } catch (err: any) {
@@ -944,7 +952,7 @@ const CustomersPage: React.FC = () => {
                   <option value="installation_date">Set original installation date</option>
                   <option value="address_updates">Update selected client addresses</option>
                   <option value="previous_balance">Add previous bill balance</option>
-                  <option value="discount">Add discount to open invoices</option>
+                  <option value="discount">Discount a specific invoice</option>
                   <option value="status">Set account status</option>
                   {canDeleteCustomers && <option value="delete">Delete selected clients</option>}
                 </select>
@@ -1047,7 +1055,16 @@ const CustomersPage: React.FC = () => {
                 {clientSetupAction === 'discount' && (
                   <div className="mt-4 space-y-3">
                     <label className="block text-sm font-medium text-foreground">
-                      Add this discount to every selected client’s open invoice
+                      Exact invoice number
+                      <input
+                        value={setupDiscountInvoiceNumber}
+                        onChange={(event) => setSetupDiscountInvoiceNumber(event.target.value.toUpperCase())}
+                        placeholder="INV-202610-0001"
+                        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal uppercase text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-foreground">
+                      Discount amount for this invoice only
                       <div className="relative mt-1.5">
                         <span className="absolute left-3 top-2 text-sm text-muted-foreground">₱</span>
                         <input
@@ -1062,7 +1079,7 @@ const CustomersPage: React.FC = () => {
                       </div>
                     </label>
                     <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                      The same peso amount is added to each selected client’s existing unpaid invoice. No invoice is created and the service-plan price is not changed. Paid invoices are never touched.
+                      Select exactly one client. The invoice number must belong to that client and must still be open. No other invoice, paid invoice, or service-plan price will be changed.
                     </p>
                   </div>
                 )}

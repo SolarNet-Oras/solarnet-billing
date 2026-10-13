@@ -13,6 +13,7 @@ export interface BulkClientSetupPayload {
   previous_balance?: number;
   previous_balance_due_date?: string;
   discount_amount?: number;
+  invoice_number?: string;
   status?: 'active' | 'suspended' | 'expired' | 'pending';
   address_updates?: Array<{ customer_id: string; address: string }>;
 }
