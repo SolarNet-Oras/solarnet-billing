@@ -8,6 +8,20 @@ import type {
   PaginatedResponse,
 } from '../types/api';
 
+export type AdvanceQrPhPayment = {
+  checkout_id: string;
+  payment_intent_id: string;
+  client_key: string;
+  public_key: string;
+  base_url?: string;
+  qr_image_url?: string | null;
+  reference_number: string;
+  customer_name: string;
+  amount: number;
+  status: string;
+  expires_at?: string | null;
+};
+
 export const invoiceService = {
   /**
    * Get all invoices with optional filters
@@ -101,6 +115,21 @@ export const invoiceService = {
     data: RecordPaymentRequest & { customer_id: string }
   ): Promise<{ message: string; payment: Payment }> => {
     const response = await api.post('/payments/advance', data);
+    return response.data;
+  },
+
+  startAdvanceQrPh: async (data: { customer_id: string; amount: number; payment_date: string; covered_cycle_date: string }): Promise<AdvanceQrPhPayment> => {
+    const response = await api.post('/payments/advance/qr-ph', data);
+    return response.data.payment;
+  },
+
+  attachAdvanceQrPh: async (checkoutId: string, data: { payment_method_id: string; qr_image_url: string }): Promise<AdvanceQrPhPayment> => {
+    const response = await api.post(`/payments/advance/qr-ph/${checkoutId}/attach`, data);
+    return response.data.payment;
+  },
+
+  reconcileAdvanceQrPh: async (checkoutId: string): Promise<{ paid: boolean; payment_status: string }> => {
+    const response = await api.post(`/payments/advance/qr-ph/${checkoutId}/reconcile`);
     return response.data;
   },
 

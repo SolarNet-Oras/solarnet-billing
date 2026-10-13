@@ -15,11 +15,12 @@ class PaymongoCheckout extends Model
         'payment_intent_id', 'payment_method_id', 'paymongo_payment_id', 'payment_intent_client_key',
         'qr_image_url', 'webhook_event_id', 'reference_number', 'amount', 'status', 'paid_at',
         'expires_at', 'payment_id',
+        'advance_payment_date', 'covered_cycle_date', 'initiated_by',
         'provider_gross_amount', 'provider_fee', 'provider_net_amount',
         'provider_payment_method', 'provider_balance_transaction_id',
         'settlement_status', 'settlement_captured_at',
     ];
-    protected function casts(): array { return ['amount' => 'float', 'provider_gross_amount' => 'float', 'provider_fee' => 'float', 'provider_net_amount' => 'float', 'paid_at' => 'datetime', 'expires_at' => 'datetime', 'settlement_captured_at' => 'datetime']; }
+    protected function casts(): array { return ['amount' => 'float', 'provider_gross_amount' => 'float', 'provider_fee' => 'float', 'provider_net_amount' => 'float', 'paid_at' => 'datetime', 'expires_at' => 'datetime', 'settlement_captured_at' => 'datetime', 'advance_payment_date' => 'date', 'covered_cycle_date' => 'date']; }
     public function invoice(): BelongsTo { return $this->belongsTo(Invoice::class); }
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function payment(): BelongsTo { return $this->belongsTo(Payment::class); }

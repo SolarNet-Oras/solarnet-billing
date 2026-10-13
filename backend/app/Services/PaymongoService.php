@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\Customer;
 use App\Models\PaymongoCheckout;
 use App\Support\CustomerPortalUrl;
 use Illuminate\Support\Facades\DB;
@@ -115,16 +116,89 @@ class PaymongoService
         return $this->qrPhResponse($checkout, $customer->full_name, $invoice->invoice_number, $public);
     }
 
+    /** Create a QR Ph intent that becomes an advance payment only after provider confirmation. */
+    public function createAdvanceQrPhPayment(
+        Customer $customer,
+        float $amount,
+        string $paymentDate,
+        string $coveredCycleDate,
+        ?string $initiatedBy,
+    ): array {
+        $secret = config('services.paymongo.secret_key');
+        $public = config('services.paymongo.public_key');
+        if (! $secret || ! $public) {
+            throw new RuntimeException('QR Ph payments are not configured. Add PAYMONGO_SECRET_KEY and PAYMONGO_PUBLIC_KEY on the server.');
+        }
+        if (! $customer->account_number) {
+            throw new RuntimeException('This advance payment requires a customer account number.');
+        }
+        $amount = round($amount, 2);
+        if ($amount < 1) throw new RuntimeException('QR Ph requires a minimum payment of PHP 1.00.');
+
+        $existing = PaymongoCheckout::query()
+            ->where('customer_id', $customer->id)
+            ->where('checkout_type', 'advance_qr_ph')
+            ->where('amount', $amount)
+            ->whereDate('advance_payment_date', $paymentDate)
+            ->whereDate('covered_cycle_date', $coveredCycleDate)
+            ->whereIn('status', ['pending', 'processing'])
+            ->where(function ($query) { $query->whereNull('expires_at')->orWhere('expires_at', '>', now()); })
+            ->latest()
+            ->first();
+        if ($existing) {
+            return $this->qrPhResponse($existing, $customer->full_name, 'Advance payment', $public);
+        }
+
+        $reference = 'SLR-ADV-' . $customer->account_number . '-' . Str::upper(Str::random(8));
+        $response = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)->post(
+            rtrim(config('services.paymongo.base_url'), '/') . '/payment_intents',
+            ['data' => ['attributes' => [
+                'amount' => (int) round($amount * 100),
+                'currency' => 'PHP',
+                'payment_method_allowed' => ['qrph'],
+                'description' => "SolarNet {$customer->account_number} - advance payment",
+            ]]],
+        );
+        if (! $response->successful()) {
+            throw new RuntimeException('PayMongo could not create the advance QR Ph payment: ' . ($response->json('errors.0.detail') ?? $response->body()));
+        }
+        $data = $response->json('data', []);
+        $intentId = $data['id'] ?? null;
+        $clientKey = data_get($data, 'attributes.client_key');
+        if (! $intentId || ! $clientKey) throw new RuntimeException('PayMongo did not return a QR Ph Payment Intent client key.');
+
+        $checkout = PaymongoCheckout::create([
+            'invoice_id' => null,
+            'customer_id' => $customer->id,
+            'account_number' => $customer->account_number,
+            'checkout_session_id' => 'advance-qrph-' . Str::lower(Str::random(32)),
+            'checkout_type' => 'advance_qr_ph',
+            'payment_intent_id' => $intentId,
+            'payment_intent_client_key' => $clientKey,
+            'reference_number' => $reference,
+            'amount' => $amount,
+            'advance_payment_date' => $paymentDate,
+            'covered_cycle_date' => $coveredCycleDate,
+            'initiated_by' => $initiatedBy,
+            'status' => 'pending',
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        return $this->qrPhResponse($checkout, $customer->full_name, 'Advance payment', $public);
+    }
+
     /** Save the PayMongo-generated QR image after the public-key attach flow. */
     public function finalizeQrPhAttachment(PaymongoCheckout $checkout, string $paymentMethodId, ?string $imageUrl = null): array
     {
-        if ($checkout->checkout_type !== 'qr_ph' || !$checkout->payment_intent_id) throw new RuntimeException('This is not a QR Ph payment.');
-        $checkout->loadMissing('invoice.customer');
+        if (! in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph'], true) || !$checkout->payment_intent_id) throw new RuntimeException('This is not a QR Ph payment.');
+        $checkout->loadMissing(['invoice.customer', 'customer']);
+        $customerName = $checkout->invoice?->customer?->full_name ?? $checkout->customer?->full_name ?? '';
+        $invoiceNumber = $checkout->invoice?->invoice_number ?? 'Advance payment';
         if ($checkout->status === 'paid') {
             if ($imageUrl && str_starts_with($imageUrl, 'data:image/')) {
                 $checkout->update(['payment_method_id' => $paymentMethodId, 'qr_image_url' => $imageUrl]);
             }
-            return $this->qrPhResponse($checkout->fresh(), $checkout->invoice?->customer?->full_name ?? '', $checkout->invoice?->invoice_number ?? '', config('services.paymongo.public_key'));
+            return $this->qrPhResponse($checkout->fresh(), $customerName, $invoiceNumber, config('services.paymongo.public_key'));
         }
         $secret = config('services.paymongo.secret_key');
         $response = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)->get(rtrim(config('services.paymongo.base_url'), '/') . '/payment_intents/' . $checkout->payment_intent_id);
@@ -138,7 +212,7 @@ class PaymongoService
         $image = data_get($attributes, 'next_action.code.image_url') ?: $imageUrl;
         if (!$image || !str_starts_with($image, 'data:image/')) throw new RuntimeException('PayMongo did not return a QR Ph image.');
         $checkout->update(['payment_method_id' => $paymentMethodId, 'qr_image_url' => $image, 'status' => in_array($status, ['succeeded', 'paid'], true) ? 'processing' : 'pending']);
-        return $this->qrPhResponse($checkout->fresh(), $checkout->invoice->customer->full_name, $checkout->invoice->invoice_number, config('services.paymongo.public_key'));
+        return $this->qrPhResponse($checkout->fresh(), $customerName, $invoiceNumber, config('services.paymongo.public_key'));
     }
 
     private function qrPhResponse(PaymongoCheckout $checkout, string $customerName, string $invoiceNumber, ?string $publicKey): array
@@ -182,7 +256,7 @@ class PaymongoService
         $secret = config('services.paymongo.secret_key');
         if (!$secret) return false;
         $checkout = PaymongoCheckout::where('payment_intent_id', $paymentIntentId)->first();
-        if (!$checkout || $checkout->checkout_type !== 'qr_ph') return false;
+        if (!$checkout || ! in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph'], true)) return false;
         $response = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)->get(rtrim(config('services.paymongo.base_url'), '/') . '/payment_intents/' . $paymentIntentId);
         if (!$response->successful()) return false;
         $attributes = $response->json('data.attributes', []);
@@ -221,9 +295,36 @@ class PaymongoService
     private function markPaidByQrCheckout(PaymongoCheckout $checkout, string $paymongoPaymentId, ?string $eventId, ?array $settlement = null): bool
     {
         return DB::transaction(function () use ($checkout, $paymongoPaymentId, $eventId, $settlement): bool {
-            $locked = PaymongoCheckout::with('invoice.customer')->whereKey($checkout->id)->lockForUpdate()->first();
+            $locked = PaymongoCheckout::with(['invoice.customer', 'customer'])->whereKey($checkout->id)->lockForUpdate()->first();
             if (!$locked) return false;
             if ($locked->payment_id || $locked->status === 'paid') return true;
+            if ($locked->checkout_type === 'advance_qr_ph') {
+                $customer = $locked->customer;
+                if (! $customer || ($locked->account_number && $customer->account_number !== $locked->account_number)) {
+                    throw new RuntimeException('PayMongo advance QR Ph account verification failed. No payment was recorded.');
+                }
+                $payment = $this->invoices->recordAdvancePayment($customer, [
+                    'amount' => $locked->amount,
+                    'payment_method' => 'mobile_money',
+                    'payment_date' => $locked->advance_payment_date ?? now(),
+                    'covered_cycle_date' => $locked->covered_cycle_date,
+                    'transaction_id' => $paymongoPaymentId,
+                    'reference' => $locked->reference_number,
+                    'received_by' => $locked->initiated_by,
+                    'notes' => 'PayMongo QR Ph advance payment | Payment Intent ' . $locked->payment_intent_id . ' | Account ' . $locked->account_number,
+                ]);
+                $locked->invoice_id = $payment->invoice_id;
+                $locked->payment_id = $payment->id;
+                $locked->status = 'paid';
+                $locked->paymongo_payment_id = $paymongoPaymentId;
+                $locked->webhook_event_id = $eventId ?: $locked->webhook_event_id;
+                $locked->paid_at = now();
+                $locked->fill($this->settlementColumns($settlement));
+                $locked->save();
+                Log::info('PayMongo QR Ph advance payment confirmed', ['payment_intent_id' => $locked->payment_intent_id, 'payment_id' => $payment->id, 'customer_id' => $customer->id, 'amount' => $locked->amount]);
+                return true;
+            }
+
             $invoice = $locked->invoice?->fresh();
             if (!$invoice || $invoice->customer_id !== $locked->customer_id || ($locked->account_number && $invoice->customer?->account_number !== $locked->account_number)) {
                 throw new RuntimeException('PayMongo QR Ph account verification failed. No payment was recorded.');
@@ -282,7 +383,7 @@ class PaymongoService
             ->eachById(function (PaymongoCheckout $checkout) use (&$result): void {
                 $result['checked']++;
                 try {
-                    $paid = $checkout->checkout_type === 'qr_ph'
+                    $paid = in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph'], true)
                         ? $this->reconcileQrPhPayment((string) $checkout->payment_intent_id)
                         : $this->reconcileCheckout($checkout->checkout_session_id);
                     if ($paid) {
@@ -361,7 +462,7 @@ class PaymongoService
             ->first();
         if (!$checkout) return ['found' => false, 'paid' => false];
 
-        $paid = $checkout->checkout_type === 'qr_ph'
+        $paid = in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph'], true)
             ? $this->reconcileQrPhPayment((string) $checkout->payment_intent_id)
             : $this->reconcileCheckout($checkout->checkout_session_id);
         return ['found' => true, 'paid' => $paid, 'checkout' => $checkout->fresh()];

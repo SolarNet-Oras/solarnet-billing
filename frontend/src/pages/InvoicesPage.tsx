@@ -16,7 +16,8 @@ import {
   Printer,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import invoiceService from '../services/invoiceService';
+import invoiceService, { type AdvanceQrPhPayment } from '../services/invoiceService';
+import { attachPaymongoQrPh } from '../services/paymongoQrService';
 import type { Invoice, Customer, Payment, InvoicePaymentHistory, InvoiceActivity } from '../types/api';
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
@@ -77,6 +78,8 @@ const InvoicesPage: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
   const [advanceCustomerId, setAdvanceCustomerId] = useState('');
+  const [advancePaymentMethod, setAdvancePaymentMethod] = useState<'cash' | 'qr_ph'>('cash');
+  const [advanceQrPayment, setAdvanceQrPayment] = useState<AdvanceQrPhPayment | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(100);
@@ -210,6 +213,35 @@ const InvoicesPage: React.FC = () => {
       window.alert('Enter a cash amount greater than ₱0.00 to create advance credit. A ₱0.00 payment cannot be recorded as customer credit.');
       return;
     }
+    if (isAdvancePayment && advancePaymentMethod === 'qr_ph') {
+      paymentSubmissionInFlight.current = true;
+      setPaymentSubmitting(true);
+      try {
+        let payment = await invoiceService.startAdvanceQrPh({
+          customer_id: advanceCustomerId,
+          amount: paymentAmount,
+          payment_date: paymentData.payment_date,
+          covered_cycle_date: paymentData.covered_cycle_date,
+        });
+        if (!payment.qr_image_url) {
+          const attached = await attachPaymongoQrPh({
+            publicKey: payment.public_key,
+            baseUrl: payment.base_url,
+            paymentIntentId: payment.payment_intent_id,
+            clientKey: payment.client_key,
+          });
+          payment = await invoiceService.attachAdvanceQrPh(payment.checkout_id, attached);
+        }
+        setAdvanceQrPayment(payment);
+      } catch (error) {
+        const message = (error as { response?: { data?: { message?: string } }; message?: string });
+        window.alert(message.response?.data?.message ?? message.message ?? 'Unable to create the PayMongo QR Ph advance payment.');
+      } finally {
+        paymentSubmissionInFlight.current = false;
+        setPaymentSubmitting(false);
+      }
+      return;
+    }
     if (paymentData.payment_method === 'cash' && !cashCoversPayment) {
       window.alert('Cash received must cover the payment amount. Enter the bills received, then return the displayed change to the client.');
       return;
@@ -266,6 +298,29 @@ const InvoicesPage: React.FC = () => {
       setDownloadingInvoiceId(null);
     }
   };
+
+  const reconcileAdvanceQrPayment = async (quiet = false) => {
+    if (!advanceQrPayment) return;
+    try {
+      const result = await invoiceService.reconcileAdvanceQrPh(advanceQrPayment.checkout_id);
+      if (result.paid) {
+        if (!quiet) window.alert('Advance payment confirmed by PayMongo. Future billing invoice allocation has been recorded.');
+        setShowPaymentModal(false);
+        resetPaymentForm();
+        await fetchInvoices();
+      } else if (!quiet) {
+        window.alert('Payment is still awaiting PayMongo confirmation. Scan and pay the QR, then check again.');
+      }
+    } catch (error) {
+      if (!quiet) window.alert((error as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Unable to verify the QR Ph payment.');
+    }
+  };
+
+  useEffect(() => {
+    if (!advanceQrPayment) return;
+    const timer = window.setInterval(() => { void reconcileAdvanceQrPayment(true); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [advanceQrPayment]);
 
   const printOpenInvoices = async () => {
     const printWindow = window.open('', '_blank');
@@ -345,6 +400,8 @@ const InvoicesPage: React.FC = () => {
     setRetainCashExcess(false);
     setIsAdvancePayment(false);
     setAdvanceCustomerId('');
+    setAdvancePaymentMethod('cash');
+    setAdvanceQrPayment(null);
     setSelectedInvoice(null);
   };
 
@@ -900,7 +957,21 @@ const InvoicesPage: React.FC = () => {
                     </select>
                   </div>}
 
-                  {isAdvancePayment && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">Payment method: Cash only · Transaction ID is generated automatically.</div>}
+                  {isAdvancePayment && <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Advance payment method</label>
+                    <select
+                      value={advancePaymentMethod}
+                      onChange={(event) => {
+                        setAdvancePaymentMethod(event.target.value as 'cash' | 'qr_ph');
+                        setAdvanceQrPayment(null);
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="qr_ph">PayMongo QR Ph</option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">QR Ph records the advance only after PayMongo confirms the payment. Closing an unpaid QR does not create payment or credit.</p>
+                  </div>}
 
                   {isAdvancePayment && <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Future billing cycle due date</label>
@@ -912,7 +983,7 @@ const InvoicesPage: React.FC = () => {
                     </div>}
                   </div>}
 
-                  {paymentData.payment_method === 'cash' && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4">
+                  {paymentData.payment_method === 'cash' && (!isAdvancePayment || advancePaymentMethod === 'cash') && <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-semibold text-emerald-950">Cash received and change</h3><p className="mt-1 text-xs leading-5 text-emerald-800">Count the bills given by the client. You can return excess cash or, with the client’s approval, save it as advance credit for a future bill.</p></div><div className={`self-start rounded-lg px-3 py-2 text-left text-sm sm:text-right ${cashCoversPayment ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-900'}`}><p className="text-xs">Cash received</p><b>{formatPHP(cashCounted)}</b></div></div>
                     <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-2 sm:p-3"><div className="grid grid-cols-[4.5rem_minmax(6rem,1fr)_minmax(5.5rem,1fr)] gap-x-2 gap-y-2 text-sm sm:grid-cols-[minmax(6rem,1fr)_minmax(8rem,1fr)_minmax(8rem,1fr)] sm:gap-x-3"><span className="font-semibold text-emerald-900">Pieces</span><span className="font-semibold text-emerald-900">Denomination</span><span className="text-right font-semibold text-emerald-900">Amount</span>{cashBreakdown.map((line) => <React.Fragment key={line.denomination}><input min="0" inputMode="numeric" type="number" value={cashCounts[line.denomination] || ''} onChange={(event) => setCashCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="min-w-0 rounded border border-emerald-200 bg-white px-2 py-2 text-base" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div></div>
                     <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"><div className="rounded-lg bg-white/75 p-3"><p className="text-xs text-emerald-800">{isCashPartialPayment ? 'Partial payment to record' : 'Payment amount'}</p><b className="text-emerald-950">{formatPHP(effectivePaymentAmount)}</b>{isCashPartialPayment && <p className="mt-1 text-xs text-amber-700">Remaining after payment: {formatPHP(Math.max(0, Number(selectedInvoice.balance) - effectivePaymentAmount))}</p>}</div><div className={`rounded-lg p-3 ${cashChange > 0 ? 'bg-amber-100 text-amber-950' : 'bg-white/75 text-emerald-950'}`}><p className="text-xs">Change to return</p><b>{formatPHP(changeToReturn)}</b></div></div>
@@ -920,6 +991,14 @@ const InvoicesPage: React.FC = () => {
                     {automaticOnePesoExcess && <div className="mt-4 rounded-lg bg-sky-100 p-3 text-sm text-sky-950"><p className="font-semibold">Automatic ₱1 excess allocation</p><p className="mt-1 text-xs leading-5">The ₱1 excess is retained and applied to another open invoice or customer advance credit.</p></div>}
                     {changeToReturn > 0 && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-amber-950">Cash change denominations</p><p className="mt-1 text-xs text-amber-800">Count exactly {formatPHP(changeToReturn)} being returned to the customer.</p></div><b className={cashReturnMatches ? 'text-emerald-700' : 'text-amber-900'}>{formatPHP(cashReturnCounted)}</b></div><div className="mt-3 grid grid-cols-[4.5rem_minmax(6rem,1fr)_minmax(5.5rem,1fr)] gap-x-2 gap-y-2 text-sm"><span className="font-semibold text-amber-900">Pieces</span><span className="font-semibold text-amber-900">Denomination</span><span className="text-right font-semibold text-amber-900">Amount</span>{cashReturnBreakdown.map((line) => <React.Fragment key={`return-${line.denomination}`}><input min="0" inputMode="numeric" type="number" value={cashReturnCounts[line.denomination] || ''} onChange={(event) => setCashReturnCounts((current) => ({ ...current, [line.denomination]: Math.max(0, Number(event.target.value) || 0) }))} className="min-w-0 rounded border border-amber-200 bg-white px-2 py-2 text-base" /><span className="self-center font-medium">₱{line.denomination.toLocaleString('en-PH')}</span><span className="self-center text-right font-semibold">{formatPHP(line.amount)}</span></React.Fragment>)}</div>{!cashReturnMatches && <p className="mt-2 text-xs font-semibold text-rose-700">Returned denominations must equal {formatPHP(changeToReturn)}.</p>}</div>}
                     <p className={`mt-3 text-xs font-medium ${cashCoversPayment && cashReturnMatches ? 'text-emerald-700' : 'text-amber-800'}`}>{isCashPartialPayment ? `${formatPHP(effectivePaymentAmount)} will be recorded as a partial payment. The remaining balance stays collectible.` : cashCoversPayment ? (retainedExcess > 0 ? `${formatPHP(retainedExcess)} will be retained and allocated to the customer.` : cashChange > 0 ? `Return ${formatPHP(changeToReturn)} change to the client and record its denominations.` : 'Exact cash received. You may record this payment.') : `Need ${formatPHP(cashShortfall)} more cash to cover the payment.`}</p>
+                  </section>}
+
+                  {isAdvancePayment && advancePaymentMethod === 'qr_ph' && advanceQrPayment?.qr_image_url && <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+                    <h3 className="font-semibold text-blue-950">Scan with any QR Ph-supported banking or e-wallet app</h3>
+                    <img src={advanceQrPayment.qr_image_url} alt="PayMongo QR Ph advance payment" className="mx-auto mt-3 w-full max-w-[280px] rounded-lg bg-white p-2" />
+                    <p className="mt-3 font-bold text-blue-950">{formatPHP(advanceQrPayment.amount)}</p>
+                    <p className="mt-1 text-xs text-blue-800">Reference: {advanceQrPayment.reference_number}</p>
+                    <button type="button" onClick={() => void reconcileAdvanceQrPayment(false)} className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Check payment confirmation</button>
                   </section>}
 
                   <div>
@@ -978,13 +1057,13 @@ const InvoicesPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={paymentSubmitting || (isAdvancePayment && !advanceCustomerId) || (paymentData.payment_method === 'cash' && (!cashCoversPayment || !cashReturnMatches)) || !advanceAmountIsValid}
+                    disabled={paymentSubmitting || (isAdvancePayment && !advanceCustomerId) || (paymentData.payment_method === 'cash' && (!isAdvancePayment || advancePaymentMethod === 'cash') && (!cashCoversPayment || !cashReturnMatches)) || !advanceAmountIsValid || (isAdvancePayment && advancePaymentMethod === 'qr_ph' && Boolean(advanceQrPayment))}
                     aria-busy={paymentSubmitting}
                     data-manual-loading="true"
                     className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     {paymentSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {paymentSubmitting ? 'Processing…' : isAdvancePayment ? 'Create and pay future invoice' : isCashPartialPayment ? `Record ${formatPHP(effectivePaymentAmount)} partial payment` : 'Record Payment'}
+                    {paymentSubmitting ? 'Processing…' : isAdvancePayment ? (advancePaymentMethod === 'qr_ph' ? (advanceQrPayment ? 'QR awaiting payment' : 'Generate PayMongo QR Ph') : 'Create and pay future invoice') : isCashPartialPayment ? `Record ${formatPHP(effectivePaymentAmount)} partial payment` : 'Record Payment'}
                   </button>
                 </div>
               </form>

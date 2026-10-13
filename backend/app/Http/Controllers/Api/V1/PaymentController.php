@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\PaymongoCheckout;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\OfficeCashLiquidationService;
+use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,73 @@ use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
+    public function startAdvanceQrPh(Request $request, InvoiceService $invoices, PaymongoService $paymongo): JsonResponse
+    {
+        $data = $request->validate([
+            'customer_id' => 'required|uuid|exists:customers,id',
+            'amount' => 'required|numeric|min:1|max:1000000',
+            'payment_date' => 'required|date',
+            'covered_cycle_date' => 'required|date',
+        ]);
+        $customer = Customer::findOrFail($data['customer_id']);
+        $outstanding = round((float) Invoice::unpaid()->where('customer_id', $customer->id)->sum('balance'), 2);
+        if ($outstanding > 0) {
+            return response()->json([
+                'message' => 'Advance QR payment is unavailable while this customer has outstanding invoices. Pay the backlog first.',
+                'outstanding_balance' => $outstanding,
+            ], 422);
+        }
+        if (! $invoices->isValidFutureBillingCycle(
+            $customer,
+            Carbon::parse($data['covered_cycle_date'], config('app.timezone', 'Asia/Manila')),
+            Carbon::parse($data['payment_date'], config('app.timezone', 'Asia/Manila')),
+        )) {
+            return response()->json(['message' => 'The selected advance cycle must be a future billing anniversary for this customer.'], 422);
+        }
+
+        return response()->json([
+            'message' => 'PayMongo QR Ph advance payment created.',
+            'payment' => $paymongo->createAdvanceQrPhPayment(
+                $customer,
+                (float) $data['amount'],
+                $data['payment_date'],
+                $data['covered_cycle_date'],
+                $request->user()?->id,
+            ),
+        ]);
+    }
+
+    public function attachAdvanceQrPh(Request $request, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $data = $request->validate([
+            'payment_method_id' => 'required|string|max:255',
+            'qr_image_url' => 'nullable|string|max:1000000',
+        ]);
+        $checkout = PaymongoCheckout::query()
+            ->whereKey($checkoutId)
+            ->where('checkout_type', 'advance_qr_ph')
+            ->firstOrFail();
+
+        return response()->json([
+            'message' => 'PayMongo QR Ph advance payment attached.',
+            'payment' => $paymongo->finalizeQrPhAttachment($checkout, $data['payment_method_id'], $data['qr_image_url'] ?? null),
+        ]);
+    }
+
+    public function reconcileAdvanceQrPh(string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $checkout = PaymongoCheckout::query()
+            ->whereKey($checkoutId)
+            ->where('checkout_type', 'advance_qr_ph')
+            ->firstOrFail();
+        $paid = $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id);
+
+        return response()->json([
+            'paid' => $paid,
+            'payment_status' => $checkout->fresh()->status,
+        ]);
+    }
+
     public function recordAdvance(Request $request, InvoiceService $invoices, CashTenderCalculator $cashTender): JsonResponse
     {
         $data = $request->validate([

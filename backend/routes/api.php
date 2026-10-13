@@ -396,6 +396,9 @@ Route::prefix('v1')->group(function () {
         Route::get('payments/{id}', [PaymentController::class, 'show']);
         });
         Route::post('payments/advance', [PaymentController::class, 'recordAdvance'])->middleware('permission:create-payments');
+        Route::post('payments/advance/qr-ph', [PaymentController::class, 'startAdvanceQrPh'])->middleware('permission:create-payments');
+        Route::post('payments/advance/qr-ph/{checkoutId}/attach', [PaymentController::class, 'attachAdvanceQrPh'])->middleware('permission:create-payments');
+        Route::post('payments/advance/qr-ph/{checkoutId}/reconcile', [PaymentController::class, 'reconcileAdvanceQrPh'])->middleware('permission:create-payments');
         // Collector workspace: only due invoices and collection/remittance actions.
         Route::middleware(['role:collector'])->prefix('collector')->group(function () {
             Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
