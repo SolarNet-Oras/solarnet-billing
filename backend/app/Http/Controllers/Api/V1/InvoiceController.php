@@ -62,8 +62,13 @@ class InvoiceController extends Controller
         }
 
         // Filter by status
-        if ($request->filled('status') && in_array($request->string('status')->toString(), ['draft', 'sent', 'partial', 'paid', 'cancelled'], true)) {
-            $query->where('status', $request->status);
+        if ($request->filled('status')) {
+            $status = $request->string('status')->toString();
+            if ($status === 'discounted') {
+                $query->where('discount', '>', 0)->where('status', '!=', 'cancelled');
+            } elseif (in_array($status, ['draft', 'sent', 'partial', 'paid', 'cancelled'], true)) {
+                $query->where('status', $status);
+            }
         }
 
         // Filter by date range

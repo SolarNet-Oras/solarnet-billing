@@ -386,7 +386,7 @@ const InvoicesPage: React.FC = () => {
 
   const invoiceDisplayStatus = (invoice: Invoice): string => {
     if (invoice.status === 'cancelled') return 'cancelled';
-    if (Number(invoice.discount) > 0 && Number(invoice.paid_amount) <= 0) return 'discounted';
+    if (Number(invoice.discount) > 0) return 'discounted';
     return invoice.status;
   };
 
@@ -430,6 +430,7 @@ const InvoicesPage: React.FC = () => {
             <option value="sent">Sent</option>
             <option value="partial">Partial</option>
             <option value="paid">Paid</option>
+            <option value="discounted">Discounted</option>
             <option value="overdue">Overdue</option>
             <option value="unpaid">Unpaid</option>
             <option value="cancelled">Cancelled</option>
