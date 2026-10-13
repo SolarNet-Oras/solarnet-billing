@@ -232,7 +232,12 @@ class BillingSuspensionService
         $eligibility = $this->accountReconciliationService->restorationEligibility($customer, $financial, $billingState);
 
         if ($eligibility['eligible']) {
-            return $this->restoreCustomer($customer, 'payment_confirmed', false, $financial, $eligibility, $payment);
+            // A stored offline/unknown router state can be stale even while
+            // RouterOS is reachable. A fully reconciled payment should make
+            // the same verified connection attempt as the administrator's
+            // Restore action. The customer is still marked active only after
+            // both queue restoration and address-list removal are confirmed.
+            return $this->restoreCustomer($customer, 'payment_confirmed', true, $financial, $eligibility, $payment);
         }
 
         if ($billingState['should_suspend'] && $customer->status === 'active') {
