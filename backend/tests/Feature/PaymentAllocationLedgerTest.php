@@ -70,6 +70,31 @@ class PaymentAllocationLedgerTest extends TestCase
         $this->assertSame('800.00', $september->fresh()->balance);
     }
 
+    public function test_collector_cash_payment_restores_manual_billing_suspension_after_all_invoices_are_paid(): void
+    {
+        $collector = User::factory()->create();
+        $customer = $this->customer();
+        $customer->update([
+            'status' => 'suspended',
+            'suspension_source' => 'manual',
+        ]);
+        $invoice = $this->invoice($customer, '2026-10-01', '800.00', '800.00', '0.00', 'overdue');
+
+        $payment = app(InvoiceService::class)->recordPayment($invoice, [
+            'amount' => '800.00',
+            'payment_method' => 'cash',
+            'collector_id' => $collector->id,
+            'transaction_id' => 'collector-manual-suspension-payment',
+        ]);
+
+        $this->assertSame($collector->id, $payment->collector_id);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame('0.00', $invoice->fresh()->balance);
+        $this->assertSame('active', $customer->fresh()->status);
+        $this->assertNull($customer->fresh()->suspension_source);
+        $this->assertSame('confirmed', $customer->fresh()->restoration_status);
+    }
+
     public function test_overpayment_becomes_credit_and_cancelled_invoice_is_excluded(): void
     {
         $customer = $this->customer();

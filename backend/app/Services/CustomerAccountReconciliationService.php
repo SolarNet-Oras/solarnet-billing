@@ -60,21 +60,30 @@ class CustomerAccountReconciliationService
     }
 
     /**
-     * Existing SolarNet policy permits an automated restriction to be removed
-     * only when no invoice remains suspension-eligible. A manual/technical
-     * restriction is a hold and cannot be removed by a payment callback.
+     * Automated billing restrictions may be removed when no invoice remains
+     * suspension-eligible. An administrator-forced suspension may also be
+     * removed by payment reconciliation, but only after every open invoice is
+     * fully settled. Unknown/technical holds remain protected.
      */
     public function restorationEligibility(Customer $customer, array $financial, array $billingState): array
     {
         $restricted = in_array($customer->status, ['suspended', 'expired'], true);
         $automatedRestriction = $customer->suspension_source === 'automation';
-        $manualOrTechnicalHold = $restricted && !$automatedRestriction;
-        $eligible = $restricted && $automatedRestriction && !$billingState['should_suspend'];
+        $manualRestriction = $customer->suspension_source === 'manual';
+        $allInvoicesSettled = ($financial['open_invoice_count'] ?? 0) === 0
+            && (float) ($financial['outstanding_balance'] ?? 0) <= 0;
+        $manualOrTechnicalHold = $restricted && !$automatedRestriction && !$manualRestriction;
+        $eligible = $restricted && (
+            ($automatedRestriction && !$billingState['should_suspend'])
+            || ($manualRestriction && $allInvoicesSettled)
+        );
 
         $reason = match (true) {
             !$restricted => 'Customer service is not currently restricted.',
-            $manualOrTechnicalHold => 'A manual or technical hold is present; payment reconciliation will not override it.',
+            $manualOrTechnicalHold => 'An unknown or technical hold is present; payment reconciliation will not override it.',
+            $manualRestriction && !$allInvoicesSettled => 'The administrator-forced suspension remains because an open invoice balance is still present.',
             $billingState['should_suspend'] => 'An invoice remains beyond the configured grace period.',
+            $manualRestriction && $eligible => 'Every open invoice is fully paid; the administrator-forced billing suspension may be restored.',
             $eligible => 'No invoice remains suspension-eligible under the current billing policy.',
             default => 'Service restoration is not eligible under the current billing policy.',
         };
@@ -83,7 +92,9 @@ class CustomerAccountReconciliationService
             'eligible' => $eligible,
             'restricted' => $restricted,
             'automated_restriction' => $automatedRestriction,
+            'manual_restriction' => $manualRestriction,
             'manual_or_technical_hold' => $manualOrTechnicalHold,
+            'all_invoices_settled' => $allInvoicesSettled,
             'reason' => $reason,
             // A balance may legitimately remain for a not-yet-due invoice.
             // It is reported but does not by itself overrule SolarNet's grace rule.

@@ -1335,9 +1335,9 @@ class CustomerController extends Controller
     public function restore(string $id): JsonResponse
     {
         $customer = Customer::with(['servicePlan', 'router'])->findOrFail($id);
-        // This is an explicit administrator action. Payment callbacks never
-        // override manual/technical holds, but an administrator may request a
-        // verified RouterOS restoration from the customer record.
+        // This is an explicit administrator action. Payment reconciliation
+        // may clear a manual billing suspension only after all open invoices
+        // are settled; this endpoint remains the verified manual override.
         $result = app(BillingSuspensionService::class)->restoreCustomer($customer, 'manual_restore', true);
 
         return response()->json($result);
