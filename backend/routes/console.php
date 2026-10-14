@@ -117,6 +117,14 @@ Schedule::command('attendance:cleanup-photos')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Just after Manila midnight, close forgotten punches from the prior day at
+// 5:00 PM. This never creates overtime and is safe to rerun.
+Schedule::command('attendance:close-stale')
+    ->dailyAt('00:05')
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // 12:00 Asia/Manila daily. Payslips are prepared and emailed one day before
 // payday; scheduled records become released on the 15th/30th (last day in a
 // short month).

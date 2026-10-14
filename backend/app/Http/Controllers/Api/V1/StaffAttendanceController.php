@@ -412,6 +412,80 @@ class StaffAttendanceController extends Controller
         return response()->json(['message'=>'Clock-out recorded.', 'data'=>$record->fresh()]);
     }
 
+    public function storeManualAttendance(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'uuid', 'exists:users,id'],
+            'work_date' => ['required', 'date_format:Y-m-d'],
+            'time_in' => ['required', 'date_format:H:i'],
+            'time_out' => ['required', 'date_format:H:i'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+        $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
+        abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
+
+        $workDate = Carbon::createFromFormat('Y-m-d', $data['work_date'], 'Asia/Manila')->startOfDay();
+        abort_if($workDate->isFuture(), 422, 'Manual attendance cannot be recorded for a future date.');
+        $clockIn = Carbon::createFromFormat('Y-m-d H:i', $data['work_date'].' '.$data['time_in'], 'Asia/Manila');
+        $clockOut = Carbon::createFromFormat('Y-m-d H:i', $data['work_date'].' '.$data['time_out'], 'Asia/Manila');
+        abort_unless($clockOut->gt($clockIn), 422, 'Time-out must be later than time-in on the selected date.');
+        abort_if($clockIn->diffInMinutes($clockOut) > 1080, 422, 'A manual attendance record cannot exceed 18 hours.');
+
+        $record = DB::transaction(function () use ($request, $data, $employee, $workDate, $clockIn, $clockOut): StaffAttendanceRecord {
+            abort_if(
+                StaffPayrollDisbursement::query()
+                    ->where('user_id', $employee->id)
+                    ->whereDate('cutoff_start', '<=', $workDate->toDateString())
+                    ->whereDate('cutoff_end', '>=', $workDate->toDateString())
+                    ->lockForUpdate()
+                    ->exists(),
+                422,
+                'This attendance date is already included in a payroll run and cannot be added manually.'
+            );
+            abort_if(
+                StaffAttendanceRecord::query()
+                    ->where('user_id', $employee->id)
+                    ->whereDate('work_date', $workDate->toDateString())
+                    ->lockForUpdate()
+                    ->exists(),
+                409,
+                'An attendance or leave record already exists for this employee and date.'
+            );
+
+            $profile = StaffCompensation::firstOrCreate(['user_id' => $employee->id]);
+            $lateThreshold = Carbon::parse($workDate->toDateString().' '.$profile->scheduled_start, 'Asia/Manila')
+                ->addMinutes($profile->grace_minutes);
+            $late = (int) floor(max(0, $lateThreshold->diffInMinutes($clockIn, false)));
+            $worked = (int) floor($clockIn->diffInMinutes($clockOut));
+            $overtimeStart = Carbon::parse($workDate->toDateString().' 18:00:00', 'Asia/Manila');
+            $overtime = (int) floor(max(0, $overtimeStart->diffInMinutes($clockOut, false)));
+
+            return StaffAttendanceRecord::create([
+                'user_id' => $employee->id,
+                'work_date' => $workDate->toDateString(),
+                'clocked_in_at' => $clockIn->copy()->utc(),
+                'clocked_out_at' => $clockOut->copy()->utc(),
+                'status' => $late > 0 ? 'late' : 'present',
+                'late_minutes' => $late,
+                'worked_minutes' => $worked,
+                'overtime_minutes' => $overtime,
+                'overtime_status' => $overtime > 0 ? 'pending' : 'not_applicable',
+                'approved_overtime_minutes' => 0,
+                'verification_method' => 'manual_super_admin',
+                'notes' => sprintf(
+                    'Manual attendance added by %s. Reason: %s',
+                    $request->user()->name,
+                    trim($data['reason'])
+                ),
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Manual attendance recorded with an administrator audit note.',
+            'data' => $this->attendanceRecordPayload($record),
+        ], 201);
+    }
+
     public function reviewOvertime(Request $request, StaffAttendanceRecord $attendance): JsonResponse
     {
         $data = $request->validate([
