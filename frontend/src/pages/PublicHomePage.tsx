@@ -94,7 +94,7 @@ export default function PublicHomePage(): React.JSX.Element {
             </div>
           </div>
         </div>`;
-      servicesSection.insertAdjacentElement('beforebegin', aboutSection);
+      servicesSection.insertAdjacentElement('afterend', aboutSection);
     }
 
     document.querySelectorAll('main li').forEach(element => {
