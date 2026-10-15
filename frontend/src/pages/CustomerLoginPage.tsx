@@ -13,6 +13,11 @@ const CustomerLoginPage: React.FC = () => {
 
   useEffect(() => { void customerPortalService.getBranding().then(setBranding).catch(() => undefined); }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.add('customer-access-active');
+    return () => document.documentElement.classList.remove('customer-access-active');
+  }, []);
+
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     setLoading(true);

@@ -549,6 +549,58 @@ html.public-site-active body {
   text-rendering: optimizeLegibility;
 }
 
+/* Customer verification uses an intentionally light form card. Keep every
+   field and explanation readable even when the staff theme was saved as dark. */
+html.customer-access-active {
+  color-scheme: light;
+  font-size: 17px;
+}
+
+html.customer-access-active body {
+  background: #020617;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html.customer-access-active .bg-white {
+  background-color: #ffffff !important;
+}
+
+html.customer-access-active .text-slate-950 {
+  color: #020617 !important;
+}
+
+html.customer-access-active .text-slate-600 {
+  color: #334155 !important;
+}
+
+html.customer-access-active .text-sky-700 {
+  color: #0369a1 !important;
+}
+
+html.customer-access-active input {
+  background-color: #ffffff !important;
+  border-color: #94a3b8 !important;
+  color: #020617 !important;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+html.customer-access-active input::placeholder {
+  color: #64748b !important;
+  opacity: 1;
+}
+
+html.customer-access-active label {
+  color: #0f172a !important;
+  font-weight: 700;
+}
+
+html.customer-access-active form p,
+html.customer-access-active section p {
+  line-height: 1.65;
+}
+
 html.public-site-active .bg-white {
   background-color: #ffffff !important;
 }
