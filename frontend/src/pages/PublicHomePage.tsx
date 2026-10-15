@@ -103,7 +103,7 @@ export default function PublicHomePage(): React.JSX.Element {
       const paymentNotice = document.createElement('aside');
       paymentNotice.className = 'mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-sm';
       paymentNotice.dataset.realtimePaymentNotice = 'true';
-      paymentNotice.innerHTML = '<p class="font-bold">Real-time online payment posting</p><p class="mt-1 text-sm leading-6">Verified QRPh, GCash, and participating bank payments are posted to your SolarNet account in real time. If service was suspended only because of unpaid billing, restoration starts automatically after full payment is confirmed and no open invoice remains.</p>';
+      paymentNotice.innerHTML = '<p class="font-bold">Real-time online payment posting</p><p class="mt-1 text-sm leading-6">Verified QRPh, GCash, and participating bank payments are posted to your SolarNet account in real time. If service was suspended only because of unpaid billing, restoration starts automatically after full payment is confirmed and no open billing remains.</p>';
       plansContainer.firstElementChild?.insertAdjacentElement('afterend', paymentNotice);
     }
 
