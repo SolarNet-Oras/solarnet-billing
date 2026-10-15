@@ -17,7 +17,7 @@ import customerPortalService from '../services/customerPortalService';
 import type { Customer } from '../types/api';
 import { formatPHP } from '../lib/currency';
 import CustomerAppInstallCard from '../components/customer/CustomerAppInstallCard';
-import CustomerTroubleshootingCard from '../components/customer/CustomerTroubleshootingCard';
+import CustomerAccountAssistant from '../components/customer/CustomerAccountAssistant';
 import CustomerReferralCard from '../components/customer/CustomerReferralCard';
 import { clearSuspensionBadge, showSuspensionBadge } from '../lib/customerAppBadge';
 
@@ -231,7 +231,7 @@ const CustomerDashboardPage: React.FC = () => {
           </div>
         )}
 
-        <CustomerTroubleshootingCard />
+        <CustomerAccountAssistant />
 
         <CustomerReferralCard />
 

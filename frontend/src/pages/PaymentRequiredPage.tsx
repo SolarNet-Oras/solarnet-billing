@@ -4,6 +4,7 @@ import { AlertTriangle, BellRing, CreditCard, Headphones, WifiOff } from 'lucide
 import customerPortalService from '@/services/customerPortalService';
 import { formatPHP } from '@/lib/currency';
 import CustomerAppInstallCard from '@/components/customer/CustomerAppInstallCard';
+import CustomerAccountAssistant from '@/components/customer/CustomerAccountAssistant';
 import { showSuspensionBadge } from '@/lib/customerAppBadge';
 
 type ReminderData = {
@@ -199,6 +200,7 @@ const PaymentRequiredPage: React.FC = () => {
           </div>
         </div>
       </div>
+      {hasCurrentPortalSession() && <CustomerAccountAssistant />}
     </div>
   );
 };

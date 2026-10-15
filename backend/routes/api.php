@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CustomerRegistrationImportController;
 use App\Http\Controllers\Api\V1\CustomerUpdateImportController;
 use App\Http\Controllers\Api\V1\ClientMigrationController;
 use App\Http\Controllers\Api\V1\CustomerPortalController;
+use App\Http\Controllers\Api\V1\CustomerAssistantController;
 use App\Http\Controllers\Api\V1\CustomerReferralRewardController;
 use App\Http\Controllers\Api\V1\CustomerTroubleshootingController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -537,6 +538,7 @@ Route::prefix('v1')->group(function () {
         // Protected customer routes
         Route::middleware('api')->group(function () {
             Route::get('dashboard', [CustomerPortalController::class, 'dashboard']);
+            Route::post('assistant/chat', [CustomerAssistantController::class, 'chat'])->middleware('throttle:30,1');
             Route::get('referrals', [CustomerPortalController::class, 'referrals']);
             Route::post('referrals', [CustomerPortalController::class, 'submitReferral'])->middleware('throttle:5,1');
             Route::post('referrals/{id}/reward-choice', [CustomerPortalController::class, 'chooseReferralReward'])->middleware('throttle:5,1');

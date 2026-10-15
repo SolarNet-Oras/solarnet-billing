@@ -347,6 +347,11 @@ export const customerPortalService = {
     return response.data.data;
   },
 
+  chatWithCustomerAssistant: async (message: string): Promise<CustomerAssistantResponse> => {
+    const response = await api.post('/customer-portal/assistant/chat', { message });
+    return response.data.data;
+  },
+
   sendTroubleshootingMessage: async (sessionId: string, message: string): Promise<CustomerTroubleshootingResponse> => {
     const response = await api.post(`/customer-portal/troubleshooting/sessions/${encodeURIComponent(sessionId)}/messages`, { message });
     return response.data.data;
@@ -368,6 +373,13 @@ export interface CustomerTroubleshootingResponse {
   };
   assistant: string;
   next_question?: string | null;
+}
+
+export interface CustomerAssistantResponse {
+  assistant: string;
+  account: { status: string; open_balance: number; open_billing_count: number };
+  payment_invoice: { id: string; invoice_number: string; balance: number } | null;
+  limitations: { read_only: boolean; customer_scoped: boolean; account_commands: boolean };
 }
 
 export interface CustomerProfileChangeRequest {
