@@ -535,6 +535,87 @@ button[data-api-loading="true"]::before {
   .security-flow-label { display: none; }
 }
 
+/* The public company website must remain highly legible regardless of the
+   staff application's saved light/dark theme. These rules are activated only
+   while PublicHomePage is mounted and never alter private portal screens. */
+html.public-site-active {
+  color-scheme: light;
+  font-size: 17px;
+}
+
+html.public-site-active body {
+  background: #020617;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html.public-site-active .bg-white {
+  background-color: #ffffff !important;
+}
+
+html.public-site-active .bg-slate-100 {
+  background-color: #f1f5f9 !important;
+}
+
+html.public-site-active .text-slate-950 {
+  color: #020617 !important;
+}
+
+html.public-site-active .text-slate-700 {
+  color: #334155 !important;
+}
+
+html.public-site-active .text-slate-600 {
+  color: #475569 !important;
+}
+
+html.public-site-active .text-slate-500 {
+  color: #64748b !important;
+}
+
+html.public-site-active .text-slate-400 {
+  color: #cbd5e1 !important;
+}
+
+html.public-site-active .text-slate-300 {
+  color: #e2e8f0 !important;
+}
+
+html.public-site-active .text-sky-700 {
+  color: #0369a1 !important;
+}
+
+html.public-site-active .text-cyan-200,
+html.public-site-active .text-cyan-300 {
+  color: #67e8f9 !important;
+}
+
+html.public-site-active main p,
+html.public-site-active main li,
+html.public-site-active main a {
+  line-height: 1.65;
+}
+
+html.public-site-active main button,
+html.public-site-active main a {
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  html.public-site-active {
+    font-size: 16px;
+  }
+
+  html.public-site-active main h1 {
+    font-size: 2.25rem !important;
+    line-height: 1.12 !important;
+  }
+
+  html.public-site-active main h2 {
+    line-height: 1.2;
+  }
+}
+
 .traffic-flow {
   background-size: 28px 100%;
   animation: traffic-flow 900ms linear infinite;
