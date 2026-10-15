@@ -28,7 +28,7 @@ export default function PublicHomePage(): React.JSX.Element {
     if (!contactLink) return;
 
     const aboutLink = document.createElement('a');
-    aboutLink.href = '#top';
+    aboutLink.href = '#about';
     aboutLink.textContent = 'About us';
     aboutLink.className = 'hover:text-white';
     aboutLink.dataset.aboutUs = 'true';
@@ -70,13 +70,31 @@ export default function PublicHomePage(): React.JSX.Element {
       .find(element => element.textContent?.trim() === 'solarnetconnection.com');
     if (companyWebsite) companyWebsite.href = 'https://solarnetconnection.com';
 
-    const contactDetails = companyWebsite?.closest('.space-y-3');
-    if (contactDetails && !contactDetails.querySelector('[data-registration-details]')) {
-      const registrationDetails = document.createElement('div');
-      registrationDetails.className = 'border-t border-white/10 pt-3 text-xs leading-6 text-slate-400';
-      registrationDetails.dataset.registrationDetails = 'true';
-      registrationDetails.innerHTML = '<p><strong class="text-slate-300">NTC Permit:</strong> RB-VAS-2025-1268/NEW</p><p><strong class="text-slate-300">DTI Registration:</strong> 7111679</p><p><strong class="text-slate-300">TIN:</strong> 700-707-761</p>';
-      contactDetails.appendChild(registrationDetails);
+    const servicesSection = document.querySelector<HTMLElement>('#services');
+    if (servicesSection && !document.querySelector('#about')) {
+      const aboutSection = document.createElement('section');
+      aboutSection.id = 'about';
+      aboutSection.className = 'bg-slate-950 py-16 text-white';
+      aboutSection.innerHTML = `
+        <div class="mx-auto max-w-7xl px-4 sm:px-6">
+          <div class="grid gap-8 lg:grid-cols-[1.1fr_.9fr]">
+            <div>
+              <p class="text-xs font-bold uppercase tracking-[.2em] text-cyan-300">About us</p>
+              <h2 class="mt-3 text-3xl font-black">SolarNet Internet and technical services</h2>
+              <p class="mt-4 max-w-2xl leading-7 text-slate-300">SolarNet delivers reliable internet connectivity, network installation, CCTV solutions, solar installation, technical support, and secure customer billing services.</p>
+              <div class="mt-6 grid gap-3 text-sm sm:grid-cols-3">
+                <div class="rounded-xl border border-white/10 bg-white/5 p-4"><strong class="block text-cyan-300">NTC Permit</strong><span class="mt-1 block text-slate-200">RB-VAS-2025-1268/NEW</span></div>
+                <div class="rounded-xl border border-white/10 bg-white/5 p-4"><strong class="block text-cyan-300">DTI Registration</strong><span class="mt-1 block text-slate-200">7111679</span></div>
+                <div class="rounded-xl border border-white/10 bg-white/5 p-4"><strong class="block text-cyan-300">TIN</strong><span class="mt-1 block text-slate-200">700-707-761</span></div>
+              </div>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <article class="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-5"><h3 class="text-lg font-bold text-cyan-200">CCTV Installation</h3><p class="mt-2 text-sm leading-6 text-slate-300">Camera planning, installation, configuration, monitoring setup, and technical support for homes and businesses.</p></article>
+              <article class="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-5"><h3 class="text-lg font-bold text-amber-200">Solar Installation</h3><p class="mt-2 text-sm leading-6 text-slate-300">Solar power system assessment, equipment installation, configuration, and after-installation support.</p></article>
+            </div>
+          </div>
+        </div>`;
+      servicesSection.insertAdjacentElement('beforebegin', aboutSection);
     }
 
     document.querySelectorAll('main li').forEach(element => {
