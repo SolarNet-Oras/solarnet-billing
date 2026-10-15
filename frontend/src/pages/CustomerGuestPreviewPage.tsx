@@ -20,8 +20,8 @@ export default function CustomerGuestPreviewPage(): React.JSX.Element {
     window.setTimeout(() => setNotice(''), 5000);
   };
 
-  return <main className="min-h-screen bg-gray-50 text-gray-950" style={{ color: '#111827' }}>
-    <header className="border-b border-gray-200 bg-white shadow-sm">
+  return <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50 dark:[&_.bg-white]:bg-slate-900 dark:[&_.bg-gray-50]:bg-slate-800 dark:[&_.bg-gray-100]:bg-slate-800 dark:[&_.border-gray-200]:border-slate-700 dark:[&_.border-gray-300]:border-slate-600 dark:[&_.text-gray-950]:text-white dark:[&_.text-gray-700]:text-slate-200 dark:[&_.text-gray-600]:text-slate-300 dark:[&_.text-blue-800]:text-cyan-300 dark:[&_.text-blue-700]:text-cyan-300 dark:[&_input]:border-slate-600 dark:[&_input]:bg-slate-950 dark:[&_input]:text-white dark:[&_textarea]:border-slate-600 dark:[&_textarea]:bg-slate-950 dark:[&_textarea]:text-white dark:[&_select]:border-slate-600 dark:[&_select]:bg-slate-950 dark:[&_select]:text-white">
+    <header className="border-b border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3"><img src="/solarnet-company-logo-192.png?v=20261015-official" alt="SolarNet" className="h-10 w-10 object-contain" /><div><h1 className="text-xl font-black text-gray-950">Solarnet Internet</h1><p className="text-xs font-semibold text-gray-600">Customer Portal · Guest demonstration</p></div></div>
         <div className="flex items-center gap-2"><span className="rounded-full border border-amber-400 bg-amber-100 px-3 py-1 text-xs font-black text-amber-950">SAMPLE DATA</span><Link to="/customer/login" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-50"><ArrowLeft className="h-4 w-4" />Exit preview</Link></div>
