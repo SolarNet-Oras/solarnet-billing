@@ -8,7 +8,7 @@ type PublicPlan = { id: string; name: string; description?: string | null; downl
 const peso = (amount: number): string => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 0 }).format(amount);
 
 export default function PublicHomePage(): React.JSX.Element {
-  const [branding, setBranding] = useState<CompanyBranding>({ name: 'Solarnet Internet', logo_url: '', email: 'solarnet.connection@gmail.com', phone: '09627981988', address: 'Oras, Eastern Samar, Philippines', website: 'https://solarnetconnection.com', facebook_url: '' });
+  const [branding, setBranding] = useState<CompanyBranding>({ name: 'Solarnet Internet', logo_url: '/solarnet-company-logo-192.png?v=20261015-official', email: 'solarnet.connection@gmail.com', phone: '09627981988', address: 'Oras, Eastern Samar, Philippines', website: 'https://solarnetconnection.com', facebook_url: '' });
   const [plans, setPlans] = useState<PublicPlan[]>([]);
 
   useEffect(() => {

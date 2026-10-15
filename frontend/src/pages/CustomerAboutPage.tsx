@@ -25,7 +25,7 @@ export default function CustomerAboutPage(): React.JSX.Element {
         <section className="mt-5 overflow-hidden rounded-3xl border border-blue-100 bg-white shadow-xl shadow-blue-950/5">
           <header className="bg-gradient-to-br from-blue-950 via-blue-800 to-cyan-700 px-6 py-10 text-white sm:px-10">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <img src={branding.logo_url || '/solarnet-mark.svg'} alt={`${branding.name} logo`} className="h-24 w-24 rounded-3xl border border-white/25 bg-white/10 object-contain p-2 shadow-lg" />
+              <img src="/solarnet-company-logo-192.png?v=20261015-official" alt={`${branding.name} logo`} className="h-24 w-24 rounded-3xl border border-white/25 bg-white/10 object-contain p-2 shadow-lg" />
               <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-200">About us</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">{branding.name}</h1><p className="mt-3 max-w-2xl leading-7 text-blue-100">Connecting customers through reliable internet service, convenient digital billing, secure online payment options, and responsive local support.</p></div>
             </div>
           </header>

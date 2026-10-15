@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { CheckCircle2, Crosshair, Loader2, Wifi, User, Mail, Phone, MapPin, ClipboardCopy } from 'lucide-react';
+import { CheckCircle2, Crosshair, Loader2, User, Mail, Phone, MapPin, ClipboardCopy } from 'lucide-react';
 import { formatPHP } from '@/lib/currency';
 
 const API_BASE = import.meta.env.VITE_API_URL
@@ -195,7 +195,7 @@ export default function SignupPage() {
         <div className="flex items-center justify-between mb-10">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 overflow-hidden rounded-lg bg-blue-500/20 flex items-center justify-center">
-              {branding.logo_url ? <img src={branding.logo_url} alt={branding.name} className="h-full w-full object-contain" /> : <Wifi className="h-6 w-6 text-blue-400" />}
+              <img src="/solarnet-company-logo-192.png?v=20261015-official" alt={branding.name} className="h-full w-full object-contain" />
             </div>
             <div>
               <h1 className="text-xl font-bold">{branding.name}</h1>

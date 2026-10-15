@@ -6,7 +6,7 @@ import customerPortalService from '../services/customerPortalService';
 const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '', email: '', facebook_url: '' });
+  const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '/solarnet-company-logo-192.png?v=20261015-official', email: '', facebook_url: '' });
   const [form, setForm] = useState({ identity: '', account_number: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

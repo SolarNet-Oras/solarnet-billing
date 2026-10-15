@@ -66,7 +66,7 @@ const LoginPage: React.FC = () => {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
+          <img src="/solarnet-company-logo-192.png?v=20261015-official" alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
           <h1 className="text-3xl font-bold text-foreground mb-2">{attendanceLogin ? 'SolarNet Attendance' : branding.name}</h1>
           <p className="text-muted-foreground">
             {attendanceLogin ? 'Super Administrator kiosk authorization' : 'Sign in to your account'}

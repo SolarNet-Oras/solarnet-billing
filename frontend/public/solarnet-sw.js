@@ -1,5 +1,5 @@
-const CACHE_NAME = 'solarnet-application-shell-v15-public-customer-home';
-const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20260907-official';
+const CACHE_NAME = 'solarnet-application-shell-v16-official-company-logo';
+const OFFICIAL_NOTIFICATION_ICON = '/solarnet-company-logo-192.png?v=20261015-official';
 const APP_SHELL = [
   '/',
   '/login',
@@ -10,7 +10,7 @@ const APP_SHELL = [
   '/solarnet-attendance-icon-512.png?v=20260914-attendance',
   '/customer/login',
   OFFICIAL_NOTIFICATION_ICON,
-  '/solarnet-company-logo-512.png?v=20260907-official',
+  '/solarnet-company-logo-512.png?v=20261015-official',
 ];
 
 self.addEventListener('install', (event) => {

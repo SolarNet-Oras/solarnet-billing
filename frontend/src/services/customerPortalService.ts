@@ -37,20 +37,18 @@ export interface ReferralServicePlan {
   price: number;
 }
 
-const DEFAULT_APP_ICON = '/solarnet-mark.svg';
+const OFFICIAL_APP_ICON = '/solarnet-company-logo-192.png?v=20261015-official';
 
 const applyBranding = (branding: CompanyBranding): void => {
   const icon = document.querySelector<HTMLLinkElement>('#company-favicon')
     ?? document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (icon) {
-    icon.href = branding.logo_url || DEFAULT_APP_ICON;
-    if (branding.logo_url) icon.removeAttribute('type');
-    else icon.type = 'image/svg+xml';
+    icon.href = OFFICIAL_APP_ICON;
+    icon.type = 'image/png';
   }
-  // Installation icons are locked to the approved square company-logo asset;
-  // ordinary in-app branding can still use the uploaded logo URL above.
+  // Browser and installation icons are locked to the approved company asset.
   const appleTouchIcon = document.querySelector<HTMLLinkElement>('#company-apple-touch-icon');
-  if (appleTouchIcon) appleTouchIcon.href = '/solarnet-company-logo-192.png?v=20260907-official';
+  if (appleTouchIcon) appleTouchIcon.href = OFFICIAL_APP_ICON;
   document.title = branding.name || 'SolarNet';
   window.dispatchEvent(new CustomEvent<CompanyBranding>('solarnet:branding-changed', { detail: branding }));
 };
@@ -59,7 +57,7 @@ export const customerPortalService = {
   applyBranding,
   getBranding: async (): Promise<CompanyBranding> => {
     const response = await api.get('/customer-portal/branding');
-    const branding = response.data.data as CompanyBranding;
+    const branding = { ...(response.data.data as CompanyBranding), logo_url: OFFICIAL_APP_ICON };
     applyBranding(branding);
     return branding;
   },
