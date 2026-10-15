@@ -87,9 +87,19 @@ export default function SignupPage() {
   useEffect(() => {
     axios
       .get(`${API_BASE}/api/v1/customer-portal/service-plans`)
-      .then((r) => setPlans(r.data?.data || []))
+      .then((r) => {
+        const availablePlans: ServicePlanOption[] = r.data?.data || [];
+        const requestedPlanId = new URLSearchParams(window.location.search).get('plan');
+
+        setPlans(availablePlans);
+        if (requestedPlanId && availablePlans.some((plan) => plan.id === requestedPlanId)) {
+          setForm((current) => ({ ...current, service_plan_id: requestedPlanId }));
+        }
+      })
       .catch(() => setPlans([]));
-    axios.get(`${API_BASE}/api/v1/customer-portal/branding`).then((r) => setBranding(r.data?.data || branding)).catch(() => undefined);
+    axios.get(`${API_BASE}/api/v1/customer-portal/branding`).then((r) => {
+      if (r.data?.data) setBranding(r.data.data);
+    }).catch(() => undefined);
   }, []);
 
   const submit = async (e: FormEvent) => {
