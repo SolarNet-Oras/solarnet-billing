@@ -352,6 +352,16 @@ export const customerPortalService = {
     return response.data.data;
   },
 
+  updateContactWithAssistant: async (data: { full_name: string; account_number: string; email?: string; contact_number?: string; confirmed: boolean }): Promise<{ message: string }> => {
+    const response = await api.post('/customer-portal/assistant/contact', data);
+    return response.data;
+  },
+
+  requestPlanWithAssistant: async (data: { full_name: string; account_number: string; service_plan_id: string; confirmed: boolean }): Promise<{ message: string }> => {
+    const response = await api.post('/customer-portal/assistant/plan-request', data);
+    return response.data;
+  },
+
   sendTroubleshootingMessage: async (sessionId: string, message: string): Promise<CustomerTroubleshootingResponse> => {
     const response = await api.post(`/customer-portal/troubleshooting/sessions/${encodeURIComponent(sessionId)}/messages`, { message });
     return response.data.data;
@@ -379,6 +389,7 @@ export interface CustomerAssistantResponse {
   assistant: string;
   account: { status: string; open_balance: number; open_billing_count: number };
   payment_invoice: { id: string; invoice_number: string; balance: number } | null;
+  action: 'contact_update' | 'plan_request' | null;
   limitations: { read_only: boolean; customer_scoped: boolean; account_commands: boolean };
 }
 

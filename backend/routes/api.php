@@ -539,6 +539,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware('api')->group(function () {
             Route::get('dashboard', [CustomerPortalController::class, 'dashboard']);
             Route::post('assistant/chat', [CustomerAssistantController::class, 'chat'])->middleware('throttle:30,1');
+            Route::post('assistant/contact', [CustomerAssistantController::class, 'updateContact'])->middleware('throttle:5,1');
+            Route::post('assistant/plan-request', [CustomerAssistantController::class, 'requestPlan'])->middleware('throttle:5,1');
             Route::get('referrals', [CustomerPortalController::class, 'referrals']);
             Route::post('referrals', [CustomerPortalController::class, 'submitReferral'])->middleware('throttle:5,1');
             Route::post('referrals/{id}/reward-choice', [CustomerPortalController::class, 'chooseReferralReward'])->middleware('throttle:5,1');
