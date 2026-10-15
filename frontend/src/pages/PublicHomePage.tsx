@@ -70,6 +70,15 @@ export default function PublicHomePage(): React.JSX.Element {
       .find(element => element.textContent?.trim() === 'solarnetconnection.com');
     if (companyWebsite) companyWebsite.href = 'https://solarnetconnection.com';
 
+    const contactDetails = companyWebsite?.closest('.space-y-3');
+    if (contactDetails && !contactDetails.querySelector('[data-registration-details]')) {
+      const registrationDetails = document.createElement('div');
+      registrationDetails.className = 'border-t border-white/10 pt-3 text-xs leading-6 text-slate-400';
+      registrationDetails.dataset.registrationDetails = 'true';
+      registrationDetails.innerHTML = '<p><strong class="text-slate-300">NTC Permit:</strong> RB-VAS-2025-1268/NEW</p><p><strong class="text-slate-300">DTI Registration:</strong> 7111679</p><p><strong class="text-slate-300">TIN:</strong> 700-707-761</p>';
+      contactDetails.appendChild(registrationDetails);
+    }
+
     document.querySelectorAll('main li').forEach(element => {
       if (element.textContent?.includes('Secure PayMongo online payments')) {
         const icon = element.firstElementChild;
