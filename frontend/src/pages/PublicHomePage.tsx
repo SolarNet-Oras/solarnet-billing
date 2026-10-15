@@ -42,6 +42,18 @@ export default function PublicHomePage(): React.JSX.Element {
       .find(element => element.textContent === 'Serving Oras, Eastern Samar');
     if (serviceArea) serviceArea.textContent = 'Serving Eastern Samar';
 
+    const introduction = Array.from(document.querySelectorAll<HTMLParagraphElement>('main p'))
+      .find(element => element.textContent?.includes('secure online billing with PayMongo'));
+    if (introduction) {
+      introduction.textContent = 'SolarNet provides high-speed internet connections, network installation, technical support, and secure online billing with QRPh.';
+    }
+
+    const footerDescription = Array.from(document.querySelectorAll<HTMLParagraphElement>('footer p'))
+      .find(element => element.textContent?.includes('Public service information for PayMongo compliance'));
+    if (footerDescription) {
+      footerDescription.textContent = 'Private account data is available only through verified customer access.';
+    }
+
     document.querySelectorAll('main li').forEach(element => {
       if (element.textContent?.includes('Secure PayMongo online payments')) {
         const icon = element.firstElementChild;
