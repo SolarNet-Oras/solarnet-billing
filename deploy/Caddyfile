@@ -43,10 +43,10 @@
     }
 }
 
-# Customer portal: its root is a customer sign-in entry point.
+# Public SolarNet website. Customer account verification remains available at
+# /customer/login, but the root must stay publicly accessible for customers
+# and payment-provider compliance review.
 {$CUSTOMER_DOMAIN} {
-    @customer_landing path /
-    redir @customer_landing /customer/login permanent
     import solarnet_application
     header Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
 }
