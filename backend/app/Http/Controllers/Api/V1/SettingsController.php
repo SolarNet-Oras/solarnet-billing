@@ -202,7 +202,9 @@ class SettingsController extends Controller
             'name' => Setting::get('company.name', 'Solarnet Internet') . ' Customer App',
             'short_name' => Setting::get('company.name', 'SolarNet'),
             'description' => 'View your SolarNet account, bills, payments, and support updates.',
-            'start_url' => '/customer/dashboard',
+            // Installed customer copies open the public company website first.
+            // Private account access begins only after Find my account.
+            'start_url' => '/?source=installed-customer-app',
             'scope' => '/',
             'display' => 'standalone',
             'background_color' => '#f8fafc',
