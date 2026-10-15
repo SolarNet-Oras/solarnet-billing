@@ -52,6 +52,7 @@ import AttendanceInstallPage from '@/pages/AttendanceInstallPage';
 import IpIntelligencePage from '@/pages/IpIntelligencePage';
 import OnuConfigPage from '@/pages/OnuConfigPage';
 import PublicHomePage from '@/pages/PublicHomePage';
+import PublicWebsiteAssistant from '@/components/customer/PublicWebsiteAssistant';
 
 // ============================================================================
 // Main App Component
@@ -238,7 +239,7 @@ const App: React.FC = (): JSX.Element => {
               />
 
               {/* Default Route */}
-              <Route path="/" element={/^(billing|attendance)\./i.test(window.location.hostname) ? <Navigate to="/dashboard" replace /> : <PublicHomePage />} />
+              <Route path="/" element={/^(billing|attendance)\./i.test(window.location.hostname) ? <Navigate to="/dashboard" replace /> : <><PublicHomePage /><PublicWebsiteAssistant /></>} />
               
               {/* Catch all - redirect to dashboard */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
