@@ -25,7 +25,14 @@ export default function PublicHomePage(): React.JSX.Element {
 
   useEffect(() => {
     const contactLink = document.querySelector<HTMLAnchorElement>('nav a[href="#contact"]');
-    if (!contactLink || contactLink.parentElement?.querySelector('[data-other-services]')) return;
+    if (!contactLink) return;
+
+    const aboutLink = document.createElement('a');
+    aboutLink.href = '#top';
+    aboutLink.textContent = 'About us';
+    aboutLink.className = 'hover:text-white';
+    aboutLink.dataset.aboutUs = 'true';
+
     const otherServicesLink = document.createElement('a');
     otherServicesLink.href = 'https://solarnetconnection.com';
     otherServicesLink.target = '_blank';
@@ -33,8 +40,13 @@ export default function PublicHomePage(): React.JSX.Element {
     otherServicesLink.textContent = 'Other services';
     otherServicesLink.className = 'hover:text-white';
     otherServicesLink.dataset.otherServices = 'true';
-    contactLink.insertAdjacentElement('afterend', otherServicesLink);
-    return () => otherServicesLink.remove();
+
+    contactLink.insertAdjacentElement('afterend', aboutLink);
+    aboutLink.insertAdjacentElement('afterend', otherServicesLink);
+    return () => {
+      aboutLink.remove();
+      otherServicesLink.remove();
+    };
   }, []);
 
   useEffect(() => {
