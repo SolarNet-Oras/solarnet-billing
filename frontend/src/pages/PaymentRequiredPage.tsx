@@ -28,7 +28,7 @@ const PaymentRequiredPage: React.FC = () => {
   const [reminder, setReminder] = useState<ReminderData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSignIn, setShowSignIn] = useState(false);
-  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  const [credentials, setCredentials] = useState({ identity: '', account_number: '' });
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState('');
 
@@ -56,14 +56,14 @@ const PaymentRequiredPage: React.FC = () => {
     event.preventDefault();
     setSigningIn(true); setSignInError('');
     try {
-      const result = await customerPortalService.login(credentials.email, credentials.password);
+      const result = await customerPortalService.login(credentials.identity, credentials.account_number);
       if (customerId && result.customer.id !== customerId) {
         setSignInError('Use the portal email for the suspended account shown on this page.');
         return;
       }
       localStorage.setItem('customer_token', result.access_token);
       localStorage.setItem('customer_data', JSON.stringify(result.customer));
-      navigate(result.customer.portal_password_change_required ? '/customer/change-password' : '/customer/billing');
+      navigate('/customer/billing');
     } catch (error: any) {
       setSignInError(error.response?.data?.message || 'Unable to verify your customer portal account.');
     } finally { setSigningIn(false); }
@@ -161,7 +161,7 @@ const PaymentRequiredPage: React.FC = () => {
                 Contact support
               </a>
             </div>
-            {showSignIn && <form onSubmit={signInForPayment} className="max-w-md rounded-2xl border border-white/15 bg-white/5 p-5 backdrop-blur"><h2 className="font-semibold text-white">Verify your account to pay</h2><p className="mt-1 text-sm text-slate-300">Sign in here to open your invoice and GCash payment securely. You will not be sent to the login page.</p>{signInError && <p className="mt-3 rounded-lg bg-rose-500/15 p-3 text-sm text-rose-100">{signInError}</p>}<div className="mt-4 space-y-3"><input required type="email" value={credentials.email} onChange={(e) => setCredentials({ ...credentials, email: e.target.value })} placeholder="Customer email" className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500" /><input required type="password" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} placeholder="Portal password" className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500" /><button disabled={signingIn} className="rounded-xl bg-sky-400 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{signingIn ? 'Verifying…' : 'Continue to payment'}</button></div></form>}
+            {showSignIn && <form onSubmit={signInForPayment} className="max-w-md rounded-2xl border border-white/15 bg-white/5 p-5 backdrop-blur"><h2 className="font-semibold text-white">Verify your account to pay</h2><p className="mt-1 text-sm text-slate-300">Enter the registered email or full name together with the account number shown above.</p>{signInError && <p className="mt-3 rounded-lg bg-rose-500/15 p-3 text-sm text-rose-100">{signInError}</p>}<div className="mt-4 space-y-3"><input required value={credentials.identity} onChange={(e) => setCredentials({ ...credentials, identity: e.target.value })} placeholder="Registered email or full name" className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500" /><input required value={credentials.account_number} onChange={(e) => setCredentials({ ...credentials, account_number: e.target.value.trim() })} placeholder="Account number" className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-4 py-3 text-white placeholder:text-slate-500" /><button disabled={signingIn} className="rounded-xl bg-sky-400 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50">{signingIn ? 'Verifying…' : 'Continue to payment'}</button></div></form>}
           </div>
 
           <div className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-6 shadow-2xl shadow-black/30 backdrop-blur">

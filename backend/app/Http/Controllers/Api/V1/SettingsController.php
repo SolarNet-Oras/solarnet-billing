@@ -184,6 +184,9 @@ class SettingsController extends Controller
             'name' => Setting::get('company.name', 'Solarnet Internet'),
             'logo_url' => $this->publicLogoUrl(),
             'email' => Setting::get('company.email', ''),
+            'phone' => Setting::get('company.phone', '09627981988'),
+            'address' => Setting::get('company.address', 'Oras, Eastern Samar, Philippines'),
+            'website' => Setting::get('company.website', 'https://solarnetconnection.com'),
             'facebook_url' => Setting::get('company.facebook_url', 'https://www.facebook.com/SolarnetConnectionInstallationandServices'),
         ]]);
     }

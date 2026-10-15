@@ -38,18 +38,14 @@ class CustomerPortalController extends Controller
     {
     }
 
-    /**
-     * Customer login. Two supported flows:
-     *   (a) NEW: email + password  (checked against Customer.portal_password)
-     *   (b) LEGACY: email + account_number  (backward compatible for customers
-     *       created before portal passwords existed and who have no password set)
-     */
+    /** Customer login using an exact account number plus the account email/name. */
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email'          => 'required|email',
+            'identity'       => 'nullable|string|max:255|required_without:email',
+            'email'          => 'nullable|email|max:255|required_without:identity',
             'password'       => 'nullable|string',
-            'account_number' => 'nullable|string',
+            'account_number' => 'nullable|string|max:64|required_without:password',
         ]);
 
         if ($validator->fails()) {
@@ -70,11 +66,11 @@ class CustomerPortalController extends Controller
             ], 422);
         }
 
-        // Customer email addresses are case-insensitive in normal use. Trim
-        // accidental spaces too, so the portal does not reject a valid record
-        // simply because staff stored mixed-case email text.
-        $email = strtolower(trim($request->string('email')->toString()));
-        $customer = Customer::whereRaw('LOWER(email) = ?', [$email])->first();
+        $identity = trim($request->string('identity', $request->string('email')->toString())->toString());
+        $accountNumber = trim($request->string('account_number')->toString());
+        $customer = $accountNumber !== ''
+            ? Customer::query()->where('account_number', $accountNumber)->first()
+            : Customer::query()->whereRaw('LOWER(email) = ?', [strtolower($identity)])->first();
 
         if (!$customer) {
             return response()->json(['status' => 'error', 'message' => 'Invalid credentials'], 401);
@@ -82,7 +78,7 @@ class CustomerPortalController extends Controller
 
         $authenticated = false;
 
-        // Password auth path (preferred)
+        // Keep the old password route for existing bookmarked payment screens.
         if ($request->filled('password')) {
             if ($customer->portal_password && Hash::check($request->password, $customer->portal_password)) {
                 $authenticated = true;
@@ -101,11 +97,18 @@ class CustomerPortalController extends Controller
             }
         }
 
-        // Legacy account-number fallback (only if the customer has no password yet)
-        if (!$authenticated && $request->filled('account_number') && !$customer->portal_password) {
-            if ($customer->account_number === $request->account_number) {
-                $authenticated = true;
-            }
+        // Public portal flow: the unique account number must match together
+        // with either the exact email address or exact full name. Comparisons
+        // are case-insensitive and normalize repeated whitespace.
+        if (!$authenticated && $accountNumber !== '' && $identity !== '') {
+            $normalize = static fn (?string $value): string => mb_strtolower(
+                preg_replace('/\s+/u', ' ', trim((string) $value)) ?? ''
+            );
+            $authenticated = hash_equals((string) $customer->account_number, $accountNumber)
+                && (
+                    hash_equals($normalize($customer->email), $normalize($identity))
+                    || hash_equals($normalize($customer->full_name), $normalize($identity))
+                );
         }
 
         if (!$authenticated) {
@@ -138,7 +141,7 @@ class CustomerPortalController extends Controller
                     'email' => $customer->email,
                     'contact_number' => $customer->contact_number,
                     'status' => $customer->status,
-                    'portal_password_change_required' => (bool) $customer->portal_password_change_required,
+                    'portal_password_change_required' => false,
                 ],
                 'access_token' => $token,
                 'token_type' => 'bearer',

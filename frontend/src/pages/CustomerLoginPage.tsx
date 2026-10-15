@@ -1,138 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { LogIn } from 'lucide-react';
+import { ArrowLeft, KeyRound, LogIn, ShieldCheck } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import customerPortalService from '../services/customerPortalService';
 
 const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [branding, setBranding] = useState({ name: 'Solarnet Internet', logo_url: '', email: '', facebook_url: '' });
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [form, setForm] = useState({ identity: '', account_number: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => { void customerPortalService.getBranding().then(setBranding).catch(() => undefined); }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
     setLoading(true);
     setError('');
-
     try {
-      const result = await customerPortalService.login(formData.email, formData.password);
-      
-      // Store token and customer data
+      const result = await customerPortalService.login(form.identity, form.account_number);
       localStorage.setItem('customer_token', result.access_token);
       localStorage.setItem('customer_data', JSON.stringify(result.customer));
-      
-      // Temporary-password users must set a personal password before they can
-      // open the dashboard or suspended-account payment page.
       const requested = new URLSearchParams(location.search).get('next');
-      const next = requested?.startsWith('/customer/') ? requested : '/customer/dashboard';
-      navigate(result.customer.portal_password_change_required
-        ? `/customer/change-password?next=${encodeURIComponent(next)}`
-        : next);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      navigate(requested?.startsWith('/customer/') ? requested : '/customer/dashboard');
+    } catch (caught: any) {
+      setError(caught.response?.data?.message || 'Account details did not match. Check both entries and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/45 to-primary/10 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        {/* Logo/Brand */}
-        <div className="text-center mb-8">
-          <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="w-16 h-16 mx-auto mb-4 object-contain" />
-          <h1 className="text-3xl font-bold text-foreground">{branding.name}</h1>
-          <p className="text-muted-foreground mt-2">Customer Portal</p>
-        </div>
-
-        {/* Login Card */}
-        <div className="bg-card border border-border rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">Sign In</h2>
-
-          {error && (
-            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm" role="alert">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-input rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="your.email@example.com"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 border border-input rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Your portal password"
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-5 h-5" />
-                  Sign In
-                </>
-              )}
-            </button>
-          </form>
-
-            <p className="mt-4 text-center text-xs text-muted-foreground">
-            New accounts use a temporary password and must change it after their first sign-in.
-          </p>
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-            If you have not created your own password yet, use <strong>Solarnet123</strong>, then change it immediately.
-          </p>
-
-          <div className="mt-6 pt-6 border-t border-border space-y-3">
-            <p className="text-center text-sm text-muted-foreground">
-              New to Solarnet?{' '}
-              <a href="/signup" className="text-primary hover:text-primary/80 font-medium" data-testid="customer-login-signup-link">
-                Sign up for service
-              </a>
-            </p>
-            <p className="text-center text-sm text-muted-foreground">
-              Need help? {branding.email && <><a href={`mailto:${branding.email}`} className="text-primary hover:text-primary/80">Email customer support</a>{branding.facebook_url && ' or '}</>}
-              {branding.facebook_url && <a href={branding.facebook_url} target="_blank" rel="noreferrer" className="text-primary hover:text-primary/80">message us on Facebook</a>}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <main className="min-h-screen bg-gradient-to-br from-slate-950 via-sky-950 to-slate-950 px-4 py-8 text-white"><div className="mx-auto max-w-md"><Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-sky-200 hover:text-white"><ArrowLeft className="h-4 w-4"/>Back to SolarNet website</Link><header className="mb-7 text-center"><img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain"/><p className="text-xs font-bold uppercase tracking-[.22em] text-cyan-300">Private customer access</p><h1 className="mt-2 text-3xl font-bold">Find your SolarNet account</h1><p className="mt-2 text-sm leading-6 text-slate-300">Enter the email address or full name registered on your account together with your account number.</p></header><section className="rounded-3xl border border-white/10 bg-white p-6 text-slate-950 shadow-2xl sm:p-8">{error && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}<form onSubmit={handleSubmit} className="space-y-4"><label className="block text-sm font-semibold">Registered email or full name<input required autoFocus autoComplete="username" value={form.identity} onChange={event => setForm({ ...form, identity: event.target.value })} placeholder="juan@email.com or Juan Dela Cruz" className="mt-1.5 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"/></label><label className="block text-sm font-semibold">Account number<input required inputMode="numeric" autoComplete="off" value={form.account_number} onChange={event => setForm({ ...form, account_number: event.target.value.trim() })} placeholder="Your SolarNet account number" className="mt-1.5 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"/></label><button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 font-bold text-white hover:bg-sky-700 disabled:opacity-50">{loading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"/> : <LogIn className="h-5 w-5"/>}{loading ? 'Checking account…' : 'Open my account'}</button></form><div className="mt-5 space-y-2 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-600"><p className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>Both details must exactly match SolarNet records. Other customers cannot be searched or displayed.</p><p className="flex gap-2"><KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-sky-600"/>Your invoices, payments, address, and connection details remain hidden until verification succeeds.</p></div><p className="mt-5 text-center text-sm text-slate-600">Need a new connection? <Link to="/signup" className="font-semibold text-sky-700 hover:underline">Apply for service</Link></p></section></div></main>;
 };
 
 export default CustomerLoginPage;

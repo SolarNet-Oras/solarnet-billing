@@ -7,6 +7,9 @@ export interface CompanyBranding {
   name: string;
   logo_url: string;
   email: string;
+  phone?: string;
+  address?: string;
+  website?: string;
   facebook_url: string;
 }
 
@@ -63,13 +66,13 @@ export const customerPortalService = {
   /**
    * Customer login
    */
-  login: async (email: string, password?: string, accountNumber?: string): Promise<{
+  login: async (identity: string, accountNumber?: string, password?: string): Promise<{
     customer: Customer;
     access_token: string;
     token_type: string;
   }> => {
     const response = await api.post('/customer-portal/login', {
-      email,
+      identity,
       password,
       account_number: accountNumber,
     });
