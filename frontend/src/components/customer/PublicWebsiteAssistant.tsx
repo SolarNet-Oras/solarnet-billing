@@ -4,9 +4,12 @@ import { Link } from 'react-router-dom';
 
 type Line = { role: 'visitor' | 'assistant'; text: string };
 
+const asksForProtectedAccountAction = (input: string): boolean =>
+  /balance|account status|invoice|my account|suspend|unsuspend|restore|discount|update my|change my|customer information|billing statement/i.test(input);
+
 const reply = (input: string): string => {
   const message = input.toLowerCase();
-  if (/balance|account status|invoice|my account|suspend/.test(message)) return 'For privacy, account balances and status are available only after you verify your registered email or full name together with your SolarNet account number. Tap “Find my account” below.';
+  if (asksForProtectedAccountAction(message)) return 'For privacy and security, account information and account changes are available only after you verify your registered email or full name together with your SolarNet account number. This assistant cannot suspend, restore, discount, or directly modify an account. Tap “Find my account” below.';
   if (/pay|qr|gcash|bank/.test(message)) return 'SolarNet accepts secure online payments through QRPh, GCash, and participating banks. Sign in to your account to display the QRPh code for your specific open billing. Confirmed payments post in real time.';
   if (/plan|price|mbps|speed/.test(message)) return 'SolarNet offers residential and business internet plans from 50 Mbps to 200 Mbps. Current prices are displayed in the Plans & prices section of this page.';
   if (/cctv/.test(message)) return 'SolarNet provides CCTV planning, camera installation, configuration, monitoring setup, and technical support for homes and businesses.';
@@ -19,10 +22,12 @@ const reply = (input: string): string => {
 export default function PublicWebsiteAssistant(): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [showPrivacyWarning, setShowPrivacyWarning] = useState(false);
   const [lines, setLines] = useState<Line[]>([{ role: 'assistant', text: 'Hi! Ask me about SolarNet services, plans, payments, or how to find your account.' }]);
   const send = (text: string): void => {
     const message = text.trim();
     if (!message) return;
+    setShowPrivacyWarning(asksForProtectedAccountAction(message));
     setDraft('');
     setLines(current => [...current, { role: 'visitor', text: message }, { role: 'assistant', text: reply(message) }]);
   };
@@ -30,7 +35,7 @@ export default function PublicWebsiteAssistant(): React.JSX.Element {
   return <div className="fixed bottom-5 right-4 z-[90] sm:right-6">
     {open && <section className="mb-3 flex max-h-[75vh] w-[min(27rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border-2 border-cyan-300 bg-slate-950 text-white shadow-2xl">
       <header className="flex items-center justify-between bg-gradient-to-r from-blue-800 to-cyan-700 p-5 text-white"><div><h2 className="text-lg font-extrabold leading-tight">SolarNet Website Assistant</h2><p className="mt-1 text-sm font-medium text-white">General information only</p></div><button onClick={() => setOpen(false)} className="rounded-lg p-2 text-white hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white" aria-label="Close assistant"><X className="h-5 w-5" /></button></header>
-      <div className="overflow-y-auto bg-slate-950 p-4 sm:p-5"><div className="mb-4 flex gap-3 rounded-xl border-2 border-amber-300 bg-amber-100 p-4 text-base font-bold leading-6 text-slate-950"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-800" />No customer information is available outside the verified customer portal.</div><div className="space-y-3">{lines.map((line, index) => <div key={index} className={`flex ${line.role === 'visitor' ? 'justify-end' : 'justify-start'}`}><p className={`max-w-[90%] rounded-2xl border-2 px-4 py-3 text-base font-semibold leading-6 ${line.role === 'visitor' ? 'border-blue-400 bg-blue-700 text-white' : 'border-slate-500 bg-slate-800 text-white'}`}>{line.text}</p></div>)}</div>
+      <div className="overflow-y-auto bg-slate-950 p-4 sm:p-5">{showPrivacyWarning && <div className="mb-3 flex gap-2 rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-bold leading-5 text-slate-950"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-800" />No customer information is available outside the verified customer portal.</div>}<div className="space-y-3">{lines.map((line, index) => <div key={index} className={`flex ${line.role === 'visitor' ? 'justify-end' : 'justify-start'}`}><p className={`max-w-[90%] rounded-2xl border-2 px-4 py-3 text-base font-semibold leading-6 ${line.role === 'visitor' ? 'border-blue-400 bg-blue-700 text-white' : 'border-slate-500 bg-slate-800 text-white'}`}>{line.text}</p></div>)}</div>
         <div className="mt-4 grid grid-cols-2 gap-2">{['Internet plans', 'How do I pay?', 'CCTV services', 'Solar installation'].map(prompt => <button key={prompt} onClick={() => send(prompt)} className="rounded-xl border-2 border-cyan-300 bg-cyan-50 px-3 py-2.5 text-sm font-extrabold text-slate-950 hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-white">{prompt}</button>)}</div>
         <Link to="/customer/login" className="mt-4 block rounded-xl border-2 border-amber-200 bg-amber-300 px-4 py-3 text-center text-base font-black text-slate-950 shadow-sm hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-white">Find my account securely</Link>
       </div>
