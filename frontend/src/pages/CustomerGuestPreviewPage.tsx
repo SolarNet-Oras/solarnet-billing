@@ -33,7 +33,7 @@ export default function CustomerGuestPreviewPage(): React.JSX.Element {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <section className="mb-6 rounded-2xl border-2 border-amber-400 bg-amber-100 p-4 text-amber-950 shadow-sm"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex gap-3"><LockKeyhole className="mt-0.5 h-6 w-6 shrink-0" /><div><h2 className="font-black">Visitor preview — no real customer information</h2><p className="mt-1 text-sm font-semibold leading-6">All names, balances, invoices, payments, and connection details below are illustrations. Guest actions never reach SolarNet records.</p></div></div><Link to="/signup" className="shrink-0 rounded-xl bg-blue-800 px-5 py-3 text-center font-black text-white hover:bg-blue-900">Sign up free & apply</Link></div></section>
 
-      {notice && <div role="status" className="mb-6 rounded-xl border-2 border-blue-400 bg-blue-100 p-4 text-sm font-bold text-blue-950">{notice}</div>}
+      {notice && <div role="alert" className="mb-6 rounded-xl border-2 border-red-500 bg-red-50 p-4 text-sm font-black text-red-800 shadow-sm dark:border-red-400 dark:bg-red-950 dark:text-red-200">{notice}</div>}
 
       {view === 'dashboard' && <DashboardPreview onDemo={demonstrate} onNavigate={setView} />}
       {view === 'billing' && <BillingPreview onDemo={demonstrate} />}
