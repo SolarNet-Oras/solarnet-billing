@@ -45,7 +45,7 @@ export default function PublicHomePage(): React.JSX.Element {
     const introduction = Array.from(document.querySelectorAll<HTMLParagraphElement>('main p'))
       .find(element => element.textContent?.includes('secure online billing with PayMongo'));
     if (introduction) {
-      introduction.textContent = 'SolarNet provides high-speed internet connections, network installation, technical support, and secure online billing with QRPh.';
+      introduction.textContent = 'SolarNet provides high-speed internet connections, network installation, technical support, and secure online payments via QRPh, GCash, and participating banks, powered by PayMongo.';
     }
 
     const footerDescription = Array.from(document.querySelectorAll<HTMLParagraphElement>('footer p'))
@@ -61,7 +61,7 @@ export default function PublicHomePage(): React.JSX.Element {
     document.querySelectorAll('main li').forEach(element => {
       if (element.textContent?.includes('Secure PayMongo online payments')) {
         const icon = element.firstElementChild;
-        element.replaceChildren(...(icon ? [icon] : []), 'Secure payment via QRPh');
+        element.replaceChildren(...(icon ? [icon] : []), 'Secure payments via QRPh, GCash, and banks — powered by PayMongo');
       }
     });
   }, [plans, branding.website]);
