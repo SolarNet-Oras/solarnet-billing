@@ -17,6 +17,7 @@ import OperationsLedgerPage from '@/pages/OperationsLedgerPage';
 import TicketsPage from '@/pages/TicketsPage';
 import ReportsPage from '@/pages/ReportsPage';
 import CustomerLoginPage from '@/pages/CustomerLoginPage';
+import CustomerGuestPreviewPage from '@/pages/CustomerGuestPreviewPage';
 import CustomerDashboardPage from '@/pages/CustomerDashboardPage';
 import CustomerBillingPage from '@/pages/CustomerBillingPage';
 import CustomerChangePasswordPage from '@/pages/CustomerChangePasswordPage';
@@ -218,6 +219,7 @@ const App: React.FC = (): JSX.Element => {
               
               {/* Customer Portal Routes */}
               <Route path="/customer/login" element={<CustomerLoginPage />} />
+              <Route path="/customer/preview" element={<CustomerGuestPreviewPage />} />
               <Route path="/pay/:token" element={<InvoiceQuickPayPage />} />
               <Route path="/customer/dashboard" element={<CustomerDashboardPage />} />
               <Route path="/customer/billing" element={<CustomerBillingPage />} />

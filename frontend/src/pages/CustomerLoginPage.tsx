@@ -18,6 +18,19 @@ const CustomerLoginPage: React.FC = () => {
     return () => document.documentElement.classList.remove('customer-access-active');
   }, []);
 
+  useEffect(() => {
+    const formElement = document.querySelector<HTMLFormElement>('main form');
+    if (!formElement || document.querySelector('[data-visitor-preview]')) return;
+
+    const visitorAccess = document.createElement('div');
+    visitorAccess.dataset.visitorPreview = 'true';
+    visitorAccess.className = 'mt-5';
+    visitorAccess.innerHTML = '<div class="mb-4 flex items-center gap-3 text-xs font-bold uppercase tracking-wider text-slate-400"><span class="h-px flex-1 bg-slate-200"></span>or<span class="h-px flex-1 bg-slate-200"></span></div><a href="/customer/preview" class="flex w-full items-center justify-center rounded-xl border-2 border-sky-700 bg-sky-50 px-4 py-3 font-bold text-sky-900 hover:bg-sky-100">Continue as visitor</a><p class="mt-2 text-center text-xs font-medium text-slate-600">Explore a safe sample of the customer portal without signing up.</p>';
+    formElement.insertAdjacentElement('afterend', visitorAccess);
+
+    return () => visitorAccess.remove();
+  }, []);
+
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     setLoading(true);
