@@ -305,13 +305,13 @@ export default function SignupPage() {
                 />
               </div>
 
-              <section className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+              <section className="mt-4 rounded-xl border-2 border-blue-300 bg-blue-100 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><MapPin className="h-4 w-4 text-blue-600" /> Installation location <span className="font-normal text-slate-500">(optional)</span></h4>
-                    <p className="mt-1 text-xs leading-5 text-slate-600">At the installation address, you may share this device’s GPS point to help SolarNet locate your service request. You can continue without sharing it.</p>
+                    <h4 className="flex items-center gap-2 text-base font-extrabold text-slate-950"><MapPin className="h-5 w-5 text-blue-800" /> Installation location <span className="font-semibold text-slate-700">(optional)</span></h4>
+                    <p className="mt-2 text-sm font-medium leading-6 text-slate-800">At the installation address, you may share this device’s GPS point to help SolarNet locate your service request. You can continue without sharing it.</p>
                   </div>
-                  <button type="button" onClick={captureSignupLocation} disabled={locating} className="shrink-0 inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60" data-testid="signup-capture-location">
+                  <button type="button" onClick={captureSignupLocation} disabled={locating} className="inline-flex shrink-0 items-center gap-2 rounded-lg border-2 border-blue-900 bg-blue-800 px-3 py-2 text-sm font-bold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-950 focus:ring-offset-2 disabled:opacity-60" data-testid="signup-capture-location">
                     {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />}
                     {locating ? 'Locating…' : form.gps_coordinates ? 'Update location' : 'Use my location'}
                   </button>
