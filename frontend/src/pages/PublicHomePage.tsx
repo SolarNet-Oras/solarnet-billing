@@ -97,6 +97,16 @@ export default function PublicHomePage(): React.JSX.Element {
       servicesSection.insertAdjacentElement('afterend', aboutSection);
     }
 
+    const plansSection = document.querySelector<HTMLElement>('#plans');
+    const plansContainer = plansSection?.firstElementChild;
+    if (plansContainer && !plansContainer.querySelector('[data-realtime-payment-notice]')) {
+      const paymentNotice = document.createElement('aside');
+      paymentNotice.className = 'mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-sm';
+      paymentNotice.dataset.realtimePaymentNotice = 'true';
+      paymentNotice.innerHTML = '<p class="font-bold">Real-time online payment posting</p><p class="mt-1 text-sm leading-6">Verified QRPh, GCash, and participating bank payments are posted to your SolarNet account in real time. If service was suspended only because of unpaid billing, restoration starts automatically after full payment is confirmed and no open invoice remains.</p>';
+      plansContainer.firstElementChild?.insertAdjacentElement('afterend', paymentNotice);
+    }
+
     document.querySelectorAll('main li').forEach(element => {
       if (element.textContent?.includes('Secure PayMongo online payments')) {
         const icon = element.firstElementChild;
