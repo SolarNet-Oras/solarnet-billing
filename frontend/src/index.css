@@ -563,7 +563,8 @@ html.customer-access-active body {
 }
 
 html.customer-access-active .bg-white {
-  background-color: #ffffff !important;
+  background-color: #e0f2fe !important;
+  border-color: #7dd3fc !important;
 }
 
 html.customer-access-active .text-slate-950 {
@@ -579,8 +580,8 @@ html.customer-access-active .text-sky-700 {
 }
 
 html.customer-access-active input {
-  background-color: #ffffff !important;
-  border-color: #94a3b8 !important;
+  background-color: #f8fafc !important;
+  border-color: #64748b !important;
   color: #020617 !important;
   font-size: 1rem;
   font-weight: 500;
