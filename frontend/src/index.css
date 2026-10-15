@@ -563,20 +563,20 @@ html.customer-access-active body {
 }
 
 html.customer-access-active .bg-white {
-  background-color: #e0f2fe !important;
-  border-color: #7dd3fc !important;
+  background-color: #102a43 !important;
+  border-color: #38bdf8 !important;
 }
 
 html.customer-access-active .text-slate-950 {
-  color: #020617 !important;
+  color: #f8fafc !important;
 }
 
 html.customer-access-active .text-slate-600 {
-  color: #334155 !important;
+  color: #dbeafe !important;
 }
 
 html.customer-access-active .text-sky-700 {
-  color: #0369a1 !important;
+  color: #67e8f9 !important;
 }
 
 html.customer-access-active input {
@@ -593,7 +593,7 @@ html.customer-access-active input::placeholder {
 }
 
 html.customer-access-active label {
-  color: #0f172a !important;
+  color: #f8fafc !important;
   font-weight: 700;
 }
 
