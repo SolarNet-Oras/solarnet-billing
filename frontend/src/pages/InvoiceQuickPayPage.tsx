@@ -4,6 +4,7 @@ import { CheckCircle2, CreditCard, Loader2, ShieldCheck, Smartphone } from 'luci
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
 import { formatPHP } from '@/lib/currency';
+import FiberOpticBackground from '@/components/FiberOpticBackground';
 
 type Summary = { invoice: { invoice_number: string; issue_date: string; due_date: string; total: number; paid_amount: number; balance: number; status: string }; customer: { full_name: string; account_number_masked: string } };
 type QrPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; qr_image_url?: string | null; invoice_number: string; amount: number };
@@ -80,10 +81,8 @@ export default function InvoiceQuickPayPage(): React.JSX.Element {
     return () => window.clearInterval(timer);
   }, [qr?.checkout_id, token]);
 
-  return <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#061b24] p-4 text-slate-900 sm:p-8">
-    <div className="pointer-events-none absolute inset-0 opacity-80" style={{ backgroundImage: 'radial-gradient(circle at 12% 18%, rgba(34,211,238,.22), transparent 25%), radial-gradient(circle at 88% 78%, rgba(59,130,246,.2), transparent 30%), linear-gradient(135deg, #061b24 0%, #082f49 52%, #071821 100%)' }} />
-    <div className="pointer-events-none absolute -left-24 top-16 h-80 w-[130%] rotate-[-8deg] rounded-[100%] border border-cyan-300/25 shadow-[0_0_45px_rgba(34,211,238,.2)]" />
-    <div className="pointer-events-none absolute -right-24 bottom-20 h-72 w-[120%] rotate-[9deg] rounded-[100%] border border-blue-300/20 shadow-[0_0_55px_rgba(59,130,246,.18)]" />
+  return <main className="relative grid min-h-screen place-items-center overflow-hidden p-4 text-slate-900 sm:p-8">
+    <FiberOpticBackground />
     <section className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-white/50 bg-white/95 p-6 shadow-[0_30px_90px_rgba(0,0,0,.42)] backdrop-blur-xl sm:p-8">
       <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-cyan-400 via-blue-600 to-emerald-400" />
       <div className="flex items-center gap-4"><img src="/solarnet-company-logo-192.png" alt="SolarNet official logo" className="h-16 w-16 shrink-0 rounded-full border-2 border-white object-cover shadow-md" /><div className="min-w-0"><div className="flex items-center gap-2 text-blue-700"><ShieldCheck className="h-4 w-4" /><p className="text-xs font-black uppercase tracking-[0.16em]">SolarNet secure payment</p></div><h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">View and pay invoice</h1><p className="mt-1 text-xs font-medium text-slate-600">Protected billing access for one SolarNet account</p></div></div>

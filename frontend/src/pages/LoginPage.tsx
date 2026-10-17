@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import customerPortalService from '@/services/customerPortalService';
+import FiberOpticBackground from '@/components/FiberOpticBackground';
 
 const REMEMBERED_STAFF_EMAIL_KEY = 'solarnet-remembered-staff-email';
 
@@ -62,19 +63,20 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <FiberOpticBackground />
+      <div className="relative z-10 w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
           <img src="/solarnet-company-logo-192.png?v=20261015-official" alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
-          <h1 className="text-3xl font-bold text-foreground mb-2">{attendanceLogin ? 'SolarNet Attendance' : branding.name}</h1>
-          <p className="text-muted-foreground">
+          <h1 className="mb-2 text-3xl font-bold text-white">{attendanceLogin ? 'SolarNet Attendance' : branding.name}</h1>
+          <p className="text-slate-200">
             {attendanceLogin ? 'Super Administrator kiosk authorization' : 'Sign in to your account'}
           </p>
         </div>
 
         {/* Login Form */}
-        <div className="bg-card border border-border rounded-lg p-8 shadow-sm">
+        <div className="rounded-2xl border border-white/40 bg-card/95 p-8 shadow-2xl backdrop-blur-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Alert */}
             {error && (
@@ -151,7 +153,7 @@ const LoginPage: React.FC = () => {
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-slate-300">
             Secure staff authentication and role-based access
           </p>
         </div>

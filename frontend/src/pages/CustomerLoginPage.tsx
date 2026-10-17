@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Hash, KeyRound, LogIn, ShieldCheck } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import customerPortalService from '../services/customerPortalService';
+import FiberOpticBackground from '@/components/FiberOpticBackground';
 
 type LoginMethod = 'account_number' | 'password';
 
@@ -49,8 +50,9 @@ const CustomerLoginPage: React.FC = () => {
     }
   };
 
-  return <main className="min-h-screen bg-gradient-to-br from-slate-950 via-sky-950 to-slate-950 px-4 py-8 text-white">
-    <div className="mx-auto max-w-md">
+  return <main className="relative min-h-screen overflow-hidden px-4 py-8 text-white">
+    <FiberOpticBackground />
+    <div className="relative z-10 mx-auto max-w-md">
       <Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-sky-200 hover:text-white"><ArrowLeft className="h-4 w-4" />Back to SolarNet website</Link>
       <header className="mb-7 text-center">
         <img src={branding.logo_url || '/solarnet-mark.svg'} alt={branding.name} className="mx-auto mb-4 h-16 w-16 object-contain" />
