@@ -56,7 +56,7 @@ class PaymongoHostedCheckoutMethodsTest extends TestCase
         $this->assertSame('https://checkout.paymongo.com/cs_test_multichannel', $result['checkout_url']);
         Http::assertSent(function (Request $request): bool {
             return $request->url() === 'https://api.paymongo.com/v1/checkout_sessions'
-                && $request['data']['attributes']['payment_method_types'] === ['gcash', 'paymaya', 'dob', 'dob_ubp'];
+                && $request['data']['attributes']['payment_method_types'] === ['gcash', 'paymaya', 'dob'];
         });
     }
 }
