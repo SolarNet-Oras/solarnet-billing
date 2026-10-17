@@ -833,7 +833,10 @@ PROMPT;
             $reason = trim((string) ($response->json('error.message') ?: 'Facebook rejected the Page post.'));
             Log::warning('Facebook Page post was rejected', ['post_id' => $post->id, 'http_status' => $response->status(), 'reason' => $reason]);
             $post->forceFill(['status' => 'failed', 'last_error' => Str::limit($reason, 1000, '')])->save();
-            return ['success' => false, 'message' => 'Facebook rejected the Page post. Confirm pages_manage_posts access and Page permissions.'];
+            return [
+                'success' => false,
+                'message' => 'Facebook rejected the Page post: '.Str::limit($reason, 500, '').' Reconnect the Page after confirming pages_manage_posts access and Page Full control.',
+            ];
         }
 
         $post->forceFill([
