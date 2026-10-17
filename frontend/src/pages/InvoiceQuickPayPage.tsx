@@ -3,12 +3,10 @@ import { useLocation, useParams } from 'react-router-dom';
 import { CheckCircle2, CreditCard, Loader2, ShieldCheck, Smartphone } from 'lucide-react';
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
-import { openPaymongoDob } from '@/services/paymongoDobService';
 import { formatPHP } from '@/lib/currency';
 
 type Summary = { invoice: { invoice_number: string; issue_date: string; due_date: string; total: number; paid_amount: number; balance: number; status: string }; customer: { full_name: string; account_number_masked: string } };
 type QrPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; qr_image_url?: string | null; invoice_number: string; amount: number };
-type DobPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; bank_code: 'bpi' | 'ubp' };
 
 const formatDueDate = (value: string): string => new Intl.DateTimeFormat('en-PH', {
   timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric',
@@ -69,19 +67,6 @@ export default function InvoiceQuickPayPage(): React.JSX.Element {
     finally { setBusy(''); }
   };
 
-  const directBank = async (bankCode: 'bpi' | 'ubp') => {
-    setBusy(bankCode); setError('');
-    try {
-      const payment = (await api.post(`${base}/online-banking`, { bank_code: bankCode })).data.data as DobPayment;
-      const returnUrl = `${window.location.origin}/pay/${encodeURIComponent(token)}?payment=success&checkout=${encodeURIComponent(payment.checkout_id)}`;
-      const redirectUrl = await openPaymongoDob({ ...payment, bankCode, returnUrl });
-      window.location.assign(redirectUrl);
-    } catch (requestError: any) {
-      setError(requestError.response?.data?.message || requestError.message || `Could not open ${bankCode.toUpperCase()} Direct Online Banking.`);
-      setBusy('');
-    }
-  };
-
   useEffect(() => {
     if (!qr) return;
     const timer = window.setInterval(async () => {
@@ -105,7 +90,7 @@ export default function InvoiceQuickPayPage(): React.JSX.Element {
         <div className="mt-6 rounded-2xl bg-slate-50 p-5"><p className="font-semibold">{summary.customer.full_name}</p><p className="text-xs text-slate-500">Account {summary.customer.account_number_masked} · {summary.invoice.invoice_number}</p><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-slate-500">Due date</dt><dd className="font-semibold">{formatDueDate(summary.invoice.due_date)}</dd></div><div><dt className="text-slate-500">Status</dt><dd className="font-semibold capitalize">{summary.invoice.status}</dd></div></dl><div className="mt-4 border-t pt-4"><p className="text-xs text-slate-500">Amount due</p><p className="text-3xl font-black text-blue-700">{formatPHP(summary.invoice.balance)}</p></div></div>
         {Number(summary.invoice.balance) > 0 ? (!showMethods
           ? <button onClick={() => setShowMethods(true)} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-lg font-black text-white shadow-lg hover:bg-blue-700"><CreditCard className="h-5 w-5" />Pay now</button>
-          : <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="font-black text-slate-950">Select payment method</h2><p className="text-xs text-slate-500">Choose one secure PayMongo payment option.</p></div><button onClick={() => setShowMethods(false)} disabled={!!busy} className="text-sm font-bold text-slate-600 hover:text-slate-950 disabled:opacity-50">Cancel</button></div><div className="grid gap-3"><button onClick={() => void qrPh()} disabled={!!busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white disabled:opacity-60"><Smartphone className="h-5 w-5" />{busy === 'qr' ? 'Preparing QR Ph…' : 'QRPh — scan with GCash or bank'}</button><div className="grid grid-cols-2 gap-3"><button onClick={() => void directBank('bpi')} disabled={!!busy} className="rounded-xl border-2 border-blue-600 bg-white px-4 py-3 font-bold text-blue-700 disabled:opacity-60">{busy === 'bpi' ? 'Opening BPI…' : 'BPI Online'}</button><button onClick={() => void directBank('ubp')} disabled={!!busy} className="rounded-xl border-2 border-violet-600 bg-white px-4 py-3 font-bold text-violet-700 disabled:opacity-60">{busy === 'ubp' ? 'Opening UBP…' : 'UBP Online'}</button></div><button onClick={() => void onlineCheckout()} disabled={!!busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white disabled:opacity-60"><CreditCard className="h-5 w-5" />{busy === 'checkout' ? 'Opening secure checkout…' : 'Card, GCash, Maya & other methods'}</button></div><p className="mt-3 text-center text-xs font-medium text-slate-500">Only payment methods activated by PayMongo are available.</p></section>)
+          : <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="font-black text-slate-950">Select payment method</h2><p className="text-xs text-slate-500">Choose one secure PayMongo payment option.</p></div><button onClick={() => setShowMethods(false)} disabled={!!busy} className="text-sm font-bold text-slate-600 hover:text-slate-950 disabled:opacity-50">Cancel</button></div><div className="grid gap-3"><button onClick={() => void qrPh()} disabled={!!busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white disabled:opacity-60"><Smartphone className="h-5 w-5" />{busy === 'qr' ? 'Preparing QR Ph…' : 'QRPh — scan with GCash or bank'}</button><button onClick={() => void onlineCheckout()} disabled={!!busy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white disabled:opacity-60"><CreditCard className="h-5 w-5" />{busy === 'checkout' ? 'Opening secure checkout…' : 'Card, GCash, Maya, BPI, UBP & other methods'}</button></div><p className="mt-3 text-center text-xs font-medium text-slate-500">Only payment methods activated by PayMongo are available.</p></section>)
           : <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-center font-semibold text-emerald-800">This invoice is fully paid.</p>}
       </>}
       <p className="mt-5 text-center text-xs leading-5 text-slate-500">No portal login is required. This signed link opens only the invoice shown above. Payment is recorded only after PayMongo confirms it.</p>
