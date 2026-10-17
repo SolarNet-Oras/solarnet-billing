@@ -69,6 +69,29 @@ class PublicInvoicePaymentController extends Controller
         return response()->json(['paid' => $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id), 'payment_status' => $checkout->fresh()->status]);
     }
 
+    public function directOnlineBanking(Request $request, string $token, PaymongoService $paymongo): JsonResponse
+    {
+        $invoice = $this->resolve($token);
+        $data = $request->validate(['bank_code' => 'required|in:bpi,ubp']);
+        try {
+            $payment = $paymongo->createDobPayment($invoice, $data['bank_code']);
+            $this->grantAccess($invoice);
+            return response()->json(['data' => $payment]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function reconcileDirectOnlineBanking(string $token, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    {
+        $invoice = $this->resolve($token);
+        $checkout = PaymongoCheckout::where('invoice_id', $invoice->id)
+            ->whereIn('checkout_type', ['dob_bpi', 'dob_ubp'])
+            ->whereKey($checkoutId)
+            ->firstOrFail();
+        return response()->json(['paid' => $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id), 'payment_status' => $checkout->fresh()->status]);
+    }
+
     private function resolve(string $token): \App\Models\Invoice
     {
         $invoice = $this->links->invoice($token);

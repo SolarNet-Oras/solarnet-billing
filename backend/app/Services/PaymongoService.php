@@ -118,6 +118,58 @@ class PaymongoService
         return $this->qrPhResponse($checkout, $customer->full_name, $invoice->invoice_number, $public);
     }
 
+    /** Create a direct-online-banking intent for one explicitly selected bank. */
+    public function createDobPayment(Invoice $invoice, string $bankCode): array
+    {
+        $invoice->loadMissing('customer');
+        $secret = config('services.paymongo.secret_key');
+        $public = config('services.paymongo.public_key');
+        if (! $secret || ! $public) throw new RuntimeException('Direct Online Banking is not configured.');
+        if (! in_array($bankCode, ['bpi', 'ubp'], true)) throw new RuntimeException('Unsupported online bank.');
+        if ($invoice->balance <= 0) throw new RuntimeException('This invoice is already paid.');
+        if (! $invoice->customer?->account_number) throw new RuntimeException('The customer account number is missing.');
+
+        $accountNumber = $invoice->customer->account_number;
+        $reference = 'SLR-' . $accountNumber . '-' . $invoice->invoice_number . '-' . strtoupper($bankCode) . '-' . Str::upper(Str::random(6));
+        $amount = (int) round((float) $invoice->balance * 100);
+        $response = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)->post(
+            rtrim(config('services.paymongo.base_url'), '/') . '/payment_intents',
+            ['data' => ['attributes' => [
+                'amount' => $amount,
+                'currency' => 'PHP',
+                'payment_method_allowed' => ['dob'],
+                'description' => "SolarNet {$accountNumber} - {$invoice->invoice_number} - " . strtoupper($bankCode),
+            ]]],
+        );
+        if (! $response->successful()) throw new RuntimeException('PayMongo could not start Direct Online Banking: ' . ($response->json('errors.0.detail') ?? $response->body()));
+        $intentId = $response->json('data.id');
+        $clientKey = $response->json('data.attributes.client_key');
+        if (! $intentId || ! $clientKey) throw new RuntimeException('PayMongo did not return Direct Online Banking credentials.');
+
+        $checkout = PaymongoCheckout::create([
+            'invoice_id' => $invoice->id,
+            'customer_id' => $invoice->customer_id,
+            'account_number' => $accountNumber,
+            'checkout_session_id' => 'dob-' . $bankCode . '-' . Str::lower(Str::random(28)),
+            'checkout_type' => 'dob_' . $bankCode,
+            'payment_intent_id' => $intentId,
+            'payment_intent_client_key' => $clientKey,
+            'reference_number' => $reference,
+            'amount' => $invoice->balance,
+            'status' => 'pending',
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        return [
+            'checkout_id' => $checkout->id,
+            'payment_intent_id' => $intentId,
+            'client_key' => $clientKey,
+            'public_key' => $public,
+            'base_url' => rtrim((string) config('services.paymongo.base_url'), '/'),
+            'bank_code' => $bankCode,
+        ];
+    }
+
     /** Create a QR Ph intent that becomes an advance payment only after provider confirmation. */
     public function createAdvanceQrPhPayment(
         Customer $customer,
@@ -258,7 +310,7 @@ class PaymongoService
         $secret = config('services.paymongo.secret_key');
         if (!$secret) return false;
         $checkout = PaymongoCheckout::where('payment_intent_id', $paymentIntentId)->first();
-        if (!$checkout || ! in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph'], true)) return false;
+        if (!$checkout || ! in_array($checkout->checkout_type, ['qr_ph', 'advance_qr_ph', 'dob_bpi', 'dob_ubp'], true)) return false;
         $response = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)->get(rtrim(config('services.paymongo.base_url'), '/') . '/payment_intents/' . $paymentIntentId);
         if (!$response->successful()) return false;
         $attributes = $response->json('data.attributes', []);
@@ -331,13 +383,14 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $locked->customer_id || ($locked->account_number && $invoice->customer?->account_number !== $locked->account_number)) {
                 throw new RuntimeException('PayMongo QR Ph account verification failed. No payment was recorded.');
             }
+            $isDob = str_starts_with((string) $locked->checkout_type, 'dob_');
             $payment = $this->invoices->recordPayment($invoice, [
                     'amount' => $locked->amount,
-                    'payment_method' => 'mobile_money',
+                    'payment_method' => $isDob ? 'bank_transfer' : 'mobile_money',
                     'payment_date' => now(),
                     'transaction_id' => $paymongoPaymentId,
                     'reference' => $locked->reference_number,
-                    'notes' => 'PayMongo QR Ph | Payment Intent ' . $locked->payment_intent_id . ' | Account ' . $locked->account_number,
+                    'notes' => ($isDob ? 'PayMongo Direct Online Banking (' . strtoupper(substr((string) $locked->checkout_type, 4)) . ')' : 'PayMongo QR Ph') . ' | Payment Intent ' . $locked->payment_intent_id . ' | Account ' . $locked->account_number,
                 ]);
             $locked->payment_id = $payment->id;
             $locked->status = 'paid';

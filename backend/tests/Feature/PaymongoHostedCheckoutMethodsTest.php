@@ -59,4 +59,42 @@ class PaymongoHostedCheckoutMethodsTest extends TestCase
                 && $request['data']['attributes']['payment_method_types'] === ['gcash', 'paymaya', 'dob'];
         });
     }
+
+    public function test_unionbank_direct_flow_creates_dob_intent_and_records_bank_selection(): void
+    {
+        config()->set('services.paymongo.secret_key', 'sk_test_checkout');
+        config()->set('services.paymongo.public_key', 'pk_test_checkout');
+        config()->set('services.paymongo.base_url', 'https://api.paymongo.com/v1');
+        Http::fake([
+            'https://api.paymongo.com/v1/payment_intents' => Http::response([
+                'data' => ['id' => 'pi_test_ubp', 'attributes' => ['client_key' => 'pi_test_ubp_client_key']],
+            ]),
+        ]);
+
+        $customer = Customer::create([
+            'account_number' => '2000000100', 'full_name' => 'UBP Customer',
+            'email' => 'ubp@example.com', 'address' => 'Test address',
+            'contact_number' => '09170000001', 'installation_date' => '2026-01-01',
+            'billing_cycle_day' => 15, 'monthly_fee' => 800, 'status' => 'active',
+        ]);
+        $invoice = Invoice::create([
+            'customer_id' => $customer->id, 'invoice_number' => 'SLR-TEST-0100',
+            'issue_date' => '2026-10-08', 'due_date' => '2026-10-15',
+            'billing_period_start' => '2026-09-15', 'billing_period_end' => '2026-10-15',
+            'total' => 800, 'balance' => 800, 'status' => 'sent',
+        ]);
+
+        $result = app(PaymongoService::class)->createDobPayment($invoice, 'ubp');
+
+        $this->assertSame('ubp', $result['bank_code']);
+        $this->assertDatabaseHas('paymongo_checkouts', [
+            'invoice_id' => $invoice->id,
+            'checkout_type' => 'dob_ubp',
+            'payment_intent_id' => 'pi_test_ubp',
+        ]);
+        Http::assertSent(fn (Request $request): bool =>
+            $request->url() === 'https://api.paymongo.com/v1/payment_intents'
+            && $request['data']['attributes']['payment_method_allowed'] === ['dob']
+        );
+    }
 }

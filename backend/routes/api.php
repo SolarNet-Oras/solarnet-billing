@@ -533,6 +533,8 @@ Route::prefix('v1')->group(function () {
             Route::post('qr-ph', [PublicInvoicePaymentController::class, 'qrPh']);
             Route::post('qr-ph/{checkoutId}/attach', [PublicInvoicePaymentController::class, 'attach']);
             Route::post('qr-ph/{checkoutId}/reconcile', [PublicInvoicePaymentController::class, 'reconcileQrPh']);
+            Route::post('online-banking', [PublicInvoicePaymentController::class, 'directOnlineBanking']);
+            Route::post('online-banking/{checkoutId}/reconcile', [PublicInvoicePaymentController::class, 'reconcileDirectOnlineBanking']);
         });
 
         // Protected customer routes
