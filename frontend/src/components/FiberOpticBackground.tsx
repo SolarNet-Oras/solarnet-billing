@@ -1,9 +1,12 @@
 export default function FiberOpticBackground(): React.JSX.Element {
   return <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden bg-[#03151d]">
     <img
-      src="/solarnet-auth-background.png"
+      src="/solarnet-auth-background.jpg"
       alt=""
       className="absolute inset-0 h-full w-full object-cover object-center"
+      decoding="async"
+      fetchPriority="high"
+      loading="eager"
       draggable={false}
     />
     <div className="absolute inset-0 bg-slate-950/45" />
