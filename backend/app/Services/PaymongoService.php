@@ -37,7 +37,7 @@ class PaymongoService
             ]],
             // PayMongo exposes one DOB selector; its hosted page lists only
             // banks activated for this merchant (for example BPI and UBP).
-            'payment_method_types' => ['gcash', 'paymaya', 'dob'],
+            'payment_method_types' => ['card', 'gcash', 'paymaya', 'dob'],
             'description' => "SolarNet account {$accountNumber}: {$customer->full_name} - invoice {$invoice->invoice_number}",
             'reference_number' => $reference,
             'success_url' => $returnUrl . '?payment=success',
@@ -299,7 +299,7 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
                 throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
             }
-            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo online checkout (GCash / Maya / BPI / UBP) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
+            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo hosted checkout (Card / GCash / Maya / DOB) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
             $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
         });
     }
