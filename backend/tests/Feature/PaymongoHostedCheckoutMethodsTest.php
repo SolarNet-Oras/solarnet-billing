@@ -44,6 +44,8 @@ class PaymongoHostedCheckoutMethodsTest extends TestCase
             'invoice_number' => 'SLR-TEST-0099',
             'issue_date' => '2026-10-08',
             'due_date' => '2026-10-15',
+            'billing_period_start' => '2026-09-15',
+            'billing_period_end' => '2026-10-15',
             'total' => 800,
             'balance' => 800,
             'status' => 'sent',
