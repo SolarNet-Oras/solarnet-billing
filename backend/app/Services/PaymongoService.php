@@ -35,9 +35,10 @@ class PaymongoService
             'line_items' => [[
                 'currency' => 'PHP', 'amount' => (int) round($invoice->balance * 100), 'name' => "SolarNet {$accountNumber} - {$invoice->invoice_number}", 'quantity' => 1,
             ]],
-            // PayMongo shows only methods enabled for this merchant. DOB opens
-            // Direct Online Banking, including BPI and UBP when activated in PayMongo.
-            'payment_method_types' => ['gcash', 'paymaya', 'dob'],
+            // This integration still uses PayMongo Checkout Sessions v1. Its
+            // bank-specific identifiers are `dob` (BPI) and `dob_ubp` (UBP).
+            // PayMongo shows either method only when enabled for this merchant.
+            'payment_method_types' => ['gcash', 'paymaya', 'dob', 'dob_ubp'],
             'description' => "SolarNet account {$accountNumber}: {$customer->full_name} - invoice {$invoice->invoice_number}",
             'reference_number' => $reference,
             'success_url' => $returnUrl . '?payment=success',
