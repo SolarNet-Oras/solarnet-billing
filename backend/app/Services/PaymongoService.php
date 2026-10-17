@@ -20,7 +20,7 @@ class PaymongoService
     {
         $invoice->loadMissing('customer');
         $key = config('services.paymongo.secret_key');
-        if (!$key) throw new RuntimeException('GCash payments are not configured yet. Ask SolarNet to add PAYMONGO_SECRET_KEY on the server.');
+        if (!$key) throw new RuntimeException('Online payments are not configured yet. Ask SolarNet to add PAYMONGO_SECRET_KEY on the server.');
         if ($invoice->balance <= 0) throw new RuntimeException('This invoice is already paid.');
         if (!$invoice->customer?->account_number) throw new RuntimeException('This invoice cannot be paid online because its customer account number is missing.');
 
@@ -35,7 +35,9 @@ class PaymongoService
             'line_items' => [[
                 'currency' => 'PHP', 'amount' => (int) round($invoice->balance * 100), 'name' => "SolarNet {$accountNumber} - {$invoice->invoice_number}", 'quantity' => 1,
             ]],
-            'payment_method_types' => ['gcash'],
+            // PayMongo shows only methods enabled for this merchant. DOB opens
+            // Direct Online Banking, including BPI when activated in PayMongo.
+            'payment_method_types' => ['gcash', 'paymaya', 'dob'],
             'description' => "SolarNet account {$accountNumber}: {$customer->full_name} - invoice {$invoice->invoice_number}",
             'reference_number' => $reference,
             'success_url' => $returnUrl . '?payment=success',
@@ -43,7 +45,7 @@ class PaymongoService
             'billing' => ['name' => $customer->full_name, 'email' => $customer->email, 'phone' => $customer->contact_number],
         ]]];
         $response = Http::withBasicAuth($key, '')->acceptJson()->post(rtrim(config('services.paymongo.base_url'), '/') . '/checkout_sessions', $payload);
-        if (!$response->successful()) throw new RuntimeException('PayMongo could not start GCash checkout: ' . ($response->json('errors.0.detail') ?? $response->body()));
+        if (!$response->successful()) throw new RuntimeException('PayMongo could not start the online checkout: ' . ($response->json('errors.0.detail') ?? $response->body()));
         $data = $response->json('data');
         $checkoutUrl = $data['attributes']['checkout_url'] ?? null;
         if (!$checkoutUrl) throw new RuntimeException('PayMongo did not return a checkout URL.');
@@ -245,7 +247,7 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
                 throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
             }
-            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo GCash checkout | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
+            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo online checkout (GCash / Maya / BPI) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
             $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
         });
     }
