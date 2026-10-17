@@ -36,7 +36,7 @@ class PaymongoService
                 'currency' => 'PHP', 'amount' => (int) round($invoice->balance * 100), 'name' => "SolarNet {$accountNumber} - {$invoice->invoice_number}", 'quantity' => 1,
             ]],
             // PayMongo shows only methods enabled for this merchant. DOB opens
-            // Direct Online Banking, including BPI when activated in PayMongo.
+            // Direct Online Banking, including BPI and UBP when activated in PayMongo.
             'payment_method_types' => ['gcash', 'paymaya', 'dob'],
             'description' => "SolarNet account {$accountNumber}: {$customer->full_name} - invoice {$invoice->invoice_number}",
             'reference_number' => $reference,
@@ -247,7 +247,7 @@ class PaymongoService
             if (!$invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
                 throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
             }
-            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo online checkout (GCash / Maya / BPI) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
+            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo online checkout (GCash / Maya / BPI / UBP) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
             $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
         });
     }

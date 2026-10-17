@@ -14,7 +14,7 @@ class PaymongoHostedCheckoutMethodsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_hosted_checkout_offers_gcash_maya_and_direct_online_banking(): void
+    public function test_hosted_checkout_offers_gcash_maya_and_bpi_ubp_direct_online_banking(): void
     {
         config()->set('services.paymongo.secret_key', 'sk_test_checkout');
         config()->set('services.paymongo.base_url', 'https://api.paymongo.com/v1');
