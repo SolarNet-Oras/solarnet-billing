@@ -535,6 +535,58 @@ button[data-api-loading="true"]::before {
   .security-flow-label { display: none; }
 }
 
+/* Public invoice checkout is deliberately light and high-contrast regardless
+   of the staff dashboard theme stored on the same browser. */
+html.dark .invoice-quick-pay-card,
+.invoice-quick-pay-card {
+  background-color: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #020617 !important;
+}
+
+html.dark .invoice-quick-pay-summary,
+.invoice-quick-pay-summary {
+  background-color: #f0f9ff !important;
+  border-color: #7dd3fc !important;
+  color: #020617 !important;
+}
+
+html.dark .invoice-quick-pay-stat,
+.invoice-quick-pay-stat {
+  background-color: #ffffff !important;
+  color: #020617 !important;
+}
+
+html.dark .invoice-quick-pay-note,
+.invoice-quick-pay-note {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.invoice-quick-pay-card h1,
+.invoice-quick-pay-card h2,
+.invoice-quick-pay-summary .text-slate-950,
+.invoice-quick-pay-stat dd {
+  color: #020617 !important;
+}
+
+.invoice-quick-pay-card .text-slate-700,
+.invoice-quick-pay-card .text-slate-600,
+.invoice-quick-pay-card .text-slate-500 {
+  color: #334155 !important;
+}
+
+.invoice-quick-pay-card .text-blue-700,
+.invoice-quick-pay-card .text-blue-800 {
+  color: #1e40af !important;
+}
+
+.invoice-quick-pay-card button.text-white,
+.invoice-quick-pay-card button .text-white {
+  color: #ffffff !important;
+}
+
 /* The public company website must remain highly legible regardless of the
    staff application's saved light/dark theme. These rules are activated only
    while PublicHomePage is mounted and never alter private portal screens. */
