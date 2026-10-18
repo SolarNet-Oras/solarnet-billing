@@ -589,29 +589,52 @@ html.dark .invoice-quick-pay-note,
 
 html.dark .invoice-quick-pay-methods,
 .invoice-quick-pay-methods {
-  background-color: #f8fafc !important;
-  border-color: #cbd5e1 !important;
+  background-color: #ffffff !important;
+  border: 2px solid #94a3b8 !important;
   color: #020617 !important;
+  box-shadow: 0 14px 32px rgb(15 23 42 / 18%) !important;
+  color-scheme: light !important;
 }
 
 .invoice-quick-pay-methods h2 {
   color: #020617 !important;
+  font-size: 1.125rem !important;
+  line-height: 1.5rem !important;
 }
 
 .invoice-quick-pay-methods p,
 .invoice-quick-pay-availability,
 .invoice-quick-pay-cancel {
-  color: #334155 !important;
+  color: #1e293b !important;
+  opacity: 1 !important;
+}
+
+.invoice-quick-pay-methods .invoice-quick-pay-cancel {
+  background-color: #fff1f2 !important;
+  border: 1px solid #fda4af !important;
+  color: #9f1239 !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 0.5rem !important;
 }
 
 .invoice-quick-pay-qr {
   background-color: #047857 !important;
   color: #ffffff !important;
+  border: 2px solid #065f46 !important;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 25%) !important;
 }
 
 .invoice-quick-pay-hosted {
   background-color: #1d4ed8 !important;
   color: #ffffff !important;
+  border: 2px solid #1e40af !important;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 25%) !important;
+}
+
+.invoice-quick-pay-methods .invoice-quick-pay-qr svg,
+.invoice-quick-pay-methods .invoice-quick-pay-hosted svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
 }
 
 /* The public company website must remain highly legible regardless of the
