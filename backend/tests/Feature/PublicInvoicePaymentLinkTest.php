@@ -43,7 +43,7 @@ class PublicInvoicePaymentLinkTest extends TestCase
         $this->getJson('/api/v1/customer-portal/pay/'.$token)
             ->assertOk()
             ->assertJsonPath('data.invoice.invoice_number', 'SLR-202610-0199')
-            ->assertJsonPath('data.customer.account_number_masked', '******0199');
+            ->assertJsonPath('data.customer.account_number', '2000000199');
     }
 
     public function test_tampered_payment_link_remains_rejected(): void

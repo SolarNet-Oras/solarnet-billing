@@ -19,7 +19,7 @@ class PublicInvoicePaymentController extends Controller
         $invoice = $this->resolve($token);
         return response()->json(['data' => [
             'invoice' => $invoice->only(['id', 'invoice_number', 'issue_date', 'due_date', 'total', 'paid_amount', 'balance', 'status']),
-            'customer' => ['full_name' => $invoice->customer?->full_name, 'account_number_masked' => '******' . substr((string) $invoice->customer?->account_number, -4)],
+            'customer' => ['full_name' => $invoice->customer?->full_name, 'account_number' => $invoice->customer?->account_number],
         ]]);
     }
 
