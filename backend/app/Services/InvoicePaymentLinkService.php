@@ -37,7 +37,6 @@ class InvoicePaymentLinkService
         return Invoice::with('customer:id,account_number,full_name,status')
             ->whereKey($payload['invoice_id'] ?? null)
             ->where('customer_id', $payload['customer_id'] ?? null)
-            ->where('invoice_number', $payload['invoice_number'] ?? null)
             ->first();
     }
 
