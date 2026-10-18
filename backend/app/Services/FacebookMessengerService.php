@@ -486,8 +486,18 @@ class FacebookMessengerService
             return ['success' => false, 'message' => 'The Facebook Page connection is inactive.'];
         }
 
+        $eligibleCount = $this->eligibleMarketingCount($campaign->connection);
+        if ($eligibleCount === 0) {
+            $campaign->forceFill([
+                'recipient_count' => 0,
+                'last_error' => 'No eligible recipients. Record explicit marketing consent on a Messenger conversation after the contact sends a new message within the last 24 hours.',
+            ])->save();
+
+            return ['success' => false, 'message' => 'No eligible recipients. The campaign remains a draft. Ask the contact to message the Page, then record their explicit marketing consent before approving the campaign.'];
+        }
+
         $campaign->forceFill([
-            'recipient_count' => $this->eligibleMarketingCount($campaign->connection),
+            'recipient_count' => $eligibleCount,
             'status' => 'sending',
             'approved_by' => $approvedBy->id,
             'approved_at' => now(),
@@ -509,6 +519,15 @@ class FacebookMessengerService
             ->orderBy('id')
             ->get();
         $campaign->forceFill(['recipient_count' => $eligible->count()])->save();
+
+        if ($eligible->isEmpty()) {
+            $campaign->forceFill([
+                'status' => 'failed',
+                'last_error' => 'No eligible recipients remained when delivery ran. Consent and the 24-hour Messenger reply window are checked again at send time.',
+                'completed_at' => now(),
+            ])->save();
+            return;
+        }
 
         foreach ($eligible as $conversation) {
             if (FacebookMessengerMessage::query()

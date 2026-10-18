@@ -81,6 +81,14 @@ Schedule::command('sms:dispatch-advisory-outbox --limit=100')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Every minute — recover approved Messenger campaigns if their original
+// Redis job was lost. Delivery is idempotent per campaign and conversation.
+Schedule::command('facebook:dispatch-marketing-campaigns --limit=10')
+    ->everyMinute()
+    ->timezone($tz)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Every 5 minutes — reconcile billing and network suspension state.
 Schedule::command('automation:auto-suspend')
     ->everyFiveMinutes()
