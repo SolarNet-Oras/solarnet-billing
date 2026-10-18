@@ -53,11 +53,7 @@ class PaymongoService
         return ['checkout_url' => $checkoutUrl, 'checkout_session_id' => $data['id'], 'reference_number' => $reference, 'account_number' => $accountNumber, 'customer_name' => $customer->full_name, 'invoice_number' => $invoice->invoice_number];
     }
 
-    /**
-     * Create a PayMongo Dynamic QR Ph Payment Intent. The QR image is only
-     * returned after the browser attaches a QR Ph payment method with the
-     * public key; this method never manufactures a QR from a SolarNet URL.
-     */
+    /** Create and fully attach a PayMongo Dynamic QR Ph Payment Intent. */
     public function createQrPhPayment(Invoice $invoice): array
     {
         $invoice->loadMissing('customer');
@@ -78,6 +74,7 @@ class PaymongoService
             ->latest()
             ->first();
         if ($existing) {
+            $existing = $this->ensureQrPhImage($existing, $public);
             return $this->qrPhResponse($existing, $customer->full_name, $invoice->invoice_number, $public);
         }
 
@@ -115,6 +112,7 @@ class PaymongoService
             'expires_at' => now()->addMinutes(30),
         ]);
         Log::info('PayMongo QR Ph Payment Intent created', ['invoice_id' => $invoice->id, 'payment_intent_id' => $intentId, 'reference_number' => $reference, 'amount' => $invoice->balance]);
+        $checkout = $this->ensureQrPhImage($checkout, $public);
         return $this->qrPhResponse($checkout, $customer->full_name, $invoice->invoice_number, $public);
     }
 
@@ -200,6 +198,7 @@ class PaymongoService
             ->latest()
             ->first();
         if ($existing) {
+            $existing = $this->ensureQrPhImage($existing, $public);
             return $this->qrPhResponse($existing, $customer->full_name, 'Advance payment', $public);
         }
 
@@ -238,7 +237,68 @@ class PaymongoService
             'expires_at' => now()->addMinutes(30),
         ]);
 
+        $checkout = $this->ensureQrPhImage($checkout, $public);
         return $this->qrPhResponse($checkout, $customer->full_name, 'Advance payment', $public);
+    }
+
+    /**
+     * Complete QR attachment on the trusted backend. This avoids leaving QR
+     * creation dependent on browser CORS, ad blockers, or captive networks.
+     */
+    private function ensureQrPhImage(PaymongoCheckout $checkout, string $publicKey): PaymongoCheckout
+    {
+        if (filled($checkout->qr_image_url)) {
+            return $checkout;
+        }
+
+        $baseUrl = rtrim((string) config('services.paymongo.base_url'), '/');
+        $secret = (string) config('services.paymongo.secret_key');
+
+        // Recover an attachment that PayMongo accepted before SolarNet saved
+        // the response (for example, when an earlier browser request stopped).
+        $intent = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)
+            ->get($baseUrl.'/payment_intents/'.$checkout->payment_intent_id);
+        if (! $intent->successful()) {
+            throw new RuntimeException('PayMongo could not read the QR Ph payment: '.($intent->json('errors.0.detail') ?? $intent->body()));
+        }
+
+        $image = data_get($intent->json(), 'data.attributes.next_action.code.image_url');
+        if (is_string($image) && str_starts_with($image, 'data:image/')) {
+            $checkout->update(['qr_image_url' => $image]);
+            return $checkout->fresh();
+        }
+
+        $paymentMethod = Http::withBasicAuth($publicKey, '')->acceptJson()->timeout(20)
+            ->post($baseUrl.'/payment_methods', [
+                'data' => ['attributes' => ['type' => 'qrph']],
+            ]);
+        if (! $paymentMethod->successful() || blank($paymentMethod->json('data.id'))) {
+            throw new RuntimeException('PayMongo could not create the QR Ph payment method: '.($paymentMethod->json('errors.0.detail') ?? $paymentMethod->body()));
+        }
+
+        $paymentMethodId = (string) $paymentMethod->json('data.id');
+        $attachment = Http::withBasicAuth($publicKey, '')->acceptJson()->timeout(20)
+            ->post($baseUrl.'/payment_intents/'.$checkout->payment_intent_id.'/attach', [
+                'data' => ['attributes' => [
+                    'payment_method' => $paymentMethodId,
+                    'client_key' => $checkout->payment_intent_client_key,
+                ]],
+            ]);
+        if (! $attachment->successful()) {
+            throw new RuntimeException('PayMongo could not attach the QR Ph payment method: '.($attachment->json('errors.0.detail') ?? $attachment->body()));
+        }
+
+        $image = data_get($attachment->json(), 'data.attributes.next_action.code.image_url');
+        if (! is_string($image) || ! str_starts_with($image, 'data:image/')) {
+            throw new RuntimeException('PayMongo attached the payment method but did not return a QR Ph image.');
+        }
+
+        $checkout->update([
+            'payment_method_id' => $paymentMethodId,
+            'qr_image_url' => $image,
+        ]);
+
+        return $checkout->fresh();
     }
 
     /** Save the PayMongo-generated QR image after the public-key attach flow. */
