@@ -587,6 +587,33 @@ html.dark .invoice-quick-pay-note,
   color: #ffffff !important;
 }
 
+html.dark .invoice-quick-pay-methods,
+.invoice-quick-pay-methods {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #020617 !important;
+}
+
+.invoice-quick-pay-methods h2 {
+  color: #020617 !important;
+}
+
+.invoice-quick-pay-methods p,
+.invoice-quick-pay-availability,
+.invoice-quick-pay-cancel {
+  color: #334155 !important;
+}
+
+.invoice-quick-pay-qr {
+  background-color: #047857 !important;
+  color: #ffffff !important;
+}
+
+.invoice-quick-pay-hosted {
+  background-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
 /* The public company website must remain highly legible regardless of the
    staff application's saved light/dark theme. These rules are activated only
    while PublicHomePage is mounted and never alter private portal screens. */
