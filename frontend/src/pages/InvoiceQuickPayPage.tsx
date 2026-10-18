@@ -63,6 +63,7 @@ export default function InvoiceQuickPayPage(): React.JSX.Element {
         const attachment = await attachPaymongoQrPh({ publicKey: payment.public_key, baseUrl: payment.base_url, paymentIntentId: payment.payment_intent_id, clientKey: payment.client_key });
         payment = (await api.post(`${base}/qr-ph/${payment.checkout_id}/attach`, attachment)).data.data;
       }
+      setShowMethods(false);
       setQr(payment);
     } catch (requestError: any) { setError(requestError.response?.data?.message || requestError.message || 'Could not prepare QR Ph.'); }
     finally { setBusy(''); }
@@ -98,6 +99,6 @@ export default function InvoiceQuickPayPage(): React.JSX.Element {
       </>}
       <p className="invoice-quick-pay-note mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-medium leading-6 text-slate-700">No portal login is required. This signed link opens only the invoice shown above. Payment is recorded only after PayMongo confirms it.</p>
     </section>
-    {qr && <div className="fixed inset-0 grid place-items-center bg-slate-950/80 p-4"><section className="w-full max-w-sm rounded-2xl bg-white p-6 text-center"><h2 className="text-xl font-bold">Scan QR Ph</h2><p className="mt-1 text-sm text-slate-500">{qr.invoice_number} · {formatPHP(qr.amount)}</p><img src={qr.qr_image_url || ''} className="mx-auto my-5 h-64 w-64 rounded-xl border p-2" alt="PayMongo QR Ph" /><p className="text-sm font-semibold text-emerald-700">Waiting for payment confirmation…</p><button onClick={() => setQr(null)} className="mt-5 rounded-lg border px-4 py-2 text-sm font-semibold">Close</button></section></div>}
+    {qr && <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/80 p-4"><section role="dialog" aria-modal="true" aria-labelledby="qr-ph-title" className="w-full max-w-sm rounded-2xl bg-white p-6 text-center text-slate-950 shadow-2xl [color-scheme:light]"><h2 id="qr-ph-title" className="text-xl font-bold text-slate-950">Scan QR Ph</h2><p className="mt-1 text-sm font-medium text-slate-600">{qr.invoice_number} · {formatPHP(qr.amount)}</p><img src={qr.qr_image_url || ''} className="mx-auto my-5 h-64 w-64 rounded-xl border border-slate-300 bg-white p-2" alt={`QR Ph payment code for ${qr.invoice_number}`} /><p className="text-sm font-semibold text-emerald-700">Waiting for payment confirmation…</p><button onClick={() => setQr(null)} className="mt-5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">Close</button></section></div>}
   </main>;
 }
