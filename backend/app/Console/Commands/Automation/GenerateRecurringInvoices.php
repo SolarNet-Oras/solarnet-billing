@@ -61,7 +61,10 @@ class GenerateRecurringInvoices extends Command
         $cycleDate = $billingDate->copy()->addDays($leadDays);
 
         $customers = Customer::query()
-            ->where('status', 'active')
+            // Billing suspension restricts Internet access; it does not end
+            // the customer's subscription. Keep producing each monthly
+            // statement until the account is explicitly expired.
+            ->whereIn('status', ['active', 'suspended'])
             ->with('servicePlan')
             ->get();
         /*

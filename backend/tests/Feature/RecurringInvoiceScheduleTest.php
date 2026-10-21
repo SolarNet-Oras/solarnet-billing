@@ -82,6 +82,21 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->assertDatabaseMissing('invoices', ['customer_id' => $free->id]);
     }
 
+    public function test_suspended_subscription_continues_monthly_billing_until_expired(): void
+    {
+        $suspended = $this->customer('Suspended Subscriber', '1000000019', '2026-01-01', 19);
+        $suspended->update(['status' => 'suspended']);
+        $expired = $this->customer('Expired Subscriber', '1000000020', '2026-01-01', 19);
+        $expired->update(['status' => 'expired']);
+
+        $this->runScheduler('2026-10-12');
+
+        $invoice = Invoice::where('customer_id', $suspended->id)->sole();
+        $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
+        $this->assertSame('recurring', $invoice->generation_source);
+        $this->assertDatabaseMissing('invoices', ['customer_id' => $expired->id]);
+    }
+
     public function test_month_end_and_leap_year_calendar_rules(): void
     {
         $customer = $this->customer('Leap Customer', '1000000014', '2027-01-31', 31);

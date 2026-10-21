@@ -199,7 +199,7 @@ class InvoiceService
         $leadDays = 7;
         $billingDate = $runDate->copy()->addDays($leadDays);
 
-        $customers = Customer::where('status', 'active')
+        $customers = Customer::whereIn('status', ['active', 'suspended'])
                            ->whereNotNull('installation_date')
                            ->whereDate('installation_date', '<=', $runDate)
                            ->with('servicePlan')

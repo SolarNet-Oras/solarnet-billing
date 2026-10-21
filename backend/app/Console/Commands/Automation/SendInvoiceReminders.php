@@ -62,6 +62,11 @@ class SendInvoiceReminders extends Command
             if (!$customer) {
                 continue;
             }
+            // Suspension is a collection state, not a subscription end.
+            // Expired/pending accounts must not receive billing campaigns.
+            if (!in_array($customer->status, ['active', 'suspended'], true)) {
+                continue;
+            }
             if ($customer->hasCompanyOwnedPlan()) {
                 continue;
             }
