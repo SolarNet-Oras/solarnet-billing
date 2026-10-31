@@ -14,6 +14,7 @@ import {
   XCircle,
   Smartphone,
   Printer,
+  Ban,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService, { type AdvanceQrPhPayment } from '../services/invoiceService';
@@ -21,6 +22,7 @@ import { attachPaymongoQrPh } from '../services/paymongoQrService';
 import type { Invoice, Customer, Payment, InvoicePaymentHistory, InvoiceActivity } from '../types/api';
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
+import { useAuth } from '../hooks/useAuth';
 
 const paymentMethodLabels: Record<Payment['payment_method'], string> = {
   cash: 'Cash',
@@ -66,6 +68,7 @@ function InvoicePaymentDateTime({ history, activity = [], discount = 0, status }
 }
 
 const InvoicesPage: React.FC = () => {
+  const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +79,10 @@ const InvoicesPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [invoiceToCancel, setInvoiceToCancel] = useState<Invoice | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [cancellationConfirmation, setCancellationConfirmation] = useState('');
+  const [cancellingInvoice, setCancellingInvoice] = useState(false);
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
   const [advanceCustomerId, setAdvanceCustomerId] = useState('');
   const [advancePaymentMethod, setAdvancePaymentMethod] = useState<'cash' | 'qr_ph'>('cash');
@@ -90,6 +97,9 @@ const InvoicesPage: React.FC = () => {
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const paymentSubmissionInFlight = useRef(false);
   const paymentAttemptId = useRef(newPaymentAttemptId());
+  const roleNames = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
+  const canCancelInvoices = roleNames.includes('super_admin')
+    && user?.email?.trim().toLowerCase() === 'solarnet.connection@gmail.com';
 
   // Form states
   const [formData, setFormData] = useState({
@@ -370,6 +380,27 @@ const InvoicesPage: React.FC = () => {
       fetchInvoices();
     } catch (error) {
       console.error('Error marking as sent:', error);
+    }
+  };
+
+  const handleCancelInvoice = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!invoiceToCancel || cancellingInvoice) return;
+
+    setCancellingInvoice(true);
+    try {
+      await invoiceService.deleteInvoice(invoiceToCancel.id, {
+        invoice_number: cancellationConfirmation.trim(),
+        reason: cancellationReason.trim(),
+      });
+      setInvoiceToCancel(null);
+      setCancellationConfirmation('');
+      setCancellationReason('');
+      await fetchInvoices();
+    } catch (error: any) {
+      window.alert(error?.response?.data?.message || 'Invoice cancellation failed. No record was changed.');
+    } finally {
+      setCancellingInvoice(false);
     }
   };
 
@@ -693,6 +724,19 @@ const InvoicesPage: React.FC = () => {
                           <PhilippinePeso className="w-4 h-4" />
                         </button>
                       )}
+                      {canCancelInvoices && invoice.status !== 'cancelled' && Number(invoice.paid_amount) === 0 && (
+                        <button
+                          onClick={() => {
+                            setInvoiceToCancel(invoice);
+                            setCancellationConfirmation('');
+                            setCancellationReason('');
+                          }}
+                          className="text-rose-600 hover:text-rose-900 dark:text-rose-400 dark:hover:text-rose-200"
+                          title="Cancel invoice"
+                        >
+                          <Ban className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -730,6 +774,31 @@ const InvoicesPage: React.FC = () => {
         </div>
         )}
       </div>
+
+      {invoiceToCancel && canCancelInvoices && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form onSubmit={(event) => void handleCancelInvoice(event)} className="w-full max-w-lg rounded-2xl bg-white p-6 text-gray-900 shadow-2xl">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-rose-700"><Ban className="h-5 w-5" />Cancel invoice</h2>
+            <p className="mt-2 text-sm text-gray-600">This preserves the invoice and audit history but removes it from collectible billing. A cancelled accidental cycle will not block its correct replacement.</p>
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm">
+              <strong>{invoiceToCancel.invoice_number}</strong><br />
+              {invoiceToCancel.customer?.full_name} · {formatPHP(invoiceToCancel.balance)} balance
+            </div>
+            <label className="mt-4 block text-sm font-semibold">Type the exact invoice number
+              <input required value={cancellationConfirmation} onChange={(event) => setCancellationConfirmation(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" />
+            </label>
+            <label className="mt-4 block text-sm font-semibold">Cancellation reason
+              <textarea required minLength={10} maxLength={500} value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Explain why this invoice was generated incorrectly" />
+            </label>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setInvoiceToCancel(null)} className="rounded-lg border border-gray-300 px-4 py-2 font-semibold">Keep invoice</button>
+              <button disabled={cancellingInvoice || cancellationConfirmation.trim() !== invoiceToCancel.invoice_number || cancellationReason.trim().length < 10} className="rounded-lg bg-rose-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
+                {cancellingInvoice ? 'Cancelling…' : 'Cancel invoice'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Create Invoice Modal */}
       {showCreateModal && (

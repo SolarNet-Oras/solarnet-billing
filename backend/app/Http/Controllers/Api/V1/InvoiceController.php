@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\ActivityLog;
+use App\Models\PaymentAllocation;
+use App\Models\PaymongoCheckout;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\InvoicePaymentLinkService;
@@ -237,7 +239,7 @@ class InvoiceController extends Controller
                         $events[] = [...$base, 'type' => 'discount', 'value' => (float) $changes['discount']];
                     }
                     if (($changes['status'] ?? null) === 'cancelled' || $log->method === 'DELETE') {
-                        $events[] = [...$base, 'type' => 'cancellation', 'reason' => $changes['correction_reason'] ?? null];
+                        $events[] = [...$base, 'type' => 'cancellation', 'reason' => $changes['reason'] ?? $changes['correction_reason'] ?? null];
                     }
                     return $events;
                 })
@@ -359,6 +361,12 @@ class InvoiceController extends Controller
             ], 422);
         }
 
+        if ($request->input('status') === 'cancelled') {
+            return response()->json([
+                'message' => 'Use the protected Cancel invoice action so the cancellation is authorized and audited.',
+            ], 422);
+        }
+
         $invoice->fill($request->only(['status', 'due_date', 'discount', 'notes']));
         if ($request->filled('correction_reason')) {
             abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only the Super Administrator can record an invoice correction.');
@@ -386,28 +394,61 @@ class InvoiceController extends Controller
     /**
      * Delete/Cancel an invoice
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
-        $invoice = Invoice::findOrFail($id);
+        $actor = $request->user();
+        $authorizedEmail = mb_strtolower(trim((string) config('billing.invoice_cancellation_authorized_email')));
+        abort_unless(
+            $actor?->hasRole('super_admin')
+                && $authorizedEmail !== ''
+                && mb_strtolower(trim((string) $actor->email)) === $authorizedEmail,
+            403,
+            'Only the authorized Super Administrator, Luke Lombendencio, can cancel an invoice.'
+        );
 
-        // Don't allow deletion of paid invoices
-        if ($invoice->status === 'paid') {
-            return response()->json([
-                'message' => 'Cannot delete paid invoices',
-            ], 422);
-        }
+        $validated = $request->validate([
+            'invoice_number' => ['required', 'string', 'max:50'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
 
-        // Check if there are payments
-        if ($invoice->payments()->count() > 0) {
-            return response()->json([
-                'message' => 'Cannot delete invoices with payment records. Consider cancelling instead.',
-            ], 422);
-        }
+        $invoice = DB::transaction(function () use ($id, $validated, $actor): Invoice {
+            $invoice = Invoice::query()->lockForUpdate()->findOrFail($id);
 
-        $invoice->delete();
+            abort_unless(
+                hash_equals($invoice->invoice_number, trim($validated['invoice_number'])),
+                422,
+                'Invoice number confirmation does not match.'
+            );
+
+            if ($invoice->status === 'cancelled') {
+                return $invoice;
+            }
+
+            $hasPaymentActivity = (float) $invoice->paid_amount > 0
+                || $invoice->payments()->exists()
+                || PaymentAllocation::query()->where('invoice_id', $invoice->id)->exists()
+                || PaymongoCheckout::query()->where('invoice_id', $invoice->id)
+                    ->whereNotIn('status', ['expired', 'failed', 'cancelled', 'canceled'])
+                    ->exists();
+
+            abort_if($hasPaymentActivity, 422, 'This invoice has payment activity or an active checkout and cannot be cancelled. Correct the payment first.');
+
+            $invoice->forceFill([
+                'status' => 'cancelled',
+                'notes' => trim(($invoice->notes ? $invoice->notes."\n" : '').sprintf(
+                    '[Cancellation %s by %s] %s',
+                    now()->toDateTimeString(),
+                    $actor->name,
+                    trim($validated['reason'])
+                )),
+            ])->save();
+
+            return $invoice;
+        });
 
         return response()->json([
-            'message' => 'Invoice deleted successfully',
+            'message' => $invoice->wasChanged('status') ? 'Invoice cancelled successfully' : 'Invoice was already cancelled',
+            'invoice' => $invoice->fresh(['customer', 'items', 'payments']),
         ]);
     }
 

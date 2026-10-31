@@ -77,8 +77,8 @@ export const invoiceService = {
   /**
    * Delete/Cancel an invoice
    */
-  deleteInvoice: async (id: string): Promise<{ message: string }> => {
-    const response = await api.delete(`/invoices/${id}`);
+  deleteInvoice: async (id: string, data: { invoice_number: string; reason: string }): Promise<{ message: string; invoice: Invoice }> => {
+    const response = await api.delete(`/invoices/${id}`, { data });
     return response.data;
   },
 

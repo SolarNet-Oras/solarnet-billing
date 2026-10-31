@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AutomationLog;
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Services\InvoiceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -68,6 +69,63 @@ class RecurringInvoiceScheduleTest extends TestCase
 
         $this->runScheduler('2026-10-12');
         $this->assertSame(1, Invoice::where('customer_id', $customer->id)->count());
+    }
+
+    public function test_cancelled_accidental_cycle_does_not_block_the_correct_recurring_statement(): void
+    {
+        $customer = $this->customer('Cancelled Cycle', '1000000021', '2026-01-01', 19);
+        Invoice::create([
+            'customer_id' => $customer->id,
+            'invoice_number' => 'SLR-CANCELLED-0001',
+            'issue_date' => '2026-10-12',
+            'due_date' => '2026-10-19',
+            'billing_period_start' => '2026-09-19',
+            'billing_period_end' => '2026-10-19',
+            'recurring_cycle_date' => '2026-10-19',
+            'generation_source' => 'manual',
+            'total' => 800,
+            'balance' => 800,
+            'status' => 'cancelled',
+        ]);
+
+        $this->runScheduler('2026-10-12');
+
+        $this->assertSame(2, Invoice::where('customer_id', $customer->id)->count());
+        $replacement = Invoice::where('customer_id', $customer->id)->where('status', '!=', 'cancelled')->sole();
+        $this->assertSame('recurring', $replacement->generation_source);
+        $this->assertSame('2026-10-19', $replacement->recurring_cycle_date->toDateString());
+    }
+
+    public function test_prior_late_discounted_invoice_never_becomes_advance_or_blocks_next_cycle(): void
+    {
+        $customer = $this->customer('Discounted Customer', '1000000022', '2026-01-01', 19);
+        $prior = Invoice::create([
+            'customer_id' => $customer->id,
+            'invoice_number' => 'SLR-DISCOUNT-0001',
+            'issue_date' => '2026-09-12',
+            'due_date' => '2026-09-19',
+            'billing_period_start' => '2026-08-19',
+            'billing_period_end' => '2026-09-19',
+            'recurring_cycle_date' => '2026-09-19',
+            'generation_source' => 'recurring',
+            'discount' => 200,
+            'paid_amount' => 0,
+            'status' => 'overdue',
+        ]);
+        $prior->items()->create(['description' => 'Monthly service', 'quantity' => 1, 'unit_price' => 800, 'total' => 800]);
+        app(InvoiceService::class)->calculateInvoiceTotals($prior);
+
+        $this->assertSame('600.00', $prior->fresh()->balance);
+        $this->assertDatabaseCount('customer_credits', 0);
+
+        $this->runScheduler('2026-10-12');
+
+        $this->assertDatabaseCount('customer_credits', 0);
+        $this->assertDatabaseHas('invoices', [
+            'customer_id' => $customer->id,
+            'recurring_cycle_date' => '2026-10-19',
+            'generation_source' => 'recurring',
+        ]);
     }
 
     public function test_inactive_and_non_billable_customers_are_skipped(): void

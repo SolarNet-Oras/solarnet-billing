@@ -93,6 +93,7 @@ class InvoiceService
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
                     ->whereDate('recurring_cycle_date', $recurringCycleDate)
+                    ->where('status', '!=', 'cancelled')
                     ->first();
                 if ($existing) {
                     return $existing->fresh(['items', 'customer']);
@@ -175,6 +176,7 @@ class InvoiceService
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
                     ->whereDate('recurring_cycle_date', $recurringCycleDate)
+                    ->where('status', '!=', 'cancelled')
                     ->first();
                 if ($existing) {
                     return $existing->loadMissing(['items', 'customer']);
@@ -239,6 +241,7 @@ class InvoiceService
                 // invoice must not prevent the normal monthly cycle.
                 $periodStart = $billingDate->copy()->subMonthNoOverflow()->startOfDay();
                 $existingInvoice = Invoice::where('customer_id', $customer->id)
+                    ->where('status', '!=', 'cancelled')
                     ->where(function ($query) use ($billingDate, $periodStart): void {
                         $query->whereDate('recurring_cycle_date', $billingDate)
                             ->orWhere(function ($query) use ($billingDate, $periodStart): void {
@@ -291,10 +294,12 @@ class InvoiceService
     {
         $vatRate = 0.08; // 8% VAT (PH BIR)
         $gross = $invoice->items()->sum('total'); // items are VAT-inclusive
-        $grossAfterDiscount = round($gross - $invoice->discount, 2);
+        // A discount reduces this invoice only. It must never create a
+        // negative balance that could be mistaken for customer advance credit.
+        $grossAfterDiscount = round(max(0, $gross - $invoice->discount), 2);
         $vatableSale = round($grossAfterDiscount / (1 + $vatRate), 2);
         $vat = round($grossAfterDiscount - $vatableSale, 2);
-        $balance = round($grossAfterDiscount - $invoice->paid_amount, 2);
+        $balance = round(max(0, $grossAfterDiscount - $invoice->paid_amount), 2);
 
         $invoice->update([
             'subtotal' => $vatableSale,      // VATable Sale (net)
