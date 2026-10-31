@@ -412,13 +412,15 @@ class InvoiceController extends Controller
         ]);
 
         $invoice = DB::transaction(function () use ($id, $validated, $actor): Invoice {
-            $invoice = Invoice::query()->lockForUpdate()->findOrFail($id);
+            // Both immutable identifiers must resolve to the same single row.
+            // This prevents a customer-wide or multi-invoice cancellation.
+            $invoice = Invoice::query()
+                ->whereKey($id)
+                ->where('invoice_number', trim($validated['invoice_number']))
+                ->lockForUpdate()
+                ->first();
 
-            abort_unless(
-                hash_equals($invoice->invoice_number, trim($validated['invoice_number'])),
-                422,
-                'Invoice number confirmation does not match.'
-            );
+            abort_unless($invoice, 422, 'Invoice number confirmation does not match the selected invoice.');
 
             if ($invoice->status === 'cancelled') {
                 return $invoice;
