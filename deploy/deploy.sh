@@ -145,11 +145,18 @@ echo "==> Ensuring PHP can read deployed application source"
 find ../backend/app ../backend/config ../backend/routes -type d -exec chmod 755 {} +
 find ../backend/app ../backend/config ../backend/routes -type f -exec chmod 644 {} +
 
-echo "==> Installing composer dependencies (first run only, or if vendor/ missing)"
-if [ ! -f ../backend/vendor/autoload.php ]; then
-  $COMPOSE run --rm --no-deps backend composer install \
-    --optimize-autoloader --no-dev --no-interaction --prefer-dist
-fi
+echo "==> Installing the exact locked Composer dependencies"
+# Always reconcile vendor/ with composer.lock. Limiting this to first install
+# leaves patched dependency versions unapplied during ordinary deployments.
+$COMPOSE run --rm --no-deps backend composer install \
+  --optimize-autoloader --no-dev --no-interaction --prefer-dist
+
+echo "==> Verifying PHP platform requirements and known dependency advisories"
+$COMPOSE run --rm --no-deps backend php --version
+$COMPOSE run --rm --no-deps backend composer check-platform-reqs --no-dev
+# This occurs before migrations or service recreation, so an advisory stops
+# the deployment without changing the running application or database.
+$COMPOSE run --rm --no-deps backend composer audit --locked --no-dev
 
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   echo "==> Running database migrations"

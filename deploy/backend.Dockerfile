@@ -1,5 +1,6 @@
-# Production Laravel image (PHP 8.4 FPM + all required extensions)
-FROM php:8.4-fpm-alpine
+# Production Laravel image. Pin the PHP patch and Alpine branch so production
+# is reproducible and security updates arrive as reviewed dependency changes.
+FROM php:8.4.27-fpm-alpine3.24
 
 RUN apk add --no-cache \
     git curl bash zip unzip \

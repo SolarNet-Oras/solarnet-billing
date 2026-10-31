@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: "/deploy"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 5
+    labels:
+      - security
+      - dependencies
+
+  - package-ecosystem: docker
+    directory: "/docker/php"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:05"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 2
+    labels:
+      - security
+      - dependencies
+
+  - package-ecosystem: composer
+    directory: "/backend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:15"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    labels:
+      - security
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:30"
+      timezone: Asia/Manila
+    open-pull-requests-limit: 5
+    labels:
+      - security
+      - dependencies
