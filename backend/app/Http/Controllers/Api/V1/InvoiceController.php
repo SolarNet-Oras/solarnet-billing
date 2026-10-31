@@ -346,6 +346,12 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::findOrFail($id);
 
+        if ($invoice->status === 'cancelled') {
+            return response()->json([
+                'message' => 'Cancelled invoices are immutable. Create or use the correct invoice instead.',
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'status' => 'nullable|in:draft,sent,partial,paid,overdue,cancelled',
             'due_date' => 'nullable|date',

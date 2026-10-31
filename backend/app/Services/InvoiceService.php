@@ -548,6 +548,9 @@ class InvoiceService
             // deterministic order. This serializes payments across different
             // invoice screens for the same account.
             $invoice = Invoice::query()->whereKey($invoice->id)->firstOrFail();
+            if ($invoice->status === 'cancelled') {
+                throw new \RuntimeException('A payment cannot be recorded from a cancelled invoice. Select an active open invoice instead.');
+            }
             $customer = Customer::query()->with('servicePlan')->whereKey($invoice->customer_id)->lockForUpdate()->firstOrFail();
             $amountCents = $this->moneyToCents($paymentData['amount']);
 
