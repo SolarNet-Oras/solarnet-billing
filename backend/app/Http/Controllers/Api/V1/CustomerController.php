@@ -14,7 +14,6 @@ use App\Services\BillingSuspensionService;
 use App\Services\MikrotikService;
 use App\Services\QueueService;
 use App\Services\InvoiceService;
-use App\Services\InvoiceDiscountService;
 use App\Support\CustomerPortalUrl;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -32,21 +31,18 @@ class CustomerController extends Controller
     protected CustomerAccountService $accountService;
     protected MikrotikService $mikrotikService;
     protected InvoiceService $invoiceService;
-    protected InvoiceDiscountService $invoiceDiscounts;
 
     public function __construct(
         QueueService $queueService,
         CustomerAccountService $accountService,
         MikrotikService $mikrotikService,
         InvoiceService $invoiceService,
-        InvoiceDiscountService $invoiceDiscounts,
     )
     {
         $this->queueService = $queueService;
         $this->accountService = $accountService;
         $this->mikrotikService = $mikrotikService;
         $this->invoiceService = $invoiceService;
-        $this->invoiceDiscounts = $invoiceDiscounts;
     }
 
     /**
@@ -1129,12 +1125,6 @@ class CustomerController extends Controller
                     $invoice->update(['discount' => round((float) $invoice->discount + $additionalDiscount, 2)]);
                     $this->invoiceService->calculateInvoiceTotals($invoice->fresh(['items']));
                     $invoice->refresh();
-                    $this->invoiceDiscounts->record(
-                        $invoice,
-                        $additionalDiscount,
-                        $request->user(),
-                        'client setup discount'
-                    );
                     if ((float) $invoice->balance <= 0) {
                         $invoice->update(['status' => 'paid', 'paid_at' => $invoice->paid_at ?? now()]);
                     }

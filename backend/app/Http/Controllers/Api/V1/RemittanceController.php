@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
 use App\Models\Payment;
@@ -19,6 +20,7 @@ use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
@@ -399,6 +401,7 @@ class RemittanceController extends Controller
                     }
                 }
 
+                $discountInvoice = null;
                 if ($variance < 0) {
                     abort_unless(in_array(($data['shortage_reason'] ?? null), ['travel_expense_gas', 'customer_invoice_discount'], true), 422, 'Select the documented reason for the short remittance.');
                     abort_unless(filled($data['expense_receipt_reference'] ?? null), 422, ($data['shortage_reason'] ?? null) === 'customer_invoice_discount'
@@ -419,13 +422,18 @@ class RemittanceController extends Controller
                                     ->orWhereIn('id', $remittanceInvoiceIds)
                                     ->orWhereIn('id', $allocatedInvoiceIds);
                             })
-                            ->where('discount', '>', 0)
                             ->first();
-                        abort_unless($discountInvoice, 422, 'The invoice number must belong to this remittance and contain a recorded discount.');
+                        abort_unless($discountInvoice, 422, 'The exact invoice number must belong to a payment in this remittance.');
+
+                        $previouslyApproved = round((float) FinancialEntry::query()
+                            ->where('category', 'Customer Discounts')
+                            ->where('reference', $discountInvoice->invoice_number)
+                            ->sum('amount'), 2);
+                        $remainingApprovalRoom = round(max(0, (float) $discountInvoice->total - $previouslyApproved), 2);
                         abort_if(
-                            round((float) $discountInvoice->discount, 2) !== round(abs($variance), 2),
+                            round(abs($variance), 2) > $remainingApprovalRoom,
                             422,
-                            'The recorded invoice discount must exactly match the remittance shortage.'
+                            'The shortage exceeds the remaining discount amount that can be approved for this invoice.'
                         );
                     }
                 }
@@ -433,25 +441,12 @@ class RemittanceController extends Controller
                 $entry = null;
                 if ($variance !== 0.0) {
                     $discountShortage = $variance < 0 && ($data['shortage_reason'] ?? null) === 'customer_invoice_discount';
-                    $entry = null;
-                    if ($discountShortage) {
-                        $recordedDiscounts = FinancialEntry::query()
-                            ->where('category', 'Customer Discounts')
-                            ->where('reference', trim((string) $data['expense_receipt_reference']))
-                            ->orderBy('created_at')
-                            ->get();
-                        if (round((float) $recordedDiscounts->sum('amount'), 2) === round(abs($variance), 2)) {
-                            // The discount was already posted when it was approved.
-                            // Reuse its ledger record so liquidation cannot deduct it twice.
-                            $entry = $recordedDiscounts->last();
-                        }
-                    }
-                    $entry ??= FinancialEntry::create([
+                    $entry = FinancialEntry::create([
                         'type' => $variance > 0 ? 'sale' : 'expense',
                         'category' => $variance > 0 ? 'Remittance Cash Overage' : ($discountShortage ? 'Customer Discounts' : 'Travel Expenses'),
                         'description' => $variance > 0
                             ? 'Excess cash explicitly accepted during liquidation'
-                            : ($discountShortage ? 'Approved customer invoice discount reflected in collector remittance' : 'Gas expense deducted from collector remittance'),
+                            : ($discountShortage ? 'Customer invoice discount approved during collector remittance liquidation' : 'Gas expense deducted from collector remittance'),
                         'amount' => number_format(abs($variance), 2, '.', ''),
                         'entry_date' => now(config('app.timezone', 'Asia/Manila'))->toDateString(),
                         'payment_method' => $variance > 0 ? 'add_to_cash' : 'cash',
@@ -463,14 +458,40 @@ class RemittanceController extends Controller
                             ? 'Explicitly accepted by '.$request->user()->name.' during remittance liquidation.'
                             : ($discountShortage
                                 ? ($receiptPath
-                                    ? 'Discount approval evidence stored privately for remittance '.$remittance->id
-                                    : 'Approved invoice discount documented during remittance liquidation; no evidence file was uploaded.')
+                                    ? 'Discount approved during liquidation by '.$request->user()->name.'; evidence stored privately for remittance '.$remittance->id.'.'
+                                    : 'Discount approved during liquidation by '.$request->user()->name.'; no evidence file was uploaded.')
                                 : ($receiptPath
                                     ? 'Official fuel receipt stored privately for remittance '.$remittance->id
                                     : 'Gas expense declared during remittance liquidation; no receipt file was uploaded.')),
                         'idempotency_key' => Str::uuid(),
                         'recorded_by' => $request->user()->id,
                     ]);
+
+                    if ($discountShortage && $discountInvoice && Schema::hasTable('activity_logs')) {
+                        ActivityLog::create([
+                            'actor_id' => $request->user()->id,
+                            'actor_name' => $request->user()->name,
+                            'actor_type' => class_basename($request->user()),
+                            'category' => 'invoices',
+                            'action' => 'RemittanceController / approveInvoiceDiscountShortage',
+                            'method' => 'POST',
+                            'path' => '/api/v1/remittances/'.$remittance->id.'/liquidate',
+                            'subject_type' => 'Invoice',
+                            'subject_id' => (string) $discountInvoice->id,
+                            'response_status' => 200,
+                            'changes' => [
+                                'invoice_number' => $discountInvoice->invoice_number,
+                                'remittance_id' => $remittance->id,
+                                'approved_discount' => round(abs($variance), 2),
+                                'cash_expected' => $cashExpected,
+                                'cash_received' => $cashRetained,
+                                'financial_entry_id' => $entry->id,
+                            ],
+                            'ip_address' => $request->ip(),
+                            'user_agent' => mb_substr((string) $request->userAgent(), 0, 500),
+                            'duration_ms' => 0,
+                        ]);
+                    }
                 }
 
                 $remittance->update([
