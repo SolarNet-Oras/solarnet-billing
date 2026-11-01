@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\Customer;
 use App\Models\CustomerProfileChangeRequest;
 use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\ServicePlan;
@@ -405,9 +406,19 @@ class RemittanceController extends Controller
                         : 'Official gas receipt number/reference is required.');
 
                     if (($data['shortage_reason'] ?? null) === 'customer_invoice_discount') {
+                        $remittanceCustomerIds = $remittance->payments->pluck('customer_id')->filter()->unique();
+                        $remittanceInvoiceIds = $remittance->payments->pluck('invoice_id')->filter()->unique();
+                        $remittancePaymentIds = $remittance->payments->pluck('id')->filter();
+                        $allocatedInvoiceIds = PaymentAllocation::query()
+                            ->whereIn('payment_id', $remittancePaymentIds)
+                            ->pluck('invoice_id');
                         $discountInvoice = Invoice::query()
                             ->where('invoice_number', trim((string) $data['expense_receipt_reference']))
-                            ->whereIn('customer_id', $remittance->payments->pluck('customer_id')->filter()->unique())
+                            ->where(function ($query) use ($remittanceCustomerIds, $remittanceInvoiceIds, $allocatedInvoiceIds) {
+                                $query->whereIn('customer_id', $remittanceCustomerIds)
+                                    ->orWhereIn('id', $remittanceInvoiceIds)
+                                    ->orWhereIn('id', $allocatedInvoiceIds);
+                            })
                             ->where('discount', '>', 0)
                             ->first();
                         abort_unless($discountInvoice, 422, 'The invoice number must belong to this remittance and contain a recorded discount.');
@@ -422,7 +433,20 @@ class RemittanceController extends Controller
                 $entry = null;
                 if ($variance !== 0.0) {
                     $discountShortage = $variance < 0 && ($data['shortage_reason'] ?? null) === 'customer_invoice_discount';
-                    $entry = FinancialEntry::create([
+                    $entry = null;
+                    if ($discountShortage) {
+                        $recordedDiscounts = FinancialEntry::query()
+                            ->where('category', 'Customer Discounts')
+                            ->where('reference', trim((string) $data['expense_receipt_reference']))
+                            ->orderBy('created_at')
+                            ->get();
+                        if (round((float) $recordedDiscounts->sum('amount'), 2) === round(abs($variance), 2)) {
+                            // The discount was already posted when it was approved.
+                            // Reuse its ledger record so liquidation cannot deduct it twice.
+                            $entry = $recordedDiscounts->last();
+                        }
+                    }
+                    $entry ??= FinancialEntry::create([
                         'type' => $variance > 0 ? 'sale' : 'expense',
                         'category' => $variance > 0 ? 'Remittance Cash Overage' : ($discountShortage ? 'Customer Discounts' : 'Travel Expenses'),
                         'description' => $variance > 0

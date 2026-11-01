@@ -11,6 +11,7 @@ use App\Models\PaymongoCheckout;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\InvoicePaymentLinkService;
+use App\Services\InvoiceDiscountService;
 use App\Services\OfficeCashLiquidationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -24,16 +25,19 @@ class InvoiceController extends Controller
     protected InvoiceService $invoiceService;
     protected CashTenderCalculator $cashTender;
     protected InvoicePaymentLinkService $paymentLinks;
+    protected InvoiceDiscountService $invoiceDiscounts;
 
     public function __construct(
         InvoiceService $invoiceService,
         CashTenderCalculator $cashTender,
         InvoicePaymentLinkService $paymentLinks,
+        InvoiceDiscountService $invoiceDiscounts,
     )
     {
         $this->invoiceService = $invoiceService;
         $this->cashTender = $cashTender;
         $this->paymentLinks = $paymentLinks;
+        $this->invoiceDiscounts = $invoiceDiscounts;
     }
 
     /**
@@ -295,6 +299,12 @@ class InvoiceController extends Controller
             $invoice->discount = $request->discount;
             $invoice->save();
             $this->invoiceService->calculateInvoiceTotals($invoice);
+            $this->invoiceDiscounts->record(
+                $invoice->fresh(),
+                (float) $request->discount,
+                $request->user(),
+                'invoice creation'
+            );
         }
 
         // Add notes if provided
@@ -373,6 +383,13 @@ class InvoiceController extends Controller
             ], 422);
         }
 
+        if ($request->has('discount') && round((float) $request->input('discount'), 2) < round((float) $invoice->discount, 2)) {
+            return response()->json([
+                'message' => 'An approved discount cannot be reduced through the general invoice editor because it already has a Daily Operations ledger record.',
+            ], 422);
+        }
+
+        $previousDiscount = (float) $invoice->discount;
         $invoice->fill($request->only(['status', 'due_date', 'discount', 'notes']));
         if ($request->filled('correction_reason')) {
             abort_unless($request->user()?->hasRole('super_admin'), 403, 'Only the Super Administrator can record an invoice correction.');
@@ -387,6 +404,13 @@ class InvoiceController extends Controller
         if ($request->has('discount')) {
             $invoice->save();
             $this->invoiceService->calculateInvoiceTotals($invoice);
+            $discountIncrease = round((float) $invoice->fresh()->discount - $previousDiscount, 2);
+            $this->invoiceDiscounts->record(
+                $invoice->fresh(),
+                $discountIncrease,
+                $request->user(),
+                'invoice update'
+            );
         } else {
             $invoice->save();
         }
