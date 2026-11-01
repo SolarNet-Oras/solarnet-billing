@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 class ProcessScheduledPayroll extends Command
 {
     protected $signature = 'payroll:process-scheduled {--date=} {--dry-run}';
-    protected $description = 'Prepare and email payslips one day before payday; salary release remains a manual wallet-backed action';
+    protected $description = 'Prepare and email payslips one day before payday, with an idempotent payday retry; salary release remains wallet-backed';
 
     public function handle(StaffPayrollService $payroll): int
     {
@@ -23,6 +23,17 @@ class ProcessScheduledPayroll extends Command
         }
 
         $today = now('Asia/Manila')->startOfDay();
+
+        // Payday is a mandatory retry window. If the previous day's cron run,
+        // mail provider, or server was unavailable, prepare missing records and
+        // retry unsent payslips today. StaffPayrollService::process is
+        // idempotent by employee + pay date, so this never duplicates payroll.
+        if ($this->isPayday($today)) {
+            $exit = $this->prepare($payroll, $today);
+            $this->info('Payday payroll verified. Any missing payslips were prepared and unsent email was retried. Release each salary only after selecting the actual source wallet.');
+            return $exit;
+        }
+
         $tomorrow = $today->copy()->addDay();
         if ($this->isPayday($tomorrow)) {
             $exit = $this->prepare($payroll, $tomorrow);
@@ -30,7 +41,7 @@ class ProcessScheduledPayroll extends Command
             return $exit;
         }
 
-        $this->info('No payslip preparation is due today. Salary releases remain available in Attendance & Payroll.');
+        $this->info('No payslip preparation or payday retry is due today. Salary releases remain available in Attendance & Payroll.');
         return self::SUCCESS;
     }
 

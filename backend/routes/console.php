@@ -134,8 +134,9 @@ Schedule::command('attendance:close-stale')
     ->runInBackground();
 
 // 12:00 Asia/Manila daily. Payslips are prepared and emailed one day before
-// payday; scheduled records become released on the 15th/30th (last day in a
-// short month).
+// payday, then idempotently checked/retried on payday itself. Actual salary
+// release remains a wallet-backed administrator action so accounting never
+// records money as paid before Cash/BPI/GCash/Landbank disbursement occurs.
 Schedule::command('payroll:process-scheduled')
     ->dailyAt('12:00')
     ->timezone($tz)
