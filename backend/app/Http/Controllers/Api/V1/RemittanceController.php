@@ -368,7 +368,7 @@ class RemittanceController extends Controller
             'cash_return_breakdown.*.kind' => 'required_with:cash_return_breakdown|in:bill,coin',
             'cash_return_breakdown.*.count' => 'required_with:cash_return_breakdown|integer|min:0|max:100000',
             'excess_action' => 'nullable|in:return_change,accept_overage',
-            'shortage_reason' => 'nullable|in:travel_expense_gas',
+            'shortage_reason' => 'nullable|in:travel_expense_gas,customer_invoice_discount',
             'expense_receipt_reference' => 'nullable|string|max:100',
             'expense_receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
@@ -399,16 +399,35 @@ class RemittanceController extends Controller
                 }
 
                 if ($variance < 0) {
-                    abort_unless(($data['shortage_reason'] ?? null) === 'travel_expense_gas', 422, 'Cash below the remittance is allowed only for Travel Expense - Gas.');
-                    abort_unless(filled($data['expense_receipt_reference'] ?? null), 422, 'Official gas receipt number/reference is required.');
+                    abort_unless(in_array(($data['shortage_reason'] ?? null), ['travel_expense_gas', 'customer_invoice_discount'], true), 422, 'Select the documented reason for the short remittance.');
+                    abort_unless(filled($data['expense_receipt_reference'] ?? null), 422, ($data['shortage_reason'] ?? null) === 'customer_invoice_discount'
+                        ? 'The exact discounted invoice number is required.'
+                        : 'Official gas receipt number/reference is required.');
+
+                    if (($data['shortage_reason'] ?? null) === 'customer_invoice_discount') {
+                        $discountInvoice = Invoice::query()
+                            ->where('invoice_number', trim((string) $data['expense_receipt_reference']))
+                            ->whereIn('customer_id', $remittance->payments->pluck('customer_id')->filter()->unique())
+                            ->where('discount', '>', 0)
+                            ->first();
+                        abort_unless($discountInvoice, 422, 'The invoice number must belong to this remittance and contain a recorded discount.');
+                        abort_if(
+                            round((float) $discountInvoice->discount, 2) !== round(abs($variance), 2),
+                            422,
+                            'The recorded invoice discount must exactly match the remittance shortage.'
+                        );
+                    }
                 }
 
                 $entry = null;
                 if ($variance !== 0.0) {
+                    $discountShortage = $variance < 0 && ($data['shortage_reason'] ?? null) === 'customer_invoice_discount';
                     $entry = FinancialEntry::create([
                         'type' => $variance > 0 ? 'sale' : 'expense',
-                        'category' => $variance > 0 ? 'Remittance Cash Overage' : 'Travel Expenses',
-                        'description' => $variance > 0 ? 'Excess cash explicitly accepted during liquidation' : 'Gas expense deducted from collector remittance',
+                        'category' => $variance > 0 ? 'Remittance Cash Overage' : ($discountShortage ? 'Customer Discounts' : 'Travel Expenses'),
+                        'description' => $variance > 0
+                            ? 'Excess cash explicitly accepted during liquidation'
+                            : ($discountShortage ? 'Approved customer invoice discount reflected in collector remittance' : 'Gas expense deducted from collector remittance'),
                         'amount' => number_format(abs($variance), 2, '.', ''),
                         'entry_date' => now(config('app.timezone', 'Asia/Manila'))->toDateString(),
                         'payment_method' => $variance > 0 ? 'add_to_cash' : 'cash',
@@ -416,9 +435,15 @@ class RemittanceController extends Controller
                         'source_wallet' => $variance > 0 ? null : 'cash',
                         'destination_wallet' => $variance > 0 ? 'cash' : null,
                         'reference' => $variance > 0 ? 'OVERAGE-'.$remittance->id : trim((string) $data['expense_receipt_reference']),
-                        'notes' => $variance > 0 ? 'Explicitly accepted by '.$request->user()->name.' during remittance liquidation.' : ($receiptPath
-                                ? 'Official fuel receipt stored privately for remittance '.$remittance->id
-                                : 'Gas expense declared during remittance liquidation; no receipt file was uploaded.'),
+                        'notes' => $variance > 0
+                            ? 'Explicitly accepted by '.$request->user()->name.' during remittance liquidation.'
+                            : ($discountShortage
+                                ? ($receiptPath
+                                    ? 'Discount approval evidence stored privately for remittance '.$remittance->id
+                                    : 'Approved invoice discount documented during remittance liquidation; no evidence file was uploaded.')
+                                : ($receiptPath
+                                    ? 'Official fuel receipt stored privately for remittance '.$remittance->id
+                                    : 'Gas expense declared during remittance liquidation; no receipt file was uploaded.')),
                         'idempotency_key' => Str::uuid(),
                         'recorded_by' => $request->user()->id,
                     ]);
@@ -431,7 +456,7 @@ class RemittanceController extends Controller
                     'cash_breakdown' => $breakdown,
                     'cash_return_breakdown' => $returnBreakdown,
                     'liquidation_variance' => $variance,
-                    'shortage_reason' => $variance < 0 ? 'travel_expense_gas' : null,
+                    'shortage_reason' => $variance < 0 ? $data['shortage_reason'] : null,
                     'expense_receipt_reference' => $variance < 0 ? trim((string) $data['expense_receipt_reference']) : null,
                     'expense_receipt_path' => $variance < 0 ? $receiptPath : null,
                     'variance_financial_entry_id' => $entry?->id,
@@ -447,7 +472,9 @@ class RemittanceController extends Controller
         return response()->json(['message' => $remittance->liquidation_variance > 0
                 ? 'Cash liquidation accepted. The explicitly accepted excess was added to Daily Operations.'
                 : ($remittance->liquidation_variance < 0
-                ? 'Cash liquidation accepted. The documented gas expense was added to Daily Operations.'
+                ? ($remittance->shortage_reason === 'customer_invoice_discount'
+                    ? 'Cash liquidation accepted. The documented customer discount was added to Daily Operations.'
+                    : 'Cash liquidation accepted. The documented gas expense was added to Daily Operations.')
                 : ((float) $remittance->cash_returned_amount > 0
                     ? 'Cash liquidation accepted. Returned change was recorded and the retained cash matches the remittance.'
                     : 'Cash liquidation matches the collector cash total. You may now validate this remittance.')), 'remittance' => $remittance]);
