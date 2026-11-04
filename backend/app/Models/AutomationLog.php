@@ -17,6 +17,7 @@ class AutomationLog extends Model
     public const JOB_OCTOBER_2026_INVOICE_RECOVERY = 'october_2026_invoice_recovery';
     public const JOB_SUSPENDED_OCTOBER_2026_RECOVERY = 'suspended_october_2026_recovery';
     public const JOB_NOVEMBER_5_2026_INVOICE_RECOVERY = 'november_5_2026_invoice_recovery';
+    public const JOB_NOVEMBER_1_TO_4_2026_INVOICE_RECOVERY = 'november_1_to_4_2026_invoice_recovery';
 
     public const STATUS_SUCCESS = 'success';
     public const STATUS_PARTIAL = 'partial';
