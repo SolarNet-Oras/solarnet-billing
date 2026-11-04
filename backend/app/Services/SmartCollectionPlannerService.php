@@ -113,6 +113,7 @@ class SmartCollectionPlannerService
                     ->whereDate('deferred_at',$today)->exists(),
                 'registration_evidence_captured'=>\App\Models\CollectionRegistrationEvidence::query()
                     ->where('customer_id',$customer->id)->whereIn('status',['pending','approved'])->exists(),
+                'mac_registration_missing'=>blank($customer->mac_address),
                 'registration_ready'=>filled($customer->mac_address) || \App\Models\CollectionRegistrationEvidence::query()
                     ->where('customer_id',$customer->id)->whereIn('status',['pending','approved'])->exists(),
                 'plan_eligible'=>$dueInvoices->isNotEmpty() || (bool)($preference?->early_collection_allowed ?? false),
