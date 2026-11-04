@@ -131,11 +131,7 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->runScheduler('2026-10-12');
 
         $this->assertDatabaseCount('customer_credits', 0);
-        $this->assertDatabaseHas('invoices', [
-            'customer_id' => $customer->id,
-            'recurring_cycle_date' => '2026-10-19',
-            'generation_source' => 'recurring',
-        ]);
+        $this->assertRecurringCycleExists($customer, '2026-10-19');
     }
 
     public function test_paid_manual_invoice_outside_the_service_period_does_not_block_recurring_cycle(): void
@@ -159,11 +155,7 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->runScheduler('2026-10-12');
 
         $this->assertSame(2, Invoice::where('customer_id', $customer->id)->count());
-        $this->assertDatabaseHas('invoices', [
-            'customer_id' => $customer->id,
-            'recurring_cycle_date' => '2026-10-19',
-            'generation_source' => 'recurring',
-        ]);
+        $this->assertRecurringCycleExists($customer, '2026-10-19');
     }
 
     public function test_prior_late_discounted_invoice_never_becomes_advance_or_blocks_next_cycle(): void
@@ -191,11 +183,7 @@ class RecurringInvoiceScheduleTest extends TestCase
         $this->runScheduler('2026-10-12');
 
         $this->assertDatabaseCount('customer_credits', 0);
-        $this->assertDatabaseHas('invoices', [
-            'customer_id' => $customer->id,
-            'recurring_cycle_date' => '2026-10-19',
-            'generation_source' => 'recurring',
-        ]);
+        $this->assertRecurringCycleExists($customer, '2026-10-19');
     }
 
     public function test_inactive_and_non_billable_customers_are_skipped(): void
@@ -308,6 +296,18 @@ class RecurringInvoiceScheduleTest extends TestCase
             '--date' => $date,
             '--triggered-by' => 'manual',
         ])->assertSuccessful();
+    }
+
+    private function assertRecurringCycleExists(Customer $customer, string $cycleDate): void
+    {
+        $this->assertTrue(
+            Invoice::query()
+                ->where('customer_id', $customer->id)
+                ->where('generation_source', 'recurring')
+                ->whereDate('recurring_cycle_date', $cycleDate)
+                ->exists(),
+            "Expected recurring invoice cycle {$cycleDate} for {$customer->account_number}.",
+        );
     }
 
     private function customer(string $name, string $account, string $installed, int $cycleDay, float $fee = 800): Customer
