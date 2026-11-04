@@ -408,6 +408,7 @@ Route::prefix('v1')->group(function () {
             Route::get('smart-dashboard', [CollectionPlannerController::class, 'dashboard']);
             Route::post('plans/generate', [CollectionPlannerController::class, 'generate']);
             Route::post('plans/stops/{stopId}/arrive', [CollectionPlannerController::class, 'arrive']);
+            Route::get('plans/stops/{stopId}/active-visit', [CollectionPlannerController::class, 'activeVisit']);
             Route::post('plans/stops/{stopId}/skip', [CollectionPlannerController::class, 'skip']);
             Route::post('plans/stops/{stopId}/defer-location-update', [CollectionPlannerController::class, 'deferLocationUpdate']);
             Route::post('plans/stops/{stopId}/registration-evidence', [CollectionPlannerController::class, 'captureRegistrationEvidence']);

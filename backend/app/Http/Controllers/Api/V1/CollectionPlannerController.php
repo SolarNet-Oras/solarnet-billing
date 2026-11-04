@@ -72,6 +72,26 @@ class CollectionPlannerController extends Controller
         return response()->json(['message'=>$verified?'Arrival GPS verified.':'Arrival recorded for supervisor review.','visit'=>$visit->fresh('invoices')]);
     }
 
+    public function activeVisit(Request $request, string $stopId): JsonResponse
+    {
+        $stop = CollectionPlanStop::with('plan')->findOrFail($stopId);
+        abort_unless($stop->plan->collector_id === $request->user()->id, 403);
+        abort_unless($stop->status === 'in_progress', 422, 'This collection stop is not currently in progress.');
+
+        $visit = CollectionVisit::query()
+            ->where('collection_plan_stop_id', $stop->id)
+            ->where('collector_id', $request->user()->id)
+            ->where('status', 'arrived')
+            ->whereNull('completed_at')
+            ->latest('arrived_at')
+            ->firstOrFail();
+
+        return response()->json(['visit'=>[
+            'id'=>$visit->id,
+            'status'=>$visit->status,
+        ]])->header('Cache-Control', 'no-store');
+    }
+
     public function complete(
         Request $request,
         string $visitId,
