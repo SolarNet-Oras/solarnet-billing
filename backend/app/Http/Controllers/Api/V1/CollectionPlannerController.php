@@ -7,6 +7,7 @@ use App\Models\CollectionPlan;
 use App\Models\CollectionPlannerSetting;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionVisit;
+use App\Models\CollectionLocationDeferral;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\Customer;
 use App\Models\CustomerCollectionPreference;
@@ -100,6 +101,23 @@ class CollectionPlannerController extends Controller
         return response()->json(['message'=>'Stop skipped with an audit reason. It remains eligible for a future plan.','plan'=>$planner->generate($request->user(),$stop->plan->smart_enabled,$stop->plan->start_latitude,$stop->plan->start_longitude,$stop->plan->start_address)]);
     }
 
+    public function deferLocationUpdate(Request $request, string $stopId): JsonResponse
+    {
+        $data=$request->validate(['reason'=>'required|string|min:10|max:1000']);
+        $stop=CollectionPlanStop::with(['plan','customer'])->findOrFail($stopId);
+        abort_unless($stop->plan->collector_id===$request->user()->id,403);
+        abort_unless(blank($stop->customer->gps_coordinates),422,'This customer already has registered coordinates.');
+        $deferral=CollectionLocationDeferral::create([
+            'customer_id'=>$stop->customer_id,'collector_id'=>$request->user()->id,
+            'collection_plan_stop_id'=>$stop->id,'context'=>'collection_away_from_service_address',
+            'reason'=>$data['reason'],'deferred_at'=>now(),
+        ]);
+        return response()->json([
+            'message'=>'Coordinate update deferred and recorded. Payment may continue, but update the location during a future visit to the actual service address.',
+            'deferral'=>$deferral,
+        ],201);
+    }
+
     public function adminIndex(): JsonResponse
     {
         $collectors=User::query()->whereHas('roles',fn($q)=>$q->where('name','collector'))->orderBy('name')->get(['id','name','email','is_active']);
@@ -115,6 +133,10 @@ class CollectionPlannerController extends Controller
             'unassigned_customer_records'=>$unassignedQuery->limit(500)->get([
                 'id','account_number','full_name','address','gps_coordinates','status',
             ]),
+            'customers_missing_coordinates'=>Customer::query()->whereHas('collectorAssignment')
+                ->whereNull('gps_coordinates')->count(),
+            'location_deferrals_today'=>CollectionLocationDeferral::with(['collector:id,name','customer:id,full_name,account_number,address'])
+                ->whereDate('deferred_at',now(config('app.timezone','Asia/Manila')))->latest('deferred_at')->get(),
             'settings'=>app(SmartCollectionPlannerService::class)->settings(),
         ]);
     }

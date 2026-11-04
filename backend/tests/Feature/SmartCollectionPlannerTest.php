@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\CollectionVisit;
 use App\Models\CollectionPlan;
 use App\Models\CollectionPlanStop;
+use App\Models\CollectionLocationDeferral;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -100,6 +101,28 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame($assigned->id, $rows->first()['customer']->id);
         $this->assertCount(1, $rows->first()['invoices']);
+    }
+
+    public function test_coordinate_deferral_keeps_address_only_customer_collectible_and_audited(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        $customer = $this->customer('Address Only', 'Phase B, Barangay Cadi-an');
+        CollectorCustomerAssignment::create(['collector_id'=>$collector->id, 'customer_id'=>$customer->id, 'assigned_at'=>now()]);
+        $this->invoice($customer, '2026-11-04');
+
+        $this->assertFalse(app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->first()['location_update_deferred_today']);
+        CollectionLocationDeferral::create([
+            'customer_id'=>$customer->id,'collector_id'=>$collector->id,
+            'context'=>'collection_away_from_service_address',
+            'reason'=>'Customer paid at the office, not at the registered service address.',
+            'deferred_at'=>now(),
+        ]);
+        $row=app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->first();
+
+        $this->assertTrue($row['location_update_deferred_today']);
+        $this->assertSame('address_only',$row['location_source']);
+        $this->assertTrue($row['plan_eligible']);
     }
 
     private function customer(string $name, string $address, ?array $gps = null): Customer

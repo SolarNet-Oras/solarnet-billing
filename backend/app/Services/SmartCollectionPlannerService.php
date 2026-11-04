@@ -6,6 +6,7 @@ use App\Models\CollectionPlan;
 use App\Models\CollectionPlannerSetting;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionVisit;
+use App\Models\CollectionLocationDeferral;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\CustomerCollectionPreference;
 use App\Models\Invoice;
@@ -84,6 +85,9 @@ class SmartCollectionPlannerService
                 'preferred_start_time'=>$preference?->preferred_start_time,
                 'preferred_end_time'=>$preference?->preferred_end_time,
                 'payment_arrangement'=>$preference?->payment_arrangement,
+                'location_update_deferred_today'=>CollectionLocationDeferral::query()
+                    ->where('collector_id',$collector->id)->where('customer_id',$customer->id)
+                    ->whereDate('deferred_at',$today)->exists(),
                 'plan_eligible'=>$dueInvoices->isNotEmpty() || (bool)($preference?->early_collection_allowed ?? false),
             ];
         })->filter()->values();

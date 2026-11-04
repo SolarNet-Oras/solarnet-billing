@@ -409,6 +409,7 @@ Route::prefix('v1')->group(function () {
             Route::post('plans/generate', [CollectionPlannerController::class, 'generate']);
             Route::post('plans/stops/{stopId}/arrive', [CollectionPlannerController::class, 'arrive']);
             Route::post('plans/stops/{stopId}/skip', [CollectionPlannerController::class, 'skip']);
+            Route::post('plans/stops/{stopId}/defer-location-update', [CollectionPlannerController::class, 'deferLocationUpdate']);
             Route::post('visits/{visitId}/complete', [CollectionPlannerController::class, 'complete']);
             Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);
             Route::get('locations', [RemittanceController::class, 'collectorLocations']);
