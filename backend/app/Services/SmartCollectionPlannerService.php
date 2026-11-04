@@ -183,7 +183,13 @@ class SmartCollectionPlannerService
     private function addressGroup(string $address): string
     {
         $normalized = trim((string)preg_replace('/\s+/', ' ', mb_strtolower($address)));
-        if (preg_match('/\b(?:brgy\.?|barangay)\s+[^,]+/iu',$normalized,$match)) return mb_convert_case($match[0],MB_CASE_TITLE,'UTF-8');
+        preg_match('/\b(?:brgy\.?|barangay)\s+[^,]+/iu', $normalized, $barangayMatch);
+        preg_match('/\b(?:phase|ph\.?)[\s-]*([a-g]|[1-7])\b/iu', $normalized, $phaseMatch);
+        $barangay = isset($barangayMatch[0]) ? mb_convert_case($barangayMatch[0], MB_CASE_TITLE, 'UTF-8') : null;
+        $phase = isset($phaseMatch[1]) ? 'Phase '.mb_strtoupper($phaseMatch[1], 'UTF-8') : null;
+        if ($barangay && $phase) return $barangay.' · '.$phase;
+        if ($phase) return $phase;
+        if ($barangay) return $barangay;
         return $normalized !== '' ? mb_convert_case($normalized,MB_CASE_TITLE,'UTF-8') : 'Address not recorded';
     }
 

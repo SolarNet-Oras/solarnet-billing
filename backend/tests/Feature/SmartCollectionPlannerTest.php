@@ -67,6 +67,23 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertGreaterThan($rows->firstWhere('customer.id', $repeat->id)['priority_score'], $rows->firstWhere('customer.id', $first->id)['priority_score']);
     }
 
+    public function test_address_grouping_recognizes_phases_a_through_g_without_coordinates(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        foreach (range('A', 'G') as $phase) {
+            $customer = $this->customer("Phase {$phase} Client", "Phase {$phase}, Barangay Cadi-an, Oras");
+            CollectorCustomerAssignment::create(['collector_id'=>$collector->id, 'customer_id'=>$customer->id, 'assigned_at'=>now()]);
+            $this->invoice($customer, '2026-11-04');
+        }
+
+        $groups = app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->pluck('address_group')->all();
+
+        foreach (range('A', 'G') as $phase) {
+            $this->assertContains("Barangay Cadi-An · Phase {$phase}", $groups);
+        }
+    }
+
     public function test_unassigned_and_non_collectible_invoices_are_excluded(): void
     {
         $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
