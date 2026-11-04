@@ -17,6 +17,7 @@ use App\Models\CustomerCollectionPreference;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
+use App\Services\CollectionAssignmentRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -70,7 +71,12 @@ class CollectionPlannerController extends Controller
         return response()->json(['message'=>$verified?'Arrival GPS verified.':'Arrival recorded for supervisor review.','visit'=>$visit->fresh('invoices')]);
     }
 
-    public function complete(Request $request, string $visitId, SmartCollectionPlannerService $planner): JsonResponse
+    public function complete(
+        Request $request,
+        string $visitId,
+        SmartCollectionPlannerService $planner,
+        CollectionAssignmentRoutingService $routing,
+    ): JsonResponse
     {
         $outcomes=['payment_collected','customer_not_home','customer_refused_payment','customer_promised_to_pay','partial_payment_collected','customer_already_paid','incorrect_address','customer_requested_reschedule','unable_to_verify_visit'];
         $data=$request->validate([
@@ -91,8 +97,18 @@ class CollectionPlannerController extends Controller
         $path=$request->hasFile('photo')?$request->file('photo')->store('collection-visits/'.now()->format('Y/m'),'local'):null;
         $visit->update(['status'=>'completed','outcome'=>$data['outcome'],'remarks'=>$data['remarks']??null,'photo_path'=>$path,'payment_id'=>$payment?->id,'completed_at'=>now()]);
         $visit->stop->update(['status'=>'completed','completed_at'=>now()]);
+        $routingWarning = null;
+        if ($failed) {
+            try {
+                $routing->apply($routing->preview()->where('customer_id', $visit->customer_id));
+            } catch (\Throwable $exception) {
+                report($exception);
+                $routingWarning = 'The visit was saved, but follow-up assignment requires administrator review.';
+            }
+        }
         $updated=$planner->generate($request->user(),$visit->stop->plan->smart_enabled,$visit->stop->plan->start_latitude,$visit->stop->plan->start_longitude,$visit->stop->plan->start_address);
-        return response()->json(['message'=>'Visit completed. The remaining plan was recalculated without changing invoice balances.','visit'=>$visit->fresh(),'plan'=>$updated]);
+        return response()->json(['message'=>'Visit completed. The remaining plan was recalculated without changing invoice balances.',
+            'routing_warning'=>$routingWarning,'visit'=>$visit->fresh(),'plan'=>$updated]);
     }
 
     public function skip(Request $request, string $stopId, SmartCollectionPlannerService $planner): JsonResponse
@@ -124,7 +140,7 @@ class CollectionPlannerController extends Controller
 
     public function adminIndex(): JsonResponse
     {
-        $collectors=User::query()->whereHas('roles',fn($q)=>$q->where('name','collector'))->orderBy('name')->get(['id','name','email','is_active']);
+        $collectors=User::query()->eligibleFieldCollector()->orderBy('name')->get(['id','name','email','is_active']);
         $assignments=CollectorCustomerAssignment::with(['collector:id,name','customer:id,account_number,full_name,address,gps_coordinates'])->whereNull('unassigned_at')->get();
         $plans=CollectionPlan::with(['collector:id,name','stops.customer:id,account_number,full_name,address','stops.visits'])->whereDate('plan_date',now(config('app.timezone','Asia/Manila')))->get();
         $todayStops=$plans->flatMap->stops;
@@ -179,7 +195,7 @@ class CollectionPlannerController extends Controller
     public function assign(Request $request): JsonResponse
     {
         $data=$request->validate(['collector_id'=>'required|uuid|exists:users,id','customer_ids'=>'required|array|min:1','customer_ids.*'=>'uuid|exists:customers,id','territory_label'=>'nullable|string|max:150']);
-        abort_unless(User::findOrFail($data['collector_id'])->hasRole('collector'),422,'The selected employee is not a collector.');
+        abort_unless(User::findOrFail($data['collector_id'])->isEligibleFieldCollector(),422,'The selected employee is not an eligible field collector.');
         DB::transaction(function()use($data,$request){foreach($data['customer_ids'] as $customerId)CollectorCustomerAssignment::updateOrCreate(['customer_id'=>$customerId],[
             'collector_id'=>$data['collector_id'],'assigned_by'=>$request->user()->id,'territory_label'=>$data['territory_label']??null,'assigned_at'=>now(),'unassigned_at'=>null,
         ]);});
@@ -225,7 +241,7 @@ class CollectionPlannerController extends Controller
             'start_address'=>'nullable|string|max:500',
         ]);
         $collector=User::findOrFail($data['collector_id']);
-        abort_unless($collector->is_active&&$collector->hasRole('collector'),422,'Territories may be assigned only to active collectors.');
+        abort_unless($collector->isEligibleFieldCollector(),422,'Territories may be assigned only to eligible field collectors.');
         abort_if(!$data['is_fallback']&&blank($data['address_pattern']),422,'A non-fallback territory requires an address pattern.');
         if(!$territory->exists)$data['created_by']=$request->user()->id;
         $territory->fill($data)->save();

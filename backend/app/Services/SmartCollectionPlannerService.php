@@ -75,7 +75,7 @@ class SmartCollectionPlannerService
                 $daysUntilDue <= 3 => ['medium', $settings->upcoming_three_day_weight],
                 default => ['low', $settings->upcoming_seven_day_weight],
             };
-            $attempts = CollectionVisit::query()->where('collector_id', $collector->id)
+            $attempts = CollectionVisit::query()
                 ->where('customer_id', $customer->id)->whereNotNull('completed_at')
                 ->whereNotIn('outcome', ['payment_collected', 'partial_payment_collected', 'customer_already_paid'])
                 ->count();

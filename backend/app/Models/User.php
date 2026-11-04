@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -158,6 +159,35 @@ class User extends Authenticatable implements JWTSubject
     public function hasRole(string $roleName): bool
     {
         return $this->roles()->where('name', $roleName)->exists();
+    }
+
+    public function isEligibleFieldCollector(): bool
+    {
+        $excludedNames = collect(config('collection_planner.excluded_field_collector_names', []))
+            ->map(fn ($name) => mb_strtolower(trim((string) $name)))
+            ->filter();
+
+        return $this->is_active
+            && $this->hasRole('collector')
+            && ! $excludedNames->contains(mb_strtolower(trim((string) $this->name)));
+    }
+
+    public function scopeEligibleFieldCollector(Builder $query): Builder
+    {
+        $excludedNames = collect(config('collection_planner.excluded_field_collector_names', []))
+            ->map(fn ($name) => mb_strtolower(trim((string) $name)))
+            ->filter()
+            ->values();
+
+        $query->where('is_active', true)
+            ->whereHas('roles', fn ($roleQuery) => $roleQuery->where('name', 'collector'));
+
+        if ($excludedNames->isNotEmpty()) {
+            $placeholders = $excludedNames->map(fn () => '?')->implode(', ');
+            $query->whereRaw("LOWER(TRIM(name)) NOT IN ({$placeholders})", $excludedNames->all());
+        }
+
+        return $query;
     }
 
     /**

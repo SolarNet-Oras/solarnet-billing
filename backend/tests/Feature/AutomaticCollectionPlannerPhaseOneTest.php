@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\CollectionPlan;
+use App\Models\CollectionPlanStop;
 use App\Models\CollectionPlannerRun;
+use App\Models\CollectionVisit;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\CollectorTerritory;
 use App\Models\Customer;
@@ -187,6 +189,72 @@ class AutomaticCollectionPlannerPhaseOneTest extends TestCase
         $this->assertDatabaseCount('collector_customer_assignments', 0);
         $this->assertDatabaseCount('collection_plans', 0);
         $this->assertDatabaseCount('collection_planner_runs', 0);
+    }
+
+    public function test_generic_collector_account_is_admin_only_and_never_receives_field_work(): void
+    {
+        $adminOnly = $this->collector('collector');
+        $fieldCollector = $this->collector('Nelson Cuanico');
+        $this->territory($adminOnly, 'Admin fallback', null, true, 100);
+        $this->territory($fieldCollector, 'Field fallback', null, true, 100);
+        $customer = $this->customer('Assignment Safety Customer', 'Barangay Saurong, Oras, Eastern Samar');
+
+        $preview = app(AutomaticCollectionPlannerService::class)
+            ->previewAssignments(collect([$customer->id]));
+
+        $this->assertFalse($adminOnly->isEligibleFieldCollector());
+        $this->assertTrue($fieldCollector->isEligibleFieldCollector());
+        $this->assertSame($fieldCollector->id, $preview['proposals'][0]['collector']->id);
+        $this->artisan('collection:preview-customer-assignments', ['--date' => '2026-11-04'])
+            ->expectsOutputToContain('"collectors_available": 1')
+            ->assertSuccessful();
+        $this->assertDatabaseCount('collector_customer_assignments', 0);
+        $this->assertDatabaseCount('collection_plans', 0);
+    }
+
+    public function test_assignment_policy_routes_first_attempt_to_edmar_and_followups_to_nelson(): void
+    {
+        $edmar = $this->collector('EDMAR CONDE ALCONABA');
+        $nelson = $this->collector('Nelson Cuanico');
+        $firstAttempt = $this->customer('First Attempt Customer', 'Barangay Burak');
+        $followup = $this->customer('Follow-up Customer', 'Barangay Saurong');
+        $plan = CollectionPlan::create([
+            'collector_id' => $edmar->id,
+            'plan_date' => '2026-11-03',
+            'generated_at' => now(),
+        ]);
+        $stop = CollectionPlanStop::create([
+            'collection_plan_id' => $plan->id,
+            'customer_id' => $followup->id,
+            'sequence' => 1,
+            'priority_level' => 'critical',
+            'priority_score' => 400,
+            'location_source' => 'address_only',
+            'attempt_count' => 0,
+            'collectible_balance' => 800,
+            'earliest_due_date' => '2026-11-03',
+            'status' => 'completed',
+        ]);
+        CollectionVisit::create([
+            'collection_plan_stop_id' => $stop->id,
+            'collector_id' => $edmar->id,
+            'customer_id' => $followup->id,
+            'status' => 'completed',
+            'outcome' => 'customer_not_home',
+            'completed_at' => now(),
+            'idempotency_key' => 'routing-policy-failed-attempt',
+        ]);
+
+        $this->artisan('collection:assign-routing-policy')->assertSuccessful();
+        $this->assertDatabaseCount('collector_customer_assignments', 0);
+
+        $this->artisan('collection:assign-routing-policy', [
+            '--execute' => true,
+            '--confirm' => 'ASSIGN COLLECTION ROUTING POLICY',
+        ])->assertSuccessful();
+
+        $this->assertSame($edmar->id, CollectorCustomerAssignment::where('customer_id', $firstAttempt->id)->value('collector_id'));
+        $this->assertSame($nelson->id, CollectorCustomerAssignment::where('customer_id', $followup->id)->value('collector_id'));
     }
 
     public function test_address_preview_normalizes_verified_aliases_but_flags_misspellings(): void

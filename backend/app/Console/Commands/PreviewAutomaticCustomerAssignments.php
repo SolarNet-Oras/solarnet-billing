@@ -37,8 +37,7 @@ class PreviewAutomaticCustomerAssignments extends Command
         $preview = $planner->previewAssignments($assignable->pluck('id'));
         $eligibleToday = $planner->eligibleCustomerIds($date);
         $proposals = collect($preview['proposals']);
-        $collectors = User::query()->where('is_active', true)
-            ->whereHas('roles', fn ($query) => $query->where('name', 'collector'))
+        $collectors = User::query()->eligibleFieldCollector()
             ->orderBy('name')->get(['id', 'name']);
 
         $workloads = $collectors->map(function (User $collector) use ($proposals, $eligibleToday, $date): array {
