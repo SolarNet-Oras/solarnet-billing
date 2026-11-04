@@ -67,6 +67,32 @@ class InvoiceIndexCalendarTest extends TestCase
         }
     }
 
+    public function test_customer_name_search_requires_every_separator_aware_token(): void
+    {
+        $target = $this->customer('Fred/Criselda Adao', '4444444444');
+        $fredOnly = $this->customer('Fred Santos', '5555555555');
+        $juanOnly = $this->customer('Juan Reyes', '6666666666');
+        $cruzOnly = $this->customer('Criselda Cruz', '7777777777');
+
+        $this->invoice($target, 'SLR-FRED-ADAO', '2026-11-04', 'sent', 800, 0);
+        $this->invoice($fredOnly, 'SLR-FRED-SANTOS', '2026-11-04', 'sent', 800, 0);
+        $this->invoice($juanOnly, 'SLR-JUAN-REYES', '2026-11-04', 'sent', 800, 0);
+        $this->invoice($cruzOnly, 'SLR-CRISELDA-CRUZ', '2026-11-04', 'sent', 800, 0);
+
+        foreach (['Fred Adao', 'Criselda Adao', 'fred adao', 'Fred/Criselda', 'Fred Ad'] as $term) {
+            $payload = $this->search($term);
+            $this->assertSame(['SLR-FRED-ADAO'], array_column($payload['data'], 'invoice_number'), $term);
+        }
+
+        foreach (['Fred Cruz', 'Juan Adao', 'Fred Reyes'] as $term) {
+            $payload = $this->search($term);
+            $this->assertSame([], array_column($payload['data'], 'invoice_number'), $term);
+        }
+
+        $invoiceLookup = $this->search('SLR-FRED-ADAO');
+        $this->assertSame(['SLR-FRED-ADAO'], array_column($invoiceLookup['data'], 'invoice_number'));
+    }
+
     private function customer(string $name, string $account): Customer
     {
         return Customer::create([
@@ -79,6 +105,14 @@ class InvoiceIndexCalendarTest extends TestCase
             'monthly_fee' => 800,
             'status' => 'active',
         ]);
+    }
+
+    private function search(string $term): array
+    {
+        return app(InvoiceController::class)->index(Request::create('/api/v1/invoices', 'GET', [
+            'q' => $term,
+            'per_page' => 100,
+        ]))->getData(true);
     }
 
     private function invoice(Customer $customer, string $number, string $dueDate, string $status, float $balance, float $discount): Invoice

@@ -61,13 +61,29 @@ class InvoiceController extends Controller
 
         if ($hasSearch) {
             $search = preg_replace('/\s+/', ' ', trim($request->string('q')->toString()));
-            $query->where(function ($builder) use ($search, $searchOperator) {
+            $nameTokens = preg_split('/[\s\/,\.\-]+/u', mb_strtolower($search), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            $normalizedNameSql = DB::connection()->getDriverName() === 'pgsql'
+                ? "LOWER(TRANSLATE(full_name, '/-,.', '    '))"
+                : "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(full_name, '/', ' '), '-', ' '), ',', ' '), '.', ' '))";
+
+            $query->where(function ($builder) use ($search, $searchOperator, $nameTokens, $normalizedNameSql) {
                 $builder->where('invoice_number', $searchOperator, '%' . $search . '%')
                     ->orWhereHas('customer', function ($customer) use ($search, $searchOperator) {
-                        $customer->where('full_name', $searchOperator, '%' . $search . '%')
-                            ->orWhere('account_number', $searchOperator, '%' . $search . '%')
+                        $customer->where('account_number', $searchOperator, '%' . $search . '%')
                             ->orWhereRaw('CAST(id AS TEXT) ' . $searchOperator . ' ?', ['%' . $search . '%']);
                     });
+
+                if ($nameTokens !== []) {
+                    $builder->orWhereHas('customer', function ($customer) use ($nameTokens, $normalizedNameSql) {
+                        $customer->where(function ($nameQuery) use ($nameTokens, $normalizedNameSql) {
+                            foreach ($nameTokens as $token) {
+                                // Every entered name token is required. Separators in
+                                // the stored customer name are treated as spaces.
+                                $nameQuery->whereRaw($normalizedNameSql . ' LIKE ?', ['%' . $token . '%']);
+                            }
+                        });
+                    });
+                }
             });
         }
 
