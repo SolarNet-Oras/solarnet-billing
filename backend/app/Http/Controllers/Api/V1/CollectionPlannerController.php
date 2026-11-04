@@ -19,6 +19,7 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
 use App\Services\CollectionAssignmentRoutingService;
+use App\Services\CollectionEvidenceRetentionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -82,7 +83,7 @@ class CollectionPlannerController extends Controller
         $outcomes=['payment_collected','customer_not_home','customer_refused_payment','customer_promised_to_pay','partial_payment_collected','customer_already_paid','incorrect_address','customer_requested_reschedule','unable_to_verify_visit'];
         $data=$request->validate([
             'outcome'=>['required',Rule::in($outcomes)],'remarks'=>'nullable|string|max:2000',
-            'photo'=>'nullable|file|mimes:jpg,jpeg,png|max:5120','payment_id'=>'nullable|uuid|exists:payments,id',
+            'photo'=>'nullable|file|mimes:jpg,jpeg,png|max:12288','payment_id'=>'nullable|uuid|exists:payments,id',
         ]);
         $visit=CollectionVisit::with('stop.plan')->find($visitId);
         if (!$visit) {
@@ -141,7 +142,7 @@ class CollectionPlannerController extends Controller
 
     public function skip(Request $request, string $stopId, SmartCollectionPlannerService $planner): JsonResponse
     {
-        $data=$request->validate(['reason'=>'required|string|min:5|max:1000','photo'=>'required|file|mimes:jpg,jpeg,png|max:5120','idempotency_key'=>'required|string|max:100']);
+        $data=$request->validate(['reason'=>'required|string|min:5|max:1000','photo'=>'required|file|mimes:jpg,jpeg,png|max:12288','idempotency_key'=>'required|string|max:100']);
         $stop=CollectionPlanStop::with('plan')->findOrFail($stopId);
         abort_unless($stop->plan->collector_id===$request->user()->id,403);
         abort_if($stop->status==='in_progress',422,'An active visit must be completed, not skipped.');
@@ -177,7 +178,7 @@ class CollectionPlannerController extends Controller
     public function captureRegistrationEvidence(Request $request, string $stopId): JsonResponse
     {
         $data=$request->validate([
-            'router_label_photo'=>'required|file|mimes:jpg,jpeg,png|max:8192',
+            'router_label_photo'=>'required|file|mimes:jpg,jpeg,png|max:12288',
             'email'=>'nullable|email:rfc|max:255',
             'contact_number'=>'nullable|string|min:7|max:30',
         ]);
@@ -203,11 +204,11 @@ class CollectionPlannerController extends Controller
     {
         $evidence=CollectionRegistrationEvidence::findOrFail($evidenceId);
         abort_unless($request->user()->id===$evidence->collector_id||$request->user()->hasAnyRole(['super_admin','admin','office_admin']),403);
-        abort_unless(Storage::disk('local')->exists($evidence->router_label_photo_path),404);
+        abort_unless(filled($evidence->router_label_photo_path)&&Storage::disk('local')->exists($evidence->router_label_photo_path),404);
         return Storage::disk('local')->download($evidence->router_label_photo_path);
     }
 
-    public function reviewRegistrationEvidence(Request $request,string $evidenceId): JsonResponse
+    public function reviewRegistrationEvidence(Request $request,string $evidenceId,CollectionEvidenceRetentionService $retention): JsonResponse
     {
         $data=$request->validate(['mac_address'=>['required','string','regex:/^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/'],'review_notes'=>'nullable|string|max:1000']);
         $evidence=CollectionRegistrationEvidence::with('customer')->where('status','pending')->findOrFail($evidenceId);
@@ -220,6 +221,7 @@ class CollectionPlannerController extends Controller
             $evidence->update(['status'=>'approved','verified_mac_address'=>$mac,'reviewed_by'=>$request->user()->id,
                 'reviewed_at'=>now(),'review_notes'=>$data['review_notes']??null]);
         });
+        $retention->purgeRouterLabelPhoto($evidence->fresh());
         return response()->json(['message'=>'MAC address verified and saved. Network binding remains subject to the existing safe synchronization process.','evidence'=>$evidence->fresh()]);
     }
 

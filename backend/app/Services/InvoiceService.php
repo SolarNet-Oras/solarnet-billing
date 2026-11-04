@@ -12,6 +12,7 @@ use App\Models\PaymentAllocation;
 use App\Models\PaymentRefund;
 use App\Models\Setting;
 use App\Services\BillingSuspensionService;
+use App\Services\CollectionEvidenceRetentionService;
 use Carbon\Carbon;
 use Illuminate\Mail\Message;
 use Illuminate\Support\Facades\DB;
@@ -645,13 +646,21 @@ class InvoiceService
             // balance keeps the customer restricted.
             if ($customer) {
                 DB::afterCommit(function () use ($customer, $payment) {
+                    $freshCustomer = $customer->fresh(['servicePlan', 'router']);
                     try {
-                        $freshCustomer = $customer->fresh(['servicePlan', 'router']);
                         app(BillingSuspensionService::class)->reconcileAfterPayment($freshCustomer, $payment->fresh(['invoice']));
                     } catch (\Throwable $e) {
                         Log::warning('Deferred customer network sync after payment failed', [
                             'customer_id' => $customer->id,
                             'error' => $e->getMessage(),
+                        ]);
+                    }
+                    try {
+                        app(CollectionEvidenceRetentionService::class)->purgeVisitPhotosIfSettled($freshCustomer->id);
+                    } catch (\Throwable $e) {
+                        Log::warning('Deferred collection photo cleanup after payment failed', [
+                            'customer_id'=>$customer->id,
+                            'error'=>$e->getMessage(),
                         ]);
                     }
                 });

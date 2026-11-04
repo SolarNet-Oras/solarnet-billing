@@ -15,8 +15,10 @@ use App\Models\Invoice;
 use App\Models\Router;
 use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
+use App\Services\CollectionEvidenceRetentionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class SmartCollectionPlannerTest extends TestCase
@@ -233,6 +235,43 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertSame($visit->id, $dashboard['plan']->stops->sole()->visits->sole()->id);
         $this->assertSame($visit->id, $dashboard['plan']->stops->sole()->active_visit_id);
         $this->assertSame('arrived', $dashboard['plan']->stops->sole()->visits->sole()->status);
+    }
+
+    public function test_collection_photos_are_removed_after_their_retention_condition_is_met(): void
+    {
+        Storage::fake('local');
+        $collector=User::factory()->create();
+        $customer=$this->customer('Settled Client','Barangay San Roque');
+        $invoice=$this->invoice($customer,'2026-11-05');
+        $invoice->update(['status'=>'paid','paid_amount'=>'800.00','balance'=>'0.00']);
+        $plan=CollectionPlan::create(['collector_id'=>$collector->id,'plan_date'=>'2026-11-05','generated_at'=>now()]);
+        $stop=CollectionPlanStop::create([
+            'collection_plan_id'=>$plan->id,'customer_id'=>$customer->id,'sequence'=>1,
+            'priority_level'=>'high','priority_score'=>300,'address_group'=>'Barangay San Roque',
+            'location_source'=>'address_only','attempt_count'=>0,'collectible_balance'=>'800.00',
+            'earliest_due_date'=>'2026-11-05','status'=>'completed',
+        ]);
+        Storage::disk('local')->put('collection-visits/proof.jpg','proof');
+        $visit=CollectionVisit::create([
+            'collection_plan_stop_id'=>$stop->id,'collector_id'=>$collector->id,
+            'customer_id'=>$customer->id,'status'=>'completed','outcome'=>'payment_collected',
+            'photo_path'=>'collection-visits/proof.jpg','completed_at'=>now(),
+            'idempotency_key'=>'settled-photo-cleanup-test',
+        ]);
+        Storage::disk('local')->put('collection-registration/router.jpg','router');
+        $evidence=CollectionRegistrationEvidence::create([
+            'customer_id'=>$customer->id,'collector_id'=>$collector->id,
+            'router_label_photo_path'=>'collection-registration/router.jpg','status'=>'approved',
+        ]);
+        $retention=app(CollectionEvidenceRetentionService::class);
+
+        $this->assertSame(1,$retention->purgeVisitPhotosIfSettled($customer->id));
+        $this->assertTrue($retention->purgeRouterLabelPhoto($evidence));
+
+        Storage::disk('local')->assertMissing('collection-visits/proof.jpg');
+        Storage::disk('local')->assertMissing('collection-registration/router.jpg');
+        $this->assertNull($visit->fresh()->photo_path);
+        $this->assertNull($evidence->fresh()->router_label_photo_path);
     }
 
     private function customer(string $name, string $address, ?array $gps = null): Customer
