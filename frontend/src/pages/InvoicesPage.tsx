@@ -15,6 +15,7 @@ import {
   Smartphone,
   Printer,
   Ban,
+  CalendarDays,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import invoiceService, { type AdvanceQrPhPayment } from '../services/invoiceService';
@@ -41,6 +42,24 @@ const localDateValue = (date: Date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+type InvoiceSummary = {
+  scope: 'all' | 'due_date' | 'search';
+  selected_due_date: string | null;
+  due_today: number;
+  selected_due: number | null;
+  all: number;
+  unpaid: number;
+  paid: number;
+  partial: number;
+  cancelled: number;
+  discounted: number;
+};
+
+const emptyInvoiceSummary: InvoiceSummary = {
+  scope: 'all', selected_due_date: null, due_today: 0, selected_due: null,
+  all: 0, unpaid: 0, paid: 0, partial: 0, cancelled: 0, discounted: 0,
 };
 
 const nextCustomerCycle = (customer: Customer, paymentDate: string) => {
@@ -74,6 +93,8 @@ const InvoicesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedDueDate, setSelectedDueDate] = useState(localDateValue(new Date()));
+  const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary>(emptyInvoiceSummary);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'due_soon' | 'due_latest' | 'customer_az' | 'balance_high' | 'balance_low'>('newest');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -148,7 +169,7 @@ const InvoicesPage: React.FC = () => {
   useEffect(() => {
     fetchInvoices();
     fetchCustomers();
-  }, [currentPage, statusFilter, perPage, sortBy, debouncedSearch]);
+  }, [currentPage, statusFilter, perPage, sortBy, debouncedSearch, selectedDueDate]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -171,6 +192,7 @@ const InvoicesPage: React.FC = () => {
       setLoading(true);
       const params: any = { page: currentPage, per_page: perPage, sort: sortBy };
       if (debouncedSearch) params.q = debouncedSearch;
+      if (!debouncedSearch && selectedDueDate) params.due_date = selectedDueDate;
       
       if (statusFilter !== 'all') {
         if (statusFilter === 'unpaid') {
@@ -187,6 +209,8 @@ const InvoicesPage: React.FC = () => {
       const raw = response as unknown as { meta?: { last_page?: number; total?: number }; last_page?: number; total?: number };
       setTotalPages(raw.meta?.last_page ?? raw.last_page ?? 1);
       setTotalInvoices(raw.meta?.total ?? raw.total ?? response.data.length);
+      const responseWithSummary = response as unknown as { summary?: InvoiceSummary };
+      setInvoiceSummary(responseWithSummary.summary ?? emptyInvoiceSummary);
     } catch (error) {
       console.error('Error fetching invoices:', error);
     } finally {
@@ -504,6 +528,57 @@ const InvoicesPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4" aria-label="Invoice calendar and status summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <CalendarDays className="h-4 w-4 text-blue-600" /> Billing due-date calendar
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">Select a due date to isolate its billing records. A search still covers every month.</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs font-medium text-slate-700">
+              Due date
+              <input
+                type="date"
+                value={selectedDueDate}
+                disabled={Boolean(debouncedSearch)}
+                onChange={(event) => { setSelectedDueDate(event.target.value); setCurrentPage(1); }}
+                className="mt-1 block rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </label>
+            <button type="button" onClick={() => { setSelectedDueDate(localDateValue(new Date())); setCurrentPage(1); }} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">Today</button>
+            <button type="button" onClick={() => { setSelectedDueDate(''); setCurrentPage(1); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">All dates</button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            { key: 'all', label: selectedDueDate && !debouncedSearch ? 'Due on date' : 'All results', value: invoiceSummary.selected_due ?? invoiceSummary.all, color: 'border-blue-200 bg-blue-50 text-blue-900' },
+            { key: 'unpaid', label: 'Unpaid', value: invoiceSummary.unpaid, color: 'border-rose-200 bg-rose-50 text-rose-900' },
+            { key: 'paid', label: 'Paid', value: invoiceSummary.paid, color: 'border-emerald-200 bg-emerald-50 text-emerald-900' },
+            { key: 'partial', label: 'Partial', value: invoiceSummary.partial, color: 'border-amber-200 bg-amber-50 text-amber-900' },
+            { key: 'cancelled', label: 'Cancelled', value: invoiceSummary.cancelled, color: 'border-slate-300 bg-slate-100 text-slate-900' },
+            { key: 'discounted', label: 'Discounted', value: invoiceSummary.discounted, color: 'border-violet-200 bg-violet-50 text-violet-900' },
+          ].map((card) => (
+            <button
+              type="button"
+              key={card.key}
+              onClick={() => { setStatusFilter(card.key); setCurrentPage(1); }}
+              className={`rounded-lg border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${card.color} ${statusFilter === card.key ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
+            >
+              <span className="block text-xs font-semibold uppercase tracking-wide opacity-75">{card.label}</span>
+              <span className="mt-1 block text-2xl font-bold">{card.value}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs font-medium text-slate-600">
+          Due today: <span className="text-slate-950">{invoiceSummary.due_today}</span>
+          {selectedDueDate && !debouncedSearch && selectedDueDate !== localDateValue(new Date()) ? ` | Due on selected date: ${invoiceSummary.selected_due ?? 0}` : ''}
+          {debouncedSearch ? ' | Calendar ignored while searching all billing history.' : ''}
+        </p>
+      </section>
 
       {/* Actions Bar */}
       <div className="mb-6 flex flex-col sm:flex-row justify-between gap-4">

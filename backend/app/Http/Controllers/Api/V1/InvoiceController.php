@@ -41,19 +41,31 @@ class InvoiceController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $validator = Validator::make($request->only('due_date'), [
+            'due_date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'The selected invoice due date is invalid.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $hasSearch = $request->filled('q');
+        $searchOperator = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
         $query = Invoice::with([
             'customer', 'items',
             'payments.paymongoCheckout', 'payments.allocations', 'payments.refunds', 'payments.receiver:id,name', 'payments.collector:id,name',
             'paymentAllocations.payment.paymongoCheckout', 'paymentAllocations.payment.refunds', 'paymentAllocations.payment.receiver:id,name', 'paymentAllocations.payment.collector:id,name',
         ]);
 
-        if ($request->filled('q')) {
+        if ($hasSearch) {
             $search = trim($request->string('q')->toString());
-            $query->where(function ($builder) use ($search) {
-                $builder->where('invoice_number', 'ilike', '%' . $search . '%')
-                    ->orWhereHas('customer', function ($customer) use ($search) {
-                        $customer->where('full_name', 'ilike', '%' . $search . '%')
-                            ->orWhere('account_number', 'ilike', '%' . $search . '%');
+            $query->where(function ($builder) use ($search, $searchOperator) {
+                $builder->where('invoice_number', $searchOperator, '%' . $search . '%')
+                    ->orWhereHas('customer', function ($customer) use ($search, $searchOperator) {
+                        $customer->where('full_name', $searchOperator, '%' . $search . '%')
+                            ->orWhere('account_number', $searchOperator, '%' . $search . '%');
                     });
             });
         }
@@ -62,6 +74,17 @@ class InvoiceController extends Controller
         if ($request->has('customer_id')) {
             $query->where('customer_id', $request->customer_id);
         }
+
+        // Preserve an unfiltered-by-status scope for the monitoring cards. A
+        // search intentionally ignores the calendar so old billing records
+        // remain discoverable from the same search box.
+        $historyScope = clone $query;
+        $selectedDueDate = null;
+        if (!$hasSearch && $request->filled('due_date')) {
+            $selectedDueDate = Carbon::parse($request->string('due_date')->toString(), 'Asia/Manila')->toDateString();
+            $query->whereDate('due_date', $selectedDueDate);
+        }
+        $summaryScope = clone $query;
 
         // Filter by status
         if ($request->filled('status')) {
@@ -114,7 +137,27 @@ class InvoiceController extends Controller
         });
         $this->appendInvoiceActivity($invoices->getCollection());
 
-        return response()->json($invoices);
+        $today = Carbon::now('Asia/Manila')->toDateString();
+        $payload = $invoices->toArray();
+        $payload['summary'] = [
+            'scope' => $hasSearch ? 'search' : ($selectedDueDate ? 'due_date' : 'all'),
+            'selected_due_date' => $selectedDueDate,
+            'due_today' => (clone $historyScope)->whereDate('due_date', $today)->count(),
+            'selected_due' => $selectedDueDate
+                ? (clone $historyScope)->whereDate('due_date', $selectedDueDate)->count()
+                : null,
+            'all' => (clone $summaryScope)->count(),
+            'unpaid' => (clone $summaryScope)->unpaid()->count(),
+            'paid' => (clone $summaryScope)->where('status', 'paid')->count(),
+            'partial' => (clone $summaryScope)->where('status', 'partial')->count(),
+            'cancelled' => (clone $summaryScope)->where('status', 'cancelled')->count(),
+            'discounted' => (clone $summaryScope)
+                ->where('discount', '>', 0)
+                ->whereNotIn('status', Invoice::NON_FULFILLING_CYCLE_STATUSES)
+                ->count(),
+        ];
+
+        return response()->json($payload);
     }
 
     /** Return every currently open invoice for the printable receivables register. */

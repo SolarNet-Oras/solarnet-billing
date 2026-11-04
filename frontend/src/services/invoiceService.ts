@@ -31,6 +31,7 @@ export const invoiceService = {
     status?: string;
     from_date?: string;
     to_date?: string;
+    due_date?: string;
     overdue?: boolean;
     unpaid?: boolean;
     q?: string;
