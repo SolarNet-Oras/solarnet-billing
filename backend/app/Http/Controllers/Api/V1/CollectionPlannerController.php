@@ -268,11 +268,42 @@ class CollectionPlannerController extends Controller
                 'algorithm_version'=>config('collection_planner.algorithm_version'),
             ],
             'settings'=>app(SmartCollectionPlannerService::class)->settings(),
+            'territory_name_options'=>config('collection_planner.territory_names',[]),
+            'territory_area_options'=>config('collection_planner.territory_areas',[]),
         ]);
     }
 
     public function storeTerritory(Request $request): JsonResponse
     {
+        if ($request->has('areas')) {
+            $data=$request->validate([
+                'collector_id'=>'required|uuid|exists:users,id',
+                'name'=>['required','string',Rule::in(config('collection_planner.territory_names',[]))],
+                'areas'=>'exclude_if:is_fallback,true|required|array|min:1|max:40',
+                'areas.*'=>['required','string',Rule::in(config('collection_planner.territory_areas',[]))],
+                'is_fallback'=>'required|boolean',
+                'priority'=>'required|integer|min:0|max:10000',
+                'max_daily_visits'=>'required|integer|min:1|max:200',
+            ]);
+            $collector=User::findOrFail($data['collector_id']);
+            abort_unless($collector->isEligibleFieldCollector(),422,'Territories may be assigned only to eligible field collectors.');
+            $fallback=(bool)$data['is_fallback'];
+            abort_if($fallback&&$data['name']!=='Fallback territory',422,'Use the Fallback territory name for unmatched addresses.');
+            abort_if(!$fallback&&$data['name']==='Fallback territory',422,'Fallback territory must be saved as a fallback rule.');
+            $records=DB::transaction(function()use($data,$request,$fallback){
+                $areas=$fallback?['All unmatched addresses']:array_values(array_unique($data['areas']??[]));
+                return collect($areas)->map(function(string $area)use($data,$request,$fallback){
+                    $name=$fallback?$data['name']:$data['name'].' · '.$area;
+                    return CollectorTerritory::updateOrCreate(
+                        ['collector_id'=>$data['collector_id'],'name'=>$name],
+                        ['address_pattern'=>$fallback?null:$area,'is_fallback'=>$fallback,'is_active'=>true,
+                            'priority'=>$data['priority'],'max_daily_visits'=>$data['max_daily_visits'],
+                            'created_by'=>$request->user()->id]
+                    );
+                })->values();
+            });
+            return response()->json(['message'=>$records->count().' territory area rule(s) saved.','territories'=>$records],201);
+        }
         return $this->saveTerritory($request,new CollectorTerritory(),201);
     }
 

@@ -12,4 +12,11 @@ return [
     'excluded_field_collector_names' => ['collector'],
     'primary_collector_name' => 'EDMAR CONDE ALCONABA',
     'followup_collector_name' => 'Nelson Cuanico',
+    'territory_names' => ['Primary territory', 'Secondary territory', 'Follow-up territory', 'Fallback territory'],
+    'territory_areas' => [
+        'Balocawe','Bantayan','Burak','Butnga','Camanga','Core','Dao','Iwayan','Kaguras',
+        'Kalaw','Kalawit','Kalobian','Mabuhay','Nadacpan','Paypayon','Relocation','Riverside',
+        'Sabang','San Eduardo','San Roque','Saurong','Tawagan','Tiguib',
+        'Phase A','Phase B','Phase C','Phase D','Phase E','Phase F','Phase G',
+    ],
 ];
