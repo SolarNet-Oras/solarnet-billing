@@ -95,7 +95,20 @@ class CollectionPlannerController extends Controller
                 ->where('status','arrived')
                 ->whereNull('completed_at')
                 ->latest('arrived_at')
-                ->firstOrFail();
+                ->first();
+            if (!$visit) {
+                $visit=CollectionVisit::create([
+                    'collection_plan_stop_id'=>$stop->id,
+                    'collector_id'=>$request->user()->id,
+                    'customer_id'=>$stop->customer_id,
+                    'status'=>'arrived',
+                    'arrived_at'=>now(),
+                    'started_at'=>now(),
+                    'requires_review'=>true,
+                    'location_exception_reason'=>'Recovered from an in-progress collection stop during proof-backed completion.',
+                    'idempotency_key'=>'recovered-'.$stop->id,
+                ])->load('stop.plan');
+            }
         }
         abort_unless($visit->collector_id===$request->user()->id,403);
         abort_if($visit->completed_at,422,'This visit is already completed and cannot be overwritten.');
