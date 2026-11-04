@@ -12,6 +12,8 @@ use App\Models\Invoice;
 use App\Models\Role;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AutomaticCollectionPlannerService;
+use App\Services\CollectionAddressNormalizer;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -151,6 +153,55 @@ class AutomaticCollectionPlannerPhaseOneTest extends TestCase
         $this->assertTrue($event->withoutOverlapping);
         $this->assertStringContainsString('--execute', $event->command);
         $this->assertStringContainsString('--triggered-by=schedule', $event->command);
+    }
+
+    public function test_full_assignment_preview_balances_work_without_database_changes(): void
+    {
+        $collectors = collect([
+            $this->collector('Collector One'),
+            $this->collector('Collector Two'),
+            $this->collector('Collector Three'),
+        ]);
+        $collectors->each(fn (User $collector, int $index) => $this->territory(
+            $collector,
+            'Fallback '.($index + 1),
+            null,
+            true,
+            100,
+        ));
+        collect(range(1, 6))->each(fn (int $number) => $this->customer(
+            'Preview Customer '.$number,
+            'Phase '.chr(64 + $number).', Barangay Saurong, Oras, Eastern Samar',
+        ));
+
+        $preview = app(AutomaticCollectionPlannerService::class)
+            ->previewAssignments(Customer::pluck('id'));
+        $loads = collect($preview['proposals'])->countBy('collector.id')->sort()->values()->all();
+
+        $this->assertSame([2, 2, 2], $loads);
+        $this->assertCount(0, $preview['exceptions']);
+        $this->artisan('collection:preview-customer-assignments', [
+            '--date' => '2026-11-04',
+            '--include-inactive' => true,
+        ])->expectsOutputToContain('"mode": "read_only_preview"')->assertSuccessful();
+        $this->assertDatabaseCount('collector_customer_assignments', 0);
+        $this->assertDatabaseCount('collection_plans', 0);
+        $this->assertDatabaseCount('collection_planner_runs', 0);
+    }
+
+    public function test_address_preview_normalizes_verified_aliases_but_flags_misspellings(): void
+    {
+        $normalizer = app(CollectionAddressNormalizer::class);
+
+        $verified = $normalizer->analyze('Phase G, Brgy. Saurong, Oras Eastern Samar');
+        $ambiguous = $normalizer->analyze('Sauorong, Oras Eastern Samar');
+
+        $this->assertSame('Saurong', $verified['barangay']);
+        $this->assertSame('Phase G', $verified['phase']);
+        $this->assertTrue($verified['reliable']);
+        $this->assertNull($ambiguous['barangay']);
+        $this->assertFalse($ambiguous['reliable']);
+        $this->assertSame('possible_misspelling_requires_review', $ambiguous['ambiguous_reason']);
     }
 
     private function collector(string $name): User

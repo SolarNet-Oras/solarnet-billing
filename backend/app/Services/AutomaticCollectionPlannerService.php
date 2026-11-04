@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class AutomaticCollectionPlannerService
 {
-    public function __construct(private readonly SmartCollectionPlannerService $planner) {}
+    public function __construct(
+        private readonly SmartCollectionPlannerService $planner,
+        private readonly CollectionAddressNormalizer $addressNormalizer,
+    ) {}
 
     public function eligibleCustomerIds(Carbon $date): Collection
     {
@@ -34,7 +37,7 @@ class AutomaticCollectionPlannerService
             ->orderByDesc('priority')->get()->filter(fn($t)=>$t->collector?->is_active && $t->collector->hasRole('collector'));
         $existing=CollectorCustomerAssignment::query()->with('collector.roles')->whereIn('customer_id',$customerIds)
             ->whereNull('unassigned_at')->get()->keyBy('customer_id');
-        $customers=\App\Models\Customer::whereIn('id',$customerIds)->get(['id','full_name','account_number','address']);
+        $customers=\App\Models\Customer::whereIn('id',$customerIds)->get(['id','full_name','account_number','address','gps_coordinates']);
         $loads=$existing->filter(fn($a)=>$a->collector?->is_active && $a->collector->hasRole('collector'))->countBy('collector_id');
         $proposals=[];$exceptions=[];
         foreach($customers as $customer){
@@ -42,9 +45,8 @@ class AutomaticCollectionPlannerService
             if($assignment?->collector?->is_active && $assignment->collector->hasRole('collector')){
                 $proposals[]=['customer'=>$customer,'collector'=>$assignment->collector,'territory'=>null,'existing'=>true];continue;
             }
-            $address=mb_strtolower(trim((string)$customer->address));
             $matches=$territories->filter(fn($t)=>!$t->is_fallback && filled($t->address_pattern)
-                && str_contains($address,mb_strtolower(trim($t->address_pattern))));
+                && $this->addressNormalizer->matches($customer->address,$t->address_pattern));
             if($matches->isEmpty())$matches=$territories->where('is_fallback',true);
             $territory=$matches->sort(function($a,$b)use($loads){
                 return ((int)$b->priority <=> (int)$a->priority)
