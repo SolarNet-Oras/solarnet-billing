@@ -204,6 +204,36 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertNull($plan->stops->first()->longitude);
     }
 
+    public function test_dashboard_includes_active_visit_needed_to_complete_a_stop(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        $customer = $this->customer('Active Visit Client', 'Barangay San Roque');
+        CollectorCustomerAssignment::create([
+            'collector_id'=>$collector->id,
+            'customer_id'=>$customer->id,
+            'assigned_at'=>now(),
+        ]);
+        $this->invoice($customer, '2026-11-04');
+        $plan = app(SmartCollectionPlannerService::class)->generate($collector, true, null, null, null);
+        $stop = $plan->stops->sole();
+        $stop->update(['status'=>'in_progress']);
+        $visit = CollectionVisit::create([
+            'collection_plan_stop_id'=>$stop->id,
+            'collector_id'=>$collector->id,
+            'customer_id'=>$customer->id,
+            'status'=>'arrived',
+            'arrived_at'=>now(),
+            'started_at'=>now(),
+            'idempotency_key'=>'active-visit-dashboard-test',
+        ]);
+
+        $dashboard = app(SmartCollectionPlannerService::class)->dashboard($collector);
+
+        $this->assertSame($visit->id, $dashboard['plan']->stops->sole()->visits->sole()->id);
+        $this->assertSame('arrived', $dashboard['plan']->stops->sole()->visits->sole()->status);
+    }
+
     private function customer(string $name, string $address, ?array $gps = null): Customer
     {
         return Customer::create([

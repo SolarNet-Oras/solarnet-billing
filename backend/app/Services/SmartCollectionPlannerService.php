@@ -128,7 +128,10 @@ class SmartCollectionPlannerService
         $dueToday = $rows->filter(fn ($row) => $row['days_until_due'] === 0);
         $overdue = $rows->filter(fn ($row) => $row['days_until_due'] < 0);
         $upcoming = $rows->filter(fn ($row) => $row['days_until_due'] > 0 && $row['days_until_due'] <= 7);
-        $plan = CollectionPlan::with(['stops.customer:id,account_number,full_name,address,contact_number,gps_coordinates'])
+        $plan = CollectionPlan::with([
+            'stops.customer:id,account_number,full_name,address,contact_number,gps_coordinates',
+            'stops.visits:id,collection_plan_stop_id,status',
+        ])
             ->where('collector_id', $collector->id)->whereDate('plan_date', $today)->first();
         $collected = Payment::query()->where('collector_id', $collector->id)->whereDate('payment_date', $today)->sum('amount');
 
