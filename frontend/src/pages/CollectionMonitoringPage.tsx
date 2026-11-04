@@ -28,7 +28,41 @@ export default function CollectionMonitoringPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [macInputs, setMacInputs] = useState<Record<string,string>>({});
-  const load = async () => { const response = await api.get('/collection-monitoring'); setData(response.data); };
+  const [loadError, setLoadError] = useState('');
+  const load = async () => {
+    setLoadError('');
+    try {
+      const response = await api.get('/collection-monitoring');
+      const payload = response.data || {};
+      setData({
+        ...payload,
+        collectors: payload.collectors || [],
+        assignments: payload.assignments || [],
+        plans: payload.plans || [],
+        unassigned_customer_records: payload.unassigned_customer_records || [],
+        registration_evidence: payload.registration_evidence || [],
+        territories: payload.territories || [],
+        planner_runs: payload.planner_runs || [],
+        automation: payload.automation || {
+          environment_enabled: false,
+          application_enabled: false,
+          active: false,
+          daily_at: 'not configured',
+          timezone: 'Asia/Manila',
+          algorithm_version: 'version unavailable',
+        },
+        coverage_report: payload.coverage_report || {
+          scheduled: 0,
+          unscheduled: 0,
+          completed: 0,
+          failed: 0,
+          total_collectible: 0,
+        },
+      });
+    } catch (error: any) {
+      setLoadError(error.response?.data?.message || 'Collection monitoring could not be loaded. Refresh after the backend update is available.');
+    }
+  };
   useEffect(() => { void load(); }, []);
   const candidates = useMemo(() => (data?.unassigned_customer_records || []).filter(item => `${item.full_name} ${item.account_number} ${item.address || ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 100), [data, search]);
   const saveTerritory = async () => { if (!territoryCollector || !territoryName || (!fallback && !addressPattern)) return; setBusy(true); try { await api.post('/collection-monitoring/territories', { collector_id: territoryCollector, name: territoryName, address_pattern: fallback ? null : addressPattern, is_fallback: fallback, is_active: true, priority: 100, max_daily_visits: 24 }); setTerritoryName(''); setAddressPattern(''); setFallback(false); await load(); } finally { setBusy(false); } };
@@ -38,9 +72,10 @@ export default function CollectionMonitoringPage() {
 
   return <DashboardLayout><main className="space-y-6 p-4 md:p-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-bold"><MapPinned className="text-primary" />Collection monitoring</h1><p className="text-sm text-muted-foreground">Supervise automatic territories, daily planning runs, coverage, and route completion.</p></div><button onClick={() => void load()} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw className="mr-1 inline h-4 w-4" />Refresh</button></header>
-    <section className={`rounded-2xl border p-4 ${data?.automation.active ? 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100' : 'border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'}`}><p className="font-bold">Automatic planner: {data?.automation.active ? 'Active' : 'Staged — production activation blocked'}</p><p className="mt-1 text-xs">Daily {data?.automation.daily_at} {data?.automation.timezone} · {data?.automation.algorithm_version}. Environment: {data?.automation.environment_enabled ? 'enabled' : 'disabled'} · application: {data?.automation.application_enabled ? 'enabled' : 'disabled'}.</p></section>
-    <section className="grid gap-3 sm:grid-cols-4"><Metric label="Collectors" value={data?.collectors.length || 0}/><Metric label="Active assignments" value={data?.assignments.length || 0}/><Metric label="Missing coordinates" value={data?.customers_missing_coordinates || 0}/><Metric label="Unassigned customers" value={data?.unassigned_customers || 0}/></section>
-    <section className="grid gap-3 sm:grid-cols-5"><Metric label="Scheduled today" value={data?.coverage_report.scheduled || 0}/><Metric label="Unscheduled" value={data?.coverage_report.unscheduled || 0}/><Metric label="Completed" value={data?.coverage_report.completed || 0}/><Metric label="Failed visits" value={data?.coverage_report.failed || 0}/><Metric label="Total coverage" value={money(data?.coverage_report.total_collectible || 0)}/></section>
+    {loadError&&<section className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">{loadError}</section>}
+    <section className={`rounded-2xl border p-4 ${data?.automation?.active ? 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100' : 'border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'}`}><p className="font-bold">Automatic planner: {data?.automation?.active ? 'Active' : 'Staged — production activation blocked'}</p><p className="mt-1 text-xs">Daily {data?.automation?.daily_at || 'not configured'} {data?.automation?.timezone || 'Asia/Manila'} · {data?.automation?.algorithm_version || 'version unavailable'}. Environment: {data?.automation?.environment_enabled ? 'enabled' : 'disabled'} · application: {data?.automation?.application_enabled ? 'enabled' : 'disabled'}.</p></section>
+    <section className="grid gap-3 sm:grid-cols-4"><Metric label="Collectors" value={data?.collectors?.length || 0}/><Metric label="Active assignments" value={data?.assignments?.length || 0}/><Metric label="Missing coordinates" value={data?.customers_missing_coordinates || 0}/><Metric label="Unassigned customers" value={data?.unassigned_customers || 0}/></section>
+    <section className="grid gap-3 sm:grid-cols-5"><Metric label="Scheduled today" value={data?.coverage_report?.scheduled || 0}/><Metric label="Unscheduled" value={data?.coverage_report?.unscheduled || 0}/><Metric label="Completed" value={data?.coverage_report?.completed || 0}/><Metric label="Failed visits" value={data?.coverage_report?.failed || 0}/><Metric label="Total coverage" value={money(data?.coverage_report?.total_collectible || 0)}/></section>
     <section className="rounded-2xl border bg-card p-5"><h2 className="font-bold">Customer registration evidence</h2><p className="mt-1 text-xs text-muted-foreground">Collectors capture router/ONU label photos. Only administrators and office staff can verify and save a MAC address.</p><div className="mt-4 space-y-2">{data?.registration_evidence?.map(item=><div key={item.id} className="grid gap-2 rounded-xl border p-3 text-sm md:grid-cols-[1fr_auto_auto_auto] md:items-center"><div><b>{item.customer.full_name}</b> · {item.customer.account_number}<p className="text-xs text-muted-foreground">Captured by {item.collector.name} · {item.status}{item.submitted_email?` · ${item.submitted_email}`:''}{item.submitted_phone?` · ${item.submitted_phone}`:''}</p></div><button onClick={()=>void viewEvidence(item.id)} className="rounded-lg border px-3 py-2 font-semibold">View label photo</button>{item.status==='pending'?<><input value={macInputs[item.id]||''} onChange={e=>setMacInputs(current=>({...current,[item.id]:e.target.value}))} placeholder="AA:BB:CC:DD:EE:FF" className="rounded-lg border bg-background px-3 py-2"/><button disabled={busy||!macInputs[item.id]?.trim()} onClick={()=>void approveMac(item.id)} className="rounded-lg bg-primary px-3 py-2 font-semibold text-primary-foreground disabled:opacity-40">Verify MAC</button></>:<span className="font-semibold text-emerald-700 dark:text-emerald-300">{item.verified_mac_address||item.customer.mac_address||'Approved'}</span>}</div>)}{!data?.registration_evidence?.length&&<p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No router-label evidence submitted.</p>}</div></section>
     <section className="rounded-2xl border bg-card p-5"><h2 className="font-bold">Automatic collector territories</h2><p className="mt-1 text-xs text-muted-foreground">Configure territories once. Daily invoice discovery and assignment require no customer selection.</p><div className="mt-4 grid gap-3 md:grid-cols-4"><select value={territoryCollector} onChange={e=>setTerritoryCollector(e.target.value)} className="rounded-lg border bg-background p-2"><option value="">Select collector</option>{data?.collectors.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><input value={territoryName} onChange={e=>setTerritoryName(e.target.value)} placeholder="Territory name" className="rounded-lg border bg-background p-2"/><input disabled={fallback} value={addressPattern} onChange={e=>setAddressPattern(e.target.value)} placeholder="Address text, e.g. Cadi-an" className="rounded-lg border bg-background p-2 disabled:opacity-50"/><label className="flex items-center gap-2 rounded-lg border px-3"><input type="checkbox" checked={fallback} onChange={e=>setFallback(e.target.checked)}/>Fallback</label></div><button disabled={busy||!territoryCollector||!territoryName||(!fallback&&!addressPattern)} onClick={()=>void saveTerritory()} className="mt-3 rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50">Save territory</button><div className="mt-4 grid gap-2 md:grid-cols-2">{data?.territories.map(item=><div key={item.id} className="rounded-lg border p-3 text-sm"><b>{item.name}</b> · {item.collector.name}<p className="text-xs text-muted-foreground">{item.is_fallback ? 'Fallback for unmatched addresses' : `Matches “${item.address_pattern}”`} · {item.max_daily_visits}/day · {item.is_active ? 'active' : 'inactive'}</p></div>)}</div></section>
     <section className="rounded-2xl border bg-card p-5"><h2 className="font-bold">Planning run monitoring</h2><div className="mt-3 overflow-x-auto"><table className="min-w-[760px] w-full text-sm"><thead className="text-left text-xs uppercase text-muted-foreground"><tr><th className="p-2">Date</th><th className="p-2">Status</th><th className="p-2">Eligible</th><th className="p-2">Assigned</th><th className="p-2">Exceptions</th><th className="p-2">Plans</th><th className="p-2">Scheduled</th><th className="p-2">Unscheduled</th></tr></thead><tbody>{data?.planner_runs.map(run=><tr key={run.id} className="border-t"><td className="p-2">{String(run.run_date).slice(0,10)}</td><td className="p-2 capitalize">{run.status}{run.dry_run ? ' · audit' : ''}</td><td className="p-2">{run.eligible_customers}</td><td className="p-2">{run.new_assignments}</td><td className="p-2">{run.unassigned_exceptions}</td><td className="p-2">{run.plans_generated}</td><td className="p-2">{run.scheduled_visits}</td><td className="p-2">{run.unscheduled_visits}</td></tr>)}</tbody></table></div></section>
