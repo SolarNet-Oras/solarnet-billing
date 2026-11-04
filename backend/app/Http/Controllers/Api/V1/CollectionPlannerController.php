@@ -72,26 +72,6 @@ class CollectionPlannerController extends Controller
         return response()->json(['message'=>$verified?'Arrival GPS verified.':'Arrival recorded for supervisor review.','visit'=>$visit->fresh('invoices')]);
     }
 
-    public function activeVisit(Request $request, string $stopId): JsonResponse
-    {
-        $stop = CollectionPlanStop::with('plan')->findOrFail($stopId);
-        abort_unless($stop->plan->collector_id === $request->user()->id, 403);
-        abort_unless($stop->status === 'in_progress', 422, 'This collection stop is not currently in progress.');
-
-        $visit = CollectionVisit::query()
-            ->where('collection_plan_stop_id', $stop->id)
-            ->where('collector_id', $request->user()->id)
-            ->where('status', 'arrived')
-            ->whereNull('completed_at')
-            ->latest('arrived_at')
-            ->firstOrFail();
-
-        return response()->json(['visit'=>[
-            'id'=>$visit->id,
-            'status'=>$visit->status,
-        ]])->header('Cache-Control', 'no-store');
-    }
-
     public function complete(
         Request $request,
         string $visitId,
@@ -104,7 +84,19 @@ class CollectionPlannerController extends Controller
             'outcome'=>['required',Rule::in($outcomes)],'remarks'=>'nullable|string|max:2000',
             'photo'=>'nullable|file|mimes:jpg,jpeg,png|max:5120','payment_id'=>'nullable|uuid|exists:payments,id',
         ]);
-        $visit=CollectionVisit::with('stop.plan')->findOrFail($visitId);
+        $visit=CollectionVisit::with('stop.plan')->find($visitId);
+        if (!$visit) {
+            $stop=CollectionPlanStop::with('plan')->findOrFail($visitId);
+            abort_unless($stop->plan->collector_id===$request->user()->id,403);
+            abort_unless($stop->status==='in_progress',422,'This collection stop is not currently in progress.');
+            $visit=CollectionVisit::with('stop.plan')
+                ->where('collection_plan_stop_id',$stop->id)
+                ->where('collector_id',$request->user()->id)
+                ->where('status','arrived')
+                ->whereNull('completed_at')
+                ->latest('arrived_at')
+                ->firstOrFail();
+        }
         abort_unless($visit->collector_id===$request->user()->id,403);
         abort_if($visit->completed_at,422,'This visit is already completed and cannot be overwritten.');
         $failed=!in_array($data['outcome'],['payment_collected','partial_payment_collected','customer_already_paid'],true);
