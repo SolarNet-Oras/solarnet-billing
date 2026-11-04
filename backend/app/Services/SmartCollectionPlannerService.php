@@ -9,6 +9,8 @@ use App\Models\CollectionVisit;
 use App\Models\CollectionLocationDeferral;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\CustomerCollectionPreference;
+use App\Models\CustomerLocationEvent;
+use App\Models\DhcpLease;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
@@ -37,6 +39,14 @@ class SmartCollectionPlannerService
             ->where('collector_id', $collector->id)->whereNull('unassigned_at')->pluck('customer_id');
         if ($assignedIds->isEmpty()) return collect();
 
+        $latestLocationEvents = CustomerLocationEvent::query()
+            ->whereIn('customer_id', $assignedIds)
+            ->whereNotNull('latitude')->whereNotNull('longitude')
+            ->latest('created_at')->get()->unique('customer_id')->keyBy('customer_id');
+        $liveLeases = DhcpLease::query()
+            ->whereIn('customer_id', $assignedIds)->presentOnRouter()->where('status', 'bound')
+            ->with('router:id,name')->latest('last_seen_at')->get()->unique('customer_id')->keyBy('customer_id');
+
         $invoices = Invoice::query()
             ->with(['customer:id,account_number,full_name,address,contact_number,gps_coordinates,location_status', 'customer.collectionPreference'])
             ->whereIn('customer_id', $assignedIds)
@@ -48,7 +58,7 @@ class SmartCollectionPlannerService
             ->get();
 
         $settings = $this->settings();
-        return $invoices->groupBy('customer_id')->map(function (Collection $customerInvoices) use ($collector, $today, $settings) {
+        return $invoices->groupBy('customer_id')->map(function (Collection $customerInvoices) use ($collector, $today, $settings, $latestLocationEvents, $liveLeases) {
             /** @var Invoice $first */
             $first = $customerInvoices->first();
             $customer = $first->customer;
@@ -70,6 +80,14 @@ class SmartCollectionPlannerService
                 ->whereNotIn('outcome', ['payment_collected', 'partial_payment_collected', 'customer_already_paid'])
                 ->count();
             $coordinates = $this->coordinates($customer->gps_coordinates);
+            $locationSource = $coordinates ? 'verified_gps' : null;
+            $locationEvent = $latestLocationEvents->get($customer->id);
+            if (!$coordinates && $locationEvent) {
+                $coordinates = $this->coordinates(['latitude'=>$locationEvent->latitude,'longitude'=>$locationEvent->longitude]);
+                if ($coordinates) $locationSource = 'operations_map_saved_location';
+            }
+            $liveLease = $liveLeases->get($customer->id);
+            $locationSource ??= $liveLease ? 'dhcp_live_address' : 'address_only';
             $score = $weight - ($attempts * $settings->repeat_attempt_penalty)
                 + ($coordinates ? $settings->verified_gps_bonus : 0);
 
@@ -81,7 +99,10 @@ class SmartCollectionPlannerService
                 'upcoming_balance'=>(float)$upcomingInvoices->sum('balance'),
                 'priority_level'=>$priority, 'priority_score'=>$score,
                 'attempt_count'=>$attempts, 'coordinates'=>$coordinates,
-                'location_source'=>$coordinates ? 'verified_gps' : 'address_only',
+                'location_source'=>$locationSource,
+                'dhcp_live'=>$liveLease !== null, 'dhcp_ip'=>$liveLease?->ip_address,
+                'dhcp_router'=>$liveLease?->router?->name,
+                'dhcp_last_seen_at'=>$liveLease?->last_seen_at?->toIso8601String(),
                 'address_group'=>$preference?->address_group_override ?: $this->addressGroup((string)$customer->address),
                 'early_collection_allowed'=>(bool)($preference?->early_collection_allowed ?? false),
                 'preferred_start_time'=>$preference?->preferred_start_time,
@@ -169,7 +190,7 @@ class SmartCollectionPlannerService
         if (!$smart) return $rows;
         $currentLat=$startLat; $currentLng=$startLng; $ordered=collect();
         foreach ($rows->groupBy('priority_level') as $group) {
-            $gps=$group->where('location_source','verified_gps')->values();
+            $gps=$group->filter(fn ($row) => $row['coordinates'] !== null)->values();
             while ($gps->isNotEmpty()) {
                 $next = ($currentLat!==null&&$currentLng!==null)
                     ? $gps->sortBy(fn($row)=>$this->haversine($currentLat,$currentLng,$row['coordinates']['latitude'],$row['coordinates']['longitude']))->first()
@@ -178,8 +199,8 @@ class SmartCollectionPlannerService
                 $ordered->push($next); $gps=$gps->reject(fn($row)=>$row['customer']->id===$next['customer']->id)->values();
                 $currentLat=$next['coordinates']['latitude']; $currentLng=$next['coordinates']['longitude'];
             }
-            $group->where('location_source','address_only')
-                ->sortBy(fn ($row) => $row['address_group'].'|'.mb_strtolower($row['customer']->full_name))
+            $group->filter(fn ($row) => $row['coordinates'] === null)
+                ->sortBy(fn ($row) => ($row['dhcp_live'] ? '0' : '1').'|'.$row['address_group'].'|'.mb_strtolower($row['customer']->full_name))
                 ->each(fn ($row) => $ordered->push($row));
         }
         return $ordered;

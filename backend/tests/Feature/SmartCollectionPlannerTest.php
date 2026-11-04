@@ -6,9 +6,12 @@ use App\Models\CollectionVisit;
 use App\Models\CollectionPlan;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionLocationDeferral;
+use App\Models\CustomerLocationEvent;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\Customer;
+use App\Models\DhcpLease;
 use App\Models\Invoice;
+use App\Models\Router;
 use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -123,6 +126,59 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertTrue($row['location_update_deferred_today']);
         $this->assertSame('address_only',$row['location_source']);
         $this->assertTrue($row['plan_eligible']);
+    }
+
+    public function test_operations_map_saved_location_routes_customer_without_profile_gps(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        $customer = $this->customer('Saved Map Client', 'Barangay Saurong');
+        CollectorCustomerAssignment::create(['collector_id'=>$collector->id, 'customer_id'=>$customer->id, 'assigned_at'=>now()]);
+        $this->invoice($customer, '2026-11-04');
+        CustomerLocationEvent::create([
+            'customer_id'=>$customer->id, 'source'=>'customer_confirmed', 'action'=>'confirmed',
+            'latitude'=>12.1345, 'longitude'=>125.4367, 'accuracy_meters'=>25,
+        ]);
+
+        $row = app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->sole();
+
+        $this->assertSame('operations_map_saved_location', $row['location_source']);
+        $this->assertSame(12.1345, $row['coordinates']['latitude']);
+        $plan = app(SmartCollectionPlannerService::class)->generate($collector, true, null, null, null);
+        $this->assertSame(12.1345, $plan->stops->sole()->latitude);
+    }
+
+    public function test_live_dhcp_prioritizes_address_route_without_fabricating_coordinates(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        $offline = $this->customer('A Offline Client', 'Barangay Saurong');
+        $online = $this->customer('Z Online Client', 'Barangay Saurong');
+        foreach ([$offline, $online] as $customer) {
+            CollectorCustomerAssignment::create(['collector_id'=>$collector->id, 'customer_id'=>$customer->id, 'assigned_at'=>now()]);
+            $this->invoice($customer, '2026-11-04');
+        }
+        $router = Router::create([
+            'name'=>'SolarNet DHCP', 'host'=>'192.0.2.1', 'port'=>8728,
+            'username'=>'test', 'password'=>'test-secret', 'is_active'=>true,
+        ]);
+        DhcpLease::create([
+            'router_id'=>$router->id, 'customer_id'=>$online->id,
+            'mac_address'=>'02:00:00:00:00:01', 'ip_address'=>'10.0.10.55',
+            'status'=>'bound', 'server'=>'vlan134', 'last_seen_at'=>now(),
+            'is_matched'=>true, 'is_current'=>true,
+        ]);
+
+        $rows = app(SmartCollectionPlannerService::class)->eligibleCustomers($collector);
+        $onlineRow = $rows->firstWhere('customer.id', $online->id);
+        $this->assertSame('dhcp_live_address', $onlineRow['location_source']);
+        $this->assertTrue($onlineRow['dhcp_live']);
+        $this->assertNull($onlineRow['coordinates']);
+
+        $plan = app(SmartCollectionPlannerService::class)->generate($collector, true, null, null, null);
+        $this->assertSame($online->id, $plan->stops->first()->customer_id);
+        $this->assertNull($plan->stops->first()->latitude);
+        $this->assertNull($plan->stops->first()->longitude);
     }
 
     private function customer(string $name, string $address, ?array $gps = null): Customer
