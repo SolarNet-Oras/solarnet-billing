@@ -133,6 +133,12 @@ class SmartCollectionPlannerService
             'stops.visits:id,collection_plan_stop_id,status',
         ])
             ->where('collector_id', $collector->id)->whereDate('plan_date', $today)->first();
+        $plan?->stops->each(function (CollectionPlanStop $stop): void {
+            $stop->setAttribute(
+                'active_visit_id',
+                $stop->visits->firstWhere('status', 'arrived')?->id,
+            );
+        });
         $collected = Payment::query()->where('collector_id', $collector->id)->whereDate('payment_date', $today)->sum('amount');
 
         return [

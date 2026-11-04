@@ -231,6 +231,7 @@ class SmartCollectionPlannerTest extends TestCase
         $dashboard = app(SmartCollectionPlannerService::class)->dashboard($collector);
 
         $this->assertSame($visit->id, $dashboard['plan']->stops->sole()->visits->sole()->id);
+        $this->assertSame($visit->id, $dashboard['plan']->stops->sole()->active_visit_id);
         $this->assertSame('arrived', $dashboard['plan']->stops->sole()->visits->sole()->status);
     }
 
