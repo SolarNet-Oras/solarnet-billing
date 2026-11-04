@@ -94,6 +94,8 @@ class CollectionPlannerController extends Controller
             $payment=Payment::whereKey($data['payment_id'])->where('collector_id',$request->user()->id)->where('customer_id',$visit->customer_id)->firstOrFail();
         }
         if(in_array($data['outcome'],['payment_collected','partial_payment_collected'],true)) abort_unless($payment,422,'Select the recorded payment before completing this visit.');
+        $withoutCollectedPayment=!in_array($data['outcome'],['payment_collected','partial_payment_collected'],true);
+        abort_if($withoutCollectedPayment&&!$request->hasFile('photo'),422,'A clear proof-of-visit photo is required when completing an attempt without receiving payment.');
         abort_if(!$visit->gps_verified && !$request->hasFile('photo'),422,'A visit photo is required when arrival GPS could not be verified.');
         $path=$request->hasFile('photo')?$request->file('photo')->store('collection-visits/'.now()->format('Y/m'),'local'):null;
         $visit->update(['status'=>'completed','outcome'=>$data['outcome'],'remarks'=>$data['remarks']??null,'photo_path'=>$path,'payment_id'=>$payment?->id,'completed_at'=>now()]);
@@ -114,11 +116,19 @@ class CollectionPlannerController extends Controller
 
     public function skip(Request $request, string $stopId, SmartCollectionPlannerService $planner): JsonResponse
     {
-        $data=$request->validate(['reason'=>'required|string|min:5|max:1000']);
+        $data=$request->validate(['reason'=>'required|string|min:5|max:1000','photo'=>'required|file|mimes:jpg,jpeg,png|max:5120','idempotency_key'=>'required|string|max:100']);
         $stop=CollectionPlanStop::with('plan')->findOrFail($stopId);
         abort_unless($stop->plan->collector_id===$request->user()->id,403);
         abort_if($stop->status==='in_progress',422,'An active visit must be completed, not skipped.');
-        $stop->update(['status'=>'skipped','skip_reason'=>$data['reason'],'completed_at'=>now()]);
+        $path=$request->file('photo')->store('collection-visits/'.now()->format('Y/m'),'local');
+        DB::transaction(function()use($stop,$request,$data,$path){
+            $stop->update(['status'=>'skipped','skip_reason'=>$data['reason'],'completed_at'=>now()]);
+            CollectionVisit::firstOrCreate(['idempotency_key'=>$data['idempotency_key']],[
+                'collection_plan_stop_id'=>$stop->id,'collector_id'=>$request->user()->id,'customer_id'=>$stop->customer_id,
+                'status'=>'completed','outcome'=>'stop_skipped','remarks'=>$data['reason'],'photo_path'=>$path,
+                'requires_review'=>true,'completed_at'=>now(),
+            ]);
+        });
         return response()->json(['message'=>'Stop skipped with an audit reason. It remains eligible for a future plan.','plan'=>$planner->generate($request->user(),$stop->plan->smart_enabled,$stop->plan->start_latitude,$stop->plan->start_longitude,$stop->plan->start_address)]);
     }
 
