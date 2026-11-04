@@ -14,6 +14,7 @@ use App\Models\Remittance;
 use App\Models\ServicePlan;
 use App\Models\User;
 use App\Models\FinancialEntry;
+use App\Models\CollectorCustomerAssignment;
 use App\Services\CashDenominationService;
 use App\Services\InvoiceService;
 use App\Services\PaymongoService;
@@ -37,6 +38,8 @@ class RemittanceController extends Controller
             : 'due_date';
 
         $invoiceQuery = Invoice::with('customer:id,account_number,full_name,address,contact_number')
+            ->whereHas('customer.collectorAssignment', fn ($assignment) => $assignment
+                ->where('collector_id', $request->user()->id)->whereNull('unassigned_at'))
             ->where('balance', '>', 0)
             ->whereDate('due_date', '<=', $today)
             ->whereIn('status', ['sent', 'overdue', 'partial'])
@@ -83,9 +86,11 @@ class RemittanceController extends Controller
     }
 
     /** Locations are limited to non-deleted customer records with confirmed coordinates. */
-    public function collectorLocations(): JsonResponse
+    public function collectorLocations(Request $request): JsonResponse
     {
         $customers = \App\Models\Customer::query()
+            ->whereHas('collectorAssignment', fn ($assignment) => $assignment
+                ->where('collector_id', $request->user()->id)->whereNull('unassigned_at'))
             ->whereNotNull('gps_coordinates')
             ->orderBy('full_name')
             ->get(['id', 'account_number', 'full_name', 'address', 'status', 'gps_coordinates'])
@@ -114,6 +119,8 @@ class RemittanceController extends Controller
     {
         $term = trim((string) $request->query('q', ''));
         $customers = Customer::with('servicePlan:id,name,price,download_speed,upload_speed')
+            ->whereHas('collectorAssignment', fn ($assignment) => $assignment
+                ->where('collector_id', $request->user()->id)->whereNull('unassigned_at'))
             ->when($term !== '', fn ($query) => $query->where(function ($query) use ($term) {
                 $query->where('full_name', 'ilike', "%{$term}%")
                     ->orWhere('account_number', 'ilike', "%{$term}%")
@@ -142,6 +149,7 @@ class RemittanceController extends Controller
             'accuracy_meters' => 'nullable|numeric|min:0|max:5000',
         ]);
         $customer = Customer::findOrFail($customerId);
+        $this->assertAssigned($request->user()->id, $customer->id);
         $customer->update([
             'gps_coordinates' => ['latitude' => (float) $data['latitude'], 'longitude' => (float) $data['longitude']],
             'location_status' => 'confirmed',
@@ -158,6 +166,7 @@ class RemittanceController extends Controller
     {
         $data = $request->validate(['service_plan_id' => 'required|uuid|exists:service_plans,id']);
         $customer = Customer::findOrFail($customerId);
+        $this->assertAssigned($request->user()->id, $customer->id);
         abort_if($customer->service_plan_id === $data['service_plan_id'], 422, 'Choose a different service plan.');
         abort_unless(ServicePlan::whereKey($data['service_plan_id'])
             ->where('is_active', true)
@@ -173,9 +182,10 @@ class RemittanceController extends Controller
     }
 
     /** Create one payable future-period invoice for a client before it becomes due. */
-    public function createCollectorEarlyInvoice(string $customerId, InvoiceService $invoices): JsonResponse
+    public function createCollectorEarlyInvoice(Request $request, string $customerId, InvoiceService $invoices): JsonResponse
     {
         $customer = Customer::with('servicePlan')->findOrFail($customerId);
+        $this->assertAssigned($request->user()->id, $customer->id);
         abort_if($customer->hasCompanyOwnedPlan(), 422, 'Company Owned plans do not use early-payment invoices.');
         abort_unless($customer->servicePlan || $customer->monthly_fee > 0, 422, 'This client has no billable service plan.');
         $openInvoice = Invoice::where('customer_id', $customer->id)
@@ -206,7 +216,8 @@ class RemittanceController extends Controller
             'signature_signer_name' => 'nullable|string|max:120',
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
-        abort_unless($invoice->isDueAndCollectible(), 422, 'Collectors may record payment only for an unpaid invoice that is due today or overdue.');
+        $this->assertAssigned($request->user()->id, $invoice->customer_id);
+        abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         $customerOutstanding = (float) Invoice::query()
             ->where('customer_id', $invoice->customer_id)
             ->unpaid()
@@ -249,10 +260,11 @@ class RemittanceController extends Controller
     }
 
     /** Start a client-specific GCash checkout. The API secret remains server-side. */
-    public function startGcashCheckout(string $invoiceId, PaymongoService $paymongo): JsonResponse
+    public function startGcashCheckout(Request $request, string $invoiceId, PaymongoService $paymongo): JsonResponse
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
-        abort_unless($invoice->isDueAndCollectible(), 422, 'Collectors may request online payment only for an unpaid invoice that is due today or overdue.');
+        $this->assertAssigned($request->user()->id, $invoice->customer_id);
+        abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
 
         try {
             return response()->json(['message' => 'PayMongo GCash checkout created.', 'checkout' => $paymongo->createGcashCheckout($invoice)]);
@@ -262,17 +274,19 @@ class RemittanceController extends Controller
     }
 
     /** Re-read PayMongo rather than trusting a browser return or payment screenshot. */
-    public function reconcileGcashCheckout(string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    public function reconcileGcashCheckout(Request $request, string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
     {
         $checkout = PaymongoCheckout::where('invoice_id', $invoiceId)->where('checkout_session_id', $checkoutId)->firstOrFail();
+        $this->assertAssigned($request->user()->id, $checkout->invoice()->value('customer_id'));
         $paid = $paymongo->reconcileCheckout($checkout->checkout_session_id);
         return response()->json(['paid' => $paid, 'checkout_status' => $checkout->fresh()->status]);
     }
 
-    public function startQrPhPayment(string $invoiceId, PaymongoService $paymongo): JsonResponse
+    public function startQrPhPayment(Request $request, string $invoiceId, PaymongoService $paymongo): JsonResponse
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
-        abort_unless($invoice->isDueAndCollectible(), 422, 'QR Ph is available only for an unpaid invoice that is due today or overdue.');
+        $this->assertAssigned($request->user()->id, $invoice->customer_id);
+        abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         try {
             return response()->json(['message' => 'PayMongo QR Ph payment created.', 'payment' => $paymongo->createQrPhPayment($invoice)]);
         } catch (\RuntimeException $e) {
@@ -287,6 +301,7 @@ class RemittanceController extends Controller
             'qr_image_url' => 'nullable|string|max:2000000',
         ]);
         $checkout = PaymongoCheckout::where('id', $checkoutId)->where('invoice_id', $invoiceId)->firstOrFail();
+        $this->assertAssigned($request->user()->id, $checkout->invoice()->value('customer_id'));
         try {
             return response()->json(['payment' => $paymongo->finalizeQrPhAttachment($checkout, $data['payment_method_id'], $data['qr_image_url'] ?? null)]);
         } catch (\RuntimeException $e) {
@@ -294,9 +309,10 @@ class RemittanceController extends Controller
         }
     }
 
-    public function reconcileQrPhPayment(string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
+    public function reconcileQrPhPayment(Request $request, string $invoiceId, string $checkoutId, PaymongoService $paymongo): JsonResponse
     {
         $checkout = PaymongoCheckout::where('id', $checkoutId)->where('invoice_id', $invoiceId)->firstOrFail();
+        $this->assertAssigned($request->user()->id, $checkout->invoice()->value('customer_id'));
         $paid = $paymongo->reconcileQrPhPayment((string) $checkout->payment_intent_id);
         return response()->json(['paid' => $paid, 'payment_status' => $checkout->fresh()->status]);
     }
@@ -321,6 +337,21 @@ class RemittanceController extends Controller
             return $remittance->load('payments');
         });
         return response()->json(['message' => 'Remittance submitted. An administrator or cashier must liquidate the cash before validation.', 'remittance' => $remittance], 201);
+    }
+
+    private function assertAssigned(string $collectorId, string $customerId): void
+    {
+        abort_unless(CollectorCustomerAssignment::query()
+            ->where('collector_id',$collectorId)->where('customer_id',$customerId)
+            ->whereNull('unassigned_at')->exists(), 403, 'This customer is not assigned to your collection territory.');
+    }
+
+    private function collectorInvoiceEligible(Invoice $invoice): bool
+    {
+        if ($invoice->isDueAndCollectible()) return true;
+        if ((float) $invoice->balance <= 0 || !in_array($invoice->status, ['sent','partial','overdue'], true)) return false;
+        if (!$invoice->due_date || $invoice->due_date->copy()->startOfDay()->gt(now(config('app.timezone','Asia/Manila'))->startOfDay()->addDays(7))) return false;
+        return $invoice->customer?->collectionPreference?->early_collection_allowed === true;
     }
 
     /** Physical cash is counted by the receiving office, never by the collector. */

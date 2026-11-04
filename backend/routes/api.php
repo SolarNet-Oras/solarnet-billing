@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\PublicInvoicePaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
+use App\Http\Controllers\Api\V1\CollectionPlannerController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\RadiusIpOeController;
@@ -404,6 +405,12 @@ Route::prefix('v1')->group(function () {
         // Collector workspace: only due invoices and collection/remittance actions.
         Route::middleware(['role:collector'])->prefix('collector')->group(function () {
             Route::get('dashboard', [RemittanceController::class, 'collectorDashboard']);
+            Route::get('smart-dashboard', [CollectionPlannerController::class, 'dashboard']);
+            Route::post('plans/generate', [CollectionPlannerController::class, 'generate']);
+            Route::post('plans/stops/{stopId}/arrive', [CollectionPlannerController::class, 'arrive']);
+            Route::post('plans/stops/{stopId}/skip', [CollectionPlannerController::class, 'skip']);
+            Route::post('visits/{visitId}/complete', [CollectionPlannerController::class, 'complete']);
+            Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);
             Route::get('locations', [RemittanceController::class, 'collectorLocations']);
             Route::get('clients', [RemittanceController::class, 'collectorClients']);
             Route::put('clients/{id}/location', [RemittanceController::class, 'updateCollectorLocation'])->middleware('fresh.field.location');
@@ -416,6 +423,13 @@ Route::prefix('v1')->group(function () {
             Route::post('invoices/{id}/qr-ph/{checkoutId}/attach', [RemittanceController::class, 'attachQrPhPayment']);
             Route::post('invoices/{id}/qr-ph/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileQrPhPayment']);
             Route::post('remittances', [RemittanceController::class, 'submit']);
+        });
+        Route::middleware(['role:super_admin|admin|office_admin'])->prefix('collection-monitoring')->group(function () {
+            Route::get('/', [CollectionPlannerController::class, 'adminIndex']);
+            Route::post('assignments', [CollectionPlannerController::class, 'assign']);
+            Route::put('customers/{customerId}/preferences', [CollectionPlannerController::class, 'updatePreference']);
+            Route::put('settings', [CollectionPlannerController::class, 'updateSettings']);
+            Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);
         });
         // Office staff verify what a collector declares against cash, bank, or GCash received.
         Route::middleware(['role:super_admin|admin|cashier|office_admin'])->prefix('remittances')->group(function () {

@@ -5,8 +5,9 @@ import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
 import { useSearchParams } from 'react-router-dom';
+import SmartCollectorPlanner from '@/components/collections/SmartCollectorPlanner';
 
-type Invoice = { id: string; invoice_number: string; due_date: string; due_date_local?: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { account_number: string; full_name: string; address?: string } };
+type Invoice = { id: string; invoice_number: string; due_date: string; due_date_local?: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { id?: string; account_number: string; full_name: string; address?: string } };
 type CashLine = { denomination: number; kind: 'bill' | 'coin'; count: number; amount: number };
 type Checkout = { checkout_url: string; reference_number: string; invoice_number: string; checkout_session_id?: string };
 type QrPayment = { checkout_id: string; payment_intent_id: string; client_key: string; public_key: string; base_url?: string; qr_image_url?: string | null; reference_number: string; invoice_number: string; amount: number; status: string; expires_at?: string | null };
@@ -179,7 +180,7 @@ export default function RemittancesPage() {
     if (paymentMethod === 'cash' && !signaturePresent) return window.alert('The client or an authorized family member must sign before confirming cash payment.');
     setBusy(true);
     try {
-      await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, {
+      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, {
         amount,
         payment_method: paymentMethod,
         reference: reference.trim() || undefined,
@@ -188,6 +189,7 @@ export default function RemittancesPage() {
         signature_signer_type: paymentMethod === 'cash' ? (familySigner ? 'family' : 'client') : undefined,
         signature_signer_name: paymentMethod === 'cash' && familySigner ? familySignerName.trim() : undefined,
       });
+      window.dispatchEvent(new CustomEvent('solarnet:collection-updated', { detail: { payment: response.data?.payment } }));
       closePayment();
       await load();
     } catch (error: any) { window.alert(error.response?.data?.message || 'Could not record payment.'); }
@@ -233,6 +235,7 @@ export default function RemittancesPage() {
       if (response.data?.paid) {
         if (!quiet) window.alert('GCash payment confirmed. The invoice has been updated.');
         closePayment();
+        window.dispatchEvent(new CustomEvent('solarnet:collection-updated'));
         await load();
       } else if (!quiet) window.alert('Payment is still awaiting PayMongo confirmation. Please complete GCash, then check again.');
     } catch (error: any) { if (!quiet) window.alert(error.response?.data?.message || 'Could not check the GCash payment.'); }
@@ -282,6 +285,7 @@ export default function RemittancesPage() {
     <header><h1 className="flex items-center gap-2 text-2xl font-bold"><Banknote className="text-primary" />{collector ? 'Collection Desk' : 'Remittances'}</h1><p className="mt-1 text-sm text-muted-foreground">{collector ? 'Cash collections are liquidated by the cashier. GCash is confirmed directly by PayMongo.' : 'Count physical cash, then validate the submitted remittance.'}</p></header>
     {!collector && needsReview && <div className="flex flex-col justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center"><div><p className="font-semibold">Showing remittances that need review</p><p className="mt-1 text-xs">Only submitted remittances awaiting liquidation or validation, and discrepancy records, are displayed.</p></div><button type="button" onClick={() => { setSearchParams({}); setRemittanceMonth(''); }} className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 text-xs font-semibold">Show all remittances</button></div>}
     {collector ? <>
+      <SmartCollectorPlanner onCollect={(invoice) => openPayment(invoice as Invoice)} />
       <form onSubmit={(event) => { event.preventDefault(); void load(collectionSearch, collectionSort); }} className="grid gap-3 rounded-2xl border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-end">
         <label className="text-sm font-medium">Search collections<input value={collectionSearch} onChange={(event) => setCollectionSearch(event.target.value)} placeholder="Client, account, address, or invoice" className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
         <label className="text-sm font-medium">Sort by<select value={collectionSort} onChange={(event) => setCollectionSort(event.target.value as 'due_date' | 'address')} className="mt-1 w-full rounded-lg border bg-background px-3 py-2"><option value="due_date">Due date</option><option value="address">Address A to Z</option></select></label>

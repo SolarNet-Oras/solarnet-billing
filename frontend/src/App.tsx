@@ -54,6 +54,7 @@ import IpIntelligencePage from '@/pages/IpIntelligencePage';
 import OnuConfigPage from '@/pages/OnuConfigPage';
 import PublicHomePage from '@/pages/PublicHomePage';
 import PublicWebsiteAssistant from '@/components/customer/PublicWebsiteAssistant';
+import CollectionMonitoringPage from '@/pages/CollectionMonitoringPage';
 
 // ============================================================================
 // Main App Component
@@ -188,6 +189,7 @@ const App: React.FC = (): JSX.Element => {
               />
               <Route path="/sms-advisories" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin']}><SmsAdvisoryPage /></ProtectedRoute>} />
               <Route path="/remittances" element={<ProtectedRoute><RemittancesPage /></ProtectedRoute>} />
+              <Route path="/collection-monitoring" element={<ProtectedRoute allowedRoles={['super_admin', 'admin', 'office_admin']}><CollectionMonitoringPage /></ProtectedRoute>} />
               <Route path="/super-admin/client-migrations" element={<ProtectedRoute><ClientMigrationPage /></ProtectedRoute>} />
               <Route path="/radius-ipoe" element={<ProtectedRoute allowedRoles={['super_admin', 'admin']}><RadiusIpOePage /></ProtectedRoute>} />
               <Route path="/wireguard" element={<ProtectedRoute allowedRoles={['super_admin']}><WireguardPage /></ProtectedRoute>} />

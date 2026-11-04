@@ -110,6 +110,16 @@ class Customer extends Model
         return $this->belongsTo(User::class, 'technician_id');
     }
 
+    public function collectorAssignment(): HasOne
+    {
+        return $this->hasOne(CollectorCustomerAssignment::class)->whereNull('unassigned_at');
+    }
+
+    public function collectionPreference(): HasOne
+    {
+        return $this->hasOne(CustomerCollectionPreference::class);
+    }
+
     /**
      * Get the router for this customer.
      */

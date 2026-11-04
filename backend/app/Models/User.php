@@ -122,6 +122,16 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasOne(StaffCompensation::class);
     }
 
+    public function collectorAssignments(): HasMany
+    {
+        return $this->hasMany(CollectorCustomerAssignment::class, 'collector_id')->whereNull('unassigned_at');
+    }
+
+    public function collectionPlans(): HasMany
+    {
+        return $this->hasMany(CollectionPlan::class, 'collector_id');
+    }
+
     /**
      * Get all permissions for the user through roles.
      */
