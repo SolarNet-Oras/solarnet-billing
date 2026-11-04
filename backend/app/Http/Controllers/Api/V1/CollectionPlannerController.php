@@ -230,6 +230,14 @@ class CollectionPlannerController extends Controller
         $collectors=User::query()->eligibleFieldCollector()->orderBy('name')->get(['id','name','email','is_active']);
         $assignments=CollectorCustomerAssignment::with(['collector:id,name','customer:id,account_number,full_name,address,gps_coordinates'])->whereNull('unassigned_at')->get();
         $plans=CollectionPlan::with(['collector:id,name','stops.customer:id,account_number,full_name,address','stops.visits'])->whereDate('plan_date',now(config('app.timezone','Asia/Manila')))->get();
+        $plans->each(fn($plan)=>$plan->stops->each(
+            fn($stop)=>$stop->visits->each(
+                fn($visit)=>$visit->setAttribute(
+                    'has_photo',
+                    filled($visit->photo_path)&&Storage::disk('local')->exists($visit->photo_path)
+                )
+            )
+        ));
         $todayStops=$plans->flatMap->stops;
         $latestTodayRun=CollectionPlannerRun::query()->whereDate('run_date',now(config('app.timezone','Asia/Manila')))
             ->where('dry_run',false)->latest('started_at')->first();
