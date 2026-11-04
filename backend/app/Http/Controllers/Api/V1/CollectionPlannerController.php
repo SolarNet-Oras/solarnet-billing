@@ -349,7 +349,10 @@ class CollectionPlannerController extends Controller
         $visit=CollectionVisit::findOrFail($visitId);
         abort_unless($request->user()->id===$visit->collector_id||$request->user()->hasAnyRole(['super_admin','admin','office_admin']),403);
         abort_unless($visit->photo_path&&Storage::disk('local')->exists($visit->photo_path),404);
-        return Storage::disk('local')->download($visit->photo_path);
+        return Storage::disk('local')->response($visit->photo_path,null,[
+            'Cache-Control'=>'private, max-age=300',
+            'X-Content-Type-Options'=>'nosniff',
+        ],'inline');
     }
 
     private function collectibleInvoices(string $customerId)
