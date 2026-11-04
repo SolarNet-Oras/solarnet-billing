@@ -117,6 +117,7 @@ const InvoicesPage: React.FC = () => {
   const [printingOpenInvoices, setPrintingOpenInvoices] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const paymentSubmissionInFlight = useRef(false);
+  const invoiceRequestSequence = useRef(0);
   const paymentAttemptId = useRef(newPaymentAttemptId());
   const roleNames = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canCancelInvoices = roleNames.includes('super_admin')
@@ -167,15 +168,20 @@ const InvoicesPage: React.FC = () => {
   const finalCycleRemainder = advanceMonthlyRate > 0 ? Math.round((paymentAmount % advanceMonthlyRate) * 100) / 100 : 0;
 
   useEffect(() => {
-    fetchInvoices();
-    fetchCustomers();
+    const controller = new AbortController();
+    void fetchInvoices(controller.signal);
+    return () => controller.abort();
   }, [currentPage, statusFilter, perPage, sortBy, debouncedSearch, selectedDueDate]);
 
   useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDebouncedSearch(searchTerm.trim());
+      setDebouncedSearch(searchTerm.trim().replace(/\s+/g, ' '));
       setCurrentPage(1);
-    }, 300);
+    }, 250);
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
 
@@ -187,7 +193,8 @@ const InvoicesPage: React.FC = () => {
       : { ...current, covered_cycle_date: automaticCycle });
   }, [isAdvancePayment, advanceCustomer, paymentData.payment_date]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (signal?: AbortSignal) => {
+    const requestSequence = ++invoiceRequestSequence.current;
     try {
       setLoading(true);
       const params: any = { page: currentPage, per_page: perPage, sort: sortBy };
@@ -204,7 +211,8 @@ const InvoicesPage: React.FC = () => {
         }
       }
 
-      const response = await invoiceService.getInvoices(params);
+      const response = await invoiceService.getInvoices(params, signal);
+      if (signal?.aborted || requestSequence !== invoiceRequestSequence.current) return;
       setInvoices(response.data);
       const raw = response as unknown as { meta?: { last_page?: number; total?: number }; last_page?: number; total?: number };
       setTotalPages(raw.meta?.last_page ?? raw.last_page ?? 1);
@@ -212,9 +220,10 @@ const InvoicesPage: React.FC = () => {
       const responseWithSummary = response as unknown as { summary?: InvoiceSummary };
       setInvoiceSummary(responseWithSummary.summary ?? emptyInvoiceSummary);
     } catch (error) {
+      if (signal?.aborted || (error as { code?: string })?.code === 'ERR_CANCELED') return;
       console.error('Error fetching invoices:', error);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted && requestSequence === invoiceRequestSequence.current) setLoading(false);
     }
   };
 
@@ -512,7 +521,9 @@ const InvoicesPage: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
         <p className="text-sm text-gray-600 mt-1">Manage customer invoices and billing</p>
         <div className="relative mt-4 w-full max-w-2xl">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          {loading && searchTerm.trim()
+            ? <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-blue-600" aria-label="Searching invoices" />
+            : <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />}
           <input
             type="search"
             placeholder="Search customer name, account number, or invoice number…"
@@ -535,7 +546,7 @@ const InvoicesPage: React.FC = () => {
             <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <CalendarDays className="h-4 w-4 text-blue-600" /> Billing due-date calendar
             </h2>
-            <p className="mt-1 text-xs text-slate-600">Select a due date to isolate its billing records. A search still covers every month.</p>
+            <p className="mt-1 text-xs text-slate-600">Select a due date to isolate its billing records. Status cards audit all permitted history; a search covers every month.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-medium text-slate-700">
@@ -565,7 +576,11 @@ const InvoicesPage: React.FC = () => {
             <button
               type="button"
               key={card.key}
-              onClick={() => { setStatusFilter(card.key); setCurrentPage(1); }}
+              onClick={() => {
+                setStatusFilter(card.key);
+                if (card.key !== 'all' && !debouncedSearch) setSelectedDueDate('');
+                setCurrentPage(1);
+              }}
               className={`rounded-lg border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${card.color} ${statusFilter === card.key ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
             >
               <span className="block text-xs font-semibold uppercase tracking-wide opacity-75">{card.label}</span>
@@ -708,7 +723,7 @@ const InvoicesPage: React.FC = () => {
             ) : filteredInvoices.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
-                  No invoices found
+                  {debouncedSearch ? 'No matching invoices found' : 'No invoices found'}
                 </td>
               </tr>
             ) : (

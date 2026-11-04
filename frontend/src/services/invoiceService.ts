@@ -38,8 +38,8 @@ export const invoiceService = {
     sort?: 'newest' | 'oldest' | 'due_soon' | 'due_latest' | 'customer_az' | 'balance_high' | 'balance_low';
     page?: number;
     per_page?: number;
-  }): Promise<PaginatedResponse<Invoice>> => {
-    const response = await api.get('/invoices', { params });
+  }, signal?: AbortSignal): Promise<PaginatedResponse<Invoice> & { summary?: Record<string, unknown> }> => {
+    const response = await api.get('/invoices', { params, signal });
     return response.data;
   },
 

@@ -60,12 +60,13 @@ class InvoiceController extends Controller
         ]);
 
         if ($hasSearch) {
-            $search = trim($request->string('q')->toString());
+            $search = preg_replace('/\s+/', ' ', trim($request->string('q')->toString()));
             $query->where(function ($builder) use ($search, $searchOperator) {
                 $builder->where('invoice_number', $searchOperator, '%' . $search . '%')
                     ->orWhereHas('customer', function ($customer) use ($search, $searchOperator) {
                         $customer->where('full_name', $searchOperator, '%' . $search . '%')
-                            ->orWhere('account_number', $searchOperator, '%' . $search . '%');
+                            ->orWhere('account_number', $searchOperator, '%' . $search . '%')
+                            ->orWhereRaw('CAST(id AS TEXT) ' . $searchOperator . ' ?', ['%' . $search . '%']);
                     });
             });
         }
@@ -84,7 +85,9 @@ class InvoiceController extends Controller
             $selectedDueDate = Carbon::parse($request->string('due_date')->toString(), 'Asia/Manila')->toDateString();
             $query->whereDate('due_date', $selectedDueDate);
         }
-        $summaryScope = clone $query;
+        // Status totals audit the complete permitted history (or the complete
+        // search result). The calendar has its own selected-day count.
+        $summaryScope = clone $historyScope;
 
         // Filter by status
         if ($request->filled('status')) {

@@ -29,6 +29,8 @@ class InvoiceIndexCalendarTest extends TestCase
 
         $this->assertCount(3, $payload['data']);
         $this->assertSame(3, $payload['summary']['selected_due']);
+        $this->assertSame(4, $payload['summary']['all']);
+        $this->assertSame(2, $payload['summary']['unpaid']);
         $this->assertSame(1, $payload['summary']['paid']);
         $this->assertSame(1, $payload['summary']['partial']);
         $this->assertSame(1, $payload['summary']['cancelled']);
@@ -43,7 +45,7 @@ class InvoiceIndexCalendarTest extends TestCase
         $this->invoice($other, 'SLR-CURRENT', '2026-11-04', 'sent', 800, 0);
 
         $response = app(InvoiceController::class)->index(Request::create('/api/v1/invoices', 'GET', [
-            'q' => 'gina',
+            'q' => '  gina   Historical  ',
             'due_date' => '2026-11-04',
             'per_page' => 100,
         ]));
@@ -53,6 +55,16 @@ class InvoiceIndexCalendarTest extends TestCase
         $this->assertSame('SLR-HISTORICAL', $payload['data'][0]['invoice_number']);
         $this->assertSame('search', $payload['summary']['scope']);
         $this->assertNull($payload['summary']['selected_due_date']);
+
+        foreach (['H', 'SLR-HIST', '222222'] as $term) {
+            $lookup = app(InvoiceController::class)->index(Request::create('/api/v1/invoices', 'GET', [
+                'q' => $term,
+                'per_page' => 1,
+            ]))->getData(true);
+
+            $this->assertCount(1, $lookup['data']);
+            $this->assertSame('SLR-HISTORICAL', $lookup['data'][0]['invoice_number']);
+        }
     }
 
     private function customer(string $name, string $account): Customer
