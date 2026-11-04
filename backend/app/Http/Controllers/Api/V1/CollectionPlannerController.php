@@ -8,6 +8,9 @@ use App\Models\CollectionPlannerSetting;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionVisit;
 use App\Models\CollectionLocationDeferral;
+use App\Models\CollectorTerritory;
+use App\Models\CollectionPlannerRun;
+use App\Models\Setting;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\Customer;
 use App\Models\CustomerCollectionPreference;
@@ -84,6 +87,7 @@ class CollectionPlannerController extends Controller
             $payment=Payment::whereKey($data['payment_id'])->where('collector_id',$request->user()->id)->where('customer_id',$visit->customer_id)->firstOrFail();
         }
         if(in_array($data['outcome'],['payment_collected','partial_payment_collected'],true)) abort_unless($payment,422,'Select the recorded payment before completing this visit.');
+        abort_if(!$visit->gps_verified && !$request->hasFile('photo'),422,'A visit photo is required when arrival GPS could not be verified.');
         $path=$request->hasFile('photo')?$request->file('photo')->store('collection-visits/'.now()->format('Y/m'),'local'):null;
         $visit->update(['status'=>'completed','outcome'=>$data['outcome'],'remarks'=>$data['remarks']??null,'photo_path'=>$path,'payment_id'=>$payment?->id,'completed_at'=>now()]);
         $visit->stop->update(['status'=>'completed','completed_at'=>now()]);
@@ -123,6 +127,9 @@ class CollectionPlannerController extends Controller
         $collectors=User::query()->whereHas('roles',fn($q)=>$q->where('name','collector'))->orderBy('name')->get(['id','name','email','is_active']);
         $assignments=CollectorCustomerAssignment::with(['collector:id,name','customer:id,account_number,full_name,address,gps_coordinates'])->whereNull('unassigned_at')->get();
         $plans=CollectionPlan::with(['collector:id,name','stops.customer:id,account_number,full_name,address','stops.visits'])->whereDate('plan_date',now(config('app.timezone','Asia/Manila')))->get();
+        $todayStops=$plans->flatMap->stops;
+        $latestTodayRun=CollectionPlannerRun::query()->whereDate('run_date',now(config('app.timezone','Asia/Manila')))
+            ->where('dry_run',false)->latest('started_at')->first();
         $unassignedQuery=Customer::query()->whereDoesntHave('collectorAssignment')->orderBy('full_name');
         $unassigned=$unassignedQuery->count();
         return response()->json([
@@ -137,8 +144,36 @@ class CollectionPlannerController extends Controller
                 ->whereNull('gps_coordinates')->count(),
             'location_deferrals_today'=>CollectionLocationDeferral::with(['collector:id,name','customer:id,full_name,account_number,address'])
                 ->whereDate('deferred_at',now(config('app.timezone','Asia/Manila')))->latest('deferred_at')->get(),
+            'territories'=>CollectorTerritory::with('collector:id,name')->orderByDesc('priority')->orderBy('name')->get(),
+            'planner_runs'=>CollectionPlannerRun::latest('started_at')->limit(30)->get(),
+            'coverage_report'=>[
+                'scheduled'=>$todayStops->whereIn('status',['planned','in_progress'])->count(),
+                'unscheduled'=>$todayStops->where('status','unscheduled')->count()+(int)($latestTodayRun?->unassigned_exceptions??0),
+                'completed'=>$todayStops->where('status','completed')->count(),
+                'failed'=>$todayStops->filter(fn($stop)=>$stop->visits->contains(fn($visit)=>$visit->completed_at
+                    && !in_array($visit->outcome,['payment_collected','partial_payment_collected','customer_already_paid'],true)))->count(),
+                'total_collectible'=>(float)$todayStops->sum('collectible_balance'),
+            ],
+            'automation'=>[
+                'environment_enabled'=>(bool)config('collection_planner.automation_enabled',false),
+                'application_enabled'=>(bool)Setting::get('collection_planner.auto_enabled',false),
+                'active'=>(bool)config('collection_planner.automation_enabled',false) && (bool)Setting::get('collection_planner.auto_enabled',false),
+                'daily_at'=>config('collection_planner.daily_at','07:15'),
+                'timezone'=>config('collection_planner.timezone','Asia/Manila'),
+                'algorithm_version'=>config('collection_planner.algorithm_version'),
+            ],
             'settings'=>app(SmartCollectionPlannerService::class)->settings(),
         ]);
+    }
+
+    public function storeTerritory(Request $request): JsonResponse
+    {
+        return $this->saveTerritory($request,new CollectorTerritory(),201);
+    }
+
+    public function updateTerritory(Request $request,string $territoryId): JsonResponse
+    {
+        return $this->saveTerritory($request,CollectorTerritory::findOrFail($territoryId));
     }
 
     public function assign(Request $request): JsonResponse
@@ -178,4 +213,22 @@ class CollectionPlannerController extends Controller
 
     private function distanceMeters(float $aLat,float $aLng,float $bLat,float $bLng): float
     { $earth=6371000;$dLat=deg2rad($bLat-$aLat);$dLng=deg2rad($bLng-$aLng);$a=sin($dLat/2)**2+cos(deg2rad($aLat))*cos(deg2rad($bLat))*sin($dLng/2)**2;return round($earth*2*atan2(sqrt($a),sqrt(1-$a)),2); }
+
+    private function saveTerritory(Request $request,CollectorTerritory $territory,int $status=200): JsonResponse
+    {
+        $data=$request->validate([
+            'collector_id'=>'required|uuid|exists:users,id','name'=>'required|string|max:150',
+            'address_pattern'=>'nullable|string|max:255','is_fallback'=>'required|boolean','is_active'=>'required|boolean',
+            'priority'=>'required|integer|min:0|max:10000','max_daily_visits'=>'required|integer|min:1|max:200',
+            'start_latitude'=>'nullable|numeric|between:-90,90|required_with:start_longitude',
+            'start_longitude'=>'nullable|numeric|between:-180,180|required_with:start_latitude',
+            'start_address'=>'nullable|string|max:500',
+        ]);
+        $collector=User::findOrFail($data['collector_id']);
+        abort_unless($collector->is_active&&$collector->hasRole('collector'),422,'Territories may be assigned only to active collectors.');
+        abort_if(!$data['is_fallback']&&blank($data['address_pattern']),422,'A non-fallback territory requires an address pattern.');
+        if(!$territory->exists)$data['created_by']=$request->user()->id;
+        $territory->fill($data)->save();
+        return response()->json(['message'=>'Collector territory saved.','territory'=>$territory->fresh('collector:id,name')],$status);
+    }
 }

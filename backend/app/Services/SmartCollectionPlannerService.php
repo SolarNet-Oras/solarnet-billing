@@ -12,6 +12,7 @@ use App\Models\CustomerCollectionPreference;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Models\Setting;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,7 @@ class SmartCollectionPlannerService
             ->whereIn('customer_id', $assignedIds)
             ->where('balance', '>', 0)
             ->whereIn('status', ['sent', 'partial', 'overdue'])
+            ->whereHas('customer', fn ($query) => $query->whereIn('status', ['active', 'suspended']))
             ->whereDate('due_date', '<=', $through)
             ->orderBy('due_date')
             ->get();
@@ -119,17 +121,19 @@ class SmartCollectionPlannerService
             'due_today'=>$dueToday->values(), 'overdue'=>$overdue->values(), 'upcoming'=>$upcoming->values(),
             'plan'=>$plan, 'settings'=>$this->settings(),
             'assignment_count'=>CollectorCustomerAssignment::where('collector_id',$collector->id)->whereNull('unassigned_at')->count(),
+            'automation_enabled'=>(bool)config('collection_planner.automation_enabled',false)
+                && (bool)Setting::get('collection_planner.auto_enabled',false),
         ];
     }
 
-    public function generate(User $collector, bool $smart, ?float $startLat, ?float $startLng, ?string $startAddress): CollectionPlan
+    public function generate(User $collector, bool $smart, ?float $startLat, ?float $startLng, ?string $startAddress, ?string $planningRunId = null, string $generationMode = 'manual', ?Carbon $planDate = null): CollectionPlan
     {
-        $today = now(config('app.timezone', 'Asia/Manila'))->startOfDay();
+        $today = ($planDate ?: now(config('app.timezone', 'Asia/Manila')))->copy()->startOfDay();
         $existing = CollectionPlan::with('stops.visits')->where('collector_id',$collector->id)->whereDate('plan_date',$today)->first();
         if ($existing?->stops->contains(fn (CollectionPlanStop $stop) => $stop->status === 'in_progress')) return $existing;
 
-        return DB::transaction(function () use ($collector,$smart,$startLat,$startLng,$startAddress,$today,$existing) {
-            $plan = $existing ?: CollectionPlan::create(['collector_id'=>$collector->id,'plan_date'=>$today,'generated_at'=>now()]);
+        return DB::transaction(function () use ($collector,$smart,$startLat,$startLng,$startAddress,$today,$existing,$planningRunId,$generationMode) {
+            $plan = $existing ?: CollectionPlan::create(['collector_id'=>$collector->id,'collection_planner_run_id'=>$planningRunId,'plan_date'=>$today,'generation_mode'=>$generationMode,'algorithm_version'=>config('collection_planner.algorithm_version'),'generated_at'=>now()]);
             $preserved = $plan->stops()->whereIn('status',['completed','skipped','in_progress'])->get();
             $plan->stops()->whereNotIn('id',$preserved->pluck('id'))->delete();
             $rows = $this->eligibleCustomers($collector,$today)->where('plan_eligible',true)
@@ -151,6 +155,9 @@ class SmartCollectionPlannerService
             }
             $plan->update(['smart_enabled'=>$smart,'start_latitude'=>$startLat,'start_longitude'=>$startLng,
                 'start_address'=>$startAddress,'route_mode'=>$smart?'urgency_gps_address_hybrid':'urgency_only',
+                'collection_planner_run_id'=>$planningRunId ?: $plan->collection_planner_run_id,
+                'generation_mode'=>$planningRunId ? $generationMode : ($plan->generation_mode ?: $generationMode),
+                'algorithm_version'=>config('collection_planner.algorithm_version'),
                 'version'=>($plan->version?:0)+1,'generated_at'=>now()]);
             return $plan->fresh(['stops.customer:id,account_number,full_name,address,contact_number,gps_coordinates','stops.visits']);
         });

@@ -248,6 +248,30 @@ gunzip -c /root/backups/isp_YYYY-MM-DD.sql.gz | \
 | Stop everything | `docker compose -f docker-compose.prod.yml down` |
 | Full rebuild | `docker compose -f docker-compose.prod.yml build --no-cache && ./deploy.sh` |
 
+## Automatic collection planner (staging only until approved)
+
+Phase 1 is protected by two independent gates. A scheduled run creates plans
+only when both the container environment and the application setting are
+enabled. Keep the environment gate unset or false in production until the
+staging report has been approved.
+
+```dotenv
+COLLECTION_PLANNER_AUTOMATION_ENABLED=false
+COLLECTION_PLANNER_DAILY_AT=07:15
+```
+
+The safe audit command records a planning-run preview but does not create
+assignments or collection plans:
+
+```bash
+php artisan collection:generate-daily-plans --date=YYYY-MM-DD --dry-run
+```
+
+Execution additionally requires the application setting
+`collection_planner.auto_enabled=true`. Manual execution requires the exact
+confirmation phrase. The scheduler runs the same idempotent command in the
+foreground with single-server and overlap locks.
+
 ## Troubleshooting
 
 - **502 Bad Gateway** — backend still starting; `docker compose logs backend` and wait ~15 s.

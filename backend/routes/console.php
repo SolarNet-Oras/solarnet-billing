@@ -130,3 +130,12 @@ Schedule::command('payroll:process-scheduled')
     ->dailyAt('12:00')
     ->timezone($tz)
     ->withoutOverlapping();
+
+// Phase 1 automatic collection planning. The command has an additional
+// disabled-by-default environment and database gate, runs in the foreground,
+// and records an idempotent planning run for every approved execution.
+Schedule::command('collection:generate-daily-plans --execute --triggered-by=schedule')
+    ->dailyAt((string) config('collection_planner.daily_at', '07:15'))
+    ->timezone((string) config('collection_planner.timezone', 'Asia/Manila'))
+    ->onOneServer()
+    ->withoutOverlapping(60);

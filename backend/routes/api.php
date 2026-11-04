@@ -428,6 +428,8 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['role:super_admin|admin|office_admin'])->prefix('collection-monitoring')->group(function () {
             Route::get('/', [CollectionPlannerController::class, 'adminIndex']);
             Route::post('assignments', [CollectionPlannerController::class, 'assign']);
+            Route::post('territories', [CollectionPlannerController::class, 'storeTerritory']);
+            Route::put('territories/{territoryId}', [CollectionPlannerController::class, 'updateTerritory']);
             Route::put('customers/{customerId}/preferences', [CollectionPlannerController::class, 'updatePreference']);
             Route::put('settings', [CollectionPlannerController::class, 'updateSettings']);
             Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);

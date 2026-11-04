@@ -132,6 +132,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(CollectionPlan::class, 'collector_id');
     }
 
+    public function collectorTerritories(): HasMany
+    {
+        return $this->hasMany(CollectorTerritory::class, 'collector_id');
+    }
+
     /**
      * Get all permissions for the user through roles.
      */
