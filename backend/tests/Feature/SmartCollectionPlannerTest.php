@@ -6,6 +6,7 @@ use App\Models\CollectionVisit;
 use App\Models\CollectionPlan;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionLocationDeferral;
+use App\Models\CollectionRegistrationEvidence;
 use App\Models\CustomerLocationEvent;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\Customer;
@@ -21,6 +22,28 @@ use Tests\TestCase;
 class SmartCollectionPlannerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_missing_mac_requires_router_label_evidence_before_collection(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-04 08:00:00', 'Asia/Manila'));
+        $collector = User::factory()->create();
+        $customer = $this->customer('Incomplete Registration', 'Barangay San Roque');
+        $customer->update(['mac_address'=>null,'email'=>null]);
+        CollectorCustomerAssignment::create(['collector_id'=>$collector->id,'customer_id'=>$customer->id,'assigned_at'=>now()]);
+        $this->invoice($customer,'2026-11-04');
+
+        $before=app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->first();
+        $this->assertFalse($before['registration_ready']);
+
+        CollectionRegistrationEvidence::create([
+            'customer_id'=>$customer->id,'collector_id'=>$collector->id,
+            'router_label_photo_path'=>'collection-registration/test/router.jpg','status'=>'pending',
+        ]);
+        $after=app(SmartCollectionPlannerService::class)->eligibleCustomers($collector)->first();
+        $this->assertTrue($after['registration_ready']);
+        $this->assertTrue($after['registration_evidence_captured']);
+        $this->assertNull($customer->fresh()->mac_address);
+    }
 
     public function test_address_only_customers_are_grouped_and_never_skipped(): void
     {

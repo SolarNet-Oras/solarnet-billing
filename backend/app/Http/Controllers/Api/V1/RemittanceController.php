@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\FinancialEntry;
 use App\Models\CollectorCustomerAssignment;
 use App\Models\CollectionLocationDeferral;
+use App\Models\CollectionRegistrationEvidence;
 use App\Services\CashDenominationService;
 use App\Services\InvoiceService;
 use App\Services\PaymongoService;
@@ -225,6 +226,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::findOrFail($invoiceId);
         $this->assertAssigned($request->user()->id, $invoice->customer_id);
         $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         $customerOutstanding = (float) Invoice::query()
             ->where('customer_id', $invoice->customer_id)
@@ -273,6 +275,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertAssigned($request->user()->id, $invoice->customer_id);
         $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
 
         try {
@@ -296,6 +299,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertAssigned($request->user()->id, $invoice->customer_id);
         $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         try {
             return response()->json(['message' => 'PayMongo QR Ph payment created.', 'payment' => $paymongo->createQrPhPayment($invoice)]);
@@ -371,6 +375,14 @@ class RemittanceController extends Controller
             ->where('customer_id',$invoice->customer_id)
             ->whereDate('deferred_at',now(config('app.timezone','Asia/Manila')))->exists();
         abort_unless($deferred,422,'This client has no coordinates. At the service address, use Update coordinates. If collecting elsewhere, record the reason for skipping the update before receiving payment.');
+    }
+
+    private function assertRegistrationReady(Invoice $invoice): void
+    {
+        if (filled($invoice->customer?->mac_address)) return;
+        $captured=CollectionRegistrationEvidence::query()->where('customer_id',$invoice->customer_id)
+            ->whereIn('status',['pending','approved'])->exists();
+        abort_unless($captured,422,'Capture a clear photo of the router/ONU back label before proceeding with payment. Office staff will verify and save the MAC address.');
     }
 
     /** Physical cash is counted by the receiving office, never by the collector. */

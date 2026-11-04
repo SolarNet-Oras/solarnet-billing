@@ -410,6 +410,8 @@ Route::prefix('v1')->group(function () {
             Route::post('plans/stops/{stopId}/arrive', [CollectionPlannerController::class, 'arrive']);
             Route::post('plans/stops/{stopId}/skip', [CollectionPlannerController::class, 'skip']);
             Route::post('plans/stops/{stopId}/defer-location-update', [CollectionPlannerController::class, 'deferLocationUpdate']);
+            Route::post('plans/stops/{stopId}/registration-evidence', [CollectionPlannerController::class, 'captureRegistrationEvidence']);
+            Route::get('registration-evidence/{evidenceId}/photo', [CollectionPlannerController::class, 'registrationEvidencePhoto']);
             Route::post('visits/{visitId}/complete', [CollectionPlannerController::class, 'complete']);
             Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);
             Route::get('locations', [RemittanceController::class, 'collectorLocations']);
@@ -433,6 +435,8 @@ Route::prefix('v1')->group(function () {
             Route::put('customers/{customerId}/preferences', [CollectionPlannerController::class, 'updatePreference']);
             Route::put('settings', [CollectionPlannerController::class, 'updateSettings']);
             Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);
+            Route::get('registration-evidence/{evidenceId}/photo', [CollectionPlannerController::class, 'registrationEvidencePhoto']);
+            Route::put('registration-evidence/{evidenceId}/review', [CollectionPlannerController::class, 'reviewRegistrationEvidence']);
         });
         // Office staff verify what a collector declares against cash, bank, or GCash received.
         Route::middleware(['role:super_admin|admin|cashier|office_admin'])->prefix('remittances')->group(function () {

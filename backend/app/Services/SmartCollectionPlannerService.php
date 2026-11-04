@@ -48,7 +48,7 @@ class SmartCollectionPlannerService
             ->with('router:id,name')->latest('last_seen_at')->get()->unique('customer_id')->keyBy('customer_id');
 
         $invoices = Invoice::query()
-            ->with(['customer:id,account_number,full_name,address,contact_number,gps_coordinates,location_status', 'customer.collectionPreference'])
+            ->with(['customer:id,account_number,full_name,address,contact_number,email,mac_address,gps_coordinates,location_status', 'customer.collectionPreference'])
             ->whereIn('customer_id', $assignedIds)
             ->where('balance', '>', 0)
             ->whereIn('status', ['sent', 'partial', 'overdue'])
@@ -111,6 +111,10 @@ class SmartCollectionPlannerService
                 'location_update_deferred_today'=>CollectionLocationDeferral::query()
                     ->where('collector_id',$collector->id)->where('customer_id',$customer->id)
                     ->whereDate('deferred_at',$today)->exists(),
+                'registration_evidence_captured'=>\App\Models\CollectionRegistrationEvidence::query()
+                    ->where('customer_id',$customer->id)->whereIn('status',['pending','approved'])->exists(),
+                'registration_ready'=>filled($customer->mac_address) || \App\Models\CollectionRegistrationEvidence::query()
+                    ->where('customer_id',$customer->id)->whereIn('status',['pending','approved'])->exists(),
                 'plan_eligible'=>$dueInvoices->isNotEmpty() || (bool)($preference?->early_collection_allowed ?? false),
             ];
         })->filter()->values();
@@ -180,7 +184,7 @@ class SmartCollectionPlannerService
                 'generation_mode'=>$planningRunId ? $generationMode : ($plan->generation_mode ?: $generationMode),
                 'algorithm_version'=>config('collection_planner.algorithm_version'),
                 'version'=>($plan->version?:0)+1,'generated_at'=>now()]);
-            return $plan->fresh(['stops.customer:id,account_number,full_name,address,contact_number,gps_coordinates','stops.visits']);
+        return $plan->fresh(['stops.customer:id,account_number,full_name,address,contact_number,email,mac_address,gps_coordinates','stops.visits']);
         });
     }
 

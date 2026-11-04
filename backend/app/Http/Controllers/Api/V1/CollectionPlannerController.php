@@ -8,6 +8,7 @@ use App\Models\CollectionPlannerSetting;
 use App\Models\CollectionPlanStop;
 use App\Models\CollectionVisit;
 use App\Models\CollectionLocationDeferral;
+use App\Models\CollectionRegistrationEvidence;
 use App\Models\CollectorTerritory;
 use App\Models\CollectionPlannerRun;
 use App\Models\Setting;
@@ -138,6 +139,55 @@ class CollectionPlannerController extends Controller
         ],201);
     }
 
+    public function captureRegistrationEvidence(Request $request, string $stopId): JsonResponse
+    {
+        $data=$request->validate([
+            'router_label_photo'=>'required|file|mimes:jpg,jpeg,png|max:8192',
+            'email'=>'nullable|email:rfc|max:255',
+            'contact_number'=>'nullable|string|min:7|max:30',
+        ]);
+        $stop=CollectionPlanStop::with(['plan','customer'])->findOrFail($stopId);
+        abort_unless($stop->plan->collector_id===$request->user()->id,403);
+        abort_unless(in_array($stop->status,['planned','in_progress'],true),422,'Registration evidence is allowed only for an active collection stop.');
+        $path=$request->file('router_label_photo')->store('collection-registration/'.now()->format('Y/m'),'local');
+        $evidence=DB::transaction(function()use($data,$stop,$request,$path){
+            $updates=[];
+            if(blank($stop->customer->email)&&filled($data['email']??null))$updates['email']=mb_strtolower(trim($data['email']));
+            if(blank($stop->customer->contact_number)&&filled($data['contact_number']??null))$updates['contact_number']=trim($data['contact_number']);
+            if($updates)$stop->customer->update($updates);
+            return CollectionRegistrationEvidence::create([
+                'customer_id'=>$stop->customer_id,'collection_plan_stop_id'=>$stop->id,
+                'collector_id'=>$request->user()->id,'router_label_photo_path'=>$path,
+                'submitted_email'=>$data['email']??null,'submitted_phone'=>$data['contact_number']??null,'status'=>'pending',
+            ]);
+        });
+        return response()->json(['message'=>'Router-label evidence saved for office review. Contact details were filled only where previously missing.','evidence'=>$evidence],201);
+    }
+
+    public function registrationEvidencePhoto(Request $request,string $evidenceId)
+    {
+        $evidence=CollectionRegistrationEvidence::findOrFail($evidenceId);
+        abort_unless($request->user()->id===$evidence->collector_id||$request->user()->hasAnyRole(['super_admin','admin','office_admin']),403);
+        abort_unless(Storage::disk('local')->exists($evidence->router_label_photo_path),404);
+        return Storage::disk('local')->download($evidence->router_label_photo_path);
+    }
+
+    public function reviewRegistrationEvidence(Request $request,string $evidenceId): JsonResponse
+    {
+        $data=$request->validate(['mac_address'=>['required','string','regex:/^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/'],'review_notes'=>'nullable|string|max:1000']);
+        $evidence=CollectionRegistrationEvidence::with('customer')->where('status','pending')->findOrFail($evidenceId);
+        $mac=strtoupper(str_replace('-',':',$data['mac_address']));
+        $hex=str_replace(':','',$mac);
+        abort_if(Customer::query()->where('id','!=',$evidence->customer_id)->whereNotNull('mac_address')
+            ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?",[$hex])->exists(),422,'This MAC address already belongs to another customer.');
+        DB::transaction(function()use($evidence,$request,$data,$mac){
+            $evidence->customer->update(['mac_address'=>$mac,'mac_binding_status'=>'pending']);
+            $evidence->update(['status'=>'approved','verified_mac_address'=>$mac,'reviewed_by'=>$request->user()->id,
+                'reviewed_at'=>now(),'review_notes'=>$data['review_notes']??null]);
+        });
+        return response()->json(['message'=>'MAC address verified and saved. Network binding remains subject to the existing safe synchronization process.','evidence'=>$evidence->fresh()]);
+    }
+
     public function adminIndex(): JsonResponse
     {
         $collectors=User::query()->eligibleFieldCollector()->orderBy('name')->get(['id','name','email','is_active']);
@@ -160,6 +210,8 @@ class CollectionPlannerController extends Controller
                 ->whereNull('gps_coordinates')->count(),
             'location_deferrals_today'=>CollectionLocationDeferral::with(['collector:id,name','customer:id,full_name,account_number,address'])
                 ->whereDate('deferred_at',now(config('app.timezone','Asia/Manila')))->latest('deferred_at')->get(),
+            'registration_evidence'=>CollectionRegistrationEvidence::with(['collector:id,name','customer:id,full_name,account_number,email,contact_number,mac_address'])
+                ->latest()->limit(200)->get(),
             'territories'=>CollectorTerritory::with('collector:id,name')->orderByDesc('priority')->orderBy('name')->get(),
             'planner_runs'=>CollectionPlannerRun::latest('started_at')->limit(30)->get(),
             'coverage_report'=>[
