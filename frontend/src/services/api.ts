@@ -106,6 +106,9 @@ export const api: AxiosInstance = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
     startButtonProgress(config as ActionRequestConfig);
+    if (config.data instanceof FormData && config.headers) {
+      config.headers.delete('Content-Type');
+    }
     // Customer portal requests use their own token (stored at portal login)
     // Match only the actual customer portal API namespace. Admin endpoints
     // such as /customer-portal-accounts must continue using the staff token.
