@@ -93,7 +93,7 @@ class InvoiceService
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
                     ->whereDate('recurring_cycle_date', $recurringCycleDate)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', Invoice::NON_FULFILLING_CYCLE_STATUSES)
                     ->first();
                 if ($existing) {
                     return $existing->fresh(['items', 'customer']);
@@ -176,7 +176,7 @@ class InvoiceService
                 $existing = Invoice::query()
                     ->where('customer_id', $customer->id)
                     ->whereDate('recurring_cycle_date', $recurringCycleDate)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', Invoice::NON_FULFILLING_CYCLE_STATUSES)
                     ->first();
                 if ($existing) {
                     return $existing->loadMissing(['items', 'customer']);
@@ -241,7 +241,7 @@ class InvoiceService
                 // invoice must not prevent the normal monthly cycle.
                 $periodStart = $billingDate->copy()->subMonthNoOverflow()->startOfDay();
                 $existingInvoice = Invoice::where('customer_id', $customer->id)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', Invoice::NON_FULFILLING_CYCLE_STATUSES)
                     ->where(function ($query) use ($billingDate, $periodStart): void {
                         $query->whereDate('recurring_cycle_date', $billingDate)
                             ->orWhere(function ($query) use ($billingDate, $periodStart): void {

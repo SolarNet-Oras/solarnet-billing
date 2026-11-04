@@ -137,6 +137,11 @@ services:
       context: ..
       dockerfile: deploy/backend.Dockerfile
     restart: unless-stopped
+    # Laravel's scheduler launches child PHP processes. Run an init process
+    # as PID 1 and cap tasks defensively so a regression cannot exhaust the
+    # VPS process table. Scheduled commands themselves run in the foreground.
+    init: true
+    pids_limit: 256
     command: ["php", "artisan", "schedule:work"]
     volumes:
       - ../backend:/var/www

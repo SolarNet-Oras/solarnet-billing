@@ -14,6 +14,9 @@ class Invoice extends Model
 {
     use HasFactory, HasUuids;
 
+    /** States that do not fulfil or reserve a recurring billing cycle. */
+    public const NON_FULFILLING_CYCLE_STATUSES = ['cancelled', 'voided'];
+
     protected $fillable = [
         'invoice_number',
         'customer_id',

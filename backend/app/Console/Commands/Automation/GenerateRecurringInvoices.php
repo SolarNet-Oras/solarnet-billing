@@ -34,7 +34,12 @@ class GenerateRecurringInvoices extends Command
         $this->line("Job: {$log->job}  status: {$log->status}  duration: {$log->duration_ms}ms");
         $this->line(json_encode($log->summary, JSON_PRETTY_PRINT));
 
-        return $log->status === AutomationLog::STATUS_ERROR ? 1 : 0;
+        // A partial run means at least one eligible customer failed. Surface
+        // that to the scheduler as a non-zero exit while preserving the
+        // detailed AutomationLog summary for an administrator to review.
+        return $log->status === AutomationLog::STATUS_SUCCESS
+            ? self::SUCCESS
+            : self::FAILURE;
     }
 
     private function doWork(InvoiceService $invoices): array
@@ -122,6 +127,10 @@ class GenerateRecurringInvoices extends Command
             // A manual invoice for this exact service period also owns the
             // cycle and must prevent a second automatic charge.
             if (Invoice::where('customer_id', $customer->id)
+                // A cancelled/voided statement does not fulfil a service
+                // cycle. The database currently stores this state as
+                // "cancelled"; keep "voided" here for forward compatibility.
+                ->whereNotIn('status', Invoice::NON_FULFILLING_CYCLE_STATUSES)
                 ->where(function ($query) use ($cycleDate, $periodStart): void {
                     $query->whereDate('recurring_cycle_date', $cycleDate)
                         ->orWhere(function ($query) use ($cycleDate, $periodStart): void {

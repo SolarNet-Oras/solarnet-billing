@@ -2,17 +2,26 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendInitialInvoiceEmail;
 use App\Models\AutomationLog;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Services\InvoiceService;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class RecurringInvoiceScheduleTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Queue::fake([SendInitialInvoiceEmail::class]);
+    }
 
     protected function tearDown(): void
     {
@@ -94,6 +103,67 @@ class RecurringInvoiceScheduleTest extends TestCase
         $replacement = Invoice::where('customer_id', $customer->id)->where('status', '!=', 'cancelled')->sole();
         $this->assertSame('recurring', $replacement->generation_source);
         $this->assertSame('2026-10-19', $replacement->recurring_cycle_date->toDateString());
+    }
+
+    public function test_fully_discounted_prior_cycle_does_not_create_credit_or_block_the_next_cycle(): void
+    {
+        $customer = $this->customer('Fully Discounted', '1000000023', '2026-01-01', 19);
+        $prior = Invoice::create([
+            'customer_id' => $customer->id,
+            'invoice_number' => 'SLR-FULL-DISCOUNT-0001',
+            'issue_date' => '2026-09-12',
+            'due_date' => '2026-09-19',
+            'billing_period_start' => '2026-08-19',
+            'billing_period_end' => '2026-09-19',
+            'recurring_cycle_date' => '2026-09-19',
+            'generation_source' => 'recurring',
+            'discount' => 800,
+            'paid_amount' => 0,
+            'status' => 'sent',
+        ]);
+        $prior->items()->create(['description' => 'Monthly service', 'quantity' => 1, 'unit_price' => 800, 'total' => 800]);
+        app(InvoiceService::class)->calculateInvoiceTotals($prior);
+
+        $this->assertSame('0.00', $prior->fresh()->total);
+        $this->assertSame('0.00', $prior->fresh()->balance);
+        $this->assertDatabaseCount('customer_credits', 0);
+
+        $this->runScheduler('2026-10-12');
+
+        $this->assertDatabaseCount('customer_credits', 0);
+        $this->assertDatabaseHas('invoices', [
+            'customer_id' => $customer->id,
+            'recurring_cycle_date' => '2026-10-19',
+            'generation_source' => 'recurring',
+        ]);
+    }
+
+    public function test_paid_manual_invoice_outside_the_service_period_does_not_block_recurring_cycle(): void
+    {
+        $customer = $this->customer('Manual Paid Other Period', '1000000024', '2026-01-01', 19);
+        Invoice::create([
+            'customer_id' => $customer->id,
+            'invoice_number' => 'MANUAL-PAID-OUTSIDE-0001',
+            'issue_date' => '2026-10-10',
+            'due_date' => '2026-10-19',
+            'billing_period_start' => '2026-10-10',
+            'billing_period_end' => '2026-10-10',
+            'generation_source' => 'manual',
+            'subtotal' => 500,
+            'total' => 500,
+            'paid_amount' => 500,
+            'balance' => 0,
+            'status' => 'paid',
+        ]);
+
+        $this->runScheduler('2026-10-12');
+
+        $this->assertSame(2, Invoice::where('customer_id', $customer->id)->count());
+        $this->assertDatabaseHas('invoices', [
+            'customer_id' => $customer->id,
+            'recurring_cycle_date' => '2026-10-19',
+            'generation_source' => 'recurring',
+        ]);
     }
 
     public function test_prior_late_discounted_invoice_never_becomes_advance_or_blocks_next_cycle(): void
@@ -194,6 +264,42 @@ class RecurringInvoiceScheduleTest extends TestCase
         $invoice = Invoice::where('customer_id', $dueNineteenth->id)->sole();
         $this->assertSame('2026-10-19', $invoice->due_date->toDateString());
         $this->assertDatabaseMissing('invoices', ['customer_id' => $dueEighteenth->id]);
+    }
+
+    public function test_all_scheduler_children_run_in_foreground_for_reliable_reaping(): void
+    {
+        $events = collect(app(Schedule::class)->events());
+        $recurring = $events
+            ->first(fn ($event) => str_contains($event->command ?? '', 'automation:generate-recurring-invoices'));
+
+        $this->assertNotNull($recurring);
+        $this->assertGreaterThan(10, $events->count());
+        $events->each(function ($event): void {
+            $this->assertFalse(
+                $event->runInBackground,
+                'Scheduled command must run in the foreground: '.($event->command ?? 'unknown'),
+            );
+        });
+    }
+
+    public function test_customer_generation_error_is_logged_and_returns_failure_exit_code(): void
+    {
+        $this->customer('Generation Failure', '1000000025', '2026-01-01', 19);
+        $this->mock(InvoiceService::class, function ($mock): void {
+            $mock->shouldReceive('generateInvoice')
+                ->once()
+                ->andThrow(new \RuntimeException('Synthetic generation failure'));
+        });
+
+        $this->artisan('automation:generate-recurring-invoices', [
+            '--date' => '2026-10-12',
+            '--triggered-by' => 'manual',
+        ])->assertFailed();
+
+        $log = AutomationLog::latest('started_at')->firstOrFail();
+        $this->assertSame(AutomationLog::STATUS_PARTIAL, $log->status);
+        $this->assertSame('Synthetic generation failure', $log->summary['errors'][0]['error']);
+        $this->assertDatabaseCount('invoices', 0);
     }
 
     private function runScheduler(string $date): void

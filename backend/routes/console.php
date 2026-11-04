@@ -12,6 +12,9 @@ Artisan::command('inspire', function () {
 // Scheduled automations (Asia/Manila).
 // All commands short-circuit if Setting 'automation.enabled' is false,
 // so a single toggle in the Settings UI pauses everything.
+// Keep scheduled commands in the foreground. The scheduler container is
+// dedicated to this work, and waiting for child exit codes prevents defunct
+// PHP processes from accumulating under the long-running schedule worker.
 // ------------------------------------------------------------------
 $tz = env('APP_TIMEZONE', 'Asia/Manila');
 
@@ -20,22 +23,19 @@ $tz = env('APP_TIMEZONE', 'Asia/Manila');
 Schedule::command('automation:generate-recurring-invoices')
     ->dailyAt('00:05')
     ->timezone('Asia/Manila')
-    ->withoutOverlapping(30)
-    ->runInBackground();
+    ->withoutOverlapping(30);
 
 // 02:00 — flip past-due invoices to overdue
 Schedule::command('automation:update-overdue')
     ->dailyAt('02:00')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // 02:15 — gzipped pg_dump backup + retention prune
 Schedule::command('automation:db-backup')
     ->dailyAt('02:15')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every minute — live DHCP mirror. This is deliberately read-only: it stores
 // current lease state and exact customer matches locally but never changes a
@@ -43,8 +43,7 @@ Schedule::command('automation:db-backup')
 Schedule::command('dhcp:sync --read-only')
     ->everyMinute()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every two minutes — apply only a tiny, exact-match static-lease batch after
 // the read-only mirror has established current DHCP state. This deliberately
@@ -53,16 +52,14 @@ $dhcpStaticBatchSize = min(10, max(1, (int) env('DHCP_STATIC_ENFORCEMENT_BATCH_S
 Schedule::command('dhcp:enforce-static --limit=' . $dhcpStaticBatchSize)
     ->everyTwoMinutes()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // 08:00 — daily web-push reminders for unpaid invoices. Initial invoice
 // emails are sent once when an invoice is created, not by this reminder job.
 Schedule::command('automation:invoice-reminders')
     ->dailyAt('08:00')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every 10 minutes — recover only audited email/SMS records that were queued
 // or failed and still have their single retry available. Null legacy audit
@@ -70,31 +67,27 @@ Schedule::command('automation:invoice-reminders')
 Schedule::command('automation:recover-billing-deliveries')
     ->everyTenMinutes()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every minute — move durable mass-advisory recipient rows into Redis. The
 // database is the outbox, so an HTTP/Redis interruption cannot lose a campaign.
 Schedule::command('sms:dispatch-advisory-outbox --limit=100')
     ->everyMinute()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every minute — recover approved Messenger campaigns if their original
 // Redis job was lost. Delivery is idempotent per campaign and conversation.
 Schedule::command('facebook:dispatch-marketing-campaigns --limit=10')
     ->everyMinute()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every 5 minutes — reconcile billing and network suspension state.
 Schedule::command('automation:auto-suspend')
     ->everyFiveMinutes()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every minute — settle paid PayMongo checkouts even if the browser return or
 // payment webhook was missed.
@@ -108,30 +101,26 @@ Schedule::command('paymongo:reconcile-pending')
 Schedule::command('qos:complete-safe-tests')
     ->everyMinute()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Every minute — remove only expired, SolarNet-tagged temporary ONU access rules.
 Schedule::command('onu-remote:cleanup')
     ->everyMinute()
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Daily — remove expired private photo evidence while preserving attendance.
 Schedule::command('attendance:cleanup-photos')
     ->dailyAt('02:30')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // Just after Manila midnight, close forgotten punches from the prior day at
 // 5:00 PM. This never creates overtime and is safe to rerun.
 Schedule::command('attendance:close-stale')
     ->dailyAt('00:05')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
 
 // 12:00 Asia/Manila daily. Payslips are prepared and emailed one day before
 // payday, then idempotently checked/retried on payday itself. Actual salary
@@ -140,5 +129,4 @@ Schedule::command('attendance:close-stale')
 Schedule::command('payroll:process-scheduled')
     ->dailyAt('12:00')
     ->timezone($tz)
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->withoutOverlapping();
