@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class CollectorDashboardVisibilityTest extends TestCase
@@ -37,6 +38,41 @@ class CollectorDashboardVisibilityTest extends TestCase
         $payload=$response->getData(true);
 
         $this->assertSame([$due->id],array_column($payload['invoices']['data'],'id'));
+    }
+
+    public function test_standard_collection_does_not_require_customer_coordinates_but_smart_planner_still_does(): void
+    {
+        $collector=User::factory()->create();
+        $customer=Customer::create([
+            'account_number'=>'7852604221',
+            'full_name'=>'Address Only Customer',
+            'address'=>'San Roque Oras Eastern Samar',
+            'contact_number'=>'09999999998',
+            'installation_date'=>'2026-01-01',
+            'monthly_fee'=>'800.00',
+            'status'=>'active',
+            'gps_coordinates'=>null,
+        ]);
+        $invoice=$this->invoice($customer,'ADDRESS-ONLY','2026-11-05');
+        $method=new \ReflectionMethod(RemittanceController::class,'assertPlannerLocationCapturedOrDeferred');
+
+        $standard=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST',[
+            'collection_context'=>'standard',
+        ]);
+        $standard->setUserResolver(fn()=> $collector);
+        $method->invoke(app(RemittanceController::class),$standard,$invoice);
+        $this->addToAssertionCount(1);
+
+        $planner=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST',[
+            'collection_context'=>'smart_planner',
+        ]);
+        $planner->setUserResolver(fn()=> $collector);
+        try {
+            $method->invoke(app(RemittanceController::class),$planner,$invoice);
+            $this->fail('Smart Planner unexpectedly accepted an address-only customer without a location deferral.');
+        } catch (HttpException $exception) {
+            $this->assertSame(422,$exception->getStatusCode());
+        }
     }
 
     private function invoice(Customer $customer,string $number,string $dueDate): Invoice

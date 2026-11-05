@@ -33,6 +33,7 @@ export default function RemittancesPage() {
   const [remittanceMonth, setRemittanceMonth] = useState('');
   const [remittanceDateOrder, setRemittanceDateOrder] = useState<'newest' | 'oldest'>('newest');
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
+  const [paymentContext, setPaymentContext] = useState<'standard' | 'smart_planner'>('standard');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile_money' | 'bank_transfer'>('cash');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [reference, setReference] = useState('');
@@ -107,8 +108,8 @@ export default function RemittancesPage() {
   const cashExcess = cashCounted > cashExpected;
   const liquidationReady = cashMatches || (cashExcess && excessAction === 'accept_overage' && cashReturned === 0) || (cashShortage && ['travel_expense_gas', 'customer_invoice_discount'].includes(shortageReason) && Boolean(expenseReceiptReference.trim()));
 
-  const closePayment = () => { setPaymentInvoice(null); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
-  const openPayment = (invoice: Invoice) => { setPaymentInvoice(invoice); setPaymentAmount(String(invoice.customer_outstanding || invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
+  const closePayment = () => { setPaymentInvoice(null); setPaymentContext('standard'); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
+  const openPayment = (invoice: Invoice, context: 'standard' | 'smart_planner' = 'standard') => { setPaymentInvoice(invoice); setPaymentContext(context); setPaymentAmount(String(invoice.customer_outstanding || invoice.balance)); setPaymentMethod('cash'); setReference(''); setCheckout(null); setQrPayment(null); setQrCode(''); setSignaturePresent(false); setFamilySigner(false); setFamilySignerName(''); setCashStep('details'); };
   const signaturePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = signatureCanvas.current;
     if (!canvas) return null;
@@ -183,6 +184,7 @@ export default function RemittancesPage() {
       const response = await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, {
         amount,
         payment_method: paymentMethod,
+        collection_context: paymentContext,
         reference: reference.trim() || undefined,
         payer_signature: paymentMethod === 'cash' ? signatureCanvas.current?.toDataURL('image/png') : undefined,
         payer_signature_fingerprint: paymentMethod === 'cash' ? signatureFingerprint() : undefined,
@@ -200,7 +202,7 @@ export default function RemittancesPage() {
     if (!paymentInvoice) return;
     setBusy(true);
     try {
-      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/gcash-checkout`);
+      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/gcash-checkout`, { collection_context: paymentContext });
       const created = response.data?.checkout as Checkout;
       if (!created?.checkout_url) throw new Error('PayMongo did not return a checkout link.');
       setCheckout(created);
@@ -212,7 +214,7 @@ export default function RemittancesPage() {
     if (!paymentInvoice) return;
     setBusy(true);
     try {
-      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/qr-ph`);
+      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/qr-ph`, { collection_context: paymentContext });
       let payment = response.data?.payment as QrPayment;
       if (!payment?.qr_image_url) {
         const qr = await attachPaymongoQrPh({ publicKey: payment.public_key, baseUrl: payment.base_url, paymentIntentId: payment.payment_intent_id, clientKey: payment.client_key });
@@ -286,7 +288,7 @@ export default function RemittancesPage() {
     {!collector && needsReview && <div className="flex flex-col justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center"><div><p className="font-semibold">Showing remittances that need review</p><p className="mt-1 text-xs">Only submitted remittances awaiting liquidation or validation, and discrepancy records, are displayed.</p></div><button type="button" onClick={() => { setSearchParams({}); setRemittanceMonth(''); }} className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 text-xs font-semibold">Show all remittances</button></div>}
     {collector ? <>
       <section className="flex flex-col gap-4 rounded-2xl border bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm text-muted-foreground">Pending remittance</p><p className="text-3xl font-bold">{peso(unremitted)}</p><p className="mt-1 text-xs text-muted-foreground">Only recorded cash requires cashier liquidation. PayMongo GCash payments settle directly to the invoice.</p></div><button disabled={!unremitted || busy} onClick={() => void submitRemittance()} className="shrink-0 rounded-xl bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"><Send className="mr-2 inline h-4 w-4" />Submit remittance</button></section>
-      <SmartCollectorPlanner onCollect={(invoice) => openPayment(invoice as Invoice)} />
+      <SmartCollectorPlanner onCollect={(invoice) => openPayment(invoice as Invoice, 'smart_planner')} />
       <form onSubmit={(event) => { event.preventDefault(); void load(collectionSearch, collectionSort); }} className="grid gap-3 rounded-2xl border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-end">
         <label className="text-sm font-medium">Search collections<input value={collectionSearch} onChange={(event) => setCollectionSearch(event.target.value)} placeholder="Client, account, address, or invoice" className="mt-1 w-full rounded-lg border bg-background px-3 py-2" /></label>
         <label className="text-sm font-medium">Sort by<select value={collectionSort} onChange={(event) => setCollectionSort(event.target.value as 'due_date' | 'address')} className="mt-1 w-full rounded-lg border bg-background px-3 py-2"><option value="due_date">Due date</option><option value="address">Address A to Z</option></select></label>

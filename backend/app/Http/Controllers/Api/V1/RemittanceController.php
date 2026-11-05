@@ -213,6 +213,7 @@ class RemittanceController extends Controller
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|in:cash,bank_transfer',
+            'collection_context' => 'nullable|in:standard,smart_planner',
             'reference' => 'nullable|string|max:255',
             'transaction_id' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
@@ -223,7 +224,7 @@ class RemittanceController extends Controller
         ]);
         $invoice = Invoice::findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
-        $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
         $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         $customerOutstanding = (float) Invoice::query()
@@ -272,7 +273,7 @@ class RemittanceController extends Controller
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
-        $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
         $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
 
@@ -296,7 +297,7 @@ class RemittanceController extends Controller
     {
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
-        $this->assertLocationCapturedOrDeferred($request->user()->id, $invoice);
+        $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
         $this->assertRegistrationReady($invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         try {
@@ -381,10 +382,15 @@ class RemittanceController extends Controller
         return $invoice->customer?->collectionPreference?->early_collection_allowed === true;
     }
 
-    private function assertLocationCapturedOrDeferred(string $collectorId, Invoice $invoice): void
+    /**
+     * GPS completion is part of a Smart Planner visit, not a prerequisite for
+     * receiving a legitimate payment from the ordinary collector invoice list.
+     */
+    private function assertPlannerLocationCapturedOrDeferred(Request $request, Invoice $invoice): void
     {
+        if ($request->input('collection_context', 'standard') !== 'smart_planner') return;
         if (filled($invoice->customer?->gps_coordinates)) return;
-        $deferred=CollectionLocationDeferral::query()->where('collector_id',$collectorId)
+        $deferred=CollectionLocationDeferral::query()->where('collector_id',$request->user()->id)
             ->where('customer_id',$invoice->customer_id)
             ->whereDate('deferred_at',now(config('app.timezone','Asia/Manila')))->exists();
         abort_unless($deferred,422,'This client has no coordinates. At the service address, use Update coordinates. If collecting elsewhere, record the reason for skipping the update before receiving payment.');
