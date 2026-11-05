@@ -437,6 +437,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [CollectionPlannerController::class, 'adminIndex']);
             Route::post('assignments', [CollectionPlannerController::class, 'assign']);
             Route::post('territories', [CollectionPlannerController::class, 'storeTerritory']);
+            Route::put('collectors/{collectorId}/daily-client-quota', [CollectionPlannerController::class, 'updateCollectorQuota']);
             Route::put('territories/{territoryId}', [CollectionPlannerController::class, 'updateTerritory']);
             Route::put('customers/{customerId}/preferences', [CollectionPlannerController::class, 'updatePreference']);
             Route::put('settings', [CollectionPlannerController::class, 'updateSettings']);

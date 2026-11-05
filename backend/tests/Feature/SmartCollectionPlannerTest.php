@@ -9,6 +9,7 @@ use App\Models\CollectionLocationDeferral;
 use App\Models\CollectionRegistrationEvidence;
 use App\Models\CustomerLocationEvent;
 use App\Models\CollectorCustomerAssignment;
+use App\Models\CollectorTerritory;
 use App\Models\Customer;
 use App\Models\DhcpLease;
 use App\Models\Invoice;
@@ -24,6 +25,35 @@ use Tests\TestCase;
 class SmartCollectionPlannerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_collector_daily_client_quota_limits_planned_customer_stops(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-05 08:00:00', 'Asia/Manila'));
+        $collector=User::factory()->create();
+        CollectorTerritory::create([
+            'collector_id'=>$collector->id,
+            'name'=>'Quota territory',
+            'address_pattern'=>'San Roque',
+            'is_fallback'=>false,
+            'is_active'=>true,
+            'priority'=>100,
+            'max_daily_visits'=>2,
+        ]);
+        foreach (range(1,3) as $number) {
+            $customer=$this->customer('Quota Client '.$number,'Barangay San Roque');
+            CollectorCustomerAssignment::create([
+                'collector_id'=>$collector->id,
+                'customer_id'=>$customer->id,
+                'assigned_at'=>now(),
+            ]);
+            $this->invoice($customer,'2026-11-05');
+        }
+
+        $plan=app(SmartCollectionPlannerService::class)->generate($collector,true,null,null,null);
+
+        $this->assertCount(2,$plan->stops->where('status','planned'));
+        $this->assertCount(1,$plan->stops->where('status','unscheduled'));
+    }
 
     public function test_missing_mac_requires_router_label_evidence_before_collection(): void
     {

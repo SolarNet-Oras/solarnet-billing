@@ -260,6 +260,7 @@ class CollectionPlannerController extends Controller
             'territories'=>CollectorTerritory::with('collector:id,name')->orderByDesc('priority')->orderBy('name')->get(),
             'planner_runs'=>CollectionPlannerRun::latest('started_at')->limit(30)->get(),
             'coverage_report'=>[
+                'target_count'=>$todayStops->where('status','!=','unscheduled')->count(),
                 'scheduled'=>$todayStops->whereIn('status',['planned','in_progress'])->count(),
                 'unscheduled'=>$todayStops->where('status','unscheduled')->count()+(int)($latestTodayRun?->unassigned_exceptions??0),
                 'completed'=>$todayStops->where('status','completed')->count(),
@@ -295,6 +296,10 @@ class CollectionPlannerController extends Controller
             ]);
             $collector=User::findOrFail($data['collector_id']);
             abort_unless($collector->isEligibleFieldCollector(),422,'Territories may be assigned only to eligible field collectors.');
+            $data['max_daily_visits']=(int)(CollectorTerritory::query()
+                ->where('collector_id',$collector->id)
+                ->where('is_active',true)
+                ->value('max_daily_visits') ?? $data['max_daily_visits']);
             $fallback=(bool)$data['is_fallback'];
             abort_if($fallback&&$data['name']!=='Fallback territory',422,'Use the Fallback territory name for unmatched addresses.');
             abort_if(!$fallback&&$data['name']==='Fallback territory',422,'Fallback territory must be saved as a fallback rule.');
@@ -318,6 +323,24 @@ class CollectionPlannerController extends Controller
     public function updateTerritory(Request $request,string $territoryId): JsonResponse
     {
         return $this->saveTerritory($request,CollectorTerritory::findOrFail($territoryId));
+    }
+
+    public function updateCollectorQuota(Request $request,string $collectorId): JsonResponse
+    {
+        $data=$request->validate(['max_daily_visits'=>'required|integer|min:1|max:200']);
+        $collector=User::findOrFail($collectorId);
+        abort_unless($collector->isEligibleFieldCollector(),422,'Daily client quotas may be assigned only to eligible field collectors.');
+        $updated=CollectorTerritory::query()
+            ->where('collector_id',$collector->id)
+            ->where('is_active',true)
+            ->update(['max_daily_visits'=>$data['max_daily_visits']]);
+        abort_if($updated===0,422,'Create an active territory for this collector before setting a daily client quota.');
+        return response()->json([
+            'message'=>'Daily client quota updated.',
+            'collector_id'=>$collector->id,
+            'max_daily_visits'=>(int)$data['max_daily_visits'],
+            'territories_updated'=>$updated,
+        ]);
     }
 
     public function assign(Request $request): JsonResponse

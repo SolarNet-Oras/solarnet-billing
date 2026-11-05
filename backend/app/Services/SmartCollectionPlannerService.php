@@ -8,6 +8,7 @@ use App\Models\CollectionPlanStop;
 use App\Models\CollectionVisit;
 use App\Models\CollectionLocationDeferral;
 use App\Models\CollectorCustomerAssignment;
+use App\Models\CollectorTerritory;
 use App\Models\CustomerCollectionPreference;
 use App\Models\CustomerLocationEvent;
 use App\Models\DhcpLease;
@@ -175,7 +176,16 @@ class SmartCollectionPlannerService
                 ->reject(fn($row)=>$preserved->contains('customer_id',$row['customer']->id));
             $ordered = $this->order($rows,$smart,$startLat,$startLng);
             $settings = $this->settings();
-            $capacity = max(1, intdiv($this->workingMinutes($settings), max(1,$settings->estimated_visit_minutes))) - $preserved->where('status','completed')->count();
+            $workingDayCapacity = max(1, intdiv($this->workingMinutes($settings), max(1,$settings->estimated_visit_minutes)));
+            $configuredClientQuota = CollectorTerritory::query()
+                ->where('collector_id',$collector->id)
+                ->where('is_active',true)
+                ->orderByDesc('priority')
+                ->value('max_daily_visits');
+            $dailyClientQuota = $configuredClientQuota === null
+                ? $workingDayCapacity
+                : max(1,(int)$configuredClientQuota);
+            $capacity = $dailyClientQuota - $preserved->whereIn('status',['completed','skipped','in_progress'])->count();
             $sequence = (int)$preserved->max('sequence');
             foreach ($ordered->values() as $index=>$row) {
                 CollectionPlanStop::create([
