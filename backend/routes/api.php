@@ -419,7 +419,10 @@ Route::prefix('v1')->group(function () {
             Route::put('clients/{id}/location', [RemittanceController::class, 'updateCollectorLocation'])->middleware('fresh.field.location');
             Route::post('clients/{id}/plan-change-request', [RemittanceController::class, 'requestCollectorPlanChange']);
             Route::post('clients/{id}/early-invoice', [RemittanceController::class, 'createCollectorEarlyInvoice']);
-            Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect'])->middleware('fresh.field.location');
+            // Ordinary invoice collection must remain available for address-only
+            // clients. Smart Planner captures arrival/proof through its own
+            // visit endpoints and retains those separate location safeguards.
+            Route::post('invoices/{id}/collect', [RemittanceController::class, 'collect']);
             Route::post('invoices/{id}/gcash-checkout', [RemittanceController::class, 'startGcashCheckout']);
             Route::post('invoices/{id}/gcash-checkouts/{checkoutId}/reconcile', [RemittanceController::class, 'reconcileGcashCheckout']);
             Route::post('invoices/{id}/qr-ph', [RemittanceController::class, 'startQrPhPayment']);

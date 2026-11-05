@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -73,6 +74,14 @@ class CollectorDashboardVisibilityTest extends TestCase
         } catch (HttpException $exception) {
             $this->assertSame(422,$exception->getStatusCode());
         }
+    }
+
+    public function test_standard_collector_payment_route_does_not_require_live_field_location(): void
+    {
+        $route=collect(Route::getRoutes()->getRoutes())->first(fn($route)=>(string)$route->uri()==='api/v1/collector/invoices/{id}/collect');
+
+        $this->assertNotNull($route);
+        $this->assertNotContains('fresh.field.location',$route->gatherMiddleware());
     }
 
     private function invoice(Customer $customer,string $number,string $dueDate): Invoice
