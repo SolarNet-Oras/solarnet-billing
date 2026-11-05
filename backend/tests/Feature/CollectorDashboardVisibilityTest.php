@@ -57,16 +57,13 @@ class CollectorDashboardVisibilityTest extends TestCase
         $invoice=$this->invoice($customer,'ADDRESS-ONLY','2026-11-05');
         $method=new \ReflectionMethod(RemittanceController::class,'assertPlannerLocationCapturedOrDeferred');
 
-        $standard=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST',[
-            'collection_context'=>'standard',
-        ]);
+        $standard=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST');
         $standard->setUserResolver(fn()=> $collector);
         $method->invoke(app(RemittanceController::class),$standard,$invoice);
         $this->addToAssertionCount(1);
 
-        $planner=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST',[
-            'collection_context'=>'smart_planner',
-        ]);
+        $planner=Request::create('/api/v1/collector/plans/invoices/'.$invoice->id.'/collect','POST');
+        $planner->attributes->set('smart_planner_payment',true);
         $planner->setUserResolver(fn()=> $collector);
         try {
             $method->invoke(app(RemittanceController::class),$planner,$invoice);

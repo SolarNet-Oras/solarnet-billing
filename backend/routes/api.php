@@ -411,6 +411,9 @@ Route::prefix('v1')->group(function () {
             Route::post('plans/stops/{stopId}/skip', [CollectionPlannerController::class, 'skip']);
             Route::post('plans/stops/{stopId}/defer-location-update', [CollectionPlannerController::class, 'deferLocationUpdate']);
             Route::post('plans/stops/{stopId}/registration-evidence', [CollectionPlannerController::class, 'captureRegistrationEvidence']);
+            Route::post('plans/invoices/{id}/collect', [RemittanceController::class, 'collectFromSmartPlanner']);
+            Route::post('plans/invoices/{id}/gcash-checkout', [RemittanceController::class, 'startSmartPlannerGcashCheckout']);
+            Route::post('plans/invoices/{id}/qr-ph', [RemittanceController::class, 'startSmartPlannerQrPhPayment']);
             Route::get('registration-evidence/{evidenceId}/photo', [CollectionPlannerController::class, 'registrationEvidencePhoto']);
             Route::post('visits/{visitId}/complete', [CollectionPlannerController::class, 'complete']);
             Route::get('visits/{visitId}/photo', [CollectionPlannerController::class, 'visitPhoto']);

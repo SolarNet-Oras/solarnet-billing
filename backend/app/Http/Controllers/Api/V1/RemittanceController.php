@@ -213,7 +213,6 @@ class RemittanceController extends Controller
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|in:cash,bank_transfer',
-            'collection_context' => 'nullable|in:standard,smart_planner',
             'reference' => 'nullable|string|max:255',
             'transaction_id' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
@@ -330,6 +329,25 @@ class RemittanceController extends Controller
         return response()->json(['paid' => $paid, 'payment_status' => $checkout->fresh()->status]);
     }
 
+    /** Smart Planner uses explicit routes so ordinary payments cannot inherit its GPS gate. */
+    public function collectFromSmartPlanner(Request $request, string $invoiceId, InvoiceService $invoices): JsonResponse
+    {
+        $request->attributes->set('smart_planner_payment', true);
+        return $this->collect($request, $invoiceId, $invoices);
+    }
+
+    public function startSmartPlannerGcashCheckout(Request $request, string $invoiceId, PaymongoService $paymongo): JsonResponse
+    {
+        $request->attributes->set('smart_planner_payment', true);
+        return $this->startGcashCheckout($request, $invoiceId, $paymongo);
+    }
+
+    public function startSmartPlannerQrPhPayment(Request $request, string $invoiceId, PaymongoService $paymongo): JsonResponse
+    {
+        $request->attributes->set('smart_planner_payment', true);
+        return $this->startQrPhPayment($request, $invoiceId, $paymongo);
+    }
+
     public function submit(Request $request): JsonResponse
     {
         $data = $request->validate(['notes' => 'nullable|string|max:1000']);
@@ -388,7 +406,7 @@ class RemittanceController extends Controller
      */
     private function assertPlannerLocationCapturedOrDeferred(Request $request, Invoice $invoice): void
     {
-        if ($request->input('collection_context', 'standard') !== 'smart_planner') return;
+        if ($request->attributes->get('smart_planner_payment') !== true) return;
         if (filled($invoice->customer?->gps_coordinates)) return;
         $deferred=CollectionLocationDeferral::query()->where('collector_id',$request->user()->id)
             ->where('customer_id',$invoice->customer_id)

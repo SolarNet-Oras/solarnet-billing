@@ -181,10 +181,12 @@ export default function RemittancesPage() {
     if (paymentMethod === 'cash' && !signaturePresent) return window.alert('The client or an authorized family member must sign before confirming cash payment.');
     setBusy(true);
     try {
-      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/collect`, {
+      const paymentPath = paymentContext === 'smart_planner'
+        ? `/collector/plans/invoices/${paymentInvoice.id}/collect`
+        : `/collector/invoices/${paymentInvoice.id}/collect`;
+      const response = await api.post(paymentPath, {
         amount,
         payment_method: paymentMethod,
-        collection_context: paymentContext,
         reference: reference.trim() || undefined,
         payer_signature: paymentMethod === 'cash' ? signatureCanvas.current?.toDataURL('image/png') : undefined,
         payer_signature_fingerprint: paymentMethod === 'cash' ? signatureFingerprint() : undefined,
@@ -202,7 +204,10 @@ export default function RemittancesPage() {
     if (!paymentInvoice) return;
     setBusy(true);
     try {
-      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/gcash-checkout`, { collection_context: paymentContext });
+      const paymentPath = paymentContext === 'smart_planner'
+        ? `/collector/plans/invoices/${paymentInvoice.id}/gcash-checkout`
+        : `/collector/invoices/${paymentInvoice.id}/gcash-checkout`;
+      const response = await api.post(paymentPath);
       const created = response.data?.checkout as Checkout;
       if (!created?.checkout_url) throw new Error('PayMongo did not return a checkout link.');
       setCheckout(created);
@@ -214,7 +219,10 @@ export default function RemittancesPage() {
     if (!paymentInvoice) return;
     setBusy(true);
     try {
-      const response = await api.post(`/collector/invoices/${paymentInvoice.id}/qr-ph`, { collection_context: paymentContext });
+      const paymentPath = paymentContext === 'smart_planner'
+        ? `/collector/plans/invoices/${paymentInvoice.id}/qr-ph`
+        : `/collector/invoices/${paymentInvoice.id}/qr-ph`;
+      const response = await api.post(paymentPath);
       let payment = response.data?.payment as QrPayment;
       if (!payment?.qr_image_url) {
         const qr = await attachPaymongoQrPh({ publicKey: payment.public_key, baseUrl: payment.base_url, paymentIntentId: payment.payment_intent_id, clientKey: payment.client_key });
