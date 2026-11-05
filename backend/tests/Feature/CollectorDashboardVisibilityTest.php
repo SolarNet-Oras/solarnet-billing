@@ -81,6 +81,39 @@ class CollectorDashboardVisibilityTest extends TestCase
         $this->assertNotContains('fresh.field.location',$route->gatherMiddleware());
     }
 
+    public function test_standard_collection_does_not_require_mac_evidence_but_smart_planner_still_does(): void
+    {
+        $collector=User::factory()->create();
+        $customer=Customer::create([
+            'account_number'=>'7852604222',
+            'full_name'=>'No MAC Customer',
+            'address'=>'San Roque Oras Eastern Samar',
+            'contact_number'=>'09999999997',
+            'installation_date'=>'2026-01-01',
+            'monthly_fee'=>'800.00',
+            'status'=>'active',
+            'gps_coordinates'=>['latitude'=>12.0,'longitude'=>125.0],
+            'mac_address'=>null,
+        ]);
+        $invoice=$this->invoice($customer,'NO-MAC','2026-11-05');
+        $method=new \ReflectionMethod(RemittanceController::class,'assertPlannerRegistrationReady');
+
+        $standard=Request::create('/api/v1/collector/invoices/'.$invoice->id.'/collect','POST');
+        $standard->setUserResolver(fn()=> $collector);
+        $method->invoke(app(RemittanceController::class),$standard,$invoice);
+        $this->addToAssertionCount(1);
+
+        $planner=Request::create('/api/v1/collector/plans/invoices/'.$invoice->id.'/collect','POST');
+        $planner->attributes->set('smart_planner_payment',true);
+        $planner->setUserResolver(fn()=> $collector);
+        try {
+            $method->invoke(app(RemittanceController::class),$planner,$invoice);
+            $this->fail('Smart Planner unexpectedly accepted a customer without MAC evidence.');
+        } catch (HttpException $exception) {
+            $this->assertSame(422,$exception->getStatusCode());
+        }
+    }
+
     private function invoice(Customer $customer,string $number,string $dueDate): Invoice
     {
         return Invoice::create([

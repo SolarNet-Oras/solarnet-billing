@@ -224,7 +224,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
         $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
-        $this->assertRegistrationReady($invoice);
+        $this->assertPlannerRegistrationReady($request, $invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         $customerOutstanding = (float) Invoice::query()
             ->where('customer_id', $invoice->customer_id)
@@ -273,7 +273,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
         $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
-        $this->assertRegistrationReady($invoice);
+        $this->assertPlannerRegistrationReady($request, $invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
 
         try {
@@ -297,7 +297,7 @@ class RemittanceController extends Controller
         $invoice = Invoice::with('customer')->findOrFail($invoiceId);
         $this->assertCollectibleInvoiceAccess($request->user()->id, $invoice);
         $this->assertPlannerLocationCapturedOrDeferred($request, $invoice);
-        $this->assertRegistrationReady($invoice);
+        $this->assertPlannerRegistrationReady($request, $invoice);
         abort_unless($this->collectorInvoiceEligible($invoice), 422, 'This invoice is not currently eligible for assigned collection.');
         try {
             return response()->json(['message' => 'PayMongo QR Ph payment created.', 'payment' => $paymongo->createQrPhPayment($invoice)]);
@@ -414,8 +414,10 @@ class RemittanceController extends Controller
         abort_unless($deferred,422,'This client has no coordinates. At the service address, use Update coordinates. If collecting elsewhere, record the reason for skipping the update before receiving payment.');
     }
 
-    private function assertRegistrationReady(Invoice $invoice): void
+    /** Missing MAC evidence is enforced only as part of a Smart Planner visit. */
+    private function assertPlannerRegistrationReady(Request $request, Invoice $invoice): void
     {
+        if ($request->attributes->get('smart_planner_payment') !== true) return;
         if (filled($invoice->customer?->mac_address)) return;
         $captured=CollectionRegistrationEvidence::query()->where('customer_id',$invoice->customer_id)
             ->whereIn('status',['pending','approved'])->exists();
