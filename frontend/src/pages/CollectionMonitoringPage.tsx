@@ -80,6 +80,7 @@ export default function CollectionMonitoringPage() {
     setProofLoading({id:visitId,percent:null});
     try {
       const response=await api.get(`/collection-monitoring/visits/${visitId}/photo`,{
+        params:{preview:1},
         responseType:'blob',
         timeout:120_000,
         onDownloadProgress:(event)=>setProofLoading({

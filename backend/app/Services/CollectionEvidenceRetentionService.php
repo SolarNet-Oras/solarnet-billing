@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Storage;
 
 class CollectionEvidenceRetentionService
 {
+    public function __construct(private readonly CollectionEvidencePreviewService $previews) {}
+
     public function purgeVisitPhotosIfSettled(string $customerId): int
     {
         if (Invoice::query()->where('customer_id',$customerId)->unpaid()->exists()) return 0;
@@ -20,6 +22,7 @@ class CollectionEvidenceRetentionService
 
         foreach ($visits as $visit) {
             if (filled($visit->photo_path)) Storage::disk('local')->delete($visit->photo_path);
+            $this->previews->delete($visit->id);
             $visit->update(['photo_path'=>null]);
         }
 

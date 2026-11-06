@@ -17,6 +17,7 @@ use App\Models\Router;
 use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
 use App\Services\CollectionEvidenceRetentionService;
+use App\Services\CollectionEvidencePreviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -25,6 +26,29 @@ use Tests\TestCase;
 class SmartCollectionPlannerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_collection_visit_preview_is_cached_as_a_small_private_image(): void
+    {
+        if (!function_exists('imagecreatetruecolor')) $this->markTestSkipped('GD is unavailable.');
+        Storage::fake('local');
+        $image=imagecreatetruecolor(2400,1600);
+        $background=imagecolorallocate($image,20,80,160);
+        imagefill($image,0,0,$background);
+        ob_start();
+        imagejpeg($image,null,95);
+        $original=(string)ob_get_clean();
+        imagedestroy($image);
+        Storage::disk('local')->put('collection-visits/large.jpg',$original);
+
+        $service=app(CollectionEvidencePreviewService::class);
+        $previewPath=$service->create('visit-preview-test','collection-visits/large.jpg');
+        $dimensions=getimagesize(Storage::disk('local')->path($previewPath));
+
+        $this->assertSame('collection-visit-previews/visit-preview-test.jpg',$previewPath);
+        $this->assertLessThanOrEqual(1280,max($dimensions[0],$dimensions[1]));
+        $this->assertLessThan(strlen($original),Storage::disk('local')->size($previewPath));
+        $this->assertSame($previewPath,$service->create('visit-preview-test','collection-visits/large.jpg'));
+    }
 
     public function test_collector_daily_client_quota_limits_planned_customer_stops(): void
     {
@@ -288,6 +312,7 @@ class SmartCollectionPlannerTest extends TestCase
             'photo_path'=>'collection-visits/proof.jpg','completed_at'=>now(),
             'idempotency_key'=>'settled-photo-cleanup-test',
         ]);
+        Storage::disk('local')->put('collection-visit-previews/'.$visit->id.'.jpg','preview');
         Storage::disk('local')->put('collection-registration/router.jpg','router');
         $evidence=CollectionRegistrationEvidence::create([
             'customer_id'=>$customer->id,'collector_id'=>$collector->id,
@@ -299,6 +324,7 @@ class SmartCollectionPlannerTest extends TestCase
         $this->assertTrue($retention->purgeRouterLabelPhoto($evidence));
 
         Storage::disk('local')->assertMissing('collection-visits/proof.jpg');
+        Storage::disk('local')->assertMissing('collection-visit-previews/'.$visit->id.'.jpg');
         Storage::disk('local')->assertMissing('collection-registration/router.jpg');
         $this->assertNull($visit->fresh()->photo_path);
         $this->assertNull($evidence->fresh()->router_label_photo_path);

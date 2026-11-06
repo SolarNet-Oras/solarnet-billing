@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\SmartCollectionPlannerService;
 use App\Services\CollectionAssignmentRoutingService;
 use App\Services\CollectionEvidenceRetentionService;
+use App\Services\CollectionEvidencePreviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -367,13 +368,16 @@ class CollectionPlannerController extends Controller
         return response()->json(['message'=>'Planner rules updated.','settings'=>$settings->fresh()]);
     }
 
-    public function visitPhoto(Request $request,string $visitId)
+    public function visitPhoto(Request $request,string $visitId,CollectionEvidencePreviewService $previews)
     {
         $visit=CollectionVisit::findOrFail($visitId);
         abort_unless($request->user()->id===$visit->collector_id||$request->user()->hasAnyRole(['super_admin','admin','office_admin']),403);
         abort_unless($visit->photo_path&&Storage::disk('local')->exists($visit->photo_path),404);
-        return Storage::disk('local')->response($visit->photo_path,null,[
-            'Cache-Control'=>'private, max-age=300',
+        $path=$request->boolean('preview',true)
+            ? $previews->create($visit->id,$visit->photo_path)
+            : $visit->photo_path;
+        return Storage::disk('local')->response($path,null,[
+            'Cache-Control'=>'private, max-age=86400',
             'X-Content-Type-Options'=>'nosniff',
         ],'inline');
     }
