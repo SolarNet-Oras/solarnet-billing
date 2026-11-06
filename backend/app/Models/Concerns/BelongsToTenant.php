@@ -12,6 +12,9 @@ use LogicException;
 
 trait BelongsToTenant
 {
+    /** @var array<string, bool> */
+    private static array $tenantColumnAvailability = [];
+
     public function initializeBelongsToTenant(): void
     {
         // Ownership is an authorization boundary, not public API data.
@@ -21,6 +24,10 @@ trait BelongsToTenant
     public static function bootBelongsToTenant(): void
     {
         static::creating(function (Model $model): void {
+            if (! self::tenantColumnAvailable($model)) {
+                return;
+            }
+
             if (! config('saas.ownership_auto_assignment', true)) {
                 return;
             }
@@ -42,6 +49,10 @@ trait BelongsToTenant
         });
 
         static::saving(function (Model $model): void {
+            if (! self::tenantColumnAvailable($model)) {
+                return;
+            }
+
             $currentTenantId = app(CurrentTenant::class)->id();
             if (self::tenantEnforcementEnabled()
                 && $currentTenantId
@@ -73,6 +84,10 @@ trait BelongsToTenant
         });
 
         static::addGlobalScope('tenant', function (Builder $builder): void {
+            if (! self::tenantColumnAvailable($builder->getModel())) {
+                return;
+            }
+
             if (! self::tenantEnforcementEnabled()) {
                 return;
             }
@@ -110,5 +125,14 @@ trait BelongsToTenant
         return (bool) config('saas.enabled')
             && (bool) config('saas.domains_enabled')
             && config('saas.enforcement_mode') === 'enforced';
+    }
+
+    private static function tenantColumnAvailable(Model $model): bool
+    {
+        $key = $model->getConnectionName().':'.$model->getTable();
+
+        return self::$tenantColumnAvailability[$key] ??= $model->getConnection()
+            ->getSchemaBuilder()
+            ->hasColumn($model->getTable(), 'tenant_id');
     }
 }

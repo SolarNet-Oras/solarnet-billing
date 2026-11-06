@@ -7,10 +7,13 @@ use App\Support\CurrentTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 class Setting extends Model
 {
     use BelongsToTenant, HasUuids;
+
+    private static ?bool $tenantColumnAvailable = null;
 
     protected $fillable = ['key', 'value', 'cast', 'group', 'label', 'description', 'is_public'];
 
@@ -41,6 +44,14 @@ class Setting extends Model
      */
     public static function get(string $key, mixed $default = null): mixed
     {
+        if (! static::hasTenantColumn()) {
+            return Cache::rememberForever('setting.'.$key, function () use ($key, $default) {
+                $row = static::where('key', $key)->first();
+
+                return $row ? $row->typedValue() : $default;
+            });
+        }
+
         $tenant = static::settingsTenant();
         $tenantId = $tenant?->getKey();
 
@@ -66,13 +77,17 @@ class Setting extends Model
 
     public static function put(string $key, mixed $value, string $cast = 'string'): void
     {
+        if (! static::hasTenantColumn()) {
+            $stringValue = static::stringValue($value, $cast);
+            static::updateOrCreate(['key' => $key], ['value' => $stringValue, 'cast' => $cast]);
+            Cache::forget('setting.'.$key);
+
+            return;
+        }
+
         $tenant = static::settingsTenant();
         $tenantId = $tenant?->getKey();
-        $stringValue = match ($cast) {
-            'bool'  => $value ? '1' : '0',
-            'json'  => json_encode($value),
-            default => (string) $value,
-        };
+        $stringValue = static::stringValue($value, $cast);
         $row = static::withoutGlobalScope('tenant')
             ->where('tenant_id', $tenantId)
             ->where('key', $key)
@@ -102,5 +117,22 @@ class Setting extends Model
     {
         return app(CurrentTenant::class)->get()
             ?? app(CurrentTenant::class)->resolveForWrite();
+    }
+
+    private static function stringValue(mixed $value, string $cast): string
+    {
+        return match ($cast) {
+            'bool' => $value ? '1' : '0',
+            'json' => json_encode($value),
+            default => (string) $value,
+        };
+    }
+
+    private static function hasTenantColumn(): bool
+    {
+        return self::$tenantColumnAvailable ??= Schema::hasColumn(
+            (new static)->getTable(),
+            'tenant_id'
+        );
     }
 }
