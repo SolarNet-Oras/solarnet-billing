@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatPHP } from '@/lib/currency';
 import api from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { useLiveDataRefresh } from '@/hooks/useLiveDataRefresh';
 
 type WalletName = 'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank' | 'online';
 type Wallet = {
@@ -71,20 +72,23 @@ export default function FinancialMonitoringPage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
 
-  const load = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async (silent = false): Promise<void> => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const response = await api.get('/financial-monitoring', { params: { month } });
       setData(response.data.data);
     } catch (requestError: any) {
-      setError(requestError.response?.data?.message || 'Could not load financial monitoring.');
+      if (!silent) setError(requestError.response?.data?.message || 'Could not load financial monitoring.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [month]);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveDataRefresh(() => load(true), { enabled: !selectedAnomaly });
 
   const wallets = data?.wallets;
   const anomalies = data?.anomalies.items ?? [];

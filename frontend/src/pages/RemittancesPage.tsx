@@ -6,6 +6,7 @@ import api from '@/services/api';
 import { attachPaymongoQrPh } from '@/services/paymongoQrService';
 import { useSearchParams } from 'react-router-dom';
 import SmartCollectorPlanner from '@/components/collections/SmartCollectorPlanner';
+import { useLiveDataRefresh } from '@/hooks/useLiveDataRefresh';
 
 type Invoice = { id: string; invoice_number: string; due_date: string; due_date_local?: string; balance: number; previous_balance?: number; customer_outstanding?: number; customer?: { id?: string; account_number: string; full_name: string; address?: string } };
 type CashLine = { denomination: number; kind: 'bill' | 'coin'; count: number; amount: number };
@@ -76,21 +77,10 @@ export default function RemittancesPage() {
   };
   useEffect(() => { void load(collectionSearch, collectionSort, remittanceMonth, remittanceDateOrder); }, [collector, collectionSort, remittanceMonth, remittanceDateOrder, needsReview]);
   useEffect(() => { setReturnCounts({}); setExcessAction(''); setShowExcessDialog(false); }, [liquidationTarget?.id]);
-  useEffect(() => {
-    if (!collector) return;
-    const refreshDueClients = () => void load(collectionSearch, collectionSort);
-    const timer = window.setInterval(refreshDueClients, 60_000);
-    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshDueClients(); };
-    window.addEventListener('focus', refreshDueClients);
-    window.addEventListener('online', refreshDueClients);
-    document.addEventListener('visibilitychange', refreshWhenVisible);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refreshDueClients);
-      window.removeEventListener('online', refreshDueClients);
-      document.removeEventListener('visibilitychange', refreshWhenVisible);
-    };
-  }, [collector, collectionSearch, collectionSort]);
+  useLiveDataRefresh(
+    () => load(collectionSearch, collectionSort, remittanceMonth, remittanceDateOrder),
+    { enabled: !busy && !paymentInvoice && !liquidationTarget && !verifyTarget },
+  );
 
   const paymentTotals = (item: Remittance) => {
     const totals = (item.payments || []).reduce((all, payment) => ({ ...all, [payment.payment_method]: (all[payment.payment_method] || 0) + Number(payment.amount) }), {} as Record<string, number>);

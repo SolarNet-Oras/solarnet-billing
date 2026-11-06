@@ -15,6 +15,7 @@ import type { AxiosInstance } from 'axios';
 import { tokenStorage } from '@/lib/tokenStorage';
 import { HTTP_STATUS } from '@/lib/constants';
 import type { ApiResponse, ApiError } from '@/types/api';
+import { announceLiveDataChange } from '@/hooks/useLiveDataRefresh';
 
 type ActionRequestConfig = InternalAxiosRequestConfig & {
   _solarnetActionButton?: HTMLButtonElement;
@@ -143,6 +144,8 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response: AxiosResponse): AxiosResponse => {
     finishButtonProgress(response.config as ActionRequestConfig);
+    const method=(response.config.method || 'get').toLowerCase();
+    if (!['get','head','options'].includes(method)) announceLiveDataChange();
     return response;
   },
   async (error: unknown): Promise<never> => {

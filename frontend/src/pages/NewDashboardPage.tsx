@@ -26,6 +26,7 @@ import { useAuth } from '@/hooks/useAuth';
 import api from '@/services/api';
 import { logger } from '@/lib/logger';
 import TechnicianDashboardPage from '@/pages/TechnicianDashboardPage';
+import { useLiveDataRefresh } from '@/hooks/useLiveDataRefresh';
 
 interface ClientMonitor {
   customer_id: string;
@@ -326,8 +327,6 @@ const NewDashboardPageContent: React.FC = () => {
       return;
     }
     fetchMetrics();
-    const interval = window.setInterval(() => fetchMetrics(), 30000);
-    return () => window.clearInterval(interval);
   }, [collector, fetchMetrics]);
 
   useEffect(() => {
@@ -336,9 +335,15 @@ const NewDashboardPageContent: React.FC = () => {
       return;
     }
     fetchClientMonitor();
-    const interval = window.setInterval(fetchClientMonitor, 5000);
-    return () => window.clearInterval(interval);
   }, [collector, fetchClientMonitor, fetchLocations]);
+
+  useLiveDataRefresh(async () => {
+    if (collector) {
+      await fetchLocations();
+      return;
+    }
+    await Promise.all([fetchMetrics(),fetchClientMonitor()]);
+  });
 
   useEffect(() => { if (collector) void fetchCollectorClients(); }, [collector, fetchCollectorClients]);
 

@@ -24,6 +24,7 @@ import type { Invoice, Customer, Payment, InvoicePaymentHistory, InvoiceActivity
 import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
 import { useAuth } from '../hooks/useAuth';
+import { useLiveDataRefresh } from '../hooks/useLiveDataRefresh';
 
 const paymentMethodLabels: Record<Payment['payment_method'], string> = {
   cash: 'Cash',
@@ -193,10 +194,10 @@ const InvoicesPage: React.FC = () => {
       : { ...current, covered_cycle_date: automaticCycle });
   }, [isAdvancePayment, advanceCustomer, paymentData.payment_date]);
 
-  const fetchInvoices = async (signal?: AbortSignal) => {
+  const fetchInvoices = async (signal?: AbortSignal, silent = false) => {
     const requestSequence = ++invoiceRequestSequence.current;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const params: any = { page: currentPage, per_page: perPage, sort: sortBy };
       if (debouncedSearch) params.q = debouncedSearch;
       if (!debouncedSearch && selectedDueDate) params.due_date = selectedDueDate;
@@ -223,9 +224,14 @@ const InvoicesPage: React.FC = () => {
       if (signal?.aborted || (error as { code?: string })?.code === 'ERR_CANCELED') return;
       console.error('Error fetching invoices:', error);
     } finally {
-      if (!signal?.aborted && requestSequence === invoiceRequestSequence.current) setLoading(false);
+      if (!silent && !signal?.aborted && requestSequence === invoiceRequestSequence.current) setLoading(false);
     }
   };
+
+  useLiveDataRefresh(
+    () => fetchInvoices(undefined,true),
+    { enabled: !showCreateModal && !showViewModal && !showPaymentModal && !paymentSubmitting },
+  );
 
   const fetchCustomers = async () => {
     try {
