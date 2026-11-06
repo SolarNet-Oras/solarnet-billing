@@ -24,7 +24,7 @@ class SaasTenantAuthenticationTest extends TestCase
     {
         [$tenant, $user] = $this->membership(subscriptionExempt: true);
 
-        $response = $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $response = $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -34,9 +34,9 @@ class SaasTenantAuthenticationTest extends TestCase
             ->assertJsonPath('tenant.id', $tenant->id)
             ->assertJsonPath('subscription_access.reason', 'subscription_exempt');
 
-        $this->fromHost('app.solarnetportal.com')
+        $this
             ->withToken($response->json('access_token'))
-            ->getJson('/api/v1/saas/auth/me')
+            ->getJson('https://app.solarnetportal.com/api/v1/saas/auth/me')
             ->assertOk()
             ->assertJsonPath('tenant.id', $tenant->id)
             ->assertJsonPath('user.id', $user->id);
@@ -47,7 +47,7 @@ class SaasTenantAuthenticationTest extends TestCase
         [$tenant, $user, $membership] = $this->membership(subscriptionExempt: true);
         $membership->update(['status' => 'revoked']);
 
-        $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -64,7 +64,7 @@ class SaasTenantAuthenticationTest extends TestCase
             'trial_ends_at' => now()->subDay(),
         ]);
 
-        $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -77,7 +77,7 @@ class SaasTenantAuthenticationTest extends TestCase
     {
         [$tenant, $user] = $this->membership(subscriptionExempt: true);
 
-        $this->fromHost('admin.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->postJson('https://admin.solarnetportal.com/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',

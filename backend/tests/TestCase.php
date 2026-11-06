@@ -8,22 +8,6 @@ use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
-    /** Simulate the host exactly as it arrives through the trusted Caddy proxy. */
-    protected function fromHost(string $host): static
-    {
-        return $this
-            ->withServerVariables([
-                'HTTP_HOST' => $host,
-                'HTTP_X_FORWARDED_HOST' => $host,
-                'SERVER_NAME' => $host,
-                'SERVER_PORT' => 443,
-                'HTTPS' => 'on',
-            ])
-            ->withHeader('Host', $host)
-            ->withHeader('X-Forwarded-Host', $host)
-            ->withHeader('X-Forwarded-Proto', 'https');
-    }
-
     /** Never allow an application test to boot with production DB/cache configuration. */
     public function createApplication(): Application
     {
