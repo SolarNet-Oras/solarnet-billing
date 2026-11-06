@@ -271,6 +271,18 @@ SAAS_REGISTRATION_ENABLED=false
 SAAS_OWNERSHIP_AUTO_ASSIGNMENT=true
 ```
 
+Create subscription plans through the audit-first command. Existing plans are
+never silently changed:
+
+```bash
+php artisan saas:configure-plan \
+  --code=monthly-3499 \
+  --name="Monthly ISP Subscription" \
+  --amount=3499 \
+  --trial-days=7 \
+  --grace-days=3
+```
+
 Tenant onboarding remains an administrator-controlled operation. Audit a
 candidate first; the audit does not write to the database:
 
@@ -279,7 +291,7 @@ php artisan saas:onboard-tenant \
   --slug=branch-a \
   --name="ISP Branch A" \
   --owner-email=owner@example.com \
-  --plan=monthly-2999
+  --plan=monthly-3499
 ```
 
 Execution requires an existing active owner account, an existing active SaaS
