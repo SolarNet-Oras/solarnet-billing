@@ -98,6 +98,7 @@ services:
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: lax
       MAIL_EHLO_DOMAIN: ${ADMIN_DOMAIN}
+      SAAS_OWNERSHIP_AUTO_ASSIGNMENT: ${SAAS_OWNERSHIP_AUTO_ASSIGNMENT:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +128,7 @@ services:
       REDIS_HOST: redis
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
+      SAAS_OWNERSHIP_AUTO_ASSIGNMENT: ${SAAS_OWNERSHIP_AUTO_ASSIGNMENT:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -161,6 +163,7 @@ services:
       REDIS_HOST: redis
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
+      SAAS_OWNERSHIP_AUTO_ASSIGNMENT: ${SAAS_OWNERSHIP_AUTO_ASSIGNMENT:-true}
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends Model
 {
-    use HasFactory, HasUuids, SoftDeletes;
+    use BelongsToTenant, HasFactory, HasUuids, SoftDeletes;
+
+    /** @return list<array{table: string, id: mixed}> */
+    protected function tenantOwnershipParents(): array
+    {
+        return [['table' => 'service_plans', 'id' => $this->service_plan_id]];
+    }
 
     /** Never expose portal credentials or delivery metadata in API responses. */
     protected $hidden = [

@@ -4,11 +4,12 @@ namespace App\Providers;
 
 use App\Models\Customer;
 use App\Observers\CustomerObserver;
-use Illuminate\Support\ServiceProvider;
+use App\Support\CurrentTenant;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,7 +18,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Scoped bindings are reset between HTTP requests and queue jobs,
+        // preventing tenant context from leaking in long-running workers.
+        $this->app->scoped(CurrentTenant::class, fn () => new CurrentTenant());
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Services\SaasTenantAccessService;
+use App\Support\CurrentTenant;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ResolveSaasTenantContext
 {
-    public function __construct(private readonly SaasTenantAccessService $access) {}
+    public function __construct(
+        private readonly SaasTenantAccessService $access,
+        private readonly CurrentTenant $currentTenant,
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -46,6 +50,8 @@ class ResolveSaasTenantContext
                 'reason' => $decision['reason'],
             ], 402);
         }
+
+        $this->currentTenant->set($tenant);
 
         $request->attributes->set('saas_tenant', $tenant);
         $request->attributes->set('saas_membership', $membership);

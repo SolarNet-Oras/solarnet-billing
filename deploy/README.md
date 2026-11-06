@@ -268,6 +268,7 @@ SAAS_DOMAINS_ENABLED=false
 SAAS_ENABLED=false
 SAAS_ENFORCEMENT_MODE=disabled
 SAAS_REGISTRATION_ENABLED=false
+SAAS_OWNERSHIP_AUTO_ASSIGNMENT=true
 ```
 
 The safe audit command records a planning-run preview but does not create

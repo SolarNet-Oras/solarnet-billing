@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -12,7 +13,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Invoice extends Model
 {
-    use HasFactory, HasUuids;
+    use BelongsToTenant, HasFactory, HasUuids;
+
+    /** @return list<array{table: string, id: mixed}> */
+    protected function tenantOwnershipParents(): array
+    {
+        return [['table' => 'customers', 'id' => $this->customer_id]];
+    }
 
     /** States that do not fulfil or reserve a recurring billing cycle. */
     public const NON_FULFILLING_CYCLE_STATUSES = ['cancelled', 'voided'];
