@@ -7,8 +7,9 @@ return [
     */
     'enabled' => (bool) env('SAAS_ENABLED', false),
     'platform_enabled' => filter_var(env('SAAS_PLATFORM_ENABLED', false), FILTER_VALIDATE_BOOL),
+    'tenant_app_enabled' => filter_var(env('SAAS_TENANT_APP_ENABLED', false), FILTER_VALIDATE_BOOL),
     'enforcement_mode' => env('SAAS_ENFORCEMENT_MODE', 'disabled'),
-    'registration_enabled' => (bool) env('SAAS_REGISTRATION_ENABLED', false),
+    'registration_enabled' => filter_var(env('SAAS_REGISTRATION_ENABLED', false), FILTER_VALIDATE_BOOL),
     'default_trial_days' => (int) env('SAAS_DEFAULT_TRIAL_DAYS', 30),
     'default_currency' => env('SAAS_DEFAULT_CURRENCY', 'PHP'),
     'primary_tenant_slug' => env('SAAS_PRIMARY_TENANT_SLUG', 'solarnet'),

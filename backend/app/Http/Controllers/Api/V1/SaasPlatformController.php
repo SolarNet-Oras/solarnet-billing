@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\SaasSubscriptionPlan;
+use App\Models\SaasTenantApplication;
 use App\Models\Tenant;
 use App\Models\TenantSubscriptionEvent;
 use App\Models\TenantSubscriptionPayment;
+use App\Models\User;
 use App\Services\SaasTenantOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,6 +56,26 @@ class SaasPlatformController extends Controller
                     'amount' => $payment->amount, 'currency' => $payment->currency, 'status' => $payment->status,
                     'provider' => $payment->provider, 'provider_reference' => $payment->provider_reference,
                     'verified_at' => $payment->verified_at, 'created_at' => $payment->created_at,
+                ]),
+            'applications' => SaasTenantApplication::query()
+                ->with(['plan:id,code,name,amount,trial_days,grace_days', 'reviewer:id,name,email'])
+                ->latest()->limit(100)->get()
+                ->map(fn (SaasTenantApplication $application) => [
+                    'id' => $application->id,
+                    'company_name' => $application->company_name,
+                    'tenant_slug' => $application->tenant_slug,
+                    'owner_name' => $application->owner_name,
+                    'owner_email' => $application->owner_email,
+                    'owner_phone' => $application->owner_phone,
+                    'business_address' => $application->business_address,
+                    'business_registration_number' => $application->business_registration_number,
+                    'status' => $application->status,
+                    'email_verified_at' => $application->email_verified_at,
+                    'submitted_at' => $application->submitted_at,
+                    'reviewed_at' => $application->reviewed_at,
+                    'review_notes' => $application->review_notes,
+                    'plan' => $application->plan,
+                    'reviewer' => $application->reviewer?->only(['id', 'name', 'email']),
                 ]),
         ]]);
     }
@@ -114,6 +136,69 @@ class SaasPlatformController extends Controller
             'message' => 'Subscription plan updated. Existing subscription periods and payments were not changed.',
             'data' => $plan->fresh(),
         ]);
+    }
+
+    public function approveApplication(Request $request, SaasTenantApplication $application): JsonResponse
+    {
+        abort_unless($application->status === 'pending_approval' && $application->email_verified_at, 422, 'Only an email-verified pending application can be approved.');
+        $data = $request->validate(['confirmation' => ['required', 'string', 'max:200']]);
+        $confirmation = 'APPROVE ISP APPLICATION '.Str::upper($application->id);
+        abort_unless(hash_equals($confirmation, $data['confirmation']), 422, 'The application approval phrase is incorrect.');
+
+        $result = DB::transaction(function () use ($request, $application): array {
+            $locked = SaasTenantApplication::query()->whereKey($application->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->status === 'pending_approval' && $locked->email_verified_at, 422, 'This application is no longer available for approval.');
+            abort_if(User::withTrashed()->whereRaw('LOWER(email) = ?', [Str::lower($locked->owner_email)])->exists(), 422, 'The owner email already belongs to an account.');
+
+            $owner = User::create([
+                'name' => $locked->owner_name,
+                'email' => Str::lower($locked->owner_email),
+                'phone' => $locked->owner_phone,
+                'password' => $locked->password_hash,
+                'is_active' => true,
+            ]);
+            $owner->forceFill(['email_verified_at' => $locked->email_verified_at])->save();
+            $onboarding = $this->onboarding->execute(
+                $locked->tenant_slug,
+                $locked->company_name,
+                $locked->owner_email,
+                $locked->plan()->value('code'),
+                'approved_self_service_application',
+                $request->user('api')?->id,
+            );
+            $locked->update([
+                'status' => 'approved',
+                'reviewed_by' => $request->user('api')?->id,
+                'reviewed_at' => now(),
+                'review_notes' => 'Approved by SolarNet platform administrator.',
+                'approved_tenant_id' => data_get($onboarding, 'tenant.id'),
+            ]);
+
+            return $onboarding;
+        }, 3);
+
+        return response()->json(['message' => 'Application approved. The isolated tenant and trial are now active.', 'data' => $result]);
+    }
+
+    public function rejectApplication(Request $request, SaasTenantApplication $application): JsonResponse
+    {
+        abort_unless(in_array($application->status, ['awaiting_email_verification', 'pending_approval'], true), 422, 'This application can no longer be rejected.');
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:5', 'max:2000'],
+            'confirmation' => ['required', 'string', 'max:200'],
+        ]);
+        $confirmation = 'REJECT ISP APPLICATION '.Str::upper($application->id);
+        abort_unless(hash_equals($confirmation, $data['confirmation']), 422, 'The application rejection phrase is incorrect.');
+        $application->update([
+            'status' => 'rejected',
+            'reviewed_by' => $request->user('api')?->id,
+            'reviewed_at' => now(),
+            'review_notes' => trim($data['reason']),
+            'verification_token_hash' => null,
+            'verification_expires_at' => null,
+        ]);
+
+        return response()->json(['message' => 'Application rejected. No tenant, trial, or financial record was created.']);
     }
 
     public function updateTenantStatus(Request $request, Tenant $tenant): JsonResponse

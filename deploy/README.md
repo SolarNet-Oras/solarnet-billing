@@ -338,3 +338,9 @@ foreground with single-server and overlap locks.
 flag does not enable tenant query enforcement and therefore does not change the
 existing `billing.solarnetportal.com` data boundary. SolarNet remains the
 protected primary, lifetime subscription-exempt tenant.
+
+Public ISP applications use two additional independent gates:
+`SAAS_REGISTRATION_ENABLED` for application/email verification and
+`SAAS_TENANT_APP_ENABLED` for approved tenant sign-in. Neither gate enables
+global tenant query enforcement or exposes legacy billing APIs. Applications
+remain pending until an authenticated platform administrator approves them.

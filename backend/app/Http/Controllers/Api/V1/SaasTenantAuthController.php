@@ -19,7 +19,8 @@ class SaasTenantAuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
-        if (! config('saas.domains_enabled') || ! config('saas.enabled')) {
+        if (! config('saas.tenant_app_enabled')
+            && (! config('saas.domains_enabled') || ! config('saas.enabled'))) {
             return response()->json(['message' => 'Tenant sign-in is not enabled yet.'], 503);
         }
 

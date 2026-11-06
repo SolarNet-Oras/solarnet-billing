@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\V1\StaffAttendanceController;
 use App\Http\Controllers\Api\V1\StaffLeaveController;
 use App\Http\Controllers\Api\V1\SaasDomainController;
 use App\Http\Controllers\Api\V1\SaasTenantAuthController;
+use App\Http\Controllers\Api\V1\SaasTenantApplicationController;
 use App\Http\Controllers\Api\V1\SaasPlatformAuthController;
 use App\Http\Controllers\Api\V1\SaasPlatformController;
 use Illuminate\Http\Request;
@@ -63,6 +64,9 @@ Route::prefix('v1')->group(function () {
     Route::post('/saas/auth/login', [SaasTenantAuthController::class, 'login'])->middleware('throttle:5,1');
     Route::get('/saas/auth/me', [SaasTenantAuthController::class, 'me'])
         ->middleware(['auth:api', 'saas.tenant', 'throttle:60,1']);
+    Route::get('/saas/applications/plans', [SaasTenantApplicationController::class, 'plans'])->middleware('throttle:60,1');
+    Route::post('/saas/applications', [SaasTenantApplicationController::class, 'store'])->middleware('throttle:5,1');
+    Route::post('/saas/applications/verify', [SaasTenantApplicationController::class, 'verify'])->middleware('throttle:10,1');
     Route::post('/saas/platform/auth/login', [SaasPlatformAuthController::class, 'login'])->middleware('throttle:5,1');
     Route::middleware(['auth:api', 'saas.platform'])->prefix('saas/platform')->group(function () {
         Route::get('/auth/me', [SaasPlatformAuthController::class, 'me'])->middleware('throttle:60,1');
@@ -71,6 +75,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/tenants', [SaasPlatformController::class, 'storeTenant'])->middleware('throttle:5,1');
         Route::patch('/tenants/{tenant}/status', [SaasPlatformController::class, 'updateTenantStatus'])->middleware('throttle:10,1');
         Route::patch('/plans/{plan}', [SaasPlatformController::class, 'updatePlan'])->middleware('throttle:10,1');
+        Route::post('/applications/{application}/approve', [SaasPlatformController::class, 'approveApplication'])->middleware('throttle:5,1');
+        Route::post('/applications/{application}/reject', [SaasPlatformController::class, 'rejectApplication'])->middleware('throttle:5,1');
     });
     // Public routes
     Route::get('/status', function () {
