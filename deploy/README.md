@@ -258,6 +258,16 @@ staging report has been approved.
 ```dotenv
 COLLECTION_PLANNER_AUTOMATION_ENABLED=false
 COLLECTION_PLANNER_DAILY_AT=07:15
+
+# SaaS hostname foundation. Keep enforcement and registration disabled until
+# tenant-scoped business tables and authorization tests are approved.
+SAAS_APP_DOMAIN=app.solarnetportal.com
+SAAS_ADMIN_DOMAIN=admin.solarnetportal.com
+SAAS_BILLING_DOMAIN=billing.solarnetportal.com
+SAAS_DOMAINS_ENABLED=false
+SAAS_ENABLED=false
+SAAS_ENFORCEMENT_MODE=disabled
+SAAS_REGISTRATION_ENABLED=false
 ```
 
 The safe audit command records a planning-run preview but does not create

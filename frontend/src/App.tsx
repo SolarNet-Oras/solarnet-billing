@@ -55,12 +55,18 @@ import OnuConfigPage from '@/pages/OnuConfigPage';
 import PublicHomePage from '@/pages/PublicHomePage';
 import PublicWebsiteAssistant from '@/components/customer/PublicWebsiteAssistant';
 import CollectionMonitoringPage from '@/pages/CollectionMonitoringPage';
+import SaasEntryPage from '@/pages/SaasEntryPage';
 
 // ============================================================================
 // Main App Component
 // ============================================================================
 
 const App: React.FC = (): JSX.Element => {
+  const hostname=window.location.hostname.toLowerCase();
+  const saasSurface=hostname==='app.solarnetportal.com'?'app':hostname==='admin.solarnetportal.com'?'admin':null;
+  if(saasSurface){
+    return <ThemeProvider><Router><Routes><Route path="*" element={<SaasEntryPage surface={saasSurface}/>} /></Routes></Router></ThemeProvider>;
+  }
   return (
     <ThemeProvider>
       <Router>

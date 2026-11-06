@@ -11,4 +11,10 @@ return [
     'default_trial_days' => (int) env('SAAS_DEFAULT_TRIAL_DAYS', 30),
     'default_currency' => env('SAAS_DEFAULT_CURRENCY', 'PHP'),
     'primary_tenant_slug' => env('SAAS_PRIMARY_TENANT_SLUG', 'solarnet'),
+    'domains_enabled' => filter_var(env('SAAS_DOMAINS_ENABLED', false), FILTER_VALIDATE_BOOL),
+    'domains' => [
+        'billing' => env('SAAS_BILLING_DOMAIN', 'billing.solarnetportal.com'),
+        'app' => env('SAAS_APP_DOMAIN', 'app.solarnetportal.com'),
+        'admin' => env('SAAS_ADMIN_DOMAIN', 'admin.solarnetportal.com'),
+    ],
 ];

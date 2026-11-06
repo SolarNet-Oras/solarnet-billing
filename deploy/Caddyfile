@@ -57,6 +57,19 @@
     header Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=(), serial=(), usb=()"
 }
 
+# SaaS tenant and platform surfaces share the application build but the SPA
+# applies a strict hostname boundary. Until tenant enforcement is approved,
+# both origins expose staged entry pages only and never legacy billing routes.
+{$SAAS_APP_DOMAIN} {
+    import solarnet_application
+    header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), serial=(), usb=()"
+}
+
+{$SAAS_ADMIN_DOMAIN} {
+    import solarnet_application
+    header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), serial=(), usb=()"
+}
+
 # Attendance uses a separate origin so Android never merges its PWA with the
 # Staff application, whose legacy manifest owns the billing-domain root scope.
 {$ATTENDANCE_DOMAIN} {

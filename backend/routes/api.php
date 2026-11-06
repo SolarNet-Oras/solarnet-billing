@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\V1\WireguardController;
 use App\Http\Controllers\Api\V1\EmployeeDeviceController;
 use App\Http\Controllers\Api\V1\StaffAttendanceController;
 use App\Http\Controllers\Api\V1\StaffLeaveController;
+use App\Http\Controllers\Api\V1\SaasDomainController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -55,6 +56,7 @@ Route::get('/health', function () {
 
 // V1 API Routes
 Route::prefix('v1')->group(function () {
+    Route::get('/saas/domain-context', [SaasDomainController::class, 'context'])->middleware('throttle:60,1');
     // Public routes
     Route::get('/status', function () {
         return response()->json([

@@ -16,7 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Only the private Docker network can reach PHP-FPM. Trust that proxy
         // hop so security-sensitive features receive Caddy's real client IP.
         $middleware->trustProxies(at: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']);
-        $middleware->api(append: [\App\Http\Middleware\AuditMutatingRequest::class]);
+        $middleware->api(append: [
+            \App\Http\Middleware\EnforceSaasDomainBoundary::class,
+            \App\Http\Middleware\AuditMutatingRequest::class,
+        ]);
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,

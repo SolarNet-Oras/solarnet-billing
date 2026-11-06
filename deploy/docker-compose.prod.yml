@@ -38,6 +38,8 @@ services:
       ADMIN_DOMAIN: ${ADMIN_DOMAIN}
       ATTENDANCE_DOMAIN: ${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
       LEGACY_ADMIN_DOMAIN: ${LEGACY_ADMIN_DOMAIN}
+      SAAS_APP_DOMAIN: ${SAAS_APP_DOMAIN:-app.solarnetportal.com}
+      SAAS_ADMIN_DOMAIN: ${SAAS_ADMIN_DOMAIN:-admin.solarnetportal.com}
       ACME_EMAIL: ${ACME_EMAIL}
     networks: [edge]
     depends_on: [frontend, backend-nginx]
@@ -90,8 +92,8 @@ services:
       CACHE_STORE: redis
       SESSION_DRIVER: redis
       QUEUE_CONNECTION: redis
-      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN},https://${CUSTOMER_DOMAIN},https://${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
-      SANCTUM_STATEFUL_DOMAINS: ${ADMIN_DOMAIN},${CUSTOMER_DOMAIN},${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com}
+      CORS_ALLOWED_ORIGINS: https://${ADMIN_DOMAIN},https://${CUSTOMER_DOMAIN},https://${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com},https://${SAAS_APP_DOMAIN:-app.solarnetportal.com},https://${SAAS_ADMIN_DOMAIN:-admin.solarnetportal.com}
+      SANCTUM_STATEFUL_DOMAINS: ${ADMIN_DOMAIN},${CUSTOMER_DOMAIN},${ATTENDANCE_DOMAIN:-attendance.solarnetportal.com},${SAAS_APP_DOMAIN:-app.solarnetportal.com},${SAAS_ADMIN_DOMAIN:-admin.solarnetportal.com}
       SESSION_DOMAIN: ""
       SESSION_SECURE_COOKIE: "true"
       SESSION_SAME_SITE: lax
