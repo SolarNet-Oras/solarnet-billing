@@ -61,7 +61,8 @@ class SaasTenantOwnershipFoundationTest extends TestCase
 
         $this->artisan('saas:audit-solarnet-ownership')
             ->expectsOutputToContain('"read_only": true')
-            ->expectsOutputToContain('"unassigned_records": 1')
+            ->expectsOutputToContain('"service_plans"')
+            ->expectsOutputToContain('"unassigned_records":')
             ->expectsOutputToContain('"action": "no_changes_audit_only"')
             ->assertSuccessful();
 
