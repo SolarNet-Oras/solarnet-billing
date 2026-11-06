@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 class AutomationLog extends Model
 {
-    use HasUuids;
+    use BelongsToTenant, HasUuids;
 
     public const JOB_INVOICE_REMINDERS = 'invoice_reminders';
     public const JOB_AUTO_SUSPEND      = 'auto_suspend';

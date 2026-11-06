@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StaffAttendanceRecord extends Model
 {
-    use HasUuids;
+    use BelongsToTenant, HasUuids;
 
     protected $fillable = ['user_id','work_date','clocked_in_at','clocked_out_at','status','late_minutes','worked_minutes','overtime_minutes','overtime_status','approved_overtime_minutes','overtime_reviewed_by','overtime_reviewed_at','overtime_review_notes','clock_in_latitude','clock_in_longitude','clock_out_latitude','clock_out_longitude','notes','verification_method','clock_in_photo_path','clock_out_photo_path','clock_in_photo_captured_at','clock_out_photo_captured_at','clock_in_ip_address','clock_out_ip_address','clock_in_device','clock_out_device'];
     protected $hidden = ['clock_in_photo_path', 'clock_out_photo_path'];

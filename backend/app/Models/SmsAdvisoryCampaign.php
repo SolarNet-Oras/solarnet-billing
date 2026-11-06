@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SmsAdvisoryCampaign extends Model
 {
-    use HasUuids;
+    use BelongsToTenant, HasUuids;
 
     protected $fillable = ['created_by', 'title', 'message', 'recipient_filter', 'router_id', 'router_name', 'status', 'recipient_count', 'sent_count', 'failed_count', 'skipped_count', 'completed_at'];
     protected $casts = ['completed_at' => 'datetime'];

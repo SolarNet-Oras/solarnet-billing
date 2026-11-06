@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CollectionPlan extends Model
 {
-    use HasUuids;
+    use BelongsToTenant, HasUuids;
     protected $fillable = ['collector_id','collection_planner_run_id','plan_date','status','generation_mode','smart_enabled','start_latitude','start_longitude','start_address','route_mode','algorithm_version','version','generated_at'];
     protected $casts = ['plan_date'=>'date','smart_enabled'=>'boolean','start_latitude'=>'float','start_longitude'=>'float','version'=>'integer','generated_at'=>'datetime'];
     public function collector(): BelongsTo { return $this->belongsTo(User::class, 'collector_id'); }

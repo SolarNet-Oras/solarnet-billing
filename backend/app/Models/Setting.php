@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
+use App\Support\CurrentTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
 class Setting extends Model
 {
-    use HasUuids;
+    use BelongsToTenant, HasUuids;
 
     protected $fillable = ['key', 'value', 'cast', 'group', 'label', 'description', 'is_public'];
 
@@ -39,8 +41,24 @@ class Setting extends Model
      */
     public static function get(string $key, mixed $default = null): mixed
     {
-        return Cache::rememberForever('setting.' . $key, function () use ($key, $default) {
-            $row = static::where('key', $key)->first();
+        $tenant = static::settingsTenant();
+        $tenantId = $tenant?->getKey();
+
+        $cacheTenant = $tenantId ?? 'legacy';
+
+        return Cache::rememberForever("setting.{$cacheTenant}.{$key}", function () use ($key, $default, $tenant, $tenantId) {
+            $row = static::withoutGlobalScope('tenant')
+                ->where('tenant_id', $tenantId)
+                ->where('key', $key)
+                ->first();
+
+            if (! $row && $tenant?->is_primary) {
+                $row = static::withoutGlobalScope('tenant')
+                    ->whereNull('tenant_id')
+                    ->where('key', $key)
+                    ->first();
+            }
+
             if (!$row) return $default;
             return $row->typedValue();
         });
@@ -48,12 +66,41 @@ class Setting extends Model
 
     public static function put(string $key, mixed $value, string $cast = 'string'): void
     {
+        $tenant = static::settingsTenant();
+        $tenantId = $tenant?->getKey();
         $stringValue = match ($cast) {
             'bool'  => $value ? '1' : '0',
             'json'  => json_encode($value),
             default => (string) $value,
         };
-        static::updateOrCreate(['key' => $key], ['value' => $stringValue, 'cast' => $cast]);
-        Cache::forget('setting.' . $key);
+        $row = static::withoutGlobalScope('tenant')
+            ->where('tenant_id', $tenantId)
+            ->where('key', $key)
+            ->first();
+
+        if (! $row && $tenant?->is_primary) {
+            $row = static::withoutGlobalScope('tenant')
+                ->whereNull('tenant_id')
+                ->where('key', $key)
+                ->first();
+        }
+
+        if ($row) {
+            $row->update(['value' => $stringValue, 'cast' => $cast]);
+        } else {
+            static::withoutGlobalScope('tenant')->create([
+                'tenant_id' => $tenantId,
+                'key' => $key,
+                'value' => $stringValue,
+                'cast' => $cast,
+            ]);
+        }
+        Cache::forget('setting.'.($tenantId ?? 'legacy').'.'.$key);
+    }
+
+    private static function settingsTenant(): ?Tenant
+    {
+        return app(CurrentTenant::class)->get()
+            ?? app(CurrentTenant::class)->resolveForWrite();
     }
 }

@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SaasModuleIsolationAuditTest extends TestCase
@@ -12,11 +14,24 @@ class SaasModuleIsolationAuditTest extends TestCase
 
     public function test_audit_is_read_only_and_covers_every_requested_workspace_module(): void
     {
+        DB::table('activity_logs')->insert([
+            'id' => (string) Str::uuid(),
+            'category' => 'test',
+            'action' => 'legacy-unassigned-record',
+            'method' => 'GET',
+            'path' => '/test',
+            'response_status' => 200,
+            'duration_ms' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $this->assertSame(0, Artisan::call('saas:audit-module-isolation'));
         $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
         $this->assertTrue($report['read_only']);
         $this->assertFalse($report['tenant_workspace_ready']);
+        $this->assertSame(1, $report['modules']['logs_reports']['roots'][0]['unassigned_records']);
         $this->assertFalse($report['safety']['records_changed']);
         $this->assertSame('keep_tenant_operational_navigation_staged', $report['action']);
         $this->assertEqualsCanonicalizing([
