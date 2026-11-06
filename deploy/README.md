@@ -331,3 +331,10 @@ foreground with single-server and overlap locks.
    EOF
    systemctl restart docker
    ```
+# SaaS platform administration
+
+`admin.solarnetportal.com` has an independently staged control plane. Keep
+`SAAS_PLATFORM_ENABLED=false` until its tests and deployment checks pass. This
+flag does not enable tenant query enforcement and therefore does not change the
+existing `billing.solarnetportal.com` data boundary. SolarNet remains the
+protected primary, lifetime subscription-exempt tenant.

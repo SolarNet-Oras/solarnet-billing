@@ -99,6 +99,7 @@ services:
       SESSION_SAME_SITE: lax
       MAIL_EHLO_DOMAIN: ${ADMIN_DOMAIN}
       SAAS_OWNERSHIP_AUTO_ASSIGNMENT: ${SAAS_OWNERSHIP_AUTO_ASSIGNMENT:-true}
+      SAAS_PLATFORM_ENABLED: ${SAAS_PLATFORM_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

@@ -6,6 +6,7 @@ return [
     | queues, caches, and integrations have each passed their rollout gate.
     */
     'enabled' => (bool) env('SAAS_ENABLED', false),
+    'platform_enabled' => filter_var(env('SAAS_PLATFORM_ENABLED', false), FILTER_VALIDATE_BOOL),
     'enforcement_mode' => env('SAAS_ENFORCEMENT_MODE', 'disabled'),
     'registration_enabled' => (bool) env('SAAS_REGISTRATION_ENABLED', false),
     'default_trial_days' => (int) env('SAAS_DEFAULT_TRIAL_DAYS', 30),

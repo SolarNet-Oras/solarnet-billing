@@ -74,7 +74,14 @@ class SaasTenantOnboardingService
     }
 
     /** @return array<string, mixed> */
-    public function execute(string $slug, string $name, string $ownerEmail, string $planCode): array
+    public function execute(
+        string $slug,
+        string $name,
+        string $ownerEmail,
+        string $planCode,
+        string $source = 'controlled_cli',
+        ?string $actorUserId = null,
+    ): array
     {
         $preview = $this->preview($slug, $name, $ownerEmail, $planCode);
         if (! $preview['ready']) {
@@ -86,7 +93,7 @@ class SaasTenantOnboardingService
         $planId = $preview['plan']['id'];
         $now = now();
 
-        return DB::transaction(function () use ($slug, $name, $ownerEmail, $ownerId, $planId, $now): array {
+        return DB::transaction(function () use ($slug, $name, $ownerEmail, $ownerId, $planId, $now, $source, $actorUserId): array {
             if (Tenant::withTrashed()->where('slug', $slug)->lockForUpdate()->exists()) {
                 throw new RuntimeException('Tenant slug was claimed before onboarding completed.');
             }
@@ -101,7 +108,7 @@ class SaasTenantOnboardingService
                 'status' => 'active',
                 'is_primary' => false,
                 'subscription_exempt' => false,
-                'metadata' => ['onboarding_source' => 'controlled_cli'],
+                'metadata' => ['onboarding_source' => $source],
             ]);
             $membership = TenantMembership::create([
                 'tenant_id' => $tenant->id,
@@ -118,15 +125,15 @@ class SaasTenantOnboardingService
                 'trial_starts_at' => $now,
                 'trial_ends_at' => $trialEndsAt,
                 'payment_status' => 'not_due',
-                'metadata' => ['onboarding_source' => 'controlled_cli'],
+                'metadata' => ['onboarding_source' => $source],
             ]);
             TenantSubscriptionEvent::create([
                 'tenant_id' => $tenant->id,
                 'subscription_id' => $subscription->id,
                 'event_type' => 'trial_started',
                 'to_status' => 'trialing',
-                'actor_user_id' => $owner->id,
-                'source' => 'controlled_cli',
+                'actor_user_id' => $actorUserId ?? $owner->id,
+                'source' => $source,
                 'idempotency_key' => 'tenant-onboarding:'.$tenant->id,
                 'context' => ['plan_code' => $plan->code, 'trial_days' => $plan->trial_days],
                 'occurred_at' => $now,
@@ -136,7 +143,7 @@ class SaasTenantOnboardingService
                 'company_fingerprint' => hash('sha256', $slug),
                 'email_hash' => hash_hmac('sha256', Str::lower(trim($ownerEmail)), (string) config('app.key')),
                 'status' => 'completed',
-                'context' => ['source' => 'controlled_cli', 'plan_code' => $plan->code],
+                'context' => ['source' => $source, 'plan_code' => $plan->code],
             ]);
 
             return [

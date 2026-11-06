@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'active.staff' => \App\Http\Middleware\EnsureActiveStaffAccount::class,
             'fresh.field.location' => \App\Http\Middleware\RequireFreshFieldLocation::class,
             'saas.tenant' => \App\Http\Middleware\ResolveSaasTenantContext::class,
+            'saas.platform' => \App\Http\Middleware\ResolveSaasPlatformAdmin::class,
         ]);
         
         // Configure API authentication to return JSON instead of redirecting
