@@ -271,6 +271,22 @@ SAAS_REGISTRATION_ENABLED=false
 SAAS_OWNERSHIP_AUTO_ASSIGNMENT=true
 ```
 
+Tenant onboarding remains an administrator-controlled operation. Audit a
+candidate first; the audit does not write to the database:
+
+```bash
+php artisan saas:onboard-tenant \
+  --slug=branch-a \
+  --name="ISP Branch A" \
+  --owner-email=owner@example.com \
+  --plan=monthly-2999
+```
+
+Execution requires an existing active owner account, an existing active SaaS
+plan, and the exact tenant-specific confirmation shown by the audit. It creates
+only the tenant, owner membership, trial subscription, subscription event, and
+onboarding audit record. It does not create billing or financial records.
+
 The safe audit command records a planning-run preview but does not create
 assignments or collection plans:
 
