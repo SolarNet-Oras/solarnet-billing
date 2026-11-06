@@ -30,10 +30,11 @@ export default function CollectionMonitoringPage() {
   const [macInputs, setMacInputs] = useState<Record<string,string>>({});
   const [quotaInputs, setQuotaInputs] = useState<Record<string,string>>({});
   const [loadError, setLoadError] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [proofPreview, setProofPreview] = useState<{url:string; title:string} | null>(null);
   const [proofLoading, setProofLoading] = useState<{id:string; percent:number|null} | null>(null);
-  const load = async () => {
-    setLoadError('');
+  const load = async (silent = false) => {
+    if (!silent) setLoadError('');
     try {
       const response = await api.get('/collection-monitoring');
       const payload = response.data || {};
@@ -65,14 +66,26 @@ export default function CollectionMonitoringPage() {
           total_collectible: 0,
         },
       });
-      setQuotaInputs(Object.fromEntries((payload.territories || [])
-        .filter((territory: Territory) => Boolean(territory?.collector?.id))
-        .map((territory: Territory) => [territory.collector!.id,String(territory.max_daily_visits)])));
+      if (!silent) {
+        setQuotaInputs(Object.fromEntries((payload.territories || [])
+          .filter((territory: Territory) => Boolean(territory?.collector?.id))
+          .map((territory: Territory) => [territory.collector!.id,String(territory.max_daily_visits)])));
+      }
+      setLastUpdatedAt(new Date());
     } catch (error: any) {
-      setLoadError(error.response?.data?.message || 'Collection monitoring could not be loaded. Refresh after the backend update is available.');
+      if (!silent) setLoadError(error.response?.data?.message || 'Collection monitoring could not be loaded. Refresh after the backend update is available.');
     }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    const refreshWhenVisible=()=>{if(document.visibilityState==='visible')void load(true)};
+    const timer=window.setInterval(refreshWhenVisible,10_000);
+    document.addEventListener('visibilitychange',refreshWhenVisible);
+    return()=>{
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange',refreshWhenVisible);
+    };
+  }, []);
   const candidates = useMemo(() => (data?.unassigned_customer_records || []).filter(item => `${item.full_name} ${item.account_number} ${item.address || ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 100), [data, search]);
   const saveTerritory = async () => { const fallback=territoryName==='Fallback territory'; if (!territoryCollector || !territoryName || (!fallback && !territoryAreas.length)) return; setBusy(true); try { await api.post('/collection-monitoring/territories', { collector_id: territoryCollector, name: territoryName, areas: fallback ? [] : territoryAreas, is_fallback: fallback, priority: 100, max_daily_visits: 24 }); setTerritoryName(''); setTerritoryAreas([]); await load(); } finally { setBusy(false); } };
   const overrideAssignment = async () => { if (!overrideCollector || !selected.length) return; setBusy(true); try { await api.post('/collection-monitoring/assignments', { collector_id: overrideCollector, customer_ids: selected, territory_label: overrideLabel || 'Administrator override' }); setSelected([]); await load(); } finally { setBusy(false); } };
@@ -126,7 +139,7 @@ export default function CollectionMonitoringPage() {
 
   return <DashboardLayout><main className="space-y-6 p-4 md:p-6">
     {proofPreview&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-label="Collection proof preview"><div className="w-full max-w-3xl rounded-2xl border bg-card p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="font-bold">Proof of visit</p><p className="text-sm text-muted-foreground">{proofPreview.title}</p></div><button type="button" onClick={closeProofPreview} className="rounded-lg border p-2" aria-label="Close proof preview"><X className="h-5 w-5"/></button></div><img src={proofPreview.url} alt={`Proof of visit for ${proofPreview.title}`} className="max-h-[75vh] w-full rounded-xl bg-muted object-contain"/></div></div>}
-    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-bold"><MapPinned className="text-primary" />Collection monitoring</h1><p className="text-sm text-muted-foreground">Supervise automatic territories, daily planning runs, coverage, and route completion.</p></div><button onClick={() => void load()} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw className="mr-1 inline h-4 w-4" />Refresh</button></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-bold"><MapPinned className="text-primary" />Collection monitoring</h1><p className="text-sm text-muted-foreground">Supervise automatic territories, daily planning runs, coverage, and route completion.</p></div><div className="flex items-center gap-2"><span className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500"/>Live updates · 10s{lastUpdatedAt?` · ${lastUpdatedAt.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit'})}`:''}</span><button onClick={() => void load()} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw className="mr-1 inline h-4 w-4" />Refresh</button></div></header>
     {loadError&&<section className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">{loadError}</section>}
     <section className={`rounded-2xl border p-4 ${data?.automation?.active ? 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100' : 'border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'}`}><p className="font-bold">Automatic planner: {data?.automation?.active ? 'Active' : 'Staged — production activation blocked'}</p><p className="mt-1 text-xs">Daily {data?.automation?.daily_at || 'not configured'} {data?.automation?.timezone || 'Asia/Manila'} · {data?.automation?.algorithm_version || 'version unavailable'}. Environment: {data?.automation?.environment_enabled ? 'enabled' : 'disabled'} · application: {data?.automation?.application_enabled ? 'enabled' : 'disabled'}.</p></section>
     <section className="grid gap-3 sm:grid-cols-4"><Metric label="Collectors" value={data?.collectors?.length || 0}/><Metric label="Active assignments" value={data?.assignments?.length || 0}/><Metric label="Missing coordinates" value={data?.customers_missing_coordinates || 0}/><Metric label="Unassigned customers" value={data?.unassigned_customers || 0}/></section>
