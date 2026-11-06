@@ -24,7 +24,7 @@ class SaasTenantAuthenticationTest extends TestCase
     {
         [$tenant, $user] = $this->membership(subscriptionExempt: true);
 
-        $response = $this->withHeader('Host', 'app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $response = $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -34,7 +34,7 @@ class SaasTenantAuthenticationTest extends TestCase
             ->assertJsonPath('tenant.id', $tenant->id)
             ->assertJsonPath('subscription_access.reason', 'subscription_exempt');
 
-        $this->withHeader('Host', 'app.solarnetportal.com')
+        $this->fromHost('app.solarnetportal.com')
             ->withToken($response->json('access_token'))
             ->getJson('/api/v1/saas/auth/me')
             ->assertOk()
@@ -47,7 +47,7 @@ class SaasTenantAuthenticationTest extends TestCase
         [$tenant, $user, $membership] = $this->membership(subscriptionExempt: true);
         $membership->update(['status' => 'revoked']);
 
-        $this->withHeader('Host', 'app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -64,7 +64,7 @@ class SaasTenantAuthenticationTest extends TestCase
             'trial_ends_at' => now()->subDay(),
         ]);
 
-        $this->withHeader('Host', 'app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->fromHost('app.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
@@ -77,7 +77,7 @@ class SaasTenantAuthenticationTest extends TestCase
     {
         [$tenant, $user] = $this->membership(subscriptionExempt: true);
 
-        $this->withHeader('Host', 'admin.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
+        $this->fromHost('admin.solarnetportal.com')->postJson('/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',

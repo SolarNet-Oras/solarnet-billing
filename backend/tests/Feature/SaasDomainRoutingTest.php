@@ -8,7 +8,7 @@ class SaasDomainRoutingTest extends TestCase
 {
     public function test_tenant_application_domain_is_recognized_but_inert_by_default(): void
     {
-        $this->withHeader('Host', 'app.solarnetportal.com')
+        $this->fromHost('app.solarnetportal.com')
             ->getJson('/api/v1/saas/domain-context')
             ->assertOk()
             ->assertJson([
@@ -23,7 +23,7 @@ class SaasDomainRoutingTest extends TestCase
 
     public function test_platform_admin_domain_is_distinct_from_tenant_application(): void
     {
-        $this->withHeader('Host', 'admin.solarnetportal.com')
+        $this->fromHost('admin.solarnetportal.com')
             ->getJson('/api/v1/saas/domain-context')
             ->assertOk()
             ->assertJsonPath('surface', 'admin');
@@ -31,7 +31,7 @@ class SaasDomainRoutingTest extends TestCase
 
     public function test_existing_billing_domain_remains_the_primary_billing_surface(): void
     {
-        $this->withHeader('Host', 'billing.solarnetportal.com')
+        $this->fromHost('billing.solarnetportal.com')
             ->getJson('/api/v1/saas/domain-context')
             ->assertOk()
             ->assertJsonPath('surface', 'billing');
@@ -39,7 +39,7 @@ class SaasDomainRoutingTest extends TestCase
 
     public function test_unknown_host_never_becomes_a_tenant_surface(): void
     {
-        $this->withHeader('Host', 'unknown.example.test')
+        $this->fromHost('unknown.example.test')
             ->getJson('/api/v1/saas/domain-context')
             ->assertOk()
             ->assertJsonPath('surface', 'public');
@@ -47,7 +47,7 @@ class SaasDomainRoutingTest extends TestCase
 
     public function test_staged_tenant_domain_cannot_call_legacy_authentication_api(): void
     {
-        $this->withHeader('Host', 'app.solarnetportal.com')
+        $this->fromHost('app.solarnetportal.com')
             ->postJson('/api/v1/auth/login', ['email' => 'owner@example.test', 'password' => 'secret'])
             ->assertStatus(503)
             ->assertJsonPath('surface', 'app');
@@ -55,7 +55,7 @@ class SaasDomainRoutingTest extends TestCase
 
     public function test_staged_platform_domain_cannot_call_legacy_billing_api(): void
     {
-        $this->withHeader('Host', 'admin.solarnetportal.com')
+        $this->fromHost('admin.solarnetportal.com')
             ->getJson('/api/v1/invoices')
             ->assertStatus(503)
             ->assertJsonPath('surface', 'admin');
