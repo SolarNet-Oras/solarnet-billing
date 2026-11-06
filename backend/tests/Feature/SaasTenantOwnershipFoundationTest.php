@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -59,12 +60,12 @@ class SaasTenantOwnershipFoundationTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->artisan('saas:audit-solarnet-ownership')
-            ->expectsOutputToContain('"read_only": true')
-            ->expectsOutputToContain('"service_plans"')
-            ->expectsOutputToContain('"unassigned_records":')
-            ->expectsOutputToContain('"action": "no_changes_audit_only"')
-            ->assertSuccessful();
+        $this->assertSame(0, Artisan::call('saas:audit-solarnet-ownership'));
+        $output = Artisan::output();
+        $this->assertStringContainsString('"read_only": true', $output);
+        $this->assertStringContainsString('"service_plans"', $output);
+        $this->assertStringContainsString('"unassigned_records":', $output);
+        $this->assertStringContainsString('"action": "no_changes_audit_only"', $output);
 
         $this->assertNull(DB::table('service_plans')->where('id', $planId)->value('tenant_id'));
         $this->assertDatabaseCount('service_plans', 1);
