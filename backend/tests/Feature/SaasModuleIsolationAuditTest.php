@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 class SaasModuleIsolationAuditTest extends TestCase
@@ -11,27 +12,19 @@ class SaasModuleIsolationAuditTest extends TestCase
 
     public function test_audit_is_read_only_and_covers_every_requested_workspace_module(): void
     {
-        $this->artisan('saas:audit-module-isolation')
-            ->expectsOutputToContain('"read_only": true')
-            ->expectsOutputToContain('"tenant_workspace_ready": false')
-            ->expectsOutputToContain('"customers"')
-            ->expectsOutputToContain('"billing"')
-            ->expectsOutputToContain('"remittances"')
-            ->expectsOutputToContain('"collection_monitoring"')
-            ->expectsOutputToContain('"daily_operations"')
-            ->expectsOutputToContain('"attendance_payroll"')
-            ->expectsOutputToContain('"leave_requests"')
-            ->expectsOutputToContain('"financial_monitoring"')
-            ->expectsOutputToContain('"service_plans"')
-            ->expectsOutputToContain('"unregistered_devices"')
-            ->expectsOutputToContain('"tickets"')
-            ->expectsOutputToContain('"operations_map"')
-            ->expectsOutputToContain('"sms_advisory"')
-            ->expectsOutputToContain('"network_devices"')
-            ->expectsOutputToContain('"logs_reports"')
-            ->expectsOutputToContain('"install_app"')
-            ->expectsOutputToContain('"settings"')
-            ->expectsOutputToContain('"records_changed": false')
-            ->assertSuccessful();
+        $this->assertSame(0, Artisan::call('saas:audit-module-isolation'));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertTrue($report['read_only']);
+        $this->assertFalse($report['tenant_workspace_ready']);
+        $this->assertFalse($report['safety']['records_changed']);
+        $this->assertSame('keep_tenant_operational_navigation_staged', $report['action']);
+        $this->assertEqualsCanonicalizing([
+            'dashboard', 'customers', 'billing', 'remittances',
+            'collection_monitoring', 'daily_operations', 'attendance_payroll',
+            'leave_requests', 'financial_monitoring', 'service_plans',
+            'unregistered_devices', 'tickets', 'operations_map', 'sms_advisory',
+            'network_devices', 'logs_reports', 'install_app', 'settings',
+        ], array_keys($report['modules']));
     }
 }
