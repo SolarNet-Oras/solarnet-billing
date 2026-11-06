@@ -52,7 +52,8 @@ class SaasTenantOnboardingTest extends TestCase
     public function test_confirmed_onboarding_creates_one_owned_trial_without_billing_records(): void
     {
         [$owner, $plan] = $this->prerequisites();
-        $before = now();
+        // Database timestamps are stored at whole-second precision.
+        $before = now()->startOfSecond();
 
         $this->artisan('saas:onboard-tenant', [
             '--slug' => 'branch-a',
