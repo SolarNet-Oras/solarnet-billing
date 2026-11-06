@@ -19,7 +19,9 @@ class EnforceSaasDomainBoundary
             return $next($request);
         }
 
-        if ($request->is('api/v1/saas/domain-context') || $request->is('api/health')) {
+        if ($request->is('api/v1/saas/domain-context')
+            || $request->is('api/v1/saas/auth/*')
+            || $request->is('api/health')) {
             return $next($request);
         }
 
