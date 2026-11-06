@@ -161,9 +161,9 @@ class InvoiceController extends Controller
         $payload['summary'] = [
             'scope' => $hasSearch ? 'search' : ($selectedDueDate ? 'due_date' : 'all'),
             'selected_due_date' => $selectedDueDate,
-            'due_today' => (clone $historyScope)->whereDate('due_date', $today)->count(),
+            'due_today' => (clone $historyScope)->whereDate('due_date', $today)->unpaid()->count(),
             'selected_due' => $selectedDueDate
-                ? (clone $historyScope)->whereDate('due_date', $selectedDueDate)->count()
+                ? (clone $historyScope)->whereDate('due_date', $selectedDueDate)->unpaid()->count()
                 : null,
             'all' => (clone $summaryScope)->count(),
             'unpaid' => (clone $summaryScope)->unpaid()->count(),

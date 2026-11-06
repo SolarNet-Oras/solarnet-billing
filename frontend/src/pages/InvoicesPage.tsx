@@ -566,7 +566,7 @@ const InvoicesPage: React.FC = () => {
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {[
-            { key: 'all', label: selectedDueDate && !debouncedSearch ? 'Due on date' : 'All results', value: invoiceSummary.selected_due ?? invoiceSummary.all, color: 'border-blue-200 bg-blue-50 text-blue-900' },
+            { key: 'all', label: selectedDueDate && !debouncedSearch ? 'Open due on date' : 'All results', value: invoiceSummary.selected_due ?? invoiceSummary.all, color: 'border-blue-200 bg-blue-50 text-blue-900' },
             { key: 'unpaid', label: 'Unpaid', value: invoiceSummary.unpaid, color: 'border-rose-200 bg-rose-50 text-rose-900' },
             { key: 'paid', label: 'Paid', value: invoiceSummary.paid, color: 'border-emerald-200 bg-emerald-50 text-emerald-900' },
             { key: 'partial', label: 'Partial', value: invoiceSummary.partial, color: 'border-amber-200 bg-amber-50 text-amber-900' },
@@ -590,7 +590,7 @@ const InvoicesPage: React.FC = () => {
         </div>
         <p className="mt-3 text-xs font-medium text-slate-600">
           Due today: <span className="text-slate-950">{invoiceSummary.due_today}</span>
-          {selectedDueDate && !debouncedSearch && selectedDueDate !== localDateValue(new Date()) ? ` | Due on selected date: ${invoiceSummary.selected_due ?? 0}` : ''}
+          {selectedDueDate && !debouncedSearch && selectedDueDate !== localDateValue(new Date()) ? ` | Open due on selected date: ${invoiceSummary.selected_due ?? 0}` : ''}
           {debouncedSearch ? ' | Calendar ignored while searching all billing history.' : ''}
         </p>
       </section>

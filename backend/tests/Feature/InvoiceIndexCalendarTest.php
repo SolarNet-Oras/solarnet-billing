@@ -28,13 +28,43 @@ class InvoiceIndexCalendarTest extends TestCase
         $payload = $response->getData(true);
 
         $this->assertCount(3, $payload['data']);
-        $this->assertSame(3, $payload['summary']['selected_due']);
+        $this->assertSame(1, $payload['summary']['selected_due']);
         $this->assertSame(4, $payload['summary']['all']);
         $this->assertSame(2, $payload['summary']['unpaid']);
         $this->assertSame(1, $payload['summary']['paid']);
         $this->assertSame(1, $payload['summary']['partial']);
         $this->assertSame(1, $payload['summary']['cancelled']);
         $this->assertSame(1, $payload['summary']['discounted']);
+    }
+
+    public function test_paid_invoice_immediately_leaves_selected_due_and_unpaid_counts(): void
+    {
+        $customer = $this->customer('Paid Calendar Customer', '1212121212');
+        $invoice = $this->invoice($customer, 'SLR-CALENDAR-OPEN', '2026-11-05', 'overdue', 800, 0);
+
+        $before = app(InvoiceController::class)->index(Request::create('/api/v1/invoices', 'GET', [
+            'due_date' => '2026-11-05',
+            'per_page' => 100,
+        ]))->getData(true);
+
+        $this->assertSame(1, $before['summary']['selected_due']);
+        $this->assertSame(1, $before['summary']['unpaid']);
+
+        $invoice->update([
+            'paid_amount' => '800.00',
+            'balance' => '0.00',
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $after = app(InvoiceController::class)->index(Request::create('/api/v1/invoices', 'GET', [
+            'due_date' => '2026-11-05',
+            'per_page' => 100,
+        ]))->getData(true);
+
+        $this->assertSame(0, $after['summary']['selected_due']);
+        $this->assertSame(0, $after['summary']['unpaid']);
+        $this->assertSame(1, $after['summary']['paid']);
     }
 
     public function test_search_ignores_calendar_and_finds_matching_past_months(): void
