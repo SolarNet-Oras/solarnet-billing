@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\Tenant;
 use App\Support\CustomerPortalUrl;
+use App\Support\CurrentTenant;
 
 class InvoicePaymentLinkService
 {
@@ -16,6 +18,7 @@ class InvoicePaymentLinkService
     {
         $payload = [
             'invoice_id' => $invoice->id,
+            'tenant_id' => $invoice->getAttribute('tenant_id'),
             'customer_id' => $invoice->customer_id,
             'invoice_number' => $invoice->invoice_number,
             'expires_at' => now()->addDays(45)->timestamp,
@@ -34,8 +37,15 @@ class InvoicePaymentLinkService
         $payload = $decoded === null ? null : json_decode($decoded, true);
         if (!is_array($payload) || (int) ($payload['expires_at'] ?? 0) < now()->timestamp) return null;
 
+        $tenant = filled($payload['tenant_id'] ?? null)
+            ? Tenant::query()->whereKey($payload['tenant_id'])->first()
+            : Tenant::query()->where('slug', config('saas.primary_tenant_slug'))->where('is_primary', true)->first();
+        if ($tenant) app(CurrentTenant::class)->set($tenant);
+        if (!$tenant && config('saas.enabled') && config('saas.enforcement_mode') === 'enforced') return null;
+
         return Invoice::with('customer:id,account_number,full_name,status')
             ->whereKey($payload['invoice_id'] ?? null)
+            ->when($tenant, fn ($query) => $query->where('tenant_id', $tenant->id))
             ->where('customer_id', $payload['customer_id'] ?? null)
             ->first();
     }
