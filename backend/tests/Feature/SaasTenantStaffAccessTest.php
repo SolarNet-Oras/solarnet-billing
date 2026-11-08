@@ -63,6 +63,43 @@ class SaasTenantStaffAccessTest extends TestCase
         $this->assertDatabaseMissing('saas_tenant_staff_access_requests', ['email' => 'unsafe@branch.test']);
     }
 
+    public function test_owner_can_change_role_and_revoke_only_the_company_membership(): void
+    {
+        [$tenant,,$token] = $this->owner();
+        $staff = User::factory()->create(['is_active' => true]);
+        $membership = TenantMembership::create([
+            'tenant_id' => $tenant->id, 'user_id' => $staff->id,
+            'membership_role' => 'tenant_collector', 'status' => 'active', 'is_owner' => false,
+        ]);
+
+        $this->withToken($token)
+            ->patchJson("https://app.solarnetportal.com/api/v1/saas/tenant/staff-members/{$membership->id}/role", ['membership_role' => 'tenant_collector_technician'])
+            ->assertOk();
+        $this->assertDatabaseHas('tenant_user', ['id' => $membership->id, 'membership_role' => 'tenant_collector_technician', 'status' => 'active']);
+
+        $this->withToken($token)
+            ->deleteJson("https://app.solarnetportal.com/api/v1/saas/tenant/staff-members/{$membership->id}")
+            ->assertOk();
+        $this->assertDatabaseHas('tenant_user', ['id' => $membership->id, 'status' => 'revoked']);
+        $this->assertDatabaseHas('users', ['id' => $staff->id, 'email' => $staff->email]);
+    }
+
+    public function test_owner_cannot_change_or_remove_another_tenants_staff(): void
+    {
+        [,,$token] = $this->owner();
+        $other = Tenant::create(['slug' => 'branch-b', 'name' => 'Branch B', 'status' => 'active', 'is_primary' => false, 'subscription_exempt' => true]);
+        $staff = User::factory()->create(['is_active' => true]);
+        $membership = TenantMembership::create(['tenant_id' => $other->id, 'user_id' => $staff->id, 'membership_role' => 'tenant_collector', 'status' => 'active', 'is_owner' => false]);
+
+        $this->withToken($token)
+            ->patchJson("https://app.solarnetportal.com/api/v1/saas/tenant/staff-members/{$membership->id}/role", ['membership_role' => 'tenant_technician'])
+            ->assertNotFound();
+        $this->withToken($token)
+            ->deleteJson("https://app.solarnetportal.com/api/v1/saas/tenant/staff-members/{$membership->id}")
+            ->assertNotFound();
+        $this->assertDatabaseHas('tenant_user', ['id' => $membership->id, 'membership_role' => 'tenant_collector', 'status' => 'active']);
+    }
+
     public function test_password_recovery_only_notifies_an_active_member_of_the_named_tenant(): void
     {
         Notification::fake();

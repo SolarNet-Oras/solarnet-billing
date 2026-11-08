@@ -79,6 +79,9 @@ Route::prefix('v1')->group(function () {
         Route::put('/cashout-settings', [SaasTenantCashoutController::class, 'updateSettings'])->middleware('throttle:10,1');
         Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
         Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
+        Route::get('/staff-members', [SaasTenantStaffController::class, 'members']);
+        Route::patch('/staff-members/{membership}/role', [SaasTenantStaffController::class, 'updateMemberRole'])->middleware('throttle:10,1');
+        Route::delete('/staff-members/{membership}', [SaasTenantStaffController::class, 'removeMember'])->middleware('throttle:10,1');
     });
     Route::get('/saas/applications/plans', [SaasTenantApplicationController::class, 'plans'])->middleware('throttle:60,1');
     Route::post('/saas/applications', [SaasTenantApplicationController::class, 'store'])->middleware('throttle:5,1');

@@ -19,6 +19,13 @@ use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class SaasTenantStaffController extends Controller
 {
+    private const STAFF_ROLES = [
+        'tenant_staff_admin',
+        'tenant_collector',
+        'tenant_technician',
+        'tenant_collector_technician',
+    ];
+
     public function requestPasswordReset(Request $request): JsonResponse
     {
         $data = $request->validate(['tenant' => ['required','string','max:100'], 'email' => ['required','email','max:255']]);
@@ -77,6 +84,54 @@ class SaasTenantStaffController extends Controller
         return response()->json(['data' => SaasTenantStaffAccessRequest::query()->where('tenant_id', $tenant->id)->orderByDesc('created_at')->get(['id','name','email','phone','requested_role','status','created_at','reviewed_at'])]);
     }
 
+    public function members(Request $request): JsonResponse
+    {
+        $this->authorizeTenantAdmin($request);
+        $tenant = $request->attributes->get('saas_tenant');
+
+        $members = TenantMembership::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('status', 'active')
+            ->where('is_owner', false)
+            ->whereIn('membership_role', [...self::STAFF_ROLES, 'tenant_staff'])
+            ->with('user:id,name,email,phone')
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (TenantMembership $membership): array => [
+                'id' => $membership->id,
+                'name' => $membership->user?->name,
+                'email' => $membership->user?->email,
+                'phone' => $membership->user?->phone,
+                'membership_role' => $membership->membership_role,
+                'status' => $membership->status,
+                'created_at' => $membership->created_at,
+            ]);
+
+        return response()->json(['data' => $members]);
+    }
+
+    public function updateMemberRole(Request $request, TenantMembership $membership): JsonResponse
+    {
+        $this->authorizeTenantAdmin($request);
+        $this->authorizeManagedMembership($request, $membership);
+        $data = $request->validate([
+            'membership_role' => ['required', 'in:'.implode(',', self::STAFF_ROLES)],
+        ]);
+
+        $membership->update(['membership_role' => $data['membership_role']]);
+
+        return response()->json(['message' => 'Staff role updated.']);
+    }
+
+    public function removeMember(Request $request, TenantMembership $membership): JsonResponse
+    {
+        $this->authorizeTenantAdmin($request);
+        $this->authorizeManagedMembership($request, $membership);
+        $membership->update(['status' => 'revoked']);
+
+        return response()->json(['message' => 'Staff workspace access removed.']);
+    }
+
     public function review(Request $request, SaasTenantStaffAccessRequest $accessRequest): JsonResponse
     {
         $this->authorizeTenantAdmin($request);
@@ -111,5 +166,13 @@ class SaasTenantStaffController extends Controller
     private function authorizeTenantAdmin(Request $request): void
     {
         abort_unless($request->attributes->get('saas_membership')?->membership_role === 'tenant_admin', 403, 'Tenant Super Administrator access is required.');
+    }
+
+    private function authorizeManagedMembership(Request $request, TenantMembership $membership): void
+    {
+        $tenant = $request->attributes->get('saas_tenant');
+        abort_unless($membership->tenant_id === $tenant->id, 404);
+        abort_if($membership->is_owner || $membership->membership_role === 'tenant_admin', 422, 'The Tenant Super Administrator cannot be changed or removed here.');
+        abort_unless($membership->status === 'active', 409, 'This staff membership is not active.');
     }
 }
