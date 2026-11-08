@@ -4,6 +4,8 @@ import FiberOpticBackground from '@/components/FiberOpticBackground';
 import service, { saasError, type TenantPlan } from '@/services/saasTenantService';
 
 const field = 'w-full rounded-md border border-input bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary';
+const REMEMBERED_TENANT_ID_KEY = 'solarnet-saas-remembered-tenant-id';
+const REMEMBERED_TENANT_EMAIL_KEY = 'solarnet-saas-remembered-email';
 
 export default function SaasAppPage(): React.JSX.Element {
   const query = new URLSearchParams(location.search);
@@ -15,11 +17,18 @@ export default function SaasAppPage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [login, setLogin] = useState({ tenant: '', email: '', password: '' });
+  const [rememberSignIn, setRememberSignIn] = useState(false);
   const [recovery, setRecovery] = useState({ tenant: query.get('tenant') || '', email: query.get('email') || '', password: '', password_confirmation: '' });
   const [staff, setStaff] = useState({ tenant: '', name: '', email: '', phone: '', password: '', password_confirmation: '' });
   const [form, setForm] = useState({ company_name: '', tenant_slug: '', owner_name: '', owner_email: '', owner_phone: '', password: '', password_confirmation: '', business_address: '', business_registration_number: '', plan: 'monthly-3499', terms_accepted: false });
 
   useEffect(() => {
+    const rememberedTenant = window.localStorage.getItem(REMEMBERED_TENANT_ID_KEY);
+    const rememberedEmail = window.localStorage.getItem(REMEMBERED_TENANT_EMAIL_KEY);
+    if (rememberedTenant || rememberedEmail) {
+      setLogin((current) => ({ ...current, tenant: rememberedTenant || '', email: rememberedEmail || '' }));
+      setRememberSignIn(true);
+    }
     const advertisementTimer = window.setTimeout(() => setShowAdvertisement(false), 5000);
     const token = new URLSearchParams(location.search).get('token');
     if (token) {
@@ -44,6 +53,13 @@ export default function SaasAppPage(): React.JSX.Element {
     event.preventDefault(); setBusy(true); setError('');
     try {
       const result = await service.login(login.tenant, login.email, login.password);
+      if (rememberSignIn) {
+        window.localStorage.setItem(REMEMBERED_TENANT_ID_KEY, login.tenant.trim().toLowerCase());
+        window.localStorage.setItem(REMEMBERED_TENANT_EMAIL_KEY, login.email.trim().toLowerCase());
+      } else {
+        window.localStorage.removeItem(REMEMBERED_TENANT_ID_KEY);
+        window.localStorage.removeItem(REMEMBERED_TENANT_EMAIL_KEY);
+      }
       if (result.workspace_activation?.allowed) { window.location.assign('/dashboard'); return; }
       service.logout();
       setNotice(`Identity verified for ${result.tenant.name}. Operational workspace access remains staged.`);
@@ -94,9 +110,10 @@ export default function SaasAppPage(): React.JSX.Element {
         {notice && <p className="mb-5 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">{notice}</p>}
 
         {mode === 'login' ? <form onSubmit={signIn} className="space-y-6">
-          <label className="block text-sm font-medium">Company login ID<input required autoComplete="organization" className={`${field} mt-2`} placeholder="example-isp" value={login.tenant} onChange={(event) => setLogin({ ...login, tenant: event.target.value.toLowerCase() })} /></label>
-          <label className="block text-sm font-medium">Email Address<input required type="email" autoComplete="username" className={`${field} mt-2`} placeholder="you@company.com" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} /></label>
-          <label className="block text-sm font-medium">Password<input required type="password" autoComplete="current-password" className={`${field} mt-2`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /></label>
+          <label className="block text-sm font-medium">Company login ID<input required name="organization" autoComplete="organization" className={`${field} mt-2`} placeholder="example-isp" value={login.tenant} onChange={(event) => setLogin({ ...login, tenant: event.target.value.toLowerCase() })} /></label>
+          <label className="block text-sm font-medium">Email Address<input required name="username" type="email" autoComplete="username" className={`${field} mt-2`} placeholder="you@company.com" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} /></label>
+          <label className="block text-sm font-medium">Password<input required name="password" type="password" autoComplete="current-password" className={`${field} mt-2`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /></label>
+          <label className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm"><input type="checkbox" name="remember" checked={rememberSignIn} onChange={(event) => setRememberSignIn(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary"/><span><b className="block text-foreground">Remember sign-in details on this device</b><span className="mt-0.5 block text-xs text-muted-foreground">SolarNet remembers the company ID and email. Your browser or device password manager securely saves and autofills the password.</span></span></label>
           <button disabled={busy} className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"><Building2 className="mr-2 inline h-5 w-5" />{busy ? 'Signing in...' : 'Sign in'}</button>
           <div className="text-center text-sm">
             <button type="button" onClick={() => { setMode('forgot'); setNotice(''); setError(''); }} className="font-medium text-primary hover:underline">Forgot your password?</button>
