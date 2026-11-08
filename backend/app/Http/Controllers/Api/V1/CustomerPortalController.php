@@ -697,7 +697,7 @@ class CustomerPortalController extends Controller
     }
 
     /** PayMongo webhook endpoint. The event is signed, then payment state is re-read from PayMongo. */
-    public function paymongoWebhook(Request $request, PaymongoService $paymongo, \App\Services\PaymongoOutwardTransferService $transfers): JsonResponse
+    public function paymongoWebhook(Request $request, PaymongoService $paymongo, \App\Services\PaymongoOutwardTransferService $transfers, \App\Services\SaasSubscriptionPaymentService $subscriptions): JsonResponse
     {
         $secret = config('services.paymongo.webhook_secret');
         if (!$secret || !$this->validPaymongoSignature($request->getContent(), (string) $request->header('Paymongo-Signature'), $secret)) {
@@ -709,6 +709,9 @@ class CustomerPortalController extends Controller
             ?? data_get($payload, 'data.attributes.data.attributes.metadata.checkout_session_id');
         $eventType = (string) (data_get($payload, 'data.attributes.type') ?? data_get($payload, 'type'));
         $eventId = (string) (data_get($payload, 'data.id') ?? data_get($payload, 'id') ?? '');
+        if ($sessionId && $subscriptions->receiveCheckout((string) $sessionId, $eventId)) {
+            return response()->json(['status' => 'ok']);
+        }
         $resource = data_get($payload, 'data.attributes.data', []);
         $paymentIntentId = data_get($resource, 'attributes.payment_intent_id')
             ?? data_get($resource, 'attributes.payment_intent.data.id')

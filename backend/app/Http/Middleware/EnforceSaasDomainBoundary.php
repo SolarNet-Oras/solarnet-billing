@@ -22,6 +22,7 @@ class EnforceSaasDomainBoundary
         if ($request->is('api/v1/saas/domain-context')
             || $request->is('api/v1/saas/auth/*')
             || $request->is('api/v1/saas/tenant/staff-access-requests*')
+            || $request->is('api/v1/saas/tenant/subscription*')
             || $request->is('api/v1/saas/applications*')
             || $request->is('api/v1/saas/platform/*')
             || $request->is('api/health')) {

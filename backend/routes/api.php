@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\V1\StaffLeaveController;
 use App\Http\Controllers\Api\V1\SaasDomainController;
 use App\Http\Controllers\Api\V1\SaasTenantAuthController;
 use App\Http\Controllers\Api\V1\SaasTenantStaffController;
+use App\Http\Controllers\Api\V1\SaasTenantSubscriptionController;
 use App\Http\Controllers\Api\V1\SaasTenantApplicationController;
 use App\Http\Controllers\Api\V1\SaasPlatformAuthController;
 use App\Http\Controllers\Api\V1\SaasPlatformController;
@@ -69,6 +70,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/saas/auth/me', [SaasTenantAuthController::class, 'me'])
         ->middleware(['auth:api', 'saas.tenant', 'throttle:60,1']);
     Route::middleware(['auth:api', 'saas.tenant'])->prefix('saas/tenant')->group(function () {
+        Route::get('/subscription', [SaasTenantSubscriptionController::class, 'show']);
+        Route::post('/subscription/checkout', [SaasTenantSubscriptionController::class, 'checkout'])->middleware('throttle:5,1');
         Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
         Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
     });
