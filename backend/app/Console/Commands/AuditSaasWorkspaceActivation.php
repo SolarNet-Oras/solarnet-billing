@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Services\SaasTenantWorkspaceActivationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 class AuditSaasWorkspaceActivation extends Command
 {
@@ -14,8 +15,9 @@ class AuditSaasWorkspaceActivation extends Command
 
     public function handle(SaasTenantWorkspaceActivationService $activation): int
     {
-        Artisan::call('saas:audit-module-isolation');
-        $isolation = json_decode(Artisan::output(), true);
+        $isolationOutput = new BufferedOutput();
+        Artisan::call('saas:audit-module-isolation', [], $isolationOutput);
+        $isolation = json_decode($isolationOutput->fetch(), true, flags: JSON_THROW_ON_ERROR);
         $canarySlugs = $activation->canarySlugs();
         $canaries = Tenant::query()->withoutGlobalScopes()
             ->whereIn('slug', $canarySlugs)
