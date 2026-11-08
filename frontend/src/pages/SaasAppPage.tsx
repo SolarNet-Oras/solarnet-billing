@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Building2, CheckCircle2, X } from 'lucide-react';
+import { Building2, CheckCircle2, Eye, EyeOff, X } from 'lucide-react';
 import FiberOpticBackground from '@/components/FiberOpticBackground';
 import service, { saasError, type TenantPlan } from '@/services/saasTenantService';
 
@@ -18,6 +18,7 @@ export default function SaasAppPage(): React.JSX.Element {
   const [notice, setNotice] = useState('');
   const [login, setLogin] = useState({ tenant: '', email: '', password: '' });
   const [rememberSignIn, setRememberSignIn] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [recovery, setRecovery] = useState({ tenant: query.get('tenant') || '', email: query.get('email') || '', password: '', password_confirmation: '' });
   const [staff, setStaff] = useState({ tenant: '', name: '', email: '', phone: '', password: '', password_confirmation: '' });
   const [form, setForm] = useState({ company_name: '', tenant_slug: '', owner_name: '', owner_email: '', owner_phone: '', password: '', password_confirmation: '', business_address: '', business_registration_number: '', plan: 'monthly-3499', terms_accepted: false });
@@ -109,10 +110,10 @@ export default function SaasAppPage(): React.JSX.Element {
         {error && <p role="alert" className="mb-5 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-100">{error}</p>}
         {notice && <p className="mb-5 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">{notice}</p>}
 
-        {mode === 'login' ? <form onSubmit={signIn} className="space-y-3.5">
+        {mode === 'login' ? <form onSubmit={signIn} autoComplete="on" className="space-y-3.5">
           <label className="block text-sm font-medium">Company login ID<input required name="organization" autoComplete="organization" className={`${field} mt-1`} placeholder="example-isp" value={login.tenant} onChange={(event) => setLogin({ ...login, tenant: event.target.value.toLowerCase() })} /></label>
           <label className="block text-sm font-medium">Email Address<input required name="username" type="email" autoComplete="username" className={`${field} mt-1`} placeholder="you@company.com" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} /></label>
-          <label className="block text-sm font-medium">Password<input required name="password" type="password" autoComplete="current-password" className={`${field} mt-1`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /></label>
+          <label className="block text-sm font-medium">Password<span className="relative mt-1 block"><input required name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" className={`${field} pr-12`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground hover:text-foreground" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button></span></label>
           <label className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 p-2.5 text-sm"><input type="checkbox" name="remember" checked={rememberSignIn} onChange={(event) => setRememberSignIn(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary"/><span><b className="block leading-tight text-foreground">Remember sign-in details on this device</b><span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">SolarNet remembers the company ID and email. Your browser or device password manager securely saves and autofills the password.</span></span></label>
           <button disabled={busy} className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"><Building2 className="mr-2 inline h-5 w-5" />{busy ? 'Signing in...' : 'Sign in'}</button>
           <div className="text-center text-sm">
