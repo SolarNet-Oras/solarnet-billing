@@ -39,6 +39,15 @@ class SaasTenantAuthController extends Controller
             ->where('slug', Str::lower(trim($data['tenant'])))
             ->where('status', 'active')
             ->first();
+
+        // SolarNet's primary workspace remains exclusively on the private
+        // billing domain. The shared tenant application is for subscribed
+        // ISP companies only, even when SolarNet memberships exist for data
+        // ownership and staff authorization metadata.
+        if ($tenant?->is_primary) {
+            return response()->json(['message' => 'The tenant or credentials are invalid.'], 401);
+        }
+
         $user = User::query()
             ->whereRaw('LOWER(email) = ?', [Str::lower(trim($data['email']))])
             ->where('is_active', true)

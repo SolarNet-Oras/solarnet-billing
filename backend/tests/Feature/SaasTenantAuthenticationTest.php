@@ -7,6 +7,7 @@ use App\Models\TenantMembership;
 use App\Models\TenantSubscription;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Tests\TestCase;
 
 class SaasTenantAuthenticationTest extends TestCase
@@ -20,31 +21,26 @@ class SaasTenantAuthenticationTest extends TestCase
         config()->set('saas.domains_enabled', true);
     }
 
-    public function test_primary_subscription_exempt_tenant_can_issue_a_tenant_bound_token(): void
+    public function test_primary_solarnet_tenant_cannot_sign_in_to_shared_tenant_application(): void
     {
         [$tenant, $user] = $this->membership(subscriptionExempt: true);
 
-        $response = $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [
+        $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [
             'tenant' => $tenant->slug,
             'email' => $user->email,
             'password' => 'password',
-        ]);
+        ])->assertUnauthorized();
 
-        $response->assertOk()
-            ->assertJsonPath('tenant.id', $tenant->id)
-            ->assertJsonPath('subscription_access.reason', 'subscription_exempt');
-
+        $token = JWTAuth::claims(['tenant_id' => $tenant->id])->fromUser($user);
         $this
-            ->withToken($response->json('access_token'))
+            ->withToken($token)
             ->getJson('https://app.solarnetportal.com/api/v1/saas/auth/me')
-            ->assertOk()
-            ->assertJsonPath('tenant.id', $tenant->id)
-            ->assertJsonPath('user.id', $user->id);
+            ->assertForbidden();
     }
 
     public function test_user_cannot_sign_in_to_a_tenant_without_an_active_membership(): void
     {
-        [$tenant, $user, $membership] = $this->membership(subscriptionExempt: true);
+        [$tenant, $user, $membership] = $this->membership();
         $membership->update(['status' => 'revoked']);
 
         $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/login', [

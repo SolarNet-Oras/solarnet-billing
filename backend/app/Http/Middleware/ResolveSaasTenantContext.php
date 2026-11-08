@@ -33,6 +33,13 @@ class ResolveSaasTenantContext
         }
 
         $tenant = Tenant::query()->with('subscription')->whereKey($tenantId)->where('status', 'active')->first();
+
+        if ($tenant?->is_primary) {
+            return new JsonResponse([
+                'message' => 'The primary SolarNet workspace is available only on the private billing domain.',
+            ], 403);
+        }
+
         $membership = $tenant ? TenantMembership::query()
             ->where('tenant_id', $tenant->id)
             ->where('user_id', $user->id)
