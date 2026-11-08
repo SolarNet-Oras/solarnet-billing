@@ -28,6 +28,10 @@ class SaasTenantSubscriptionTest extends TestCase
         config()->set('saas.workspace_activation_mode', 'canary');
         config()->set('saas.workspace_canary_tenants', ['branch-a']);
         config()->set('saas.workspace_canary_read_only', true);
+        // Test-only credentials let Http::fake exercise the QRPh workflow;
+        // no request can leave the process in these tests.
+        config()->set('services.paymongo.secret_key', 'sk_test_tenant_subscription');
+        config()->set('services.paymongo.public_key', 'pk_test_tenant_subscription');
     }
 
     public function test_owner_sees_tenant_super_administrator_trial_and_plan_summary(): void
