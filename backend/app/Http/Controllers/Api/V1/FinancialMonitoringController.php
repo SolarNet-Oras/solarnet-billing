@@ -22,7 +22,11 @@ class FinancialMonitoringController extends Controller
 
         $summary = $monitoring->summary($data['month'] ?? null);
         $tenant = $request->attributes->get('saas_tenant');
-        if ($tenant && ! $tenant->is_primary) $summary['paymongo_account_position'] = null;
+        if ($tenant && ! $tenant->is_primary) {
+            $summary['paymongo_account_position'] = null;
+            $summary['wallets']['paymongo'] = ['collections'=>0,'processing_fees'=>0,'cash_in'=>0,'transfers_in'=>0,'transfers_out'=>0,'expenses'=>0,'balance'=>0];
+            $summary['paymongo_settlements'] = ['gross_amount'=>0,'fee_amount'=>0,'net_amount'=>0,'confirmed_count'=>0,'pending_count'=>0,'overall'=>['gross_amount'=>0,'fee_amount'=>0,'net_amount'=>0,'confirmed_count'=>0,'tracking_started_at'=>null],'transactions'=>[]];
+        }
         return response()->json(['data' => $summary]);
     }
 

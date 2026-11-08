@@ -8,6 +8,9 @@ use App\Models\SaasTenantApplication;
 use App\Models\Tenant;
 use App\Models\TenantSubscriptionEvent;
 use App\Models\TenantSubscriptionPayment;
+use App\Models\TenantCashoutRequest;
+use App\Models\FinancialEntry;
+use App\Support\CurrentTenant;
 use App\Models\User;
 use App\Services\SaasTenantOnboardingService;
 use Illuminate\Http\JsonResponse;
@@ -57,6 +60,7 @@ class SaasPlatformController extends Controller
                     'provider' => $payment->provider, 'provider_reference' => $payment->provider_reference,
                     'verified_at' => $payment->verified_at, 'created_at' => $payment->created_at,
                 ]),
+            'cashout_requests' => TenantCashoutRequest::query()->with(['tenant:id,slug,name','requester:id,name,email'])->latest()->limit(100)->get(),
             'applications' => SaasTenantApplication::query()
                 ->with(['plan:id,code,name,amount,trial_days,grace_days', 'reviewer:id,name,email'])
                 ->latest()->limit(100)->get()
@@ -220,6 +224,24 @@ class SaasPlatformController extends Controller
         }, 3);
 
         return response()->json(['message' => 'Tenant status updated.', 'data' => $tenant->fresh()]);
+    }
+
+    public function markCashoutSent(Request $request, TenantCashoutRequest $cashout): JsonResponse
+    {
+        abort_unless($cashout->status==='pending',422,'This cash-out request is no longer pending.');
+        $data=$request->validate(['transfer_reference'=>'required|string|max:255','notes'=>'nullable|string|max:1000','confirmation'=>'required|string|max:255']);
+        $phrase='MARK CASHOUT '.Str::upper($cashout->id).' SENT';
+        abort_unless(hash_equals($phrase,$data['confirmation']),422,'The cash-out confirmation phrase is incorrect.');
+        $primary=app(CurrentTenant::class)->get();
+        DB::transaction(function()use($request,$cashout,$data,$primary):void{
+            $locked=TenantCashoutRequest::whereKey($cashout->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->status==='pending',422,'This cash-out request is no longer pending.');
+            $tenant=Tenant::findOrFail($locked->tenant_id);app(CurrentTenant::class)->set($tenant);
+            try{FinancialEntry::create(['type'=>'transfer','description'=>'SaaS-approved PayMongo cash-out to tenant GCash','category'=>'tenant_cashout','amount'=>$locked->amount,'entry_date'=>now()->toDateString(),'payment_method'=>'gcash','effect_type'=>'transfer','source_wallet'=>'paymongo','destination_wallet'=>'gcash','external_recipient_name'=>$locked->gcash_name,'external_recipient_institution'=>'GCash','external_recipient_account_last4'=>substr($locked->gcash_number,-4),'provider_reference_number'=>$data['transfer_reference'],'reference'=>$locked->id,'notes'=>$data['notes']??null,'idempotency_key'=>'tenant-cashout:'.$locked->id,'recorded_by'=>$request->user('api')->id]);}
+            finally{if($primary)app(CurrentTenant::class)->set($primary);else app(CurrentTenant::class)->clear();}
+            $locked->update(['status'=>'sent','reviewed_by'=>$request->user('api')->id,'transfer_reference'=>$data['transfer_reference'],'review_notes'=>$data['notes']??null,'sent_at'=>now()]);
+        },3);
+        return response()->json(['message'=>'Cash-out marked sent. The tenant PayMongo-to-GCash transfer is now reflected in Daily Operations.']);
     }
 
     /** @return array{slug:string,name:string,owner_email:string,plan:string,confirmation?:string} */

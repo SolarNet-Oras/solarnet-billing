@@ -110,6 +110,6 @@ return [
     'shared_platform_tables' => [
         'tenants', 'saas_subscription_plans', 'tenant_subscriptions',
         'tenant_subscription_payments', 'tenant_subscription_events',
-        'saas_tenant_applications',
+        'saas_tenant_applications', 'tenant_cashout_requests',
     ],
 ];

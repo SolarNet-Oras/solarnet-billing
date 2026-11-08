@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\V1\SaasDomainController;
 use App\Http\Controllers\Api\V1\SaasTenantAuthController;
 use App\Http\Controllers\Api\V1\SaasTenantStaffController;
 use App\Http\Controllers\Api\V1\SaasTenantSubscriptionController;
+use App\Http\Controllers\Api\V1\SaasTenantCashoutController;
 use App\Http\Controllers\Api\V1\SaasTenantApplicationController;
 use App\Http\Controllers\Api\V1\SaasPlatformAuthController;
 use App\Http\Controllers\Api\V1\SaasPlatformController;
@@ -73,6 +74,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/subscription', [SaasTenantSubscriptionController::class, 'show']);
         Route::post('/subscription/checkout', [SaasTenantSubscriptionController::class, 'checkout'])->middleware('throttle:5,1');
         Route::post('/subscription/qrph', [SaasTenantSubscriptionController::class, 'qrPh'])->middleware('throttle:5,1');
+        Route::get('/cashout-requests', [SaasTenantCashoutController::class, 'index']);
+        Route::post('/cashout-requests', [SaasTenantCashoutController::class, 'store'])->middleware('throttle:5,1');
         Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
         Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
     });
@@ -89,6 +92,7 @@ Route::prefix('v1')->group(function () {
         Route::patch('/plans/{plan}', [SaasPlatformController::class, 'updatePlan'])->middleware('throttle:10,1');
         Route::post('/applications/{application}/approve', [SaasPlatformController::class, 'approveApplication'])->middleware('throttle:5,1');
         Route::post('/applications/{application}/reject', [SaasPlatformController::class, 'rejectApplication'])->middleware('throttle:5,1');
+        Route::post('/cashout-requests/{cashout}/mark-sent', [SaasPlatformController::class, 'markCashoutSent'])->middleware('throttle:10,1');
     });
     // Public routes
     Route::get('/status', function () {

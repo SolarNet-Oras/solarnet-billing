@@ -29,6 +29,7 @@ type PaymongoPosition = { available: number | null; pending: number | null; tota
 type Data = { collections: Entry[]; cash_in: Entry[]; transfers: Entry[]; expenses: Entry[]; installation_incentives?:InstallationIncentive[]; wallets: Record<'cash' | 'gcash' | 'paymongo' | 'bpi' | 'landbank', Wallet>; wallet_balance_as_of?: string; paymongo_account_position?: PaymongoPosition; cash_count?: CashCount | null; cash_denomination_position?: CashPosition };
 
 function DailyOperationsPaymongoPosition({ position }: { position?: PaymongoPosition }): React.JSX.Element {
+  if (window.location.hostname.toLowerCase() === 'app.solarnetportal.com') return <></>;
   if (!position || position.status !== 'available') {
     return <div className="mt-3 rounded-xl border border-dashed border-border p-2.5 text-[11px] text-muted-foreground"><b className="text-foreground">Live PayMongo money:</b> {position?.message ?? 'Loading provider balance…'}</div>;
   }

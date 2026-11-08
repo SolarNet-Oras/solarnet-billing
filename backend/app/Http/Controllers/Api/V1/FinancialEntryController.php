@@ -94,6 +94,9 @@ class FinancialEntryController extends Controller
             }
         }
         foreach ($wallets as &$wallet) $wallet['balance'] = $wallet['collections'] + $wallet['cash_in'] + $wallet['transfers_in'] - $wallet['transfers_out'] - $wallet['expenses'] - $wallet['processing_fees'];
+        if ($request->attributes->get('saas_tenant') && ! $request->attributes->get('saas_tenant')->is_primary) {
+            $wallets['paymongo'] = ['collections'=>0.0,'processing_fees'=>0.0,'cash_in'=>0.0,'transfers_in'=>0.0,'transfers_out'=>0.0,'expenses'=>0.0,'balance'=>0.0];
+        }
 
         $cashCount = DailyCashCount::with('counter:id,name')
             ->whereDate('count_date', $end)
