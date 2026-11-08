@@ -57,8 +57,8 @@ const navItems: NavItem[] = [
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'cashier', 'office_admin'] },
   { name: 'Collection Monitoring', path: '/collection-monitoring', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
-  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin'] },
-  { name: 'Leave Requests', path: '/staff-leave', icon: CalendarClock, roles: ['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
+  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin', 'tenant_admin'] },
+  { name: 'Leave Requests', path: '/staff-leave', icon: CalendarClock, roles: ['super_admin', 'tenant_admin', 'tenant_staff_admin', 'tenant_collector', 'tenant_technician', 'tenant_collector_technician', 'tenant_staff', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
   { name: 'Financial Monitoring', path: '/financial-monitoring', icon: ChartNoAxesCombined, roles: ['super_admin', 'admin', 'cashier', 'accounting'] },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
   const tenantWorkspace = window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
-  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/unregistered-clients','/tickets','/sms-advisories','/network-devices','/reports','/install-staff-app','/subscription','/settings','/tenant-staff']);
+  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/staff-attendance','/staff-leave','/financial-monitoring','/service-plans','/unregistered-clients','/tickets','/sms-advisories','/network-devices','/reports','/install-staff-app','/subscription','/settings','/tenant-staff']);
 
   React.useEffect(() => {
     const loadBranding = (): void => {

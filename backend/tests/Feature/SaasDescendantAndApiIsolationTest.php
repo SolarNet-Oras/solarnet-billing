@@ -34,6 +34,8 @@ class SaasDescendantAndApiIsolationTest extends TestCase
             ->get('/_test/tenant-permission', fn () => response()->json(['allowed' => true]));
         Route::middleware(['auth:api', 'tenant.operational', 'role:super_admin'])
             ->get('/_test/tenant-super-admin', fn () => response()->json(['allowed' => true]));
+        Route::middleware(['auth:api', 'tenant.operational', 'role:super_admin|tenant_admin'])
+            ->get('/_test/tenant-owner', fn () => response()->json(['allowed' => true]));
     }
 
     public function test_descendant_queries_follow_the_owned_parent_tenant(): void
@@ -123,6 +125,10 @@ class SaasDescendantAndApiIsolationTest extends TestCase
         $this->withToken($token)
             ->getJson('https://app.solarnetportal.com/_test/tenant-super-admin')
             ->assertForbidden();
+
+        $this->withToken($token)
+            ->getJson('https://app.solarnetportal.com/_test/tenant-owner')
+            ->assertOk();
     }
 
     private function tenant(string $slug): Tenant

@@ -36,7 +36,10 @@ class CheckRole
 
         // Check if user has any of the required roles
         $tenantRoleAliases = $membership
-            ? config('saas_tenant_workspace.membership_role_aliases.'.(string) $membership->membership_role, [])
+            ? array_values(array_unique([
+                (string) $membership->membership_role,
+                ...config('saas_tenant_workspace.membership_role_aliases.'.(string) $membership->membership_role, []),
+            ]))
             : [];
 
         if (!$user->hasAnyRole($roleNames) && empty(array_intersect($roleNames, $tenantRoleAliases))) {

@@ -203,7 +203,7 @@ const App: React.FC = (): JSX.Element => {
               <Route path="/employee-device-controller" element={<ProtectedRoute allowedRoles={['super_admin']}><EmployeeDeviceControllerPage /></ProtectedRoute>} />
               <Route path="/ip-intelligence" element={<ProtectedRoute allowedRoles={['super_admin']}><IpIntelligencePage /></ProtectedRoute>} />
               <Route path="/config-onu" element={<ProtectedRoute allowedRoles={['super_admin']}><OnuConfigPage /></ProtectedRoute>} />
-              <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin']}><StaffAttendancePage /></ProtectedRoute>} />
+              <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['super_admin', 'tenant_admin']}><StaffAttendancePage /></ProtectedRoute>} />
               <Route path="/staff-leave" element={<ProtectedRoute><StaffLeavePage /></ProtectedRoute>} />
               <Route path="/attendance-app" element={<AttendanceAppPage />} />
               <Route path="/attendance-app/" element={<AttendanceAppPage />} />

@@ -155,6 +155,8 @@ Route::prefix('v1')->group(function () {
             Route::post('onu-remote-sessions', [OnuRemoteAccessController::class, 'store'])->middleware('throttle:10,1');
             Route::delete('onu-remote-sessions/{onuRemoteSession}', [OnuRemoteAccessController::class, 'destroy'])->middleware('throttle:20,1');
             Route::post('ip-intelligence/lookup', [IpIntelligenceController::class, 'lookup'])->middleware('throttle:30,1');
+        });
+        Route::middleware('role:super_admin|tenant_admin')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
             Route::get('staff-attendance/payroll/{payroll}', [StaffAttendanceController::class, 'payrollPayslip']);
             Route::post('staff-attendance/payroll/{payroll}/release', [StaffAttendanceController::class, 'releasePayroll'])->middleware('throttle:10,1');
