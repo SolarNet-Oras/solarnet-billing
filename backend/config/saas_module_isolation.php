@@ -23,6 +23,12 @@ use App\Models\Ticket;
 use App\Models\WireguardPeer;
 
 return [
+    // Root ownership is only one stage. Keep tenant navigation unavailable
+    // until every descendant/history table and API path is tenant-scoped.
+    'workspace_release_blockers' => [
+        'descendant_operational_records_not_yet_tenant_scoped',
+        'operational_api_authorization_not_yet_verified',
+    ],
     'modules' => [
         'dashboard' => ['roots' => []],
         'customers' => ['roots' => [['table' => 'customers', 'model' => Customer::class]]],

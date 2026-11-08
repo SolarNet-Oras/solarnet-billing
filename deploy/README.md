@@ -344,3 +344,16 @@ Public ISP applications use two additional independent gates:
 `SAAS_TENANT_APP_ENABLED` for approved tenant sign-in. Neither gate enables
 global tenant query enforcement or exposes legacy billing APIs. Applications
 remain pending until an authenticated platform administrator approves them.
+### Operational tenant ownership backfill (staged)
+
+After migration `2026_11_06_000003` has run, audit the legacy operational
+roots without changing records:
+
+```bash
+php artisan saas:backfill-solarnet-operational-ownership
+```
+
+Execution is transactional and requires both `--execute` and the exact
+confirmation phrase printed by the command's deployment procedure. Completing
+this root backfill does **not** enable tenant workspace navigation; descendant
+operational tables and API authorization remain explicit release blockers.

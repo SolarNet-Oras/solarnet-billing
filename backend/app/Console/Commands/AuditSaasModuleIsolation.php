@@ -46,9 +46,11 @@ class AuditSaasModuleIsolation extends Command
             $allReady = $allReady && $moduleReady;
         }
 
-        $allReady = collect($modules)
+        $rootIsolationReady = collect($modules)
             ->except(['dashboard', 'install_app'])
             ->every(fn (array $module): bool => $module['ready']);
+        $releaseBlockers = array_values(config('saas_module_isolation.workspace_release_blockers', []));
+        $allReady = $rootIsolationReady && $releaseBlockers === [];
         $modules['dashboard']['ready'] = $allReady;
         $modules['install_app']['ready'] = $allReady;
 
@@ -56,6 +58,8 @@ class AuditSaasModuleIsolation extends Command
             'mode' => 'audit',
             'read_only' => true,
             'tenant_workspace_ready' => $allReady,
+            'operational_roots_ready' => $rootIsolationReady,
+            'workspace_release_blockers' => $releaseBlockers,
             'modules' => $modules,
             'membership_owned_tables' => config('saas_module_isolation.membership_owned'),
             'shared_platform_tables' => config('saas_module_isolation.shared_platform_tables'),

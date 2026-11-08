@@ -31,6 +31,10 @@ class SaasModuleIsolationAuditTest extends TestCase
 
         $this->assertTrue($report['read_only']);
         $this->assertFalse($report['tenant_workspace_ready']);
+        $this->assertContains(
+            'descendant_operational_records_not_yet_tenant_scoped',
+            $report['workspace_release_blockers']
+        );
         $this->assertSame(1, $report['modules']['logs_reports']['roots'][0]['unassigned_records']);
         $this->assertFalse($report['safety']['records_changed']);
         $this->assertSame('keep_tenant_operational_navigation_staged', $report['action']);
