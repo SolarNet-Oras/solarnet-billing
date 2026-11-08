@@ -9,6 +9,7 @@ use App\Support\TenantRuntimeNamespace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use LogicException;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 class SaasWorkspaceActivationFoundationTest extends TestCase
@@ -59,8 +60,9 @@ class SaasWorkspaceActivationFoundationTest extends TestCase
     public function test_activation_audit_is_read_only_and_does_not_enable_navigation(): void
     {
         config()->set('saas.workspace_activation_mode', 'staged');
-        $this->assertSame(0, Artisan::call('saas:audit-workspace-activation'));
-        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $output = new BufferedOutput();
+        $this->assertSame(0, Artisan::call('saas:audit-workspace-activation', [], $output));
+        $report = json_decode($output->fetch(), true, flags: JSON_THROW_ON_ERROR);
 
         $this->assertTrue($report['read_only']);
         $this->assertFalse($report['production_access_enabled']);
