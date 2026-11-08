@@ -10,6 +10,7 @@ use App\Models\TransactionDefinition;
 use App\Models\StaffCashAdvance;
 use App\Models\User;
 use App\Models\InstallationIncentivePool;
+use App\Models\Setting;
 use App\Services\CashDenominationService;
 use App\Services\PaymongoAccountPositionService;
 use Illuminate\Http\JsonResponse;
@@ -116,6 +117,10 @@ class FinancialEntryController extends Controller
             'transfers' => $entries->where('effect_type', 'transfer')->values(),
             'expenses' => $entries->filter(fn (FinancialEntry $entry) => ($entry->effect_type ?: ($entry->type === 'expense' ? 'expense' : 'cash_in')) === 'expense')->values(),
             'wallets' => $wallets,
+            'enabled_wallets' => [
+                'bpi' => (bool) Setting::get('payments.bpi_enabled', true),
+                'landbank' => (bool) Setting::get('payments.landbank_enabled', true),
+            ],
             // Provider-reported money is kept separate from the accounting
             // ledger. In particular, pending settlement is not cash-outable.
             'paymongo_account_position' => ($request->attributes->get('saas_tenant') && ! $request->attributes->get('saas_tenant')->is_primary)
@@ -170,6 +175,16 @@ class FinancialEntryController extends Controller
         if (!$request->boolean('include_inactive')) $query->where('active', true);
         if ($request->filled('type')) $query->where('type', $request->string('type'));
         if ($request->filled('description')) $query->where('description', $request->string('description'));
+        if (! Setting::get('payments.bpi_enabled', true)) {
+            $query->whereNotIn('payment_method', ['bank_bpi', 'deposit_to_bpi'])
+                ->where(fn ($query) => $query->whereNull('source_wallet')->orWhere('source_wallet', '!=', 'bpi'))
+                ->where(fn ($query) => $query->whereNull('destination_wallet')->orWhere('destination_wallet', '!=', 'bpi'));
+        }
+        if (! Setting::get('payments.landbank_enabled', true)) {
+            $query->whereNotIn('payment_method', ['bank_landbank', 'deposit_to_landbank'])
+                ->where(fn ($query) => $query->whereNull('source_wallet')->orWhere('source_wallet', '!=', 'landbank'))
+                ->where(fn ($query) => $query->whereNull('destination_wallet')->orWhere('destination_wallet', '!=', 'landbank'));
+        }
         return response()->json(['data' => $query->orderBy('sort_order')->get(['id', 'type', 'description', 'payment_method', 'effect_type', 'source_wallet', 'destination_wallet', 'active'])]);
     }
 
@@ -197,6 +212,7 @@ class FinancialEntryController extends Controller
         $data['effect_type'] ??= $data['type'] === 'Cash In'
             ? (empty($data['source_wallet']) ? 'cash_in' : 'transfer')
             : 'expense';
+        $this->assertWalletEnabled($data['payment_method'], $data['source_wallet'] ?? null);
 
         if (in_array($data['effect_type'], ['cash_in', 'transfer'], true)) {
             $destination = $this->walletFor($data['payment_method']);
@@ -253,6 +269,7 @@ class FinancialEntryController extends Controller
         ]);
         $definition = TransactionDefinition::query()->whereKey($data['transaction_definition_id'])->where('active', true)->first();
         if (!$definition) return response()->json(['message' => 'The selected transaction type, description, and payment method is not valid.'], 422);
+        $this->assertWalletEnabled($definition->payment_method, $definition->source_wallet, $definition->destination_wallet);
         $cashAdvanceEmployee = null;
         if ($definition->type === 'C/A') {
             abort_unless(filled($data['employee_id'] ?? null), 422, 'Select the employee receiving this cash advance.');
@@ -327,6 +344,17 @@ class FinancialEntryController extends Controller
         return response()->json(['data' => $entry], $entry->wasRecentlyCreated ? 201 : 200);
     }
 
+    private function assertWalletEnabled(?string $method, ?string $source = null, ?string $destination = null): void
+    {
+        $wallets = [$method, $source, $destination];
+        if (! Setting::get('payments.bpi_enabled', true) && collect($wallets)->intersect(['bpi', 'bank_bpi', 'deposit_to_bpi'])->isNotEmpty()) {
+            throw ValidationException::withMessages(['payment_method' => 'BPI is disabled in tenant payment settings.']);
+        }
+        if (! Setting::get('payments.landbank_enabled', true) && collect($wallets)->intersect(['landbank', 'bank_landbank', 'deposit_to_landbank'])->isNotEmpty()) {
+            throw ValidationException::withMessages(['payment_method' => 'LandBank is disabled in tenant payment settings.']);
+        }
+    }
+
     public function cashTopUp(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -342,6 +370,7 @@ class FinancialEntryController extends Controller
             'cash_breakdown.*.kind' => ['required_with:cash_breakdown', 'in:bill,coin'],
             'cash_breakdown.*.count' => ['required_with:cash_breakdown', 'integer', 'min:0', 'max:100000'],
         ]);
+        $this->assertWalletEnabled($data['destination_wallet']);
 
         if ($data['destination_wallet'] === 'cash' && isset($data['cash_breakdown'])) {
             $data['cash_breakdown'] = app(CashDenominationService::class)->normalize($data['cash_breakdown']);

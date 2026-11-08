@@ -40,6 +40,12 @@ class SettingsController extends Controller
         'billing.auto_suspend_days'   => ['cast' => 'int',   'group' => 'suspension', 'label' => 'Grace period (full days after due date)', 'default' => 5],
         'billing.sms_reminder_enabled' => ['cast' => 'bool', 'group' => 'billing', 'label' => 'Billing SMS reminder (one time, 7 days before due)', 'default' => true],
 
+        // Tenant wallets and cash-out recipient
+        'payments.gcash_recipient_name' => ['cast' => 'string', 'group' => 'payments', 'label' => 'GCash Recipient Name', 'default' => ''],
+        'payments.gcash_recipient_number' => ['cast' => 'string', 'group' => 'payments', 'label' => 'GCash Recipient Number', 'default' => ''],
+        'payments.bpi_enabled' => ['cast' => 'bool', 'group' => 'payments', 'label' => 'Enable BPI Wallet', 'default' => true],
+        'payments.landbank_enabled' => ['cast' => 'bool', 'group' => 'payments', 'label' => 'Enable LandBank Wallet', 'default' => true],
+
         // AI
         'ai.enabled'          => ['cast' => 'bool',   'group' => 'ai', 'label' => 'AI Assistant enabled', 'default' => true],
         'ai.model'            => ['cast' => 'string', 'group' => 'ai', 'label' => 'OpenAI model (server setting)', 'default' => 'gpt-5.4-mini'],
@@ -139,6 +145,9 @@ class SettingsController extends Controller
             }
             if ($key === 'company.facebook_url' && $value !== '' && !filter_var($value, FILTER_VALIDATE_URL)) {
                 return response()->json(['status' => 'error', 'message' => 'Facebook Support Page must be a valid URL.'], 422);
+            }
+            if ($key === 'payments.gcash_recipient_number' && $value !== '' && !preg_match('/^09\d{9}$/', (string) $value)) {
+                return response()->json(['status' => 'error', 'message' => 'GCash Recipient Number must use the 09XXXXXXXXX format.'], 422);
             }
             Setting::put($key, $value, $meta['cast']);
             $applied[] = $key;

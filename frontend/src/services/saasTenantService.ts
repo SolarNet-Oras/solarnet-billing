@@ -20,6 +20,7 @@ export default{
   async startSubscriptionQrPh():Promise<{payment_id:string;reference:string;amount:number;currency:string;qr_image_url:string;expires_at:string}>{const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post('/tenant/subscription/qrph',{}, {headers:{Authorization:`Bearer ${token}`}})).data.data;},
   async cashouts(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/tenant/cashout-requests',{headers:{Authorization:`Bearer ${token}`}})).data.data;},
   async requestCashout(payload:{amount:number;gcash_name:string;gcash_number:string}){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post('/tenant/cashout-requests',payload,{headers:{Authorization:`Bearer ${token}`}})).data;},
+  async updateCashoutSettings(payload:{gcash_name:string;gcash_number:string;bpi_enabled:boolean;landbank_enabled:boolean}){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.put('/tenant/cashout-settings',payload,{headers:{Authorization:`Bearer ${token}`}})).data;},
   async me(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/auth/me',{headers:{Authorization:`Bearer ${token}`}})).data;},
   logout(){sessionStorage.removeItem(SAAS_TENANT_TOKEN_KEY);},
 };

@@ -94,6 +94,25 @@ class SaasTenantSubscriptionTest extends TestCase
         $this->assertNull($summary['paymongo_account_position']);
     }
 
+    public function test_owner_can_save_isolated_cashout_recipient_and_bank_availability(): void
+    {
+        [, , $token] = $this->workspace();
+
+        $this->withToken($token)->putJson('https://app.solarnetportal.com/api/v1/saas/tenant/cashout-settings', [
+            'gcash_name' => 'Luke Mejares',
+            'gcash_number' => '09171234567',
+            'bpi_enabled' => false,
+            'landbank_enabled' => true,
+        ])->assertOk();
+
+        $this->withToken($token)->getJson('https://app.solarnetportal.com/api/v1/saas/tenant/cashout-requests')
+            ->assertOk()
+            ->assertJsonPath('data.recipient.gcash_name', 'Luke Mejares')
+            ->assertJsonPath('data.recipient.gcash_number', '09171234567')
+            ->assertJsonPath('data.payment_methods.bpi_enabled', false)
+            ->assertJsonPath('data.payment_methods.landbank_enabled', true);
+    }
+
     private function workspace(): array
     {
         $plan = SaasSubscriptionPlan::create(['code' => 'monthly-3499', 'name' => 'Monthly ISP Subscription', 'amount' => 3499, 'currency' => 'PHP', 'billing_interval' => 'monthly', 'trial_days' => 7, 'grace_days' => 3, 'is_active' => true]);

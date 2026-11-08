@@ -76,6 +76,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/subscription/qrph', [SaasTenantSubscriptionController::class, 'qrPh'])->middleware('throttle:5,1');
         Route::get('/cashout-requests', [SaasTenantCashoutController::class, 'index']);
         Route::post('/cashout-requests', [SaasTenantCashoutController::class, 'store'])->middleware('throttle:5,1');
+        Route::put('/cashout-settings', [SaasTenantCashoutController::class, 'updateSettings'])->middleware('throttle:10,1');
         Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
         Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
     });
