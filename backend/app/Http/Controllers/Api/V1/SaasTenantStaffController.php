@@ -57,6 +57,7 @@ class SaasTenantStaffController extends Controller
         $data = $request->validate([
             'tenant' => ['required','string','max:100'], 'name' => ['required','string','max:255'],
             'email' => ['required','email','max:255'], 'phone' => ['nullable','string','max:40'],
+            'requested_role' => ['sometimes','in:tenant_staff_admin,tenant_collector,tenant_technician,tenant_collector_technician'],
             'password' => ['required','confirmed',PasswordRule::min(10)->letters()->numbers()],
         ]);
         $tenant = $this->tenant($data['tenant']);
@@ -64,7 +65,7 @@ class SaasTenantStaffController extends Controller
         $email = Str::lower(trim($data['email']));
         $accessRequest = SaasTenantStaffAccessRequest::query()->updateOrCreate(
             ['tenant_id' => $tenant->id, 'email' => $email],
-            ['name' => trim($data['name']), 'phone' => $data['phone'] ?? null, 'password_encrypted' => Crypt::encryptString($data['password']), 'status' => 'pending', 'reviewed_by' => null, 'reviewed_at' => null, 'review_notes' => null]
+            ['name' => trim($data['name']), 'phone' => $data['phone'] ?? null, 'requested_role' => $data['requested_role'] ?? 'tenant_staff_admin', 'password_encrypted' => Crypt::encryptString($data['password']), 'status' => 'pending', 'reviewed_by' => null, 'reviewed_at' => null, 'review_notes' => null]
         );
         return response()->json(['message' => 'Staff access request submitted to the Tenant Super Administrator.', 'request_id' => $accessRequest->id], 201);
     }
@@ -73,7 +74,7 @@ class SaasTenantStaffController extends Controller
     {
         $this->authorizeTenantAdmin($request);
         $tenant = $request->attributes->get('saas_tenant');
-        return response()->json(['data' => SaasTenantStaffAccessRequest::query()->where('tenant_id', $tenant->id)->orderByDesc('created_at')->get(['id','name','email','phone','status','created_at','reviewed_at'])]);
+        return response()->json(['data' => SaasTenantStaffAccessRequest::query()->where('tenant_id', $tenant->id)->orderByDesc('created_at')->get(['id','name','email','phone','requested_role','status','created_at','reviewed_at'])]);
     }
 
     public function review(Request $request, SaasTenantStaffAccessRequest $accessRequest): JsonResponse
@@ -94,7 +95,7 @@ class SaasTenantStaffController extends Controller
                 }
                 TenantMembership::query()->updateOrCreate(
                     ['tenant_id' => $tenant->id, 'user_id' => $user->id],
-                    ['membership_role' => 'tenant_staff', 'status' => 'active', 'is_owner' => false]
+                    ['membership_role' => $accessRequest->requested_role, 'status' => 'active', 'is_owner' => false]
                 );
             }
             $accessRequest->update(['status' => $data['decision'] === 'approve' ? 'approved' : 'rejected', 'reviewed_by' => $request->user('api')->id, 'reviewed_at' => now(), 'review_notes' => $data['notes'] ?? null]);

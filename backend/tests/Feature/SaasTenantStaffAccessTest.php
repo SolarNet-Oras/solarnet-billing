@@ -33,6 +33,7 @@ class SaasTenantStaffAccessTest extends TestCase
         $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/staff-access-request', [
             'tenant' => 'branch-a', 'name' => 'Branch Staff', 'email' => 'staff@branch.test',
             'phone' => '09170000000', 'password' => 'staffpass123', 'password_confirmation' => 'staffpass123',
+            'requested_role' => 'tenant_collector_technician',
         ])->assertCreated();
 
         $request = SaasTenantStaffAccessRequest::firstOrFail();
@@ -43,9 +44,23 @@ class SaasTenantStaffAccessTest extends TestCase
             ->assertOk();
 
         $staff = User::where('email', 'staff@branch.test')->firstOrFail();
-        $this->assertDatabaseHas('tenant_user', ['tenant_id' => $tenant->id, 'user_id' => $staff->id, 'membership_role' => 'tenant_staff', 'status' => 'active', 'is_owner' => false]);
+        $this->assertSame('tenant_collector_technician', $request->requested_role);
+        $this->assertDatabaseHas('tenant_user', ['tenant_id' => $tenant->id, 'user_id' => $staff->id, 'membership_role' => 'tenant_collector_technician', 'status' => 'active', 'is_owner' => false]);
         $this->assertDatabaseCount('tenant_subscriptions', 0);
         $this->assertNotSame($owner->id, $staff->id);
+    }
+
+    public function test_staff_request_rejects_an_unknown_role(): void
+    {
+        $this->owner();
+
+        $this->postJson('https://app.solarnetportal.com/api/v1/saas/auth/staff-access-request', [
+            'tenant' => 'branch-a', 'name' => 'Unsafe Role', 'email' => 'unsafe@branch.test',
+            'requested_role' => 'tenant_admin',
+            'password' => 'staffpass123', 'password_confirmation' => 'staffpass123',
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseMissing('saas_tenant_staff_access_requests', ['email' => 'unsafe@branch.test']);
     }
 
     public function test_password_recovery_only_notifies_an_active_member_of_the_named_tenant(): void

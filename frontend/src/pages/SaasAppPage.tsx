@@ -20,7 +20,7 @@ export default function SaasAppPage(): React.JSX.Element {
   const [rememberSignIn, setRememberSignIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [recovery, setRecovery] = useState({ tenant: query.get('tenant') || '', email: query.get('email') || '', password: '', password_confirmation: '' });
-  const [staff, setStaff] = useState({ tenant: '', name: '', email: '', phone: '', password: '', password_confirmation: '' });
+  const [staff, setStaff] = useState({ tenant: '', name: '', email: '', phone: '', requested_role: 'tenant_staff_admin', password: '', password_confirmation: '' });
   const [form, setForm] = useState({ company_name: '', tenant_slug: '', owner_name: '', owner_email: '', owner_phone: '', password: '', password_confirmation: '', business_address: '', business_registration_number: '', plan: 'monthly-3499', terms_accepted: false });
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function SaasAppPage(): React.JSX.Element {
     event.preventDefault(); setBusy(true); setError('');
     try {
       const result = await service.requestStaffAccess(staff);
-      setNotice(result.message); setStaff({ ...staff, name: '', email: '', phone: '', password: '', password_confirmation: '' });
+      setNotice(result.message); setStaff({ ...staff, name: '', email: '', phone: '', requested_role: 'tenant_staff_admin', password: '', password_confirmation: '' });
     } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
   }
 
@@ -132,6 +132,7 @@ export default function SaasAppPage(): React.JSX.Element {
           <label className="text-sm font-medium">Full name<input required className={`${field} mt-2`} value={staff.name} onChange={(event) => setStaff({ ...staff, name: event.target.value })} /></label>
           <label className="text-sm font-medium">Email<input required type="email" className={`${field} mt-2`} value={staff.email} onChange={(event) => setStaff({ ...staff, email: event.target.value })} /></label>
           <label className="text-sm font-medium sm:col-span-2">Phone (optional)<input className={`${field} mt-2`} value={staff.phone} onChange={(event) => setStaff({ ...staff, phone: event.target.value })} /></label>
+          <label className="text-sm font-medium sm:col-span-2">Requested staff role<select required className={`${field} mt-2`} value={staff.requested_role} onChange={(event) => setStaff({ ...staff, requested_role: event.target.value })}><option value="tenant_staff_admin">Admin Staff</option><option value="tenant_collector">Collector</option><option value="tenant_technician">Technician</option><option value="tenant_collector_technician">Collector + Technician</option></select><span className="mt-1 block text-xs text-muted-foreground">The Tenant Super Administrator reviews this role before access is granted.</span></label>
           <label className="text-sm font-medium">Password<input required minLength={10} type="password" className={`${field} mt-2`} value={staff.password} onChange={(event) => setStaff({ ...staff, password: event.target.value })} /></label>
           <label className="text-sm font-medium">Confirm password<input required minLength={10} type="password" className={`${field} mt-2`} value={staff.password_confirmation} onChange={(event) => setStaff({ ...staff, password_confirmation: event.target.value })} /></label>
           <button disabled={busy} className="rounded-md bg-primary p-2.5 font-semibold text-primary-foreground sm:col-span-2">{busy ? 'Submitting...' : 'Submit for company approval'}</button>

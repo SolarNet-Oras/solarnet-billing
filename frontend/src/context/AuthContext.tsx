@@ -7,6 +7,14 @@ import saasTenantService, { SAAS_TENANT_TOKEN_KEY } from '@/services/saasTenantS
 
 const isTenantApp = (): boolean => typeof window !== 'undefined' && window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
 const tenantAdminPermissions = ['view-customers','create-customers','edit-customers','view-invoices','create-invoices','edit-invoices','download-invoices','view-payments','create-payments','view-service-plans','create-service-plans','edit-service-plans','view-tickets','create-tickets','edit-tickets','assign-tickets','close-tickets','view-routers','create-routers','edit-routers','delete-routers','manage-routers','view-dhcp','sync-dhcp','manage-dhcp','view-reports','view-settings','edit-settings'];
+const tenantRoleProfiles: Record<string, { roles: string[]; permissions: string[] }> = {
+  tenant_admin: { roles: ['tenant_admin','admin','office_admin','cashier','accounting','viewer'], permissions: tenantAdminPermissions },
+  tenant_staff_admin: { roles: ['tenant_staff_admin','admin','office_admin','cashier','viewer'], permissions: tenantAdminPermissions.filter((permission) => !['create-routers','edit-routers','delete-routers','manage-routers','sync-dhcp','manage-dhcp','edit-settings'].includes(permission)) },
+  tenant_collector: { roles: ['tenant_collector','collector','viewer'], permissions: ['view-customers','view-invoices','download-invoices','view-payments','create-payments','view-tickets','create-tickets'] },
+  tenant_technician: { roles: ['tenant_technician','technician','viewer'], permissions: ['view-customers','edit-customers','view-service-plans','view-tickets','create-tickets','edit-tickets','close-tickets','view-routers','view-dhcp'] },
+  tenant_collector_technician: { roles: ['tenant_collector_technician','collector','technician','viewer'], permissions: ['view-customers','edit-customers','view-invoices','download-invoices','view-payments','create-payments','view-service-plans','view-tickets','create-tickets','edit-tickets','close-tickets','view-routers','view-dhcp'] },
+  tenant_staff: { roles: ['tenant_staff','viewer'], permissions: ['view-customers','view-invoices','download-invoices','view-payments','view-service-plans','view-tickets','create-tickets'] },
+};
 
 // ============================================================================
 // Types
@@ -54,15 +62,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const userData = isTenantApp()
-        ? await saasTenantService.me().then((result) => ({
-            ...result.user,
-            role: result.membership.membership_role,
-            roles: result.membership.membership_role === 'tenant_admin'
-              ? [result.membership.membership_role, 'admin', 'office_admin', 'cashier', 'accounting', 'viewer']
-              : [result.membership.membership_role, 'viewer'],
-            permissions: result.membership.membership_role === 'tenant_admin' ? tenantAdminPermissions : tenantAdminPermissions.filter((permission) => permission.startsWith('view-') || permission === 'download-invoices' || permission === 'create-tickets'),
-            email_verified_at: null, created_at: '', updated_at: '',
-          } as User))
+        ? await saasTenantService.me().then((result) => {
+            const membershipRole = result.membership.membership_role;
+            const profile = tenantRoleProfiles[membershipRole] || tenantRoleProfiles.tenant_staff;
+            return {
+              ...result.user,
+              role: membershipRole,
+              roles: profile.roles,
+              permissions: profile.permissions,
+              email_verified_at: null, created_at: '', updated_at: '',
+            } as User;
+          })
         : await getCurrentUser();
       setUser(userData);
     } catch (error) {
