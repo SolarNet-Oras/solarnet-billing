@@ -48,6 +48,7 @@ interface NavItem {
   icon: LucideIcon;
   permission?: string;
   roles?: string[];
+  tenantBadge?: string;
 }
 
 const navItems: NavItem[] = [
@@ -57,8 +58,8 @@ const navItems: NavItem[] = [
   { name: 'Remittances', path: '/remittances', icon: Banknote, roles: ['collector', 'super_admin', 'admin', 'cashier', 'office_admin'] },
   { name: 'Collection Monitoring', path: '/collection-monitoring', icon: MapPinned, roles: ['super_admin', 'admin', 'office_admin'] },
   { name: 'Daily Operations', path: '/operations', icon: WalletCards, permission: 'view-payments' },
-  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin', 'tenant_admin'] },
-  { name: 'Leave Requests', path: '/staff-leave', icon: CalendarClock, roles: ['super_admin', 'tenant_admin', 'tenant_staff_admin', 'tenant_collector', 'tenant_technician', 'tenant_collector_technician', 'tenant_staff', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
+  { name: 'Attendance & Payroll', path: '/staff-attendance', icon: CalendarClock, roles: ['super_admin', 'tenant_admin'], tenantBadge: 'Soon' },
+  { name: 'Leave Requests', path: '/staff-leave', icon: CalendarClock, roles: ['super_admin', 'tenant_admin', 'tenant_staff_admin', 'tenant_collector', 'tenant_technician', 'tenant_collector_technician', 'tenant_staff', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'], tenantBadge: 'Soon' },
   { name: 'Financial Monitoring', path: '/financial-monitoring', icon: ChartNoAxesCombined, roles: ['super_admin', 'admin', 'cashier', 'accounting'] },
   { name: 'Service Plans', path: '/service-plans', icon: Package, permission: 'view-service-plans' },
   { name: 'Unregistered', path: '/unregistered-clients', icon: Wifi, permission: 'view-customers' },
@@ -159,7 +160,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 }`}>
                   <Icon className="h-4 w-4" strokeWidth={1.8} />
                 </span>
-                <span>{label}</span>
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                {tenantWorkspace && item.tenantBadge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${active ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{item.tenantBadge}</span>}
               </Link>
             );
           })}
