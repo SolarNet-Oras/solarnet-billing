@@ -6,7 +6,7 @@ import { logger } from '@/lib/logger';
 import saasTenantService, { SAAS_TENANT_TOKEN_KEY } from '@/services/saasTenantService';
 
 const isTenantApp = (): boolean => typeof window !== 'undefined' && window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
-const tenantAdminPermissions = ['view-customers','create-customers','edit-customers','view-invoices','create-invoices','edit-invoices','download-invoices','view-payments','create-payments','view-service-plans','create-service-plans','edit-service-plans','view-tickets','create-tickets','edit-tickets','assign-tickets','close-tickets','view-reports','view-settings','edit-settings'];
+const tenantAdminPermissions = ['view-customers','create-customers','edit-customers','view-invoices','create-invoices','edit-invoices','download-invoices','view-payments','create-payments','view-service-plans','create-service-plans','edit-service-plans','view-tickets','create-tickets','edit-tickets','assign-tickets','close-tickets','view-routers','create-routers','edit-routers','delete-routers','manage-routers','view-dhcp','sync-dhcp','manage-dhcp','view-reports','view-settings','edit-settings'];
 
 // ============================================================================
 // Types

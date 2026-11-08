@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
   const tenantWorkspace = window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
-  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/tickets','/reports','/install-staff-app','/subscription','/settings','/tenant-staff']);
+  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/unregistered-clients','/tickets','/sms-advisories','/network-devices','/reports','/install-staff-app','/subscription','/settings','/tenant-staff']);
 
   React.useEffect(() => {
     const loadBranding = (): void => {

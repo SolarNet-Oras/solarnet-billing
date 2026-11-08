@@ -17,6 +17,9 @@ import SettingsPage from '@/pages/SettingsPage';
 import StaffAppInstallPage from '@/pages/StaffAppInstallPage';
 import TenantStaffAccessPage from '@/pages/TenantStaffAccessPage';
 import TenantSubscriptionPage from '@/pages/TenantSubscriptionPage';
+import { NetworkDevicesPage } from '@/pages/NetworkDevicesPage';
+import SmsAdvisoryPage from '@/pages/SmsAdvisoryPage';
+import UnregisteredLeasesPage from '@/pages/UnregisteredLeasesPage';
 import { SAAS_TENANT_TOKEN_KEY } from '@/services/saasTenantService';
 
 const protect = (page: ReactNode): React.JSX.Element => <ProtectedRoute>{page}</ProtectedRoute>;
@@ -35,7 +38,10 @@ export default function TenantWorkspaceRoutes(): React.JSX.Element {
     <Route path="/operations" element={protect(<OperationsLedgerPage />)} />
     <Route path="/financial-monitoring" element={protect(<FinancialMonitoringPage />)} />
     <Route path="/service-plans" element={protect(<ServicePlansPage />)} />
+    <Route path="/unregistered-clients" element={protect(<UnregisteredLeasesPage />)} />
     <Route path="/tickets" element={protect(<TicketsPage />)} />
+    <Route path="/sms-advisories" element={protect(<SmsAdvisoryPage />)} />
+    <Route path="/network-devices" element={protect(<NetworkDevicesPage />)} />
     <Route path="/reports" element={protect(<ReportsPage />)} />
     <Route path="/settings" element={protect(<SettingsPage />)} />
     <Route path="/tenant-staff" element={protect(<TenantStaffAccessPage />)} />

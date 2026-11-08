@@ -73,7 +73,7 @@ const ticketCategoryLabel = (ticket: Ticket): string => {
   if (ticket.ticket_type === 'repair') return 'Repair';
   if (ticket.ticket_type === 'maintenance') return 'Maintenance';
   if (ticket.ticket_type === 'expansion') return 'Network expansion';
-  return ticket.category.replace('_', ' ');
+  return String(ticket.category || 'general').replaceAll('_', ' ');
 };
 
 const TicketsPage: React.FC = () => {
@@ -463,7 +463,8 @@ const TicketsPage: React.FC = () => {
     [customers, formData.customer_id],
   );
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status?: string | null) => {
+    const safeStatus = status || 'open';
     const badges = {
       unclaimed: { bg: 'bg-slate-100', text: 'text-slate-700', icon: AlertCircle },
       claimed: { bg: 'bg-blue-100', text: 'text-blue-800', icon: Clock },
@@ -476,18 +477,19 @@ const TicketsPage: React.FC = () => {
       registered: { bg: 'bg-emerald-100', text: 'text-emerald-800', icon: CheckCircle },
     };
 
-    const badge = badges[status as keyof typeof badges] || badges.open;
+    const badge = badges[safeStatus as keyof typeof badges] || badges.open;
     const Icon = badge.icon;
 
     return (
       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
         <Icon className="w-3 h-3" />
-        {status.toUpperCase().replace('_', ' ')}
+        {safeStatus.toUpperCase().replaceAll('_', ' ')}
       </span>
     );
   };
 
-  const getPriorityBadge = (priority: string) => {
+  const getPriorityBadge = (priority?: string | null) => {
+    const safePriority = priority || 'medium';
     const badges = {
       low: { bg: 'bg-gray-100', text: 'text-gray-700' },
       medium: { bg: 'bg-blue-100', text: 'text-blue-700' },
@@ -495,11 +497,11 @@ const TicketsPage: React.FC = () => {
       urgent: { bg: 'bg-red-100', text: 'text-red-700' },
     };
 
-    const badge = badges[priority as keyof typeof badges] || badges.medium;
+    const badge = badges[safePriority as keyof typeof badges] || badges.medium;
 
     return (
       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.bg} ${badge.text}`}>
-        {priority.toUpperCase()}
+        {safePriority.toUpperCase()}
       </span>
     );
   };
