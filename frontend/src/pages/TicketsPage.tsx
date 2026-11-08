@@ -160,7 +160,7 @@ const TicketsPage: React.FC = () => {
       }
 
       const response = await ticketService.getTickets(params);
-      setTickets(response.data);
+      setTickets(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching tickets:', error);
     } finally {
@@ -171,7 +171,7 @@ const TicketsPage: React.FC = () => {
   const fetchInstallationApprovals = async () => {
     try {
       const response = await ticketService.getTickets({ status: 'waiting_admin_approval', ticket_type: 'installation', per_page: 100 });
-      setInstallationApprovals(response.data);
+      setInstallationApprovals(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching installation approvals:', error);
       setInstallationApprovals([]);
@@ -181,7 +181,7 @@ const TicketsPage: React.FC = () => {
   const fetchProfileChanges = async () => {
     try {
       const response = await api.get('/customer-profile-change-requests');
-      setProfileChanges(response.data?.data || []);
+      setProfileChanges(Array.isArray(response.data?.data) ? response.data.data : []);
     } catch (error) {
       console.error('Error fetching client change requests:', error);
       setProfileChanges([]);
@@ -208,12 +208,12 @@ const TicketsPage: React.FC = () => {
   const fetchCustomers = async () => {
     try {
       const firstPage = await customerService.getCustomers({ per_page: 100, page: 1 });
-      const allCustomers = [...firstPage.data];
+      const allCustomers = Array.isArray(firstPage.data) ? [...firstPage.data] : [];
       for (let page = 2; page <= (firstPage.meta?.last_page || 1); page += 1) {
         const response = await customerService.getCustomers({ per_page: 100, page });
-        allCustomers.push(...response.data);
+        if (Array.isArray(response.data)) allCustomers.push(...response.data);
       }
-      setCustomers(allCustomers.sort((a, b) => a.full_name.localeCompare(b.full_name)));
+      setCustomers(allCustomers.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''))));
     } catch (error) {
       console.error('Error fetching customers:', error);
     }
@@ -509,8 +509,8 @@ const TicketsPage: React.FC = () => {
   const filteredTickets = tickets.filter((ticket) => {
     const searchLower = searchTerm.toLowerCase();
     return (
-      ticket.ticket_number.toLowerCase().includes(searchLower) ||
-      ticket.subject.toLowerCase().includes(searchLower) ||
+      String(ticket.ticket_number || '').toLowerCase().includes(searchLower) ||
+      String(ticket.subject || '').toLowerCase().includes(searchLower) ||
       ticket.referral?.prospect_name?.toLowerCase().includes(searchLower) ||
       ticket.referral?.phone?.toLowerCase().includes(searchLower) ||
       ticket.customer?.full_name?.toLowerCase().includes(searchLower) ||
@@ -1000,7 +1000,7 @@ const TicketsPage: React.FC = () => {
                       <h3 className="font-semibold text-emerald-950">Customer referral</h3>
                       <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
                         <div><dt className="text-emerald-700">Prospect</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.prospect_name}</dd></div>
-                        <div><dt className="text-emerald-700">Status</dt><dd className="font-semibold capitalize text-emerald-950">{selectedTicket.referral.status.replaceAll('_', ' ')}</dd></div>
+                        <div><dt className="text-emerald-700">Status</dt><dd className="font-semibold capitalize text-emerald-950">{String(selectedTicket.referral.status || 'pending').replaceAll('_', ' ')}</dd></div>
                         <div><dt className="text-emerald-700">Phone</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.phone}</dd></div>
                         <div><dt className="text-emerald-700">Email</dt><dd className="font-semibold text-emerald-950">{selectedTicket.referral.email || 'Not provided'}</dd></div>
                         <div><dt className="text-emerald-700">Reward</dt><dd className="font-semibold text-emerald-950">₱{Number(selectedTicket.referral.reward_amount).toFixed(2)} · {selectedTicket.referral.reward_choice?.replaceAll('_', ' ') || 'Not selected'}</dd></div>
@@ -1043,7 +1043,7 @@ const TicketsPage: React.FC = () => {
                     <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
                       <h3 className="font-semibold text-violet-950">Installation validation</h3>
                       <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                        <div><dt className="text-violet-700">Workflow</dt><dd className="font-semibold capitalize">{selectedTicket.workflow_status.replaceAll('_', ' ')}</dd></div>
+                        <div><dt className="text-violet-700">Workflow</dt><dd className="font-semibold capitalize">{String(selectedTicket.workflow_status || selectedTicket.status || 'open').replaceAll('_', ' ')}</dd></div>
                         <div><dt className="text-violet-700">Technician</dt><dd className="font-semibold">{selectedTicket.assigned_technician?.name || 'Unclaimed'}</dd></div>
                         <div><dt className="text-violet-700">Submitted MAC</dt><dd className="font-mono font-semibold">{selectedTicket.installation_mac || 'Not submitted'}</dd></div>
                         <div><dt className="text-violet-700">Submitted</dt><dd>{selectedTicket.submitted_for_approval_at ? new Date(selectedTicket.submitted_for_approval_at).toLocaleString() : 'Not submitted'}</dd></div>
@@ -1055,7 +1055,7 @@ const TicketsPage: React.FC = () => {
                     </div>
                   )}
 
-                  {!!selectedTicket.histories?.length && <div><h3 className="mb-2 font-medium text-gray-900">Audit history</h3><ol className="space-y-2">{selectedTicket.histories.map((history) => <li key={history.id} className="border-l-2 border-blue-200 pl-3 text-sm"><p className="font-medium capitalize">{history.action.replaceAll('_', ' ')} · {history.user?.name || 'System'}</p><p className="text-xs text-gray-500">{new Date(history.created_at).toLocaleString()}{history.new_status ? ` · ${history.new_status.replaceAll('_', ' ')}` : ''}</p>{history.notes && <p className="mt-1 text-gray-700">{history.notes}</p>}</li>)}</ol></div>}
+                  {!!selectedTicket.histories?.length && <div><h3 className="mb-2 font-medium text-gray-900">Audit history</h3><ol className="space-y-2">{selectedTicket.histories.map((history) => <li key={history.id} className="border-l-2 border-blue-200 pl-3 text-sm"><p className="font-medium capitalize">{String(history.action || 'updated').replaceAll('_', ' ')} · {history.user?.name || 'System'}</p><p className="text-xs text-gray-500">{new Date(history.created_at).toLocaleString()}{history.new_status ? ` · ${String(history.new_status).replaceAll('_', ' ')}` : ''}</p>{history.notes && <p className="mt-1 text-gray-700">{history.notes}</p>}</li>)}</ol></div>}
 
                   {selectedTicket.ticket_type === 'other' && selectedTicket.status !== 'closed' && (
                     <div className="flex gap-2 pt-4 border-t">
