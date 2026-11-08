@@ -80,4 +80,42 @@ class SaasFoundationTest extends TestCase
         $this->assertSame(2, TenantMembership::where('tenant_id', $tenant->id)->count());
         $this->assertDatabaseCount('tenants', 1);
     }
+
+    public function test_bootstrap_never_enrolls_an_owner_from_another_tenant_into_solarnet(): void
+    {
+        $otherTenant = Tenant::create([
+            'slug' => 'other-isp',
+            'name' => 'Other ISP',
+            'status' => 'active',
+            'is_primary' => false,
+            'subscription_exempt' => false,
+        ]);
+        $otherOwner = User::factory()->create();
+        TenantMembership::create([
+            'tenant_id' => $otherTenant->id,
+            'user_id' => $otherOwner->id,
+            'membership_role' => 'tenant_admin',
+            'status' => 'active',
+            'is_owner' => true,
+        ]);
+        $solarNetStaff = User::factory()->create();
+
+        $arguments = [
+            '--execute' => true,
+            '--confirm' => 'CREATE SOLARNET TENANT FOUNDATION',
+        ];
+        $this->artisan('saas:bootstrap-solarnet', $arguments)->assertSuccessful();
+
+        $solarNet = Tenant::where('slug', 'solarnet')->firstOrFail();
+        $this->assertDatabaseHas('tenant_user', [
+            'tenant_id' => $solarNet->id,
+            'user_id' => $solarNetStaff->id,
+            'membership_role' => 'legacy_staff',
+        ]);
+        $this->assertDatabaseMissing('tenant_user', [
+            'tenant_id' => $solarNet->id,
+            'user_id' => $otherOwner->id,
+        ]);
+        $this->assertSame(1, TenantMembership::where('user_id', $otherOwner->id)->count());
+    }
 }

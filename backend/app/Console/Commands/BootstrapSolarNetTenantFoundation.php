@@ -35,10 +35,27 @@ class BootstrapSolarNetTenantFoundation extends Command
         $slug = (string) config('saas.primary_tenant_slug', 'solarnet');
         $existing = Tenant::withTrashed()->where('slug', $slug)->first();
         $primaryCount = Tenant::withTrashed()->where('is_primary', true)->count();
-        $users = User::withTrashed()->with('roles:id,name')->orderBy('id')->get();
+        $users = User::withTrashed()
+            ->with(['roles:id,name', 'tenantMemberships:id,tenant_id,user_id,status'])
+            ->orderBy('id')
+            ->get();
         $existingMemberships = $existing
             ? TenantMembership::where('tenant_id', $existing->id)->count()
             : 0;
+        $membershipCandidates = $users->filter(function (User $user) use ($existing): bool {
+            if ($existing && $user->tenantMemberships->contains('tenant_id', $existing->id)) {
+                return false;
+            }
+
+            return $user->tenantMemberships->isEmpty();
+        });
+        $crossTenantUsers = $users->filter(function (User $user) use ($existing): bool {
+            if ($existing && $user->tenantMemberships->contains('tenant_id', $existing->id)) {
+                return false;
+            }
+
+            return $user->tenantMemberships->isNotEmpty();
+        });
 
         $preview = [
             'mode' => $execute ? 'execute' : 'audit',
@@ -49,7 +66,14 @@ class BootstrapSolarNetTenantFoundation extends Command
             'primary_tenant_count' => $primaryCount,
             'legacy_users' => $users->count(),
             'existing_memberships' => $existingMemberships,
-            'memberships_to_create' => max(0, $users->count() - $existingMemberships),
+            'memberships_to_create' => $membershipCandidates->count(),
+            'users_preserved_in_other_tenants' => $crossTenantUsers->count(),
+            'preserved_other_tenant_users' => $crossTenantUsers
+                ->map(fn (User $user): array => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                ])->values()->all(),
         ];
 
         if (! $execute) {
@@ -87,6 +111,16 @@ class BootstrapSolarNetTenantFoundation extends Command
             }
 
             foreach ($users as $user) {
+                if ($user->tenantMemberships->contains('tenant_id', $tenant->id)) {
+                    continue;
+                }
+
+                // A user already owned by another ISP must never be silently
+                // enrolled into the protected SolarNet workspace.
+                if ($user->tenantMemberships->isNotEmpty()) {
+                    continue;
+                }
+
                 $isSuperAdmin = $user->roles->contains('name', 'super_admin');
                 TenantMembership::firstOrCreate(
                     ['tenant_id' => $tenant->id, 'user_id' => $user->id],
