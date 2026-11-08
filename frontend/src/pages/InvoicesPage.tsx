@@ -673,7 +673,7 @@ const InvoicesPage: React.FC = () => {
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Generate Invoice
+            Generate Advance Invoice
           </button>
         </div>
       </div>
@@ -901,7 +901,7 @@ const InvoicesPage: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white text-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Generate New Invoice</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Generate Advance Invoice</h2>
               <form onSubmit={handleCreateInvoice}>
                 <div className="space-y-4">
                   <div>
@@ -1053,7 +1053,7 @@ const InvoicesPage: React.FC = () => {
                     type="submit"
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Generate Invoice
+                    Generate Advance Invoice
                   </button>
                 </div>
               </form>
