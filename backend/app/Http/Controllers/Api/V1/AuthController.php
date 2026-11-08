@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\Tenant;
+use App\Models\TenantMembership;
 use App\Support\LegacyDefaultAdministrator;
 use App\Services\StaffProfilePhotoService;
 use Illuminate\Http\JsonResponse;
@@ -229,6 +231,28 @@ class AuthController extends Controller
                 'status' => 'error',
                 'message' => 'Your account has been deactivated. Please contact support.',
             ], 403);
+        }
+
+        $billingHost = mb_strtolower((string) config('saas.domains.billing'));
+        if (mb_strtolower($request->getHost()) === $billingHost && config('saas.enabled')) {
+            $primaryTenant = Tenant::query()
+                ->where('slug', config('saas.primary_tenant_slug'))
+                ->where('is_primary', true)
+                ->where('status', 'active')
+                ->first();
+            $hasSolarNetMembership = $primaryTenant && TenantMembership::query()
+                ->where('tenant_id', $primaryTenant->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->exists();
+
+            if (! $hasSolarNetMembership) {
+                auth('api')->logout();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'This account belongs to a tenant workspace. Sign in at app.solarnetportal.com.',
+                ], 403);
+            }
         }
 
         // Update last login

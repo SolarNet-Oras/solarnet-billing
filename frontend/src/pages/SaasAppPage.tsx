@@ -1,15 +1,97 @@
-import {useEffect,useState,type FormEvent} from 'react';
-import {Building2,CheckCircle2,LockKeyhole} from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Building2, CheckCircle2, LockKeyhole, X } from 'lucide-react';
 import FiberOpticBackground from '@/components/FiberOpticBackground';
-import service,{saasError,type TenantPlan} from '@/services/saasTenantService';
+import service, { saasError, type TenantPlan } from '@/services/saasTenantService';
 
-const field='w-full rounded-xl border border-slate-400 bg-white px-3 py-2.5 font-medium text-slate-950 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-300 dark:focus:border-cyan-400 dark:focus:ring-cyan-900';
-export default function SaasAppPage():React.JSX.Element{
-  const [mode,setMode]=useState<'login'|'register'>('register'),[plans,setPlans]=useState<TenantPlan[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
-  const [login,setLogin]=useState({tenant:'',email:'',password:''});
-  const [form,setForm]=useState({company_name:'',tenant_slug:'',owner_name:'',owner_email:'',owner_phone:'',password:'',password_confirmation:'',business_address:'',business_registration_number:'',plan:'monthly-3499',terms_accepted:false});
-  useEffect(()=>{const token=new URLSearchParams(location.search).get('token');if(token){setBusy(true);service.verify(token).then(result=>setNotice(result.message)).catch(e=>setError(saasError(e))).finally(()=>setBusy(false));}service.plans().then(setPlans).catch(e=>setError(saasError(e)));},[]);
-  async function register(event:FormEvent){event.preventDefault();setBusy(true);setError('');try{const result=await service.register(form);setNotice(result.message);setForm({...form,password:'',password_confirmation:''});}catch(e){setError(saasError(e));}finally{setBusy(false);}}
-  async function signIn(event:FormEvent){event.preventDefault();setBusy(true);setError('');try{const result=await service.login(login.tenant,login.email,login.password),activation=result.workspace_activation;if(activation?.allowed){window.location.assign('/dashboard');return;}service.logout();setNotice(`Identity verified for ${result.tenant.name}. Operational workspace access remains staged and no company data has been opened.`);}catch(e){setError(saasError(e));}finally{setBusy(false);}}
-  return <main className="relative min-h-screen overflow-hidden text-white"><FiberOpticBackground/><div className="relative z-10 mx-auto grid min-h-screen max-w-6xl items-center gap-6 px-4 py-10 lg:grid-cols-[.8fr_1.2fr]"><section className="rounded-3xl border border-white/40 bg-slate-950/95 p-7 text-white shadow-2xl backdrop-blur-xl"><img src="/solarnet-company-logo-192.png?v=20261015-official" alt="SolarNet" className="h-16 w-16"/><p className="mt-5 text-xs font-bold uppercase tracking-[.2em] text-cyan-200">SolarNet ISP Billing SaaS</p><h1 className="mt-2 text-4xl font-black text-white">Your company. Your isolated workspace.</h1><div className="mt-6 space-y-3 text-slate-50">{['Separate tenant data','Approval before access','No financial record during application','PHP 3,499 monthly after trial'].map(x=><p key={x} className="flex gap-2"><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300"/>{x}</p>)}</div></section><section className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-8"><div className="flex rounded-xl bg-slate-200 p-1 text-slate-800 dark:bg-slate-800 dark:text-slate-100"><button type="button" onClick={()=>setMode('register')} className={`flex-1 rounded-lg p-2 font-bold ${mode==='register'?'bg-white text-slate-950 shadow dark:bg-slate-700 dark:text-white':'hover:bg-slate-300 dark:hover:bg-slate-700'}`}>Apply as an ISP</button><button type="button" onClick={()=>setMode('login')} className={`flex-1 rounded-lg p-2 font-bold ${mode==='login'?'bg-white text-slate-950 shadow dark:bg-slate-700 dark:text-white':'hover:bg-slate-300 dark:hover:bg-slate-700'}`}>Tenant sign in</button></div>{error&&<p className="mt-4 rounded-xl border border-red-300 bg-red-100 p-3 text-sm font-semibold text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100">{error}</p>}{notice&&<p className="mt-4 rounded-xl border border-emerald-300 bg-emerald-100 p-3 text-sm font-semibold text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-100">{notice}</p>}{mode==='register'?<form onSubmit={register} className="mt-5 grid gap-3 text-slate-950 dark:text-white sm:grid-cols-2"><input required aria-label="ISP company name" className={field} placeholder="ISP company name" value={form.company_name} onChange={e=>setForm({...form,company_name:e.target.value})}/><div><input required aria-label="Company login ID" className={field} placeholder="Company login ID, e.g. eastern-samar-net" value={form.tenant_slug} onChange={e=>setForm({...form,tenant_slug:e.target.value.toLowerCase().replace(/[^a-z0-9-]/g,'')})}/><p className="mt-1 px-1 text-xs font-medium text-slate-600 dark:text-slate-300">Your unique tenant slug used when signing in. Use lowercase letters, numbers, and hyphens.</p></div><input required aria-label="Owner full name" className={field} placeholder="Owner full name" value={form.owner_name} onChange={e=>setForm({...form,owner_name:e.target.value})}/><input required aria-label="Owner email" type="email" className={field} placeholder="Owner email" value={form.owner_email} onChange={e=>setForm({...form,owner_email:e.target.value})}/><input required aria-label="Owner phone" className={field} placeholder="Owner phone" value={form.owner_phone} onChange={e=>setForm({...form,owner_phone:e.target.value})}/><input aria-label="DTI or SEC registration" className={field} placeholder="DTI/SEC registration (optional)" value={form.business_registration_number} onChange={e=>setForm({...form,business_registration_number:e.target.value})}/><textarea required aria-label="Business address" className={`${field} sm:col-span-2`} placeholder="Business address" value={form.business_address} onChange={e=>setForm({...form,business_address:e.target.value})}/><select required aria-label="Subscription plan" className={`${field} sm:col-span-2`} value={form.plan} onChange={e=>setForm({...form,plan:e.target.value})}>{plans.map(p=><option className="bg-white text-slate-950 dark:bg-slate-900 dark:text-white" key={p.id} value={p.code}>{p.name} - PHP {Number(p.amount).toLocaleString()} monthly - {p.trial_days}-day trial</option>)}</select><input required aria-label="Password" minLength={10} type="password" className={field} placeholder="Password (letters and numbers)" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><input required aria-label="Confirm password" minLength={10} type="password" className={field} placeholder="Confirm password" value={form.password_confirmation} onChange={e=>setForm({...form,password_confirmation:e.target.value})}/><label className="flex gap-2 text-sm font-medium text-slate-800 dark:text-slate-100 sm:col-span-2"><input required type="checkbox" className="h-5 w-5 shrink-0 accent-blue-700" checked={form.terms_accepted} onChange={e=>setForm({...form,terms_accepted:e.target.checked})}/>I confirm the company information is accurate and agree to administrator review.</label><button disabled={busy||plans.length===0} className="rounded-xl bg-blue-700 p-3 font-bold text-white hover:bg-blue-800 disabled:bg-slate-400 disabled:text-slate-700 dark:disabled:bg-slate-700 dark:disabled:text-slate-300 sm:col-span-2">{busy?'Submitting...':'Submit application and verify email'}</button><p className="text-xs font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">Submitting does not start a trial. Approval is required and creates no invoice or payment.</p></form>:<form onSubmit={signIn} className="mt-5 space-y-3 text-slate-950 dark:text-white"><div className="flex gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-950 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100"><LockKeyhole className="h-5 w-5 shrink-0"/>Approved ISP owners and staff only.</div><input required aria-label="Company login ID" className={field} placeholder="Company login ID (tenant slug)" value={login.tenant} onChange={e=>setLogin({...login,tenant:e.target.value})}/><input required aria-label="Email" type="email" className={field} placeholder="Email" value={login.email} onChange={e=>setLogin({...login,email:e.target.value})}/><input required aria-label="Password" type="password" className={field} placeholder="Password" value={login.password} onChange={e=>setLogin({...login,password:e.target.value})}/><button disabled={busy} className="w-full rounded-xl bg-blue-700 p-3 font-bold text-white hover:bg-blue-800 disabled:bg-slate-400"><Building2 className="mr-2 inline h-5 w-5"/>Sign in to tenant workspace</button></form>}</section></div></main>;
+const field = 'w-full rounded-md border border-input bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary';
+
+export default function SaasAppPage(): React.JSX.Element {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [showAdvertisement, setShowAdvertisement] = useState(true);
+  const [plans, setPlans] = useState<TenantPlan[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [login, setLogin] = useState({ tenant: '', email: '', password: '' });
+  const [form, setForm] = useState({ company_name: '', tenant_slug: '', owner_name: '', owner_email: '', owner_phone: '', password: '', password_confirmation: '', business_address: '', business_registration_number: '', plan: 'monthly-3499', terms_accepted: false });
+
+  useEffect(() => {
+    const advertisementTimer = window.setTimeout(() => setShowAdvertisement(false), 5000);
+    const token = new URLSearchParams(location.search).get('token');
+    if (token) {
+      setBusy(true);
+      service.verify(token).then((result) => setNotice(result.message)).catch((requestError) => setError(saasError(requestError))).finally(() => setBusy(false));
+    }
+    service.plans().then(setPlans).catch((requestError) => setError(saasError(requestError)));
+    return () => window.clearTimeout(advertisementTimer);
+  }, []);
+
+  async function register(event: FormEvent): Promise<void> {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = await service.register(form);
+      setNotice(result.message);
+      setForm({ ...form, password: '', password_confirmation: '' });
+      setMode('login');
+    } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
+  }
+
+  async function signIn(event: FormEvent): Promise<void> {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = await service.login(login.tenant, login.email, login.password);
+      if (result.workspace_activation?.allowed) { window.location.assign('/dashboard'); return; }
+      service.logout();
+      setNotice(`Identity verified for ${result.tenant.name}. Operational workspace access remains staged.`);
+    } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
+  }
+
+  return <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+    <FiberOpticBackground />
+    <button type="button" onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="fixed right-4 top-4 z-30 rounded-full border border-white/50 bg-slate-950/85 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur hover:bg-slate-900 sm:right-7 sm:top-6">
+      {mode === 'register' ? 'Tenant sign in' : 'Apply as an ISP'}
+    </button>
+
+    {showAdvertisement && mode === 'login' && <section className="fixed inset-x-4 top-20 z-40 mx-auto max-w-lg rounded-2xl border border-cyan-300/70 bg-slate-950/95 p-5 text-white shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4">
+      <button type="button" onClick={() => setShowAdvertisement(false)} aria-label="Close advertisement" className="absolute right-3 top-3 rounded-full p-1 text-slate-300 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-cyan-200">SolarNet ISP Billing SaaS</p>
+      <h2 className="mt-2 text-2xl font-black">Your company. Your isolated workspace.</h2>
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">{['Separate tenant data', 'Approval before access', 'No financial record during application', 'PHP 3,499 monthly after trial'].map((text) => <p key={text} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />{text}</p>)}</div>
+    </section>}
+
+    <div className={`relative z-10 w-full ${mode === 'login' ? 'max-w-md' : 'max-w-2xl'}`}>
+      <header className="mb-8 text-center">
+        <img src="/solarnet-company-logo-192.png?v=20261015-official" alt="SolarNet" className="mx-auto mb-4 h-16 w-16 object-contain" />
+        <h1 className="mb-2 text-3xl font-bold text-white">SolarNet ISP Billing SaaS</h1>
+        <p className="text-slate-200">{mode === 'login' ? 'Sign in to your company workspace' : 'Apply for an isolated ISP workspace'}</p>
+      </header>
+
+      <section className="rounded-2xl border border-white/40 bg-card/95 p-6 text-foreground shadow-2xl backdrop-blur-xl sm:p-8">
+        {error && <p role="alert" className="mb-5 rounded-md border border-red-300 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-100">{error}</p>}
+        {notice && <p className="mb-5 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">{notice}</p>}
+
+        {mode === 'login' ? <form onSubmit={signIn} className="space-y-6">
+          <div className="flex gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm"><LockKeyhole className="h-5 w-5 shrink-0" />Approved ISP owners and staff only.</div>
+          <label className="block text-sm font-medium">Company login ID<input required autoComplete="organization" className={`${field} mt-2`} placeholder="example-isp" value={login.tenant} onChange={(event) => setLogin({ ...login, tenant: event.target.value.toLowerCase() })} /></label>
+          <label className="block text-sm font-medium">Email Address<input required type="email" autoComplete="username" className={`${field} mt-2`} placeholder="you@company.com" value={login.email} onChange={(event) => setLogin({ ...login, email: event.target.value })} /></label>
+          <label className="block text-sm font-medium">Password<input required type="password" autoComplete="current-password" className={`${field} mt-2`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /></label>
+          <button disabled={busy} className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"><Building2 className="mr-2 inline h-5 w-5" />{busy ? 'Signing in...' : 'Sign in'}</button>
+        </form> : <form onSubmit={register} className="grid gap-4 sm:grid-cols-2">
+          <input required aria-label="ISP company name" className={field} placeholder="ISP company name" value={form.company_name} onChange={(event) => setForm({ ...form, company_name: event.target.value })} />
+          <div><input required aria-label="Company login ID" className={field} placeholder="Company login ID" value={form.tenant_slug} onChange={(event) => setForm({ ...form, tenant_slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })} /><p className="mt-1 text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens.</p></div>
+          <input required aria-label="Owner full name" className={field} placeholder="Owner full name" value={form.owner_name} onChange={(event) => setForm({ ...form, owner_name: event.target.value })} />
+          <input required aria-label="Owner email" type="email" className={field} placeholder="Owner email" value={form.owner_email} onChange={(event) => setForm({ ...form, owner_email: event.target.value })} />
+          <input required aria-label="Owner phone" className={field} placeholder="Owner phone" value={form.owner_phone} onChange={(event) => setForm({ ...form, owner_phone: event.target.value })} />
+          <input aria-label="DTI or SEC registration" className={field} placeholder="DTI/SEC registration (optional)" value={form.business_registration_number} onChange={(event) => setForm({ ...form, business_registration_number: event.target.value })} />
+          <textarea required aria-label="Business address" className={`${field} sm:col-span-2`} placeholder="Business address" value={form.business_address} onChange={(event) => setForm({ ...form, business_address: event.target.value })} />
+          <select required aria-label="Subscription plan" className={`${field} sm:col-span-2`} value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })}>{plans.map((plan) => <option key={plan.id} value={plan.code}>{plan.name} — PHP {Number(plan.amount).toLocaleString()} monthly — {plan.trial_days}-day trial</option>)}</select>
+          <input required minLength={10} aria-label="Password" type="password" className={field} placeholder="Password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          <input required minLength={10} aria-label="Confirm password" type="password" className={field} placeholder="Confirm password" value={form.password_confirmation} onChange={(event) => setForm({ ...form, password_confirmation: event.target.value })} />
+          <label className="flex gap-2 text-sm sm:col-span-2"><input required type="checkbox" className="h-5 w-5 accent-primary" checked={form.terms_accepted} onChange={(event) => setForm({ ...form, terms_accepted: event.target.checked })} />I confirm the company information is accurate and agree to administrator review.</label>
+          <button disabled={busy || plans.length === 0} className="rounded-md bg-primary p-3 font-bold text-primary-foreground disabled:opacity-50 sm:col-span-2">{busy ? 'Submitting...' : 'Submit application and verify email'}</button>
+        </form>}
+      </section>
+      <p className="mt-8 text-center text-xs text-slate-300">Secure tenant authentication and isolated company access</p>
+    </div>
+  </main>;
 }

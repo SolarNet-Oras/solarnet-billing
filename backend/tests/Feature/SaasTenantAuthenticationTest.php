@@ -80,6 +80,26 @@ class SaasTenantAuthenticationTest extends TestCase
         ])->assertNotFound();
     }
 
+    public function test_tenant_only_user_cannot_sign_in_to_private_billing_domain(): void
+    {
+        Tenant::create([
+            'slug' => 'solarnet',
+            'name' => 'SolarNet',
+            'status' => 'active',
+            'is_primary' => true,
+            'subscription_exempt' => true,
+        ]);
+        [$tenant, $user] = $this->membership();
+
+        $this->postJson('https://billing.solarnetportal.com/api/v1/auth/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertForbidden()
+            ->assertJsonPath('message', 'This account belongs to a tenant workspace. Sign in at app.solarnetportal.com.');
+
+        $this->assertSame('branch-a', $tenant->slug);
+    }
+
     /** @return array{Tenant, User, TenantMembership} */
     private function membership(bool $subscriptionExempt = false): array
     {
