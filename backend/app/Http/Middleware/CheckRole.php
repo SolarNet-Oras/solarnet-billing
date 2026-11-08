@@ -24,6 +24,7 @@ class CheckRole
         }
 
         $user = auth()->user();
+        $membership = $request->attributes->get('saas_membership');
 
         // Support pipe-separated role alternatives, e.g. 'role:admin|super_admin'
         $roleNames = [];
@@ -34,7 +35,11 @@ class CheckRole
         }
 
         // Check if user has any of the required roles
-        if (!$user->hasAnyRole($roleNames)) {
+        $tenantRoleAliases = $membership
+            ? config('saas_tenant_workspace.membership_role_aliases.'.(string) $membership->membership_role, [])
+            : [];
+
+        if (!$user->hasAnyRole($roleNames) && empty(array_intersect($roleNames, $tenantRoleAliases))) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Insufficient permissions. Required role: ' . implode(' or ', $roles),

@@ -84,6 +84,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { user } = useAuth();
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
+  const tenantWorkspace = window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
+  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/tickets','/reports','/install-staff-app','/settings']);
 
   React.useEffect(() => {
     const loadBranding = (): void => {
@@ -117,7 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <img src="/solarnet-company-logo-192.png?v=20261015-official" alt={branding.name} className="h-9 w-9 shrink-0 object-contain" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-tight text-foreground">{branding.name}</p>
-              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Billing</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{tenantWorkspace ? 'Tenant workspace' : 'Billing'}</p>
             </div>
           </Link>
           <button onClick={onClose} className="rounded-md p-2 hover:bg-secondary lg:hidden" aria-label="Close navigation">
@@ -126,11 +128,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          {navItems.filter((item) => !hasRole('technician')
+          {navItems.filter((item) => (!tenantWorkspace || tenantCanaryPaths.has(item.path)) && (!hasRole('technician')
             || item.path === '/dashboard'
             || item.path === '/operations-map'
             || item.path === '/install-staff-app'
-            || (hasRole('collector') && item.path === '/remittances')).map((item) => {
+            || (hasRole('collector') && item.path === '/remittances'))).map((item) => {
             if (!hasPermission(item.permission, item.roles)) return null;
             const Icon = item.icon;
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);

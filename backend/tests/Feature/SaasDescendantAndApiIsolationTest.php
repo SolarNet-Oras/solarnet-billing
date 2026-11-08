@@ -30,6 +30,10 @@ class SaasDescendantAndApiIsolationTest extends TestCase
         Route::middleware(['auth:api', 'tenant.operational'])->get('/_test/tenant-context', function () {
             return response()->json(['tenant_id' => app(CurrentTenant::class)->id()]);
         });
+        Route::middleware(['auth:api', 'tenant.operational', 'permission:view-customers'])
+            ->get('/_test/tenant-permission', fn () => response()->json(['allowed' => true]));
+        Route::middleware(['auth:api', 'tenant.operational', 'role:super_admin'])
+            ->get('/_test/tenant-super-admin', fn () => response()->json(['allowed' => true]));
     }
 
     public function test_descendant_queries_follow_the_owned_parent_tenant(): void
@@ -97,6 +101,28 @@ class SaasDescendantAndApiIsolationTest extends TestCase
         $this->withToken($token)
             ->getJson('https://admin.solarnetportal.com/_test/tenant-context')
             ->assertNotFound();
+    }
+
+    public function test_tenant_admin_receives_tenant_permissions_without_solar_net_super_admin(): void
+    {
+        $tenant = $this->tenant('branch-a');
+        $user = User::factory()->create(['is_active' => true]);
+        TenantMembership::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'membership_role' => 'tenant_admin',
+            'status' => 'active',
+            'is_owner' => true,
+        ]);
+        $token = JWTAuth::claims(['tenant_id' => $tenant->id])->fromUser($user);
+
+        $this->withToken($token)
+            ->getJson('https://app.solarnetportal.com/_test/tenant-permission')
+            ->assertOk();
+
+        $this->withToken($token)
+            ->getJson('https://app.solarnetportal.com/_test/tenant-super-admin')
+            ->assertForbidden();
     }
 
     private function tenant(string $slug): Tenant

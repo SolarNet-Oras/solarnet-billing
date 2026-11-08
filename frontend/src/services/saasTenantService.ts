@@ -1,11 +1,14 @@
 import axios from 'axios';
 
 const api=axios.create({baseURL:'/api/v1/saas',timeout:30000,headers:{Accept:'application/json','Content-Type':'application/json'}});
+export const SAAS_TENANT_TOKEN_KEY='saas_tenant_token';
 export type TenantPlan={id:string;code:string;name:string;description?:string;amount:string;trial_days:number;grace_days:number};
 export const saasError=(error:unknown)=>axios.isAxiosError(error)?String(error.response?.data?.message||Object.values(error.response?.data?.errors||{}).flat()[0]||error.message):'Unexpected request error.';
 export default{
   async plans():Promise<TenantPlan[]>{return (await api.get('/applications/plans')).data.data;},
   async register(payload:Record<string,unknown>){return (await api.post('/applications',payload)).data;},
   async verify(token:string){return (await api.post('/applications/verify',{token})).data;},
-  async login(tenant:string,email:string,password:string){const response=await api.post('/auth/login',{tenant,email,password});sessionStorage.setItem('saas_tenant_token',response.data.access_token);return response.data;},
+  async login(tenant:string,email:string,password:string){const response=await api.post('/auth/login',{tenant,email,password});sessionStorage.setItem(SAAS_TENANT_TOKEN_KEY,response.data.access_token);return response.data;},
+  async me(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/auth/me',{headers:{Authorization:`Bearer ${token}`}})).data;},
+  logout(){sessionStorage.removeItem(SAAS_TENANT_TOKEN_KEY);},
 };

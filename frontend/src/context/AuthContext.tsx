@@ -3,6 +3,10 @@ import { getCurrentUser, login as loginService, logout as logoutService, registe
 import type { User, LoginRequest, RegisterRequest } from '@/types/api';
 import { tokenStorage } from '@/lib/tokenStorage';
 import { logger } from '@/lib/logger';
+import saasTenantService, { SAAS_TENANT_TOKEN_KEY } from '@/services/saasTenantService';
+
+const isTenantApp = (): boolean => typeof window !== 'undefined' && window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
+const tenantAdminPermissions = ['view-customers','create-customers','edit-customers','view-invoices','create-invoices','edit-invoices','download-invoices','view-payments','create-payments','view-service-plans','create-service-plans','edit-service-plans','view-tickets','create-tickets','edit-tickets','assign-tickets','close-tickets','view-reports','view-settings','edit-settings'];
 
 // ============================================================================
 // Types
@@ -41,7 +45,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    */
   const fetchUser = useCallback(async (): Promise<void> => {
     try {
-      const token = tokenStorage.getToken();
+      const token = isTenantApp() ? sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY) : tokenStorage.getToken();
       
       if (!token) {
         setUser(null);
@@ -49,12 +53,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      const userData = await getCurrentUser();
+      const userData = isTenantApp()
+        ? await saasTenantService.me().then((result) => ({
+            ...result.user,
+            role: result.membership.membership_role,
+            roles: result.membership.membership_role === 'tenant_admin'
+              ? [result.membership.membership_role, 'admin', 'office_admin', 'cashier', 'accounting', 'viewer']
+              : [result.membership.membership_role, 'viewer'],
+            permissions: result.membership.membership_role === 'tenant_admin' ? tenantAdminPermissions : tenantAdminPermissions.filter((permission) => permission.startsWith('view-') || permission === 'download-invoices' || permission === 'create-tickets'),
+            email_verified_at: null, created_at: '', updated_at: '',
+          } as User))
+        : await getCurrentUser();
       setUser(userData);
     } catch (error) {
       logger.error('Failed to fetch user', error);
       setUser(null);
-      tokenStorage.clearAll();
+      if (isTenantApp()) saasTenantService.logout(); else tokenStorage.clearAll();
     } finally {
       setLoading(false);
     }
@@ -104,8 +118,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      await logoutService();
+      if (isTenantApp()) saasTenantService.logout(); else await logoutService();
       setUser(null);
+      if (isTenantApp()) window.location.href = '/';
     } catch (error) {
       logger.error('Logout error', error);
       setUser(null);

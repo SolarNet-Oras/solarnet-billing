@@ -16,6 +16,7 @@ import { tokenStorage } from '@/lib/tokenStorage';
 import { HTTP_STATUS } from '@/lib/constants';
 import type { ApiResponse, ApiError } from '@/types/api';
 import { announceLiveDataChange } from '@/hooks/useLiveDataRefresh';
+import { SAAS_TENANT_TOKEN_KEY } from '@/services/saasTenantService';
 
 type ActionRequestConfig = InternalAxiosRequestConfig & {
   _solarnetActionButton?: HTMLButtonElement;
@@ -114,9 +115,10 @@ api.interceptors.request.use(
     // Match only the actual customer portal API namespace. Admin endpoints
     // such as /customer-portal-accounts must continue using the staff token.
     const isCustomerPortal = (config.url ?? '').startsWith('/customer-portal/');
+    const isTenantApp = typeof window !== 'undefined' && window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
     const token = isCustomerPortal
       ? localStorage.getItem('customer_token')
-      : tokenStorage.getToken();
+      : isTenantApp ? sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY) : tokenStorage.getToken();
     
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -160,6 +162,7 @@ api.interceptors.response.use(
     // Handle 401 Unauthorized - User session expired
     if (error.response?.status === HTTP_STATUS.UNAUTHORIZED) {
       const isCustomerPortal = (originalRequest?.url ?? '').startsWith('/customer-portal/');
+      const isTenantApp = window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
 
       if (isCustomerPortal) {
         // Customer portal session expired - send back to the portal login
@@ -170,6 +173,12 @@ api.interceptors.response.use(
           const next = requestedPath.startsWith('/customer/') ? `?next=${encodeURIComponent(requestedPath)}` : '';
           window.location.href = `/customer/login${next}`;
         }
+        return Promise.reject(error);
+      }
+
+      if (isTenantApp) {
+        sessionStorage.removeItem(SAAS_TENANT_TOKEN_KEY);
+        if (window.location.pathname !== '/') window.location.href = '/';
         return Promise.reject(error);
       }
 

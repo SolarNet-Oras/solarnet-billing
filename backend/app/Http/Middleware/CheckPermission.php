@@ -24,6 +24,10 @@ class CheckPermission
         }
 
         $user = auth()->user();
+        $membership = $request->attributes->get('saas_membership');
+        $tenantPermissions = $membership
+            ? config('saas_tenant_workspace.membership_permissions.'.(string) $membership->membership_role, [])
+            : [];
 
         // Each parameter is required (AND). Within a parameter, pipe-separated
         // permissions are alternatives (OR), e.g. 'edit-tickets|close-tickets'.
@@ -32,7 +36,7 @@ class CheckPermission
             $hasAny = false;
 
             foreach ($alternatives as $alternative) {
-                if ($user->hasPermission($alternative)) {
+                if ($user->hasPermission($alternative) || in_array($alternative, $tenantPermissions, true)) {
                     $hasAny = true;
                     break;
                 }
