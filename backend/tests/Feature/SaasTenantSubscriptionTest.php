@@ -96,7 +96,7 @@ class SaasTenantSubscriptionTest extends TestCase
 
     public function test_owner_can_save_isolated_cashout_recipient_and_bank_availability(): void
     {
-        [, , $token] = $this->workspace();
+        [$tenant, , $token] = $this->workspace();
 
         $this->withToken($token)->putJson('https://app.solarnetportal.com/api/v1/saas/tenant/cashout-settings', [
             'gcash_name' => 'Luke Mejares',
@@ -111,6 +111,12 @@ class SaasTenantSubscriptionTest extends TestCase
             ->assertJsonPath('data.recipient.gcash_number', '09171234567')
             ->assertJsonPath('data.payment_methods.bpi_enabled', false)
             ->assertJsonPath('data.payment_methods.landbank_enabled', true);
+
+        $this->assertDatabaseHas('settings', [
+            'tenant_id' => $tenant->id,
+            'key' => 'payments.gcash_recipient_number',
+            'value' => '09171234567',
+        ]);
     }
 
     private function workspace(): array

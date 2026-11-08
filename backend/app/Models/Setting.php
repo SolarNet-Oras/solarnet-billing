@@ -103,12 +103,14 @@ class Setting extends Model
         if ($row) {
             $row->update(['value' => $stringValue, 'cast' => $cast]);
         } else {
-            static::withoutGlobalScope('tenant')->create([
+            $row = new static;
+            $row->forceFill([
                 'tenant_id' => $tenantId,
                 'key' => $key,
                 'value' => $stringValue,
                 'cast' => $cast,
             ]);
+            $row->save();
         }
         Cache::forget('setting.'.($tenantId ?? 'legacy').'.'.$key);
     }
