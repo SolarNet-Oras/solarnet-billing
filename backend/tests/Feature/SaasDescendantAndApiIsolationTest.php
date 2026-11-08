@@ -81,7 +81,20 @@ class SaasDescendantAndApiIsolationTest extends TestCase
 
     public function test_platform_domain_cannot_reach_operational_api(): void
     {
-        $this->getJson('https://admin.solarnetportal.com/_test/tenant-context')->assertNotFound();
+        $tenant = $this->tenant('branch-a');
+        $user = User::factory()->create(['is_active' => true]);
+        TenantMembership::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'membership_role' => 'tenant_admin',
+            'status' => 'active',
+            'is_owner' => true,
+        ]);
+        $token = JWTAuth::claims(['tenant_id' => $tenant->id])->fromUser($user);
+
+        $this->withToken($token)
+            ->getJson('https://admin.solarnetportal.com/_test/tenant-context')
+            ->assertNotFound();
     }
 
     private function tenant(string $slug): Tenant
@@ -97,12 +110,16 @@ class SaasDescendantAndApiIsolationTest extends TestCase
 
     private function router(string $name): Router
     {
-        return Router::create([
+        $router = new Router([
             'name' => $name,
             'host' => fake()->ipv4(),
             'username' => 'api',
             'password' => 'secret',
         ]);
+        $router->forceFill(['tenant_id' => app(CurrentTenant::class)->id()]);
+        $router->save();
+
+        return $router;
     }
 
     private function observation(Router $router): RouterThreatObservation
