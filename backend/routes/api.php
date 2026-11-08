@@ -129,7 +129,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Protected routes (require authentication)
-    Route::middleware(['auth:api', 'active.staff'])->group(function () {
+    Route::middleware(['auth:api', 'active.staff', 'tenant.operational'])->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::get('onu-remote-sessions', [OnuRemoteAccessController::class, 'index']);
             Route::post('onu-remote-sessions', [OnuRemoteAccessController::class, 'store'])->middleware('throttle:10,1');

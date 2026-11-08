@@ -21,13 +21,54 @@ use App\Models\StaffLeaveRequest;
 use App\Models\StaffPayrollDisbursement;
 use App\Models\Ticket;
 use App\Models\WireguardPeer;
+use App\Models\CollectionLocationDeferral;
+use App\Models\CollectionPlanStop;
+use App\Models\CollectionRegistrationEvidence;
+use App\Models\CollectionVisit;
+use App\Models\InvoiceItem;
+use App\Models\PaymentAllocation;
+use App\Models\PaymentRefund;
+use App\Models\RouterDnsBrandingAudit;
+use App\Models\RouterProvisioningAudit;
+use App\Models\RouterQosDeployment;
+use App\Models\RouterThreatObservation;
+use App\Models\SmsAdvisoryRecipient;
+use App\Models\StaffAttendancePhotoAudit;
+use App\Models\TicketComment;
+use App\Models\TicketHistory;
 
 return [
     // Root ownership is only one stage. Keep tenant navigation unavailable
     // until every descendant/history table and API path is tenant-scoped.
     'workspace_release_blockers' => [
-        'descendant_operational_records_not_yet_tenant_scoped',
-        'operational_api_authorization_not_yet_verified',
+        'production_activation_requires_separate_approval',
+    ],
+    'operational_api_middleware' => 'tenant.operational',
+    'operational_api_routes' => [
+        'api/v1/dashboard/metrics',
+        'api/v1/customers',
+        'api/v1/invoices',
+        'api/v1/payments',
+        'api/v1/financial-entries',
+        'api/v1/tickets',
+        'api/v1/settings',
+    ],
+    'descendants' => [
+        InvoiceItem::class,
+        PaymentAllocation::class,
+        PaymentRefund::class,
+        TicketComment::class,
+        TicketHistory::class,
+        CollectionPlanStop::class,
+        CollectionVisit::class,
+        CollectionRegistrationEvidence::class,
+        CollectionLocationDeferral::class,
+        SmsAdvisoryRecipient::class,
+        RouterThreatObservation::class,
+        RouterQosDeployment::class,
+        RouterProvisioningAudit::class,
+        RouterDnsBrandingAudit::class,
+        StaffAttendancePhotoAudit::class,
     ],
     'modules' => [
         'dashboard' => ['roots' => []],

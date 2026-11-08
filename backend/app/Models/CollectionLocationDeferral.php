@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenantThroughParent;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CollectionLocationDeferral extends Model
 {
-    use HasUuids;
+    use BelongsToTenantThroughParent, HasUuids;
+
+    public function tenantOwnershipRelation(): string { return 'customer'; }
 
     protected $fillable = ['customer_id','collector_id','collection_plan_stop_id','context','reason','deferred_at'];
     protected $casts = ['deferred_at'=>'datetime'];

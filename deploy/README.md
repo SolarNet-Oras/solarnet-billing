@@ -357,3 +357,20 @@ Execution is transactional and requires both `--execute` and the exact
 confirmation phrase printed by the command's deployment procedure. Completing
 this root backfill does **not** enable tenant workspace navigation; descendant
 operational tables and API authorization remain explicit release blockers.
+# Descendant operational isolation and API authorization
+
+Operational child/history models inherit tenant isolation through their owned
+parent. Protected operational API routes resolve either the authenticated ISP
+tenant on `app.solarnetportal.com` or the primary SolarNet tenant on the private
+billing domain. Platform administration never receives operational API access.
+
+Audit the foundation without changing data:
+
+```bash
+php artisan saas:audit-module-isolation
+```
+
+The audit must report `descendant_isolation_ready` and
+`operational_api_authorization_ready` as true. Tenant navigation remains staged
+behind `production_activation_requires_separate_approval`; do not enable global
+SaaS enforcement as part of this foundation deployment.

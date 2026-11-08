@@ -38,12 +38,15 @@ class EnforceSaasDomainBoundary
             ], 503);
         }
 
-        // Fail closed even after flags are changed. A later rollout must
-        // replace this guard with verified platform/tenant middleware before
-        // either hostname can reach application APIs.
-        return new JsonResponse([
-            'message' => 'Tenant authorization is not installed for this surface.',
-            'surface' => $host === $adminHost ? 'admin' : 'app',
-        ], 503);
+        if ($host === $adminHost) {
+            return new JsonResponse([
+                'message' => 'Operational tenant APIs are unavailable on the platform administration domain.',
+                'surface' => 'admin',
+            ], 404);
+        }
+
+        // Operational routes apply tenant.operational after authentication.
+        // Public routes remain explicitly allow-listed above.
+        return $next($request);
     }
 }

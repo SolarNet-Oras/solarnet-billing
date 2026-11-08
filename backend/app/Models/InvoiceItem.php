@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenantThroughParent;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -9,7 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class InvoiceItem extends Model
 {
-    use HasFactory, HasUuids;
+    use BelongsToTenantThroughParent, HasFactory, HasUuids;
+
+    public function tenantOwnershipRelation(): string { return 'invoice'; }
 
     protected $fillable = [
         'invoice_id',

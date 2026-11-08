@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenantThroughParent;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class CollectionVisit extends Model
 {
-    use HasUuids;
+    use BelongsToTenantThroughParent, HasUuids;
+    public function tenantOwnershipRelation(): string { return 'stop'; }
     protected $fillable = ['collection_plan_stop_id','collector_id','customer_id','status','outcome','arrived_at','started_at','completed_at','latitude','longitude','accuracy_meters','distance_from_customer_meters','gps_verified','requires_review','location_exception_reason','remarks','photo_path','payment_id','idempotency_key'];
     protected $casts = ['arrived_at'=>'datetime','started_at'=>'datetime','completed_at'=>'datetime','latitude'=>'float','longitude'=>'float','accuracy_meters'=>'float','distance_from_customer_meters'=>'float','gps_verified'=>'boolean','requires_review'=>'boolean'];
     protected $hidden = ['photo_path'];
