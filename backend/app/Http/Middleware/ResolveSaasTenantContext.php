@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Services\SaasTenantAccessService;
+use App\Services\SaasTenantWorkspaceActivationService;
 use App\Support\CurrentTenant;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +17,7 @@ class ResolveSaasTenantContext
 {
     public function __construct(
         private readonly SaasTenantAccessService $access,
+        private readonly SaasTenantWorkspaceActivationService $activation,
         private readonly CurrentTenant $currentTenant,
     ) {}
 
@@ -58,11 +60,21 @@ class ResolveSaasTenantContext
             ], 402);
         }
 
+        $activation = $this->activation->evaluate($tenant);
+        if (! $activation['allowed']) {
+            return new JsonResponse([
+                'message' => 'This tenant workspace has not been activated for operational access.',
+                'reason' => $activation['reason'],
+                'activation_mode' => $activation['mode'],
+            ], 503);
+        }
+
         $this->currentTenant->set($tenant);
 
         $request->attributes->set('saas_tenant', $tenant);
         $request->attributes->set('saas_membership', $membership);
         $request->attributes->set('saas_subscription_access', $decision);
+        $request->attributes->set('saas_workspace_activation', $activation);
 
         return $next($request);
     }

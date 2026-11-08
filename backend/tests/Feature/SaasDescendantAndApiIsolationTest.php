@@ -24,6 +24,8 @@ class SaasDescendantAndApiIsolationTest extends TestCase
         config()->set('saas.enabled', true);
         config()->set('saas.domains_enabled', true);
         config()->set('saas.enforcement_mode', 'enforced');
+        config()->set('saas.workspace_activation_mode', 'canary');
+        config()->set('saas.workspace_canary_tenants', ['branch-a']);
 
         Route::middleware(['auth:api', 'tenant.operational'])->get('/_test/tenant-context', function () {
             return response()->json(['tenant_id' => app(CurrentTenant::class)->id()]);

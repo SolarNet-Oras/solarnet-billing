@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Models\User;
 use App\Services\SaasTenantAccessService;
+use App\Services\SaasTenantWorkspaceActivationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -15,7 +16,10 @@ use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class SaasTenantAuthController extends Controller
 {
-    public function __construct(private readonly SaasTenantAccessService $access) {}
+    public function __construct(
+        private readonly SaasTenantAccessService $access,
+        private readonly SaasTenantWorkspaceActivationService $activation,
+    ) {}
 
     public function login(Request $request): JsonResponse
     {
@@ -76,6 +80,7 @@ class SaasTenantAuthController extends Controller
         }
 
         $token = JWTAuth::claims(['tenant_id' => $tenant->id])->fromUser($user);
+        $activation = $this->activation->evaluate($tenant);
 
         return response()->json([
             'token_type' => 'bearer',
@@ -84,6 +89,7 @@ class SaasTenantAuthController extends Controller
             'tenant' => $tenant->only(['id', 'slug', 'name']),
             'membership' => $membership->only(['membership_role', 'is_owner']),
             'subscription_access' => $decision,
+            'workspace_activation' => $activation,
         ]);
     }
 
@@ -100,6 +106,7 @@ class SaasTenantAuthController extends Controller
             'tenant' => $tenant->only(['id', 'slug', 'name']),
             'membership' => $membership->only(['membership_role', 'is_owner']),
             'subscription_access' => $request->attributes->get('saas_subscription_access'),
+            'workspace_activation' => $request->attributes->get('saas_workspace_activation'),
         ]);
     }
 }

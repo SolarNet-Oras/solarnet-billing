@@ -374,3 +374,18 @@ The audit must report `descendant_isolation_ready` and
 `operational_api_authorization_ready` as true. Tenant navigation remains staged
 behind `production_activation_requires_separate_approval`; do not enable global
 SaaS enforcement as part of this foundation deployment.
+
+## Controlled tenant workspace activation
+
+Workspace access is independently fail-closed even if global SaaS flags are
+changed. Keep `SAAS_WORKSPACE_ACTIVATION_MODE=staged` by default. A later
+canary rollout must use `canary` plus an explicit comma-separated
+`SAAS_WORKSPACE_CANARY_TENANTS` allowlist. Run the read-only readiness command
+before and after any configuration change:
+
+```bash
+php artisan saas:audit-workspace-activation
+```
+
+Rollback requires no database migration: restore activation mode to `staged`,
+clear the canary allowlist, and disable global SaaS enforcement.

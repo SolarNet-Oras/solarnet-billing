@@ -22,6 +22,7 @@ class SaasDomainController extends Controller
             'saas_enabled' => (bool) config('saas.enabled', false),
             'registration_enabled' => (bool) config('saas.registration_enabled', false),
             'enforcement_mode' => (string) config('saas.enforcement_mode', 'disabled'),
+            'workspace_activation_mode' => (string) config('saas.workspace_activation_mode', 'staged'),
         ]);
     }
 }
