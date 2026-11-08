@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\SaasSubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
@@ -92,6 +94,35 @@ class SaasTenantSubscriptionTest extends TestCase
         $summary = app(FinancialMonitoringService::class)->summary('2026-11');
 
         $this->assertNull($summary['paymongo_account_position']);
+    }
+
+    public function test_tenant_finance_summary_excludes_other_company_advance_credit(): void
+    {
+        [$tenant] = $this->workspace();
+        app(CurrentTenant::class)->set($tenant);
+        $customer = Customer::create([
+            'account_number' => '6000000001', 'full_name' => 'Tenant customer',
+            'address' => 'Test address', 'contact_number' => '09170000001',
+            'installation_date' => '2026-01-01', 'billing_cycle_day' => 15,
+            'monthly_fee' => 800, 'status' => 'active',
+        ]);
+        CustomerCredit::create(['customer_id' => $customer->id, 'original_amount' => 50, 'remaining_amount' => 50, 'status' => 'unallocated']);
+
+        $otherTenant = Tenant::create(['slug' => 'branch-b', 'name' => 'Other Company', 'status' => 'active', 'is_primary' => false, 'subscription_exempt' => true]);
+        app(CurrentTenant::class)->set($otherTenant);
+        $otherCustomer = Customer::create([
+            'account_number' => '6000000002', 'full_name' => 'Other customer',
+            'address' => 'Other address', 'contact_number' => '09170000002',
+            'installation_date' => '2026-01-01', 'billing_cycle_day' => 15,
+            'monthly_fee' => 800, 'status' => 'active',
+        ]);
+        CustomerCredit::create(['customer_id' => $otherCustomer->id, 'original_amount' => 216, 'remaining_amount' => 216, 'status' => 'unallocated']);
+
+        app(CurrentTenant::class)->set($tenant);
+        Http::preventStrayRequests();
+        $summary = app(FinancialMonitoringService::class)->summary('2026-11');
+
+        $this->assertSame(50.0, $summary['accounts_receivable']['available_advance_credit']);
     }
 
     public function test_owner_can_save_isolated_cashout_recipient_and_bank_availability(): void

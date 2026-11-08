@@ -2,13 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenantThroughParent;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CustomerCredit extends Model
 {
-    use HasUuids;
+    use BelongsToTenantThroughParent, HasUuids;
+
+    public function tenantOwnershipRelation(): string
+    {
+        return 'customer';
+    }
 
     protected $fillable = [
         'customer_id', 'payment_id', 'covered_cycle_date',
@@ -31,5 +37,10 @@ class CustomerCredit extends Model
     public function payment(): BelongsTo
     {
         return $this->belongsTo(Payment::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 }

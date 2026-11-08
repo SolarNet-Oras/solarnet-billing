@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\Router;
 use App\Models\RouterThreatObservation;
 use App\Models\Tenant;
@@ -66,6 +68,36 @@ class SaasDescendantAndApiIsolationTest extends TestCase
         app(CurrentTenant::class)->set($first);
         $this->expectException(LogicException::class);
         $this->observation($router);
+    }
+
+    public function test_customer_advance_credit_is_scoped_through_its_tenant_customer(): void
+    {
+        $first = $this->tenant('branch-a');
+        $second = $this->tenant('branch-b');
+
+        app(CurrentTenant::class)->set($first);
+        $firstCustomer = $this->customer('5000000001', 'First customer');
+        CustomerCredit::create([
+            'customer_id' => $firstCustomer->id,
+            'original_amount' => 100,
+            'remaining_amount' => 100,
+            'status' => 'unallocated',
+        ]);
+
+        app(CurrentTenant::class)->set($second);
+        $secondCustomer = $this->customer('5000000002', 'Second customer');
+        CustomerCredit::create([
+            'customer_id' => $secondCustomer->id,
+            'original_amount' => 216,
+            'remaining_amount' => 216,
+            'status' => 'unallocated',
+        ]);
+
+        app(CurrentTenant::class)->set($first);
+        $this->assertSame(100.0, (float) CustomerCredit::query()->sum('remaining_amount'));
+
+        app(CurrentTenant::class)->set($second);
+        $this->assertSame(216.0, (float) CustomerCredit::query()->sum('remaining_amount'));
     }
 
     public function test_operational_api_resolves_only_the_authenticated_membership_tenant(): void
@@ -139,6 +171,20 @@ class SaasDescendantAndApiIsolationTest extends TestCase
             'status' => 'active',
             'is_primary' => false,
             'subscription_exempt' => true,
+        ]);
+    }
+
+    private function customer(string $accountNumber, string $name): Customer
+    {
+        return Customer::create([
+            'account_number' => $accountNumber,
+            'full_name' => $name,
+            'address' => 'Test address',
+            'contact_number' => '09170000000',
+            'installation_date' => '2026-01-01',
+            'billing_cycle_day' => 15,
+            'monthly_fee' => 800,
+            'status' => 'active',
         ]);
     }
 

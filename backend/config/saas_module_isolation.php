@@ -4,6 +4,7 @@ use App\Models\ActivityLog;
 use App\Models\AutomationLog;
 use App\Models\CollectionPlan;
 use App\Models\Customer;
+use App\Models\CustomerCredit;
 use App\Models\DailyCashCount;
 use App\Models\DhcpLease;
 use App\Models\FinancialEntry;
@@ -57,6 +58,7 @@ return [
         InvoiceItem::class,
         PaymentAllocation::class,
         PaymentRefund::class,
+        CustomerCredit::class,
         TicketComment::class,
         TicketHistory::class,
         CollectionPlanStop::class,
