@@ -53,6 +53,65 @@ class SaasSubscriptionPaymentService
         return ['checkout_url' => $url, 'reference' => $reference];
     }
 
+    public function qrPh(TenantSubscription $subscription): array
+    {
+        $subscription->loadMissing(['tenant', 'plan']);
+        $plan = $subscription->plan;
+        $tenant = $subscription->tenant;
+        abort_if(! $plan || ! $plan->is_active, 422, 'The subscription plan is unavailable.');
+        $secret = config('services.paymongo.secret_key');
+        $public = config('services.paymongo.public_key');
+        if (! $secret || ! $public) throw new RuntimeException('QRPh subscription payments are not configured.');
+
+        $existing = TenantSubscriptionPayment::query()
+            ->where('subscription_id', $subscription->id)->where('provider', 'paymongo_qrph')
+            ->where('status', 'pending')->where('created_at', '>', now()->subMinutes(30))->latest()->first();
+        if ($existing && filled(data_get($existing->provider_payload, 'qr_image_url'))) return $this->qrResponse($existing);
+
+        $reference = 'SAAS-QR-'.Str::upper(Str::random(12));
+        $intent = Http::withBasicAuth($secret, '')->acceptJson()->timeout(20)
+            ->post(rtrim(config('services.paymongo.base_url'), '/').'/payment_intents', ['data' => ['attributes' => [
+                'amount' => (int) round(((float) $plan->amount) * 100), 'currency' => $plan->currency,
+                'payment_method_allowed' => ['qrph'], 'description' => "{$tenant->name} ISP workspace subscription",
+            ]]]);
+        if (! $intent->successful()) throw new RuntimeException('PayMongo could not create the subscription QRPh payment.');
+        $intentId = $intent->json('data.id');
+        $clientKey = $intent->json('data.attributes.client_key');
+        if (! $intentId || ! $clientKey) throw new RuntimeException('PayMongo did not return QRPh payment credentials.');
+
+        $method = Http::withBasicAuth($public, '')->acceptJson()->timeout(20)
+            ->post(rtrim(config('services.paymongo.base_url'), '/').'/payment_methods', ['data' => ['attributes' => ['type' => 'qrph']]]);
+        $methodId = $method->json('data.id');
+        if (! $method->successful() || ! $methodId) throw new RuntimeException('PayMongo could not create the QRPh payment method.');
+        $attachment = Http::withBasicAuth($public, '')->acceptJson()->timeout(20)
+            ->post(rtrim(config('services.paymongo.base_url'), '/').'/payment_intents/'.$intentId.'/attach', ['data' => ['attributes' => [
+                'payment_method' => $methodId, 'client_key' => $clientKey,
+            ]]]);
+        $image = $attachment->json('data.attributes.next_action.code.image_url');
+        if (! $attachment->successful() || ! is_string($image) || ! str_starts_with($image, 'data:image/')) {
+            throw new RuntimeException('PayMongo did not return a valid subscription QRPh image.');
+        }
+        $payment = TenantSubscriptionPayment::create([
+            'tenant_id' => $tenant->id, 'subscription_id' => $subscription->id, 'plan_id' => $plan->id,
+            'provider' => 'paymongo_qrph', 'provider_payment_id' => $intentId, 'provider_reference' => $reference,
+            'idempotency_key' => 'saas-qrph:'.Str::uuid(), 'amount' => $plan->amount, 'currency' => $plan->currency,
+            'status' => 'pending', 'provider_payload' => ['qr_image_url' => $image, 'payment_method_id' => $methodId, 'expires_at' => now()->addMinutes(30)->toIso8601String()],
+        ]);
+        return $this->qrResponse($payment);
+    }
+
+    public function receivePaymentIntent(string $intentId, string $eventId = ''): bool
+    {
+        $payment = TenantSubscriptionPayment::query()->where('provider', 'paymongo_qrph')->where('provider_payment_id', $intentId)->first();
+        if (! $payment) return false;
+        $response = Http::withBasicAuth(config('services.paymongo.secret_key'), '')->acceptJson()->timeout(20)
+            ->get(rtrim(config('services.paymongo.base_url'), '/').'/payment_intents/'.$intentId);
+        if (! $response->successful()) return true;
+        $status = strtolower((string) $response->json('data.attributes.status'));
+        if (in_array($status, ['paid', 'succeeded'], true)) $this->activate($payment, $eventId, $response->json('data'));
+        return true;
+    }
+
     public function receiveCheckout(string $sessionId, string $eventId = ''): bool
     {
         $payment = TenantSubscriptionPayment::query()->where('provider', 'paymongo')->where('provider_payment_id', $sessionId)->first();
@@ -64,7 +123,13 @@ class SaasSubscriptionPaymentService
         $status = strtolower((string) (data_get($attributes, 'payment_intent.attributes.status') ?? data_get($attributes, 'status') ?? ''));
         if (! in_array($status, ['succeeded', 'paid'], true)) return true;
 
-        DB::transaction(function () use ($payment, $eventId, $response): void {
+        $this->activate($payment, $eventId, $response->json('data'));
+        return true;
+    }
+
+    private function activate(TenantSubscriptionPayment $payment, string $eventId, array $providerPayload): void
+    {
+        DB::transaction(function () use ($payment, $eventId, $providerPayload): void {
             $locked = TenantSubscriptionPayment::query()->lockForUpdate()->findOrFail($payment->id);
             if ($locked->status === 'paid') return;
             $subscription = TenantSubscription::query()->with('plan')->lockForUpdate()->findOrFail($locked->subscription_id);
@@ -75,7 +140,7 @@ class SaasSubscriptionPaymentService
             }
             $periodEnd = $periodStart->copy()->addMonthNoOverflow();
             $from = $subscription->status;
-            $locked->update(['status' => 'paid', 'verified_at' => $now, 'provider_payload' => $response->json('data')]);
+            $locked->update(['status' => 'paid', 'verified_at' => $now, 'provider_payload' => $providerPayload]);
             $subscription->update([
                 'status' => 'active', 'payment_status' => 'paid', 'current_period_starts_at' => $periodStart,
                 'current_period_ends_at' => $periodEnd, 'next_payment_due_at' => $periodEnd,
@@ -88,6 +153,13 @@ class SaasSubscriptionPaymentService
                  'context' => ['payment_id' => $locked->id], 'occurred_at' => $now]
             );
         }, 3);
-        return true;
+    }
+
+    private function qrResponse(TenantSubscriptionPayment $payment): array
+    {
+        return ['payment_id' => $payment->id, 'reference' => $payment->provider_reference,
+            'amount' => (float) $payment->amount, 'currency' => $payment->currency,
+            'qr_image_url' => data_get($payment->provider_payload, 'qr_image_url'),
+            'expires_at' => data_get($payment->provider_payload, 'expires_at')];
     }
 }

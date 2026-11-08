@@ -35,4 +35,12 @@ class SaasTenantSubscriptionController extends Controller
         abort_unless($membership->is_owner && $membership->membership_role === 'tenant_admin', 403, 'Only the Tenant Super Administrator can pay the company subscription.');
         return response()->json(['data' => $payments->checkout($tenant->subscription()->firstOrFail())]);
     }
+
+    public function qrPh(Request $request, SaasSubscriptionPaymentService $payments): JsonResponse
+    {
+        /** @var Tenant $tenant */ $tenant = $request->attributes->get('saas_tenant');
+        /** @var TenantMembership $membership */ $membership = $request->attributes->get('saas_membership');
+        abort_unless($membership->is_owner && $membership->membership_role === 'tenant_admin', 403, 'Only the Tenant Super Administrator can pay the company subscription.');
+        return response()->json(['data' => $payments->qrPh($tenant->subscription()->firstOrFail())]);
+    }
 }

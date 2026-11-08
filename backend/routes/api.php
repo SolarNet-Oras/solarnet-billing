@@ -72,6 +72,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:api', 'saas.tenant'])->prefix('saas/tenant')->group(function () {
         Route::get('/subscription', [SaasTenantSubscriptionController::class, 'show']);
         Route::post('/subscription/checkout', [SaasTenantSubscriptionController::class, 'checkout'])->middleware('throttle:5,1');
+        Route::post('/subscription/qrph', [SaasTenantSubscriptionController::class, 'qrPh'])->middleware('throttle:5,1');
         Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
         Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
     });

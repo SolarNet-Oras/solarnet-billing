@@ -17,6 +17,7 @@ export default{
   async reviewStaffRequest(id:string,decision:'approve'|'reject'){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post(`/tenant/staff-access-requests/${id}/review`,{decision},{headers:{Authorization:`Bearer ${token}`}})).data;},
   async subscription():Promise<TenantSubscriptionSummary>{const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/tenant/subscription',{headers:{Authorization:`Bearer ${token}`}})).data.data;},
   async startSubscriptionCheckout():Promise<{checkout_url:string;reference:string}>{const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post('/tenant/subscription/checkout',{}, {headers:{Authorization:`Bearer ${token}`}})).data.data;},
+  async startSubscriptionQrPh():Promise<{payment_id:string;reference:string;amount:number;currency:string;qr_image_url:string;expires_at:string}>{const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post('/tenant/subscription/qrph',{}, {headers:{Authorization:`Bearer ${token}`}})).data.data;},
   async me(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/auth/me',{headers:{Authorization:`Bearer ${token}`}})).data;},
   logout(){sessionStorage.removeItem(SAAS_TENANT_TOKEN_KEY);},
 };

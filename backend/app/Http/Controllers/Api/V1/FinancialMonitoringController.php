@@ -20,9 +20,10 @@ class FinancialMonitoringController extends Controller
             'month' => 'nullable|date_format:Y-m',
         ]);
 
-        return response()->json([
-            'data' => $monitoring->summary($data['month'] ?? null),
-        ]);
+        $summary = $monitoring->summary($data['month'] ?? null);
+        $tenant = $request->attributes->get('saas_tenant');
+        if ($tenant && ! $tenant->is_primary) $summary['paymongo_account_position'] = null;
+        return response()->json(['data' => $summary]);
     }
 
     /** Restore an accidentally archived customer without altering any invoice. */

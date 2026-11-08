@@ -115,7 +115,8 @@ class FinancialEntryController extends Controller
             'wallets' => $wallets,
             // Provider-reported money is kept separate from the accounting
             // ledger. In particular, pending settlement is not cash-outable.
-            'paymongo_account_position' => app(PaymongoAccountPositionService::class)->snapshot(),
+            'paymongo_account_position' => ($request->attributes->get('saas_tenant') && ! $request->attributes->get('saas_tenant')->is_primary)
+                ? null : app(PaymongoAccountPositionService::class)->snapshot(),
             'cash_count' => $cashCount,
             'cash_denomination_position' => app(CashDenominationService::class)->livePosition(),
             'installation_incentives' => $installationIncentives,

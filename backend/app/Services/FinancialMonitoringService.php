@@ -10,6 +10,7 @@ use App\Models\PaymentRefund;
 use App\Models\PaymongoCheckout;
 use App\Models\Remittance;
 use App\Models\User;
+use App\Support\CurrentTenant;
 use Carbon\Carbon;
 
 /**
@@ -28,6 +29,8 @@ class FinancialMonitoringService
      */
     public function summary(?string $month = null): array
     {
+        $currentTenant = app(CurrentTenant::class)->get();
+        $tenantId = $currentTenant && ! $currentTenant->is_primary ? $currentTenant->id : null;
         $period = $this->resolvePeriod($month);
         $start = $period['start'];
         $end = $period['end'];
@@ -103,6 +106,10 @@ class FinancialMonitoringService
         $wallets = self::calculateWallets($allCollections, $allEntries);
 
         $settlements = PaymongoCheckout::query()
+            ->when($tenantId, fn ($query) => $query->where(function ($query) use ($tenantId) {
+                $query->whereHas('invoice', fn ($invoice) => $invoice->where('tenant_id', $tenantId))
+                    ->orWhereHas('customer', fn ($customer) => $customer->where('tenant_id', $tenantId));
+            }))
             ->with(['payment:id,payment_number', 'customer:id,full_name,account_number', 'invoice:id,invoice_number'])
             ->where('status', 'paid')
             ->whereBetween('paid_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
@@ -111,6 +118,10 @@ class FinancialMonitoringService
         $confirmedSettlements = $settlements->where('settlement_status', 'provider_confirmed');
         $processingFees = self::rounded((float) $confirmedSettlements->sum('provider_fee'));
         $overallSettlement = PaymongoCheckout::query()
+            ->when($tenantId, fn ($query) => $query->where(function ($query) use ($tenantId) {
+                $query->whereHas('invoice', fn ($invoice) => $invoice->where('tenant_id', $tenantId))
+                    ->orWhereHas('customer', fn ($customer) => $customer->where('tenant_id', $tenantId));
+            }))
             ->where('settlement_status', 'provider_confirmed')
             ->selectRaw('COUNT(*) as count, COALESCE(SUM(provider_gross_amount), 0) as gross, COALESCE(SUM(provider_fee), 0) as fees, COALESCE(SUM(provider_net_amount), 0) as net, MIN(settlement_captured_at) as tracking_started_at')
             ->first();
@@ -194,7 +205,7 @@ class FinancialMonitoringService
         $collectionRate = $billed > 0 ? self::rounded(($totalCollections / $billed) * 100) : null;
         $expenseRatio = $totalCollections > 0 ? self::rounded(($expenses / $totalCollections) * 100) : null;
         $study = $this->study($billed, $totalCollections, $expenses, $netMovement, $outstanding, $overdue, $pendingRemittances, $collectionRate);
-        $collectorCash = $this->collectorCashAccountability($start, $end);
+        $collectorCash = $this->collectorCashAccountability($start, $end, $tenantId);
 
         return [
             'period' => [
@@ -217,7 +228,7 @@ class FinancialMonitoringService
             'wallets' => $wallets,
             'wallet_balance_as_of' => $balanceDate,
             'paymongo_settlements' => $paymongo,
-            'paymongo_account_position' => app(PaymongoAccountPositionService::class)->snapshot(),
+            'paymongo_account_position' => $tenantId ? null : app(PaymongoAccountPositionService::class)->snapshot(),
             'daily_metrics' => $dailyMetrics,
             'allocation_plan' => self::allocationPlan(self::rounded($totalCollections - $processingFees)),
             'accounts_receivable' => [
@@ -262,9 +273,11 @@ class FinancialMonitoringService
      *
      * @return array{summary: array<string, int|float>, collectors: array<int, array<string, int|float|string|null>>}
      */
-    private function collectorCashAccountability(Carbon $start, Carbon $end): array
+    private function collectorCashAccountability(Carbon $start, Carbon $end, ?string $tenantId = null): array
     {
         $collectors = User::query()
+            ->when($tenantId, fn ($query) => $query->whereHas('tenantMemberships', fn ($membership) => $membership
+                ->where('tenant_id', $tenantId)->where('status', 'active')))
             ->whereHas('roles', fn ($query) => $query->where('name', 'collector'))
             ->orderBy('name')
             ->get(['id', 'name', 'is_active']);
