@@ -388,6 +388,11 @@ Unsafe HTTP methods are rejected before operational authorization. Production
 console and worker scopes continue to resolve the primary SolarNet tenant so
 existing recurring billing and queue processing remain isolated and available.
 
+Tenant password recovery and staff access requests use the company login ID.
+Only an active `tenant_admin` membership can approve staff; approval creates an
+active `tenant_staff` membership under the existing company subscription and
+never grants a SolarNet role or a separate subscription.
+
 ```bash
 php artisan saas:audit-workspace-activation
 ```

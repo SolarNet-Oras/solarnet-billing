@@ -6,13 +6,17 @@ import service, { saasError, type TenantPlan } from '@/services/saasTenantServic
 const field = 'w-full rounded-md border border-input bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary';
 
 export default function SaasAppPage(): React.JSX.Element {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const query = new URLSearchParams(location.search);
+  const resetToken = query.get('token');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'staff'>(resetToken ? 'forgot' : 'login');
   const [showAdvertisement, setShowAdvertisement] = useState(true);
   const [plans, setPlans] = useState<TenantPlan[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [login, setLogin] = useState({ tenant: '', email: '', password: '' });
+  const [recovery, setRecovery] = useState({ tenant: query.get('tenant') || '', email: query.get('email') || '', password: '', password_confirmation: '' });
+  const [staff, setStaff] = useState({ tenant: '', name: '', email: '', phone: '', password: '', password_confirmation: '' });
   const [form, setForm] = useState({ company_name: '', tenant_slug: '', owner_name: '', owner_email: '', owner_phone: '', password: '', password_confirmation: '', business_address: '', business_registration_number: '', plan: 'monthly-3499', terms_accepted: false });
 
   useEffect(() => {
@@ -46,6 +50,25 @@ export default function SaasAppPage(): React.JSX.Element {
     } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
   }
 
+  async function recover(event: FormEvent): Promise<void> {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = resetToken
+        ? await service.resetPassword({ ...recovery, token: resetToken })
+        : await service.forgotPassword(recovery.tenant, recovery.email);
+      setNotice(result.message);
+      if (resetToken) window.setTimeout(() => window.location.assign('/'), 1500);
+    } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
+  }
+
+  async function requestStaffAccess(event: FormEvent): Promise<void> {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = await service.requestStaffAccess(staff);
+      setNotice(result.message); setStaff({ ...staff, name: '', email: '', phone: '', password: '', password_confirmation: '' });
+    } catch (requestError) { setError(saasError(requestError)); } finally { setBusy(false); }
+  }
+
   return <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
     <FiberOpticBackground />
     <button type="button" onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="fixed right-4 top-4 z-30 rounded-full border border-white/50 bg-slate-950/85 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur hover:bg-slate-900 sm:right-7 sm:top-6">
@@ -63,7 +86,7 @@ export default function SaasAppPage(): React.JSX.Element {
       <header className="mb-8 text-center">
         <img src="/solarnet-company-logo-192.png?v=20261015-official" alt="SolarNet" className="mx-auto mb-4 h-16 w-16 object-contain" />
         <h1 className="mb-2 text-3xl font-bold text-white">SolarNet ISP Billing</h1>
-        <p className="text-slate-200">{mode === 'login' ? 'Sign in to your company workspace' : 'Apply for an isolated ISP workspace'}</p>
+        <p className="text-slate-200">{mode === 'login' ? 'Sign in to your company workspace' : mode === 'register' ? 'Apply for an isolated ISP workspace' : mode === 'forgot' ? 'Recover your company workspace access' : 'Request access to an existing company'}</p>
       </header>
 
       <section className="rounded-2xl border border-white/40 bg-card/95 p-6 text-foreground shadow-2xl backdrop-blur-xl sm:p-8">
@@ -76,10 +99,25 @@ export default function SaasAppPage(): React.JSX.Element {
           <label className="block text-sm font-medium">Password<input required type="password" autoComplete="current-password" className={`${field} mt-2`} placeholder="••••••••" value={login.password} onChange={(event) => setLogin({ ...login, password: event.target.value })} /></label>
           <button disabled={busy} className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"><Building2 className="mr-2 inline h-5 w-5" />{busy ? 'Signing in...' : 'Sign in'}</button>
           <div className="text-center text-sm">
-            <button type="button" onClick={() => setNotice('Password recovery must be requested for this company ID. Contact your Tenant Super Administrator while the tenant recovery workflow is being enabled.')} className="font-medium text-primary hover:underline">Forgot your password?</button>
-            <p className="mt-2 text-xs text-muted-foreground">Need a staff account? <button type="button" onClick={() => setNotice('Staff do not need a separate subscription. Ask the Tenant Super Administrator for this company ID to grant your staff access.')} className="font-medium text-primary hover:underline">Submit a signup request</button>.</p>
+            <button type="button" onClick={() => { setMode('forgot'); setNotice(''); setError(''); }} className="font-medium text-primary hover:underline">Forgot your password?</button>
+            <p className="mt-2 text-xs text-muted-foreground">Need a staff account? <button type="button" onClick={() => { setMode('staff'); setNotice(''); setError(''); }} className="font-medium text-primary hover:underline">Submit a signup request</button>.</p>
           </div>
           <p className="rounded-lg border border-border bg-muted/35 p-3 text-xs text-muted-foreground">The subscribing company owner is the Tenant Super Administrator. Staff share the company subscription and can access only after that administrator grants membership.</p>
+        </form> : mode === 'forgot' ? <form onSubmit={recover} className="space-y-4">
+          <label className="block text-sm font-medium">Company login ID<input required className={`${field} mt-2`} value={recovery.tenant} onChange={(event) => setRecovery({ ...recovery, tenant: event.target.value.toLowerCase() })} /></label>
+          <label className="block text-sm font-medium">Email Address<input required type="email" className={`${field} mt-2`} value={recovery.email} onChange={(event) => setRecovery({ ...recovery, email: event.target.value })} /></label>
+          {resetToken && <><label className="block text-sm font-medium">New password<input required minLength={10} type="password" className={`${field} mt-2`} value={recovery.password} onChange={(event) => setRecovery({ ...recovery, password: event.target.value })} /></label><label className="block text-sm font-medium">Confirm password<input required minLength={10} type="password" className={`${field} mt-2`} value={recovery.password_confirmation} onChange={(event) => setRecovery({ ...recovery, password_confirmation: event.target.value })} /></label></>}
+          <button disabled={busy} className="w-full rounded-md bg-primary p-2.5 font-semibold text-primary-foreground">{busy ? 'Processing...' : resetToken ? 'Reset password' : 'Send reset link'}</button>
+          <button type="button" onClick={() => setMode('login')} className="w-full text-sm text-primary hover:underline">Back to tenant sign in</button>
+        </form> : mode === 'staff' ? <form onSubmit={requestStaffAccess} className="grid gap-4 sm:grid-cols-2">
+          <label className="text-sm font-medium sm:col-span-2">Company login ID<input required className={`${field} mt-2`} value={staff.tenant} onChange={(event) => setStaff({ ...staff, tenant: event.target.value.toLowerCase() })} /></label>
+          <label className="text-sm font-medium">Full name<input required className={`${field} mt-2`} value={staff.name} onChange={(event) => setStaff({ ...staff, name: event.target.value })} /></label>
+          <label className="text-sm font-medium">Email<input required type="email" className={`${field} mt-2`} value={staff.email} onChange={(event) => setStaff({ ...staff, email: event.target.value })} /></label>
+          <label className="text-sm font-medium sm:col-span-2">Phone (optional)<input className={`${field} mt-2`} value={staff.phone} onChange={(event) => setStaff({ ...staff, phone: event.target.value })} /></label>
+          <label className="text-sm font-medium">Password<input required minLength={10} type="password" className={`${field} mt-2`} value={staff.password} onChange={(event) => setStaff({ ...staff, password: event.target.value })} /></label>
+          <label className="text-sm font-medium">Confirm password<input required minLength={10} type="password" className={`${field} mt-2`} value={staff.password_confirmation} onChange={(event) => setStaff({ ...staff, password_confirmation: event.target.value })} /></label>
+          <button disabled={busy} className="rounded-md bg-primary p-2.5 font-semibold text-primary-foreground sm:col-span-2">{busy ? 'Submitting...' : 'Submit for company approval'}</button>
+          <button type="button" onClick={() => setMode('login')} className="text-sm text-primary hover:underline sm:col-span-2">Back to tenant sign in</button>
         </form> : <form onSubmit={register} className="grid gap-4 sm:grid-cols-2">
           <input required aria-label="ISP company name" className={field} placeholder="ISP company name" value={form.company_name} onChange={(event) => setForm({ ...form, company_name: event.target.value })} />
           <div><input required aria-label="Company login ID" className={field} placeholder="Company login ID" value={form.tenant_slug} onChange={(event) => setForm({ ...form, tenant_slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })} /><p className="mt-1 text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens.</p></div>

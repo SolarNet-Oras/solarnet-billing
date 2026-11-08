@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\V1\StaffAttendanceController;
 use App\Http\Controllers\Api\V1\StaffLeaveController;
 use App\Http\Controllers\Api\V1\SaasDomainController;
 use App\Http\Controllers\Api\V1\SaasTenantAuthController;
+use App\Http\Controllers\Api\V1\SaasTenantStaffController;
 use App\Http\Controllers\Api\V1\SaasTenantApplicationController;
 use App\Http\Controllers\Api\V1\SaasPlatformAuthController;
 use App\Http\Controllers\Api\V1\SaasPlatformController;
@@ -62,8 +63,15 @@ Route::get('/health', function () {
 Route::prefix('v1')->group(function () {
     Route::get('/saas/domain-context', [SaasDomainController::class, 'context'])->middleware('throttle:60,1');
     Route::post('/saas/auth/login', [SaasTenantAuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/saas/auth/forgot-password', [SaasTenantStaffController::class, 'requestPasswordReset'])->middleware('throttle:3,1');
+    Route::post('/saas/auth/reset-password', [SaasTenantStaffController::class, 'resetPassword'])->middleware('throttle:5,1');
+    Route::post('/saas/auth/staff-access-request', [SaasTenantStaffController::class, 'storeRequest'])->middleware('throttle:3,1');
     Route::get('/saas/auth/me', [SaasTenantAuthController::class, 'me'])
         ->middleware(['auth:api', 'saas.tenant', 'throttle:60,1']);
+    Route::middleware(['auth:api', 'saas.tenant'])->prefix('saas/tenant')->group(function () {
+        Route::get('/staff-access-requests', [SaasTenantStaffController::class, 'index']);
+        Route::post('/staff-access-requests/{accessRequest}/review', [SaasTenantStaffController::class, 'review'])->middleware('throttle:10,1');
+    });
     Route::get('/saas/applications/plans', [SaasTenantApplicationController::class, 'plans'])->middleware('throttle:60,1');
     Route::post('/saas/applications', [SaasTenantApplicationController::class, 'store'])->middleware('throttle:5,1');
     Route::post('/saas/applications/verify', [SaasTenantApplicationController::class, 'verify'])->middleware('throttle:10,1');

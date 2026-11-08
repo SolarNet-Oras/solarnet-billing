@@ -9,6 +9,11 @@ export default{
   async register(payload:Record<string,unknown>){return (await api.post('/applications',payload)).data;},
   async verify(token:string){return (await api.post('/applications/verify',{token})).data;},
   async login(tenant:string,email:string,password:string){const response=await api.post('/auth/login',{tenant,email,password});sessionStorage.setItem(SAAS_TENANT_TOKEN_KEY,response.data.access_token);return response.data;},
+  async forgotPassword(tenant:string,email:string){return (await api.post('/auth/forgot-password',{tenant,email})).data;},
+  async resetPassword(payload:Record<string,unknown>){return (await api.post('/auth/reset-password',payload)).data;},
+  async requestStaffAccess(payload:Record<string,unknown>){return (await api.post('/auth/staff-access-request',payload)).data;},
+  async staffRequests(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/tenant/staff-access-requests',{headers:{Authorization:`Bearer ${token}`}})).data.data;},
+  async reviewStaffRequest(id:string,decision:'approve'|'reject'){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.post(`/tenant/staff-access-requests/${id}/review`,{decision},{headers:{Authorization:`Bearer ${token}`}})).data;},
   async me(){const token=sessionStorage.getItem(SAAS_TENANT_TOKEN_KEY);return (await api.get('/auth/me',{headers:{Authorization:`Bearer ${token}`}})).data;},
   logout(){sessionStorage.removeItem(SAAS_TENANT_TOKEN_KEY);},
 };

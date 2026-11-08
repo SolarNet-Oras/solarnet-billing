@@ -74,6 +74,7 @@ const navItems: NavItem[] = [
   { name: 'IP / ASN Lookup', path: '/ip-intelligence', icon: Globe2, roles: ['super_admin'] },
   { name: 'Logs & Reports', path: '/reports', icon: ClipboardList, permission: 'view-reports' },
   { name: 'Users', path: '/users', icon: Users, roles: ['super_admin'] },
+  { name: 'Company Staff', path: '/tenant-staff', icon: Users, roles: ['tenant_admin'] },
   { name: 'Client Migration', path: '/super-admin/client-migrations', icon: Upload, roles: ['super_admin'] },
   { name: 'Install Staff App', path: '/install-staff-app', icon: Download, roles: ['super_admin', 'admin', 'cashier', 'office_admin', 'collector', 'technician', 'noc', 'accounting', 'viewer'] },
   { name: 'Settings', path: '/settings', icon: Settings, permission: 'view-settings' },
@@ -85,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const [branding, setBranding] = React.useState({ name: 'Solarnet Internet', logo_url: '' });
   const tenantWorkspace = window.location.hostname.toLowerCase() === 'app.solarnetportal.com';
-  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/tickets','/reports','/install-staff-app','/settings']);
+  const tenantCanaryPaths = new Set(['/dashboard','/customers','/billing','/operations','/financial-monitoring','/service-plans','/tickets','/reports','/install-staff-app','/settings','/tenant-staff']);
 
   React.useEffect(() => {
     const loadBranding = (): void => {
