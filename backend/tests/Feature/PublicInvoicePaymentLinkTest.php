@@ -58,7 +58,7 @@ class PublicInvoicePaymentLinkTest extends TestCase
     {
         $tenant = Tenant::create(['slug'=>'branch-a','name'=>'Branch A','status'=>'active','is_primary'=>false,'subscription_exempt'=>false]);
         app(CurrentTenant::class)->set($tenant);
-        $customer = Customer::create(['account_number'=>'3000000199','full_name'=>'Tenant Customer','address'=>'Test address','installation_date'=>'2026-01-01','billing_cycle_day'=>15,'monthly_fee'=>800,'status'=>'active']);
+        $customer = Customer::create(['account_number'=>'3000000199','full_name'=>'Tenant Customer','contact_number'=>'09170000399','address'=>'Test address','installation_date'=>'2026-01-01','billing_cycle_day'=>15,'monthly_fee'=>800,'status'=>'active']);
         $invoice = Invoice::create(['customer_id'=>$customer->id,'invoice_number'=>'TEN-0199','issue_date'=>'2026-10-08','due_date'=>'2026-10-15','billing_period_start'=>'2026-09-15','billing_period_end'=>'2026-10-15','total'=>800,'balance'=>800,'status'=>'sent']);
         $token = app(InvoicePaymentLinkService::class)->token($invoice);
 
@@ -77,7 +77,7 @@ class PublicInvoicePaymentLinkTest extends TestCase
     {
         $tenant = Tenant::create(['slug'=>'solarnet','name'=>'SolarNet','status'=>'active','is_primary'=>true,'subscription_exempt'=>true]);
         app(CurrentTenant::class)->set($tenant);
-        $customer = Customer::create(['account_number'=>'4000000199','full_name'=>'Legacy Link Customer','address'=>'Test address','installation_date'=>'2026-01-01','billing_cycle_day'=>15,'monthly_fee'=>800,'status'=>'active']);
+        $customer = Customer::create(['account_number'=>'4000000199','full_name'=>'Legacy Link Customer','contact_number'=>'09170000499','address'=>'Test address','installation_date'=>'2026-01-01','billing_cycle_day'=>15,'monthly_fee'=>800,'status'=>'active']);
         $invoice = Invoice::create(['customer_id'=>$customer->id,'invoice_number'=>'SLR-LEGACY-0199','issue_date'=>'2026-10-08','due_date'=>'2026-10-15','billing_period_start'=>'2026-09-15','billing_period_end'=>'2026-10-15','total'=>800,'balance'=>800,'status'=>'sent']);
         $payload = ['invoice_id'=>$invoice->id,'customer_id'=>$customer->id,'invoice_number'=>$invoice->invoice_number,'expires_at'=>now()->addDays(30)->timestamp];
         $encoded = rtrim(strtr(base64_encode(json_encode($payload,JSON_UNESCAPED_SLASHES)),'+/','-_'),'=');
