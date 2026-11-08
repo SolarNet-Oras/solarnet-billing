@@ -22,7 +22,7 @@ interface ProfileChangeRequest {
   status: 'pending' | 'approved' | 'rejected';
   requested_full_name: string | null;
   requested_service_plan: { id: string; name: string; price: number } | null;
-  customer: { account_number: string; full_name: string; email: string | null };
+  customer: { account_number: string; full_name: string; email: string | null } | null;
   created_at: string;
 }
 
@@ -191,6 +191,10 @@ const TicketsPage: React.FC = () => {
   const reviewProfileChange = async (change: ProfileChangeRequest, decision: 'approve' | 'reject') => {
     const reviewNotes = decision === 'reject' ? window.prompt('Optional reason for rejecting this request:') : null;
     if (decision === 'reject' && reviewNotes === null) return;
+    if (!change.customer) {
+      window.alert('This request is not connected to a customer in the current company workspace.');
+      return;
+    }
     if (!window.confirm(`${decision === 'approve' ? 'Approve and apply' : 'Reject'} the requested changes for ${change.customer.full_name}?`)) return;
 
     try {
@@ -594,9 +598,9 @@ const TicketsPage: React.FC = () => {
                 <tr><th className="px-4 py-3 text-left">Client</th><th className="px-4 py-3 text-left">Requested change</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-left">Submitted</th><th className="px-4 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {profileChanges.map((change) => (
+                {profileChanges.filter((change) => change.customer !== null).map((change) => (
                   <tr key={change.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/80">
-                    <td className="px-4 py-3"><div className="font-medium text-gray-900">{change.customer.full_name}</div><div className="text-xs text-gray-500">{change.customer.account_number}</div></td>
+                    <td className="px-4 py-3"><div className="font-medium text-gray-900">{change.customer?.full_name || 'Unavailable customer'}</div><div className="text-xs text-gray-500">{change.customer?.account_number || 'No account'}</div></td>
                     <td className="px-4 py-3 text-gray-800"><div>{change.requested_full_name && <>Name: <strong>{change.requested_full_name}</strong></>}</div>{change.requested_service_plan && <div className="text-xs text-gray-500">Plan: {change.requested_service_plan.name} · ₱{Number(change.requested_service_plan.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}/mo</div>}</td>
                     <td className="px-4 py-3 capitalize text-gray-700">{change.status}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">{new Date(change.created_at).toLocaleString()}</td>

@@ -1266,7 +1266,7 @@ class CustomerController extends Controller
             'customer.servicePlan:id,name,price',
             'requestedServicePlan:id,name,price',
             'reviewer:id,name',
-        ])->latest()->get();
+        ])->whereHas('customer')->latest()->get();
 
         return response()->json(['status' => 'success', 'data' => $requests]);
     }
@@ -1274,7 +1274,9 @@ class CustomerController extends Controller
     /** Apply a client request only after an administrator explicitly approves it. */
     public function approveProfileChangeRequest(string $id): JsonResponse
     {
-        $change = CustomerProfileChangeRequest::with('requestedServicePlan')->findOrFail($id);
+        $change = CustomerProfileChangeRequest::with('requestedServicePlan')
+            ->whereHas('customer')
+            ->findOrFail($id);
         if ($change->status !== 'pending') {
             return response()->json(['status' => 'error', 'message' => 'This request has already been reviewed.'], 422);
         }
@@ -1318,7 +1320,7 @@ class CustomerController extends Controller
 
     public function rejectProfileChangeRequest(Request $request, string $id): JsonResponse
     {
-        $change = CustomerProfileChangeRequest::findOrFail($id);
+        $change = CustomerProfileChangeRequest::whereHas('customer')->findOrFail($id);
         if ($change->status !== 'pending') {
             return response()->json(['status' => 'error', 'message' => 'This request has already been reviewed.'], 422);
         }
