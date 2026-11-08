@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -20,11 +21,15 @@ class SaasOperationalOwnershipBackfillTest extends TestCase
         $tenant = $this->solarNet();
         $this->legacySetting('company.name', 'SolarNet');
 
-        $this->artisan('saas:backfill-solarnet-operational-ownership')
-            ->expectsOutputToContain('"mode": "audit"')
-            ->expectsOutputToContain('"unassigned_records": 1')
-            ->expectsOutputToContain('"safe_for_execution": true')
-            ->assertSuccessful();
+        $this->assertSame(0, Artisan::call('saas:backfill-solarnet-operational-ownership'));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame('audit', $report['mode']);
+        $this->assertTrue($report['read_only']);
+        $this->assertSame(1, $report['tables']['settings']['unassigned']);
+        $this->assertSame(1, $report['unassigned_records']);
+        $this->assertTrue($report['safe_for_execution']);
+        $this->assertTrue($report['navigation_remains_staged']);
 
         $this->assertDatabaseHas('settings', ['key' => 'company.name', 'tenant_id' => null]);
         $this->assertDatabaseCount('tenants', 1);
