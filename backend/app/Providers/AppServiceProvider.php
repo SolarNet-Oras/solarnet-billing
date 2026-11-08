@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Customer;
+use App\Models\Tenant;
 use App\Observers\CustomerObserver;
 use App\Support\CurrentTenant;
 use Illuminate\Auth\Notifications\ResetPassword;
@@ -20,7 +21,25 @@ class AppServiceProvider extends ServiceProvider
     {
         // Scoped bindings are reset between HTTP requests and queue jobs,
         // preventing tenant context from leaking in long-running workers.
-        $this->app->scoped(CurrentTenant::class, fn () => new CurrentTenant());
+        $this->app->scoped(CurrentTenant::class, function (): CurrentTenant {
+            $context = new CurrentTenant();
+
+            // Existing production scheduler and queue jobs belong to the
+            // primary SolarNet workspace until tenant-aware job payloads are
+            // introduced. Recreate this context for every scoped queue job.
+            if ($this->app->runningInConsole() && $this->app->environment('production')) {
+                $tenant = Tenant::query()
+                    ->where('slug', config('saas.primary_tenant_slug'))
+                    ->where('is_primary', true)
+                    ->where('status', 'active')
+                    ->first();
+                if ($tenant) {
+                    $context->set($tenant);
+                }
+            }
+
+            return $context;
+        });
     }
 
     /**

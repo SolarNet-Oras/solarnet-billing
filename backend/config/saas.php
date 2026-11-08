@@ -18,6 +18,7 @@ return [
     // Staged by default. Canary mode permits only explicitly listed tenant
     // slugs; active mode still requires all global enforcement flags.
     'workspace_activation_mode' => env('SAAS_WORKSPACE_ACTIVATION_MODE', 'staged'),
+    'workspace_canary_read_only' => filter_var(env('SAAS_WORKSPACE_CANARY_READ_ONLY', true), FILTER_VALIDATE_BOOL),
     'workspace_canary_tenants' => array_values(array_filter(array_map(
         'trim',
         explode(',', (string) env('SAAS_WORKSPACE_CANARY_TENANTS', ''))

@@ -54,4 +54,17 @@ class SaasDomainRoutingTest extends TestCase
             ->assertStatus(503)
             ->assertJsonPath('surface', 'admin');
     }
+
+    public function test_canary_workspace_blocks_mutations_before_operational_authorization(): void
+    {
+        config()->set('saas.enabled', true);
+        config()->set('saas.domains_enabled', true);
+        config()->set('saas.enforcement_mode', 'enforced');
+        config()->set('saas.workspace_activation_mode', 'canary');
+        config()->set('saas.workspace_canary_read_only', true);
+
+        $this->postJson('https://app.solarnetportal.com/api/v1/invoices', [])
+            ->assertStatus(423)
+            ->assertJsonPath('surface', 'app');
+    }
 }

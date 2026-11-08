@@ -383,6 +383,11 @@ canary rollout must use `canary` plus an explicit comma-separated
 `SAAS_WORKSPACE_CANARY_TENANTS` allowlist. Run the read-only readiness command
 before and after any configuration change:
 
+The first canary is read-only with `SAAS_WORKSPACE_CANARY_READ_ONLY=true`.
+Unsafe HTTP methods are rejected before operational authorization. Production
+console and worker scopes continue to resolve the primary SolarNet tenant so
+existing recurring billing and queue processing remain isolated and available.
+
 ```bash
 php artisan saas:audit-workspace-activation
 ```

@@ -45,6 +45,15 @@ class EnforceSaasDomainBoundary
             ], 404);
         }
 
+        if (config('saas.workspace_activation_mode') === 'canary'
+            && config('saas.workspace_canary_read_only', true)
+            && ! in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true)) {
+            return new JsonResponse([
+                'message' => 'The tenant canary workspace is read-only while isolation is being verified.',
+                'surface' => 'app',
+            ], 423);
+        }
+
         // Operational routes apply tenant.operational after authentication.
         // Public routes remain explicitly allow-listed above.
         return $next($request);
