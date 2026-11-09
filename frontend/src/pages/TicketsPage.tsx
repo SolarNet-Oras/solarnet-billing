@@ -15,6 +15,7 @@ import api from '@/services/api';
 import ticketService from '../services/ticketService';
 import { customerService } from '../services/customerService';
 import { routerService, type Router } from '../services/routerService';
+import { servicePlanService } from '../services/servicePlanService';
 import type { Ticket, Customer } from '../types/api';
 
 interface ProfileChangeRequest {
@@ -138,8 +139,8 @@ const TicketsPage: React.FC = () => {
     fetchCustomers();
     routerService.getAll().then(setRouters).catch(() => setRouters([]));
     fetchProfileChanges();
-    api.get('/customer-portal/service-plans')
-      .then((response) => setInstallationPlans(response.data?.data || []))
+    servicePlanService.getOptions()
+      .then(setInstallationPlans)
       .catch(() => setInstallationPlans([]));
   }, [statusFilter, priorityFilter, searchTerm]);
   /* oxlint-enable react-hooks/exhaustive-deps */

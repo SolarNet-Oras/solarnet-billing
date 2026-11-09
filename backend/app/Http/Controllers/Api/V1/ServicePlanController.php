@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServicePlan;
+use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -49,10 +50,24 @@ class ServicePlanController extends Controller
      */
     public function publicIndex(): JsonResponse
     {
-        $plans = ServicePlan::where('is_active', true)
-            ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
-            ->orderBy('price')
-            ->get(['id', 'name', 'description', 'download_speed', 'upload_speed', 'price']);
+        // Public SolarNet pages have no authenticated tenant context. Under
+        // enforced isolation the global scope must fail closed, so explicitly
+        // bind this public catalogue to the primary SolarNet tenant. Never
+        // expose another ISP tenant's plans through the public portal.
+        $solarNet = Tenant::query()
+            ->where('slug', config('saas.primary_tenant_slug', 'solarnet'))
+            ->where('is_primary', true)
+            ->where('status', 'active')
+            ->first();
+
+        $plans = $solarNet
+            ? ServicePlan::query()->forTenant($solarNet)
+                ->where('is_active', true)
+                ->whereRaw("LOWER(name) NOT LIKE '%company owned%'")
+                ->orderBy('price')
+                ->get(['id', 'name', 'description', 'download_speed', 'upload_speed', 'price'])
+            : collect();
+
         return response()->json([
             'success' => true,
             'data' => $plans,
