@@ -11,11 +11,13 @@ use App\Models\StaffLiveLocation;
 use App\Models\StaffPayrollDisbursement;
 use App\Models\InstallationIncentivePool;
 use App\Models\FinancialEntry;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Services\PhilippinePayrollContributionService;
 use App\Services\StaffProfilePhotoService;
 use App\Services\CashDenominationService;
 use App\Services\StaffPayrollService;
+use App\Support\CurrentTenant;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +33,7 @@ class StaffAttendanceController extends Controller
 {
     public function kiosk(Request $request): JsonResponse
     {
+        $this->resolvePublicSolarNetTenant();
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         $now = now('Asia/Manila');
         $users = User::query()
@@ -70,6 +73,7 @@ class StaffAttendanceController extends Controller
 
     public function kioskPunch(Request $request): JsonResponse
     {
+        $this->resolvePublicSolarNetTenant();
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         $data = $request->validate([
             'employee_id' => ['required', 'uuid', 'exists:users,id'],
@@ -442,15 +446,56 @@ class StaffAttendanceController extends Controller
                 422,
                 'This attendance date is already included in a payroll run and cannot be added manually.'
             );
-            abort_if(
-                StaffAttendanceRecord::query()
-                    ->where('user_id', $employee->id)
-                    ->whereDate('work_date', $workDate->toDateString())
-                    ->lockForUpdate()
-                    ->exists(),
-                409,
-                'An attendance or leave record already exists for this employee and date.'
-            );
+            $existing = StaffAttendanceRecord::query()
+                ->where('user_id', $employee->id)
+                ->whereDate('work_date', $workDate->toDateString())
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                abort_if(
+                    ! $existing->clocked_in_at || $existing->clocked_out_at,
+                    409,
+                    'A completed attendance or leave record already exists for this employee and date.'
+                );
+
+                $existingClockIn = $existing->clocked_in_at->copy()->timezone('Asia/Manila');
+                abort_unless(
+                    $clockOut->gt($existingClockIn),
+                    422,
+                    "Time-out must be later than the employee's recorded time-in."
+                );
+                abort_if(
+                    $existingClockIn->diffInMinutes($clockOut) > 1080,
+                    422,
+                    'A completed attendance record cannot exceed 18 hours.'
+                );
+
+                $worked = (int) floor($existingClockIn->diffInMinutes($clockOut));
+                $overtimeStart = Carbon::parse($workDate->toDateString().' 18:00:00', 'Asia/Manila');
+                $overtime = (int) floor(max(0, $overtimeStart->diffInMinutes($clockOut, false)));
+                $auditNote = sprintf(
+                    'Manual clock-out completed by %s. Reason: %s',
+                    $request->user()->name,
+                    trim($data['reason'])
+                );
+
+                $existing->update([
+                    'clocked_out_at' => $clockOut->copy()->utc(),
+                    'worked_minutes' => $worked,
+                    'overtime_minutes' => $overtime,
+                    'overtime_status' => $overtime > 0 ? 'pending' : 'not_applicable',
+                    'approved_overtime_minutes' => 0,
+                    'overtime_reviewed_by' => null,
+                    'overtime_reviewed_at' => null,
+                    'overtime_review_notes' => null,
+                    'notes' => filled($existing->notes)
+                        ? $existing->notes."\n".$auditNote
+                        : $auditNote,
+                ]);
+
+                return $existing->fresh();
+            }
 
             $profile = StaffCompensation::firstOrCreate(['user_id' => $employee->id]);
             $lateThreshold = Carbon::parse($workDate->toDateString().' '.$profile->scheduled_start, 'Asia/Manila')
@@ -481,9 +526,29 @@ class StaffAttendanceController extends Controller
         });
 
         return response()->json([
-            'message' => 'Manual attendance recorded with an administrator audit note.',
+            'message' => $record->wasRecentlyCreated
+                ? 'Manual attendance recorded with an administrator audit note.'
+                : 'The existing attendance record was completed with an administrator audit note.',
             'data' => $this->attendanceRecordPayload($record),
-        ], 201);
+        ], $record->wasRecentlyCreated ? 201 : 200);
+    }
+
+    /** Public attendance devices always operate inside SolarNet's primary workspace. */
+    private function resolvePublicSolarNetTenant(): void
+    {
+        $context = app(CurrentTenant::class);
+        if ($context->get()) {
+            return;
+        }
+
+        $tenant = Tenant::query()
+            ->where('slug', config('saas.primary_tenant_slug', 'solarnet'))
+            ->where('is_primary', true)
+            ->where('status', 'active')
+            ->first();
+
+        abort_unless($tenant, 503, 'The SolarNet attendance workspace is unavailable.');
+        $context->set($tenant);
     }
 
     public function reviewOvertime(Request $request, StaffAttendanceRecord $attendance): JsonResponse
