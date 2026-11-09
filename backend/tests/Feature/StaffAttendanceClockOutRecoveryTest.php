@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\Api\V1\StaffAttendanceController;
 use App\Models\StaffAttendanceRecord;
 use App\Models\Tenant;
+use App\Models\TenantMembership;
 use App\Models\User;
 use App\Support\CurrentTenant;
 use Carbon\Carbon;
@@ -28,6 +29,16 @@ class StaffAttendanceClockOutRecoveryTest extends TestCase
     {
         $tenant = $this->solarNet();
         $employee = User::factory()->create(['name' => 'EDMAR CONDE ALCONABA', 'is_active' => true]);
+        $this->membership($tenant, $employee);
+        $otherTenant = Tenant::create([
+            'slug' => 'testing-company',
+            'name' => 'Testing Company',
+            'status' => 'active',
+            'is_primary' => false,
+            'subscription_exempt' => false,
+        ]);
+        $tenantOnlyUser = User::factory()->create(['name' => 'luke mejares', 'is_active' => true]);
+        $this->membership($otherTenant, $tenantOnlyUser, owner: true);
         app(CurrentTenant::class)->set($tenant);
         $record = $this->openRecord($employee);
         app(CurrentTenant::class)->clear();
@@ -36,7 +47,8 @@ class StaffAttendanceClockOutRecoveryTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.employees.0.id', $employee->id)
             ->assertJsonPath('data.employees.0.record.id', $record->id)
-            ->assertJsonPath('data.employees.0.state', 'clocked_in');
+            ->assertJsonPath('data.employees.0.state', 'clocked_in')
+            ->assertJsonMissing(['name' => 'luke mejares']);
     }
 
     public function test_manual_attendance_completes_an_existing_open_punch(): void
@@ -44,6 +56,8 @@ class StaffAttendanceClockOutRecoveryTest extends TestCase
         $tenant = $this->solarNet();
         $administrator = User::factory()->create(['name' => 'Administrator', 'is_active' => true]);
         $employee = User::factory()->create(['name' => 'EDMAR CONDE ALCONABA', 'is_active' => true]);
+        $this->membership($tenant, $administrator, owner: true);
+        $this->membership($tenant, $employee);
         app(CurrentTenant::class)->set($tenant);
         $record = $this->openRecord($employee);
         $date = now('Asia/Manila')->toDateString();
@@ -88,6 +102,17 @@ class StaffAttendanceClockOutRecoveryTest extends TestCase
             'clocked_in_at' => $clockIn->copy()->utc(),
             'status' => 'present',
             'verification_method' => 'camera_pin',
+        ]);
+    }
+
+    private function membership(Tenant $tenant, User $user, bool $owner = false): TenantMembership
+    {
+        return TenantMembership::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $user->id,
+            'membership_role' => $owner ? 'tenant_admin' : 'tenant_staff',
+            'status' => 'active',
+            'is_owner' => $owner,
         ]);
     }
 }

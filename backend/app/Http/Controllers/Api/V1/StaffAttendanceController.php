@@ -21,6 +21,7 @@ use App\Support\CurrentTenant;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +37,7 @@ class StaffAttendanceController extends Controller
         $this->resolvePublicSolarNetTenant();
         abort_unless(Schema::hasTable('staff_attendance_records'), 503, 'Attendance storage is not installed. Run migrations.');
         $now = now('Asia/Manila');
-        $users = User::query()
+        $users = $this->attendanceEmployees()
             ->where('is_active', true)
             ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
             ->orderBy('name')
@@ -95,7 +96,7 @@ class StaffAttendanceController extends Controller
             || (bool) $data['face_detection_supported'];
         abort_if($faceDetectionSupported && (int) ($data['face_count'] ?? 0) !== 1, 422, 'Exactly one face must be visible.');
 
-        $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
+        $employee = $this->attendanceEmployees()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
         abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
         $validCredential = $data['credential_type'] === 'pin'
             ? filled($employee->attendance_pin_hash) && Hash::check($data['credential'], $employee->attendance_pin_hash)
@@ -159,7 +160,7 @@ class StaffAttendanceController extends Controller
             : [$monthStart->copy()->day(5), $monthStart->copy()->day(20)];
         $manager = true;
         $canEditPayroll = true;
-        $users = User::query()
+        $users = $this->attendanceEmployees()
             ->where('is_active', true)
             ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'super_admin'))
             ->with('roles:id,name')
@@ -425,7 +426,7 @@ class StaffAttendanceController extends Controller
             'time_out' => ['required', 'date_format:H:i'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
         ]);
-        $employee = User::query()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
+        $employee = $this->attendanceEmployees()->whereKey($data['employee_id'])->where('is_active', true)->firstOrFail();
         abort_if($employee->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
 
         $workDate = Carbon::createFromFormat('Y-m-d', $data['work_date'], 'Asia/Manila')->startOfDay();
@@ -551,6 +552,29 @@ class StaffAttendanceController extends Controller
         $context->set($tenant);
     }
 
+    /** Only active members of the resolved workspace belong in its payroll. */
+    private function attendanceEmployees(): Builder
+    {
+        $tenantId = app(CurrentTenant::class)->id();
+        abort_unless($tenantId, 503, 'The attendance workspace is unavailable.');
+
+        return User::query()->whereHas(
+            'tenantMemberships',
+            fn (Builder $membership): Builder => $membership
+                ->where('tenant_id', $tenantId)
+                ->where('status', 'active')
+        );
+    }
+
+    private function assertAttendanceEmployee(User $user): void
+    {
+        abort_unless(
+            $this->attendanceEmployees()->whereKey($user->id)->exists(),
+            404,
+            'Employee not found in this workspace.'
+        );
+    }
+
     public function reviewOvertime(Request $request, StaffAttendanceRecord $attendance): JsonResponse
     {
         $data = $request->validate([
@@ -586,6 +610,7 @@ class StaffAttendanceController extends Controller
     public function updateCompensation(Request $request, User $user): JsonResponse
     {
         abort_unless($request->user()->hasRole('super_admin'), 403);
+        $this->assertAttendanceEmployee($user);
         abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance or payroll.');
 
         $data = $request->validate([
@@ -611,6 +636,7 @@ class StaffAttendanceController extends Controller
     public function updateAttendancePin(Request $request, User $user): JsonResponse
     {
         abort_unless($request->user()->hasRole('super_admin'), 403);
+        $this->assertAttendanceEmployee($user);
         abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
 
         $data = $request->validate([
@@ -619,7 +645,7 @@ class StaffAttendanceController extends Controller
         ]);
         abort_unless(Hash::check($data['admin_password'], $request->user()->password), 422, 'Your Super Administrator password is incorrect.');
 
-        $duplicate = User::query()
+        $duplicate = $this->attendanceEmployees()
             ->where('id', '!=', $user->id)
             ->whereNotNull('attendance_pin_hash')
             ->get(['id', 'attendance_pin_hash'])
@@ -633,6 +659,7 @@ class StaffAttendanceController extends Controller
 
     public function updateReferencePhoto(Request $request, User $user, StaffProfilePhotoService $photos): JsonResponse
     {
+        $this->assertAttendanceEmployee($user);
         abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
         $request->validate(['photo'=>['required','image','mimes:jpeg,jpg,png,webp','max:4096','dimensions:min_width=128,min_height=128']]);
         $updated=$photos->replace($user,$request->file('photo'));
@@ -650,6 +677,7 @@ class StaffAttendanceController extends Controller
 
     public function referencePhoto(Request $request, User $user)
     {
+        $this->assertAttendanceEmployee($user);
         abort_if($user->hasRole('super_admin'), 404);
         $path = $user->attendance_reference_photo_path;
         abort_unless($path && Storage::disk('local')->exists($path), 404, 'Attendance reference photo not found.');
@@ -660,6 +688,7 @@ class StaffAttendanceController extends Controller
 
     public function resetReferencePhoto(Request $request, User $user): JsonResponse
     {
+        $this->assertAttendanceEmployee($user);
         abort_if($user->hasRole('super_admin'), 422, 'Super Administrators are not included in attendance.');
         $path = $user->attendance_reference_photo_path;
         $user->forceFill(['attendance_reference_photo_path'=>null,'attendance_reference_captured_at'=>null])->save();
