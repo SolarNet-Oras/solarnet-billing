@@ -4,7 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\Invoice;
+use App\Models\PaymongoCheckout;
+use App\Models\Payment;
+use App\Models\Tenant;
 use App\Services\PaymongoService;
+use App\Support\CurrentTenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -154,5 +158,74 @@ class PaymongoHostedCheckoutMethodsTest extends TestCase
             $request->url() === 'https://api.paymongo.com/v1/payment_methods'
             && $request['data']['attributes']['type'] === 'qrph'
         );
+    }
+
+    public function test_scheduled_confirmation_records_payment_in_the_checkout_tenant(): void
+    {
+        $solarNet = Tenant::create([
+            'slug' => 'solarnet',
+            'name' => 'SolarNet',
+            'status' => 'active',
+            'is_primary' => true,
+            'subscription_exempt' => true,
+        ]);
+        $tenant = Tenant::create([
+            'slug' => 'tenant-isp',
+            'name' => 'Tenant ISP',
+            'status' => 'active',
+            'is_primary' => false,
+            'subscription_exempt' => false,
+        ]);
+        $context = app(CurrentTenant::class);
+        $context->set($tenant);
+
+        $customer = Customer::create([
+            'account_number' => '2000000199',
+            'full_name' => 'Tenant Checkout Customer',
+            'email' => 'tenant-checkout@example.com',
+            'address' => 'Test address',
+            'contact_number' => '09170000199',
+            'installation_date' => '2026-01-01',
+            'billing_cycle_day' => 15,
+            'monthly_fee' => 800,
+            'status' => 'active',
+        ]);
+        $invoice = Invoice::create([
+            'customer_id' => $customer->id,
+            'invoice_number' => 'SLR-TEST-0199',
+            'issue_date' => '2026-10-08',
+            'due_date' => '2026-10-15',
+            'billing_period_start' => '2026-09-15',
+            'billing_period_end' => '2026-10-15',
+            'total' => 800,
+            'balance' => 800,
+            'status' => 'sent',
+        ]);
+        PaymongoCheckout::create([
+            'invoice_id' => $invoice->id,
+            'customer_id' => $customer->id,
+            'account_number' => $customer->account_number,
+            'checkout_session_id' => 'cs_tenant_confirmation',
+            'reference_number' => 'TENANT-CHECKOUT-0199',
+            'amount' => 800,
+            'status' => 'pending',
+        ]);
+
+        config()->set('saas.enabled', true);
+        config()->set('saas.domains_enabled', true);
+        config()->set('saas.enforcement_mode', 'enforced');
+        $context->set($solarNet);
+
+        app(PaymongoService::class)->markPaidByCheckoutId('cs_tenant_confirmation', 'pay_tenant_confirmation');
+
+        $payment = Payment::query()->forTenant($tenant)->where('transaction_id', 'cs_tenant_confirmation')->firstOrFail();
+        $this->assertSame($tenant->id, $payment->tenant_id);
+        $this->assertSame($solarNet->id, $context->id());
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoice->id,
+            'tenant_id' => $tenant->id,
+            'status' => 'paid',
+            'balance' => 0,
+        ]);
     }
 }

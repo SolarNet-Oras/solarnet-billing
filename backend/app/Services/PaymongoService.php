@@ -5,7 +5,10 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\Customer;
 use App\Models\PaymongoCheckout;
+use App\Models\Tenant;
 use App\Support\CustomerPortalUrl;
+use App\Support\CurrentTenant;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -352,15 +355,24 @@ class PaymongoService
 
     public function markPaidByCheckoutId(string $sessionId, ?string $providerPaymentId = null, ?array $settlement = null): void
     {
-        DB::transaction(function () use ($sessionId, $providerPaymentId, $settlement) {
-            $checkout = PaymongoCheckout::with('invoice.customer')->where('checkout_session_id', $sessionId)->lockForUpdate()->first();
-            if (!$checkout || $checkout->payment_id) return;
-            $invoice = $checkout->invoice->fresh();
-            if (!$invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
-                throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
-            }
-            $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo hosted checkout (Card / GCash / Maya / DOB) | Account ' . $checkout->account_number . ' | ' . $invoice->customer->full_name]);
-            $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
+        $candidate = PaymongoCheckout::query()->where('checkout_session_id', $sessionId)->first();
+        if (! $candidate) {
+            return;
+        }
+
+        $this->withinCheckoutTenant($candidate, function () use ($sessionId, $providerPaymentId, $settlement): void {
+            DB::transaction(function () use ($sessionId, $providerPaymentId, $settlement) {
+                $checkout = PaymongoCheckout::with('invoice.customer')->where('checkout_session_id', $sessionId)->lockForUpdate()->first();
+                if (! $checkout || $checkout->payment_id) {
+                    return;
+                }
+                $invoice = $checkout->invoice->fresh();
+                if (! $invoice || $invoice->customer_id !== $checkout->customer_id || ($checkout->account_number && $invoice->customer?->account_number !== $checkout->account_number)) {
+                    throw new RuntimeException('PayMongo checkout account verification failed. No payment was recorded.');
+                }
+                $payment = $this->invoices->recordPayment($invoice, ['amount' => $checkout->amount, 'payment_method' => 'mobile_money', 'payment_date' => now(), 'transaction_id' => $sessionId, 'reference' => $checkout->reference_number, 'notes' => 'PayMongo hosted checkout (Card / GCash / Maya / DOB) | Account '.$checkout->account_number.' | '.$invoice->customer->full_name]);
+                $checkout->update(array_merge(['status' => 'paid', 'paid_at' => now(), 'payment_id' => $payment->id, 'paymongo_payment_id' => $providerPaymentId], $this->settlementColumns($settlement)));
+            });
         });
     }
 
@@ -408,7 +420,7 @@ class PaymongoService
 
     private function markPaidByQrCheckout(PaymongoCheckout $checkout, string $paymongoPaymentId, ?string $eventId, ?array $settlement = null): bool
     {
-        return DB::transaction(function () use ($checkout, $paymongoPaymentId, $eventId, $settlement): bool {
+        return $this->withinCheckoutTenant($checkout, fn (): bool => DB::transaction(function () use ($checkout, $paymongoPaymentId, $eventId, $settlement): bool {
             $locked = PaymongoCheckout::with(['invoice.customer', 'customer'])->whereKey($checkout->id)->lockForUpdate()->first();
             if (!$locked) return false;
             if ($locked->payment_id || $locked->status === 'paid') return true;
@@ -461,7 +473,39 @@ class PaymongoService
             $locked->save();
             Log::info('PayMongo QR Ph payment confirmed', ['payment_intent_id' => $locked->payment_intent_id, 'payment_id' => $paymongoPaymentId, 'invoice_id' => $invoice->id, 'amount' => $locked->amount, 'webhook_event_id' => $eventId]);
             return true;
-        });
+        }));
+    }
+
+    /** Run provider confirmation inside the tenant that owns its invoice/customer. */
+    private function withinCheckoutTenant(PaymongoCheckout $checkout, Closure $callback): mixed
+    {
+        $tenantIds = collect([
+            $checkout->invoice_id
+                ? DB::table('invoices')->where('id', $checkout->invoice_id)->value('tenant_id')
+                : null,
+            $checkout->customer_id
+                ? DB::table('customers')->where('id', $checkout->customer_id)->value('tenant_id')
+                : null,
+        ])->filter()->unique()->values();
+
+        if ($tenantIds->count() !== 1) {
+            throw new RuntimeException('PayMongo checkout tenant ownership could not be verified. No payment was recorded.');
+        }
+
+        $tenant = Tenant::query()->whereKey($tenantIds->first())->where('status', 'active')->first();
+        if (! $tenant) {
+            throw new RuntimeException('PayMongo checkout tenant is unavailable. No payment was recorded.');
+        }
+
+        $context = app(CurrentTenant::class);
+        $previous = $context->get();
+        $context->set($tenant);
+
+        try {
+            return $callback();
+        } finally {
+            $previous ? $context->set($previous) : $context->clear();
+        }
     }
 
     /** Ask PayMongo directly; no browser redirect or webhook body is trusted as proof of payment. */

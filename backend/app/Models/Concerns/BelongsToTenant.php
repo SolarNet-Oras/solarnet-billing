@@ -23,34 +23,22 @@ trait BelongsToTenant
 
     public static function bootBelongsToTenant(): void
     {
-        static::creating(function (Model $model): void {
-            if (! self::tenantColumnAvailable($model)) {
-                return;
-            }
-
-            if (! config('saas.ownership_auto_assignment', true)) {
-                return;
-            }
-
-            if ($model->getAttribute('tenant_id')) {
-                return;
-            }
-
-            $tenant = app(CurrentTenant::class)->resolveForWrite();
-            if ($tenant) {
-                $model->setAttribute('tenant_id', $tenant->getKey());
-
-                return;
-            }
-
-            if (app()->environment('production')) {
-                throw new LogicException('A primary tenant is required before creating tenant-owned records.');
-            }
-        });
-
         static::saving(function (Model $model): void {
             if (! self::tenantColumnAvailable($model)) {
                 return;
+            }
+
+            // Eloquent dispatches `saving` before `creating`. Ownership must
+            // therefore be assigned here so a new record is not mistaken for
+            // a cross-tenant mutation before its `creating` event can run.
+            if (! $model->getAttribute('tenant_id')
+                && config('saas.ownership_auto_assignment', true)) {
+                $tenant = app(CurrentTenant::class)->resolveForWrite();
+                if ($tenant) {
+                    $model->setAttribute('tenant_id', $tenant->getKey());
+                } elseif (app()->environment('production')) {
+                    throw new LogicException('A primary tenant is required before creating tenant-owned records.');
+                }
             }
 
             $currentTenantId = app(CurrentTenant::class)->id();

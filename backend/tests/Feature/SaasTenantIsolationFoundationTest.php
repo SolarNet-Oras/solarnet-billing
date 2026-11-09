@@ -76,6 +76,30 @@ class SaasTenantIsolationFoundationTest extends TestCase
         $branchPlan->update(['name' => 'Forbidden update']);
     }
 
+    public function test_enforced_context_assigns_ownership_before_new_record_safety_check(): void
+    {
+        $branch = $this->tenant('branch-a');
+        config()->set('saas.enabled', true);
+        config()->set('saas.domains_enabled', true);
+        config()->set('saas.enforcement_mode', 'enforced');
+        app(CurrentTenant::class)->set($branch);
+
+        $entry = FinancialEntry::create([
+            'type' => 'expense',
+            'description' => 'Tenant-safe transaction test',
+            'category' => 'Test',
+            'amount' => 10,
+            'entry_date' => '2026-11-09',
+            'payment_method' => 'cash',
+            'effect_type' => 'expense',
+            'source_wallet' => 'cash',
+            'idempotency_key' => fake()->uuid(),
+        ]);
+
+        $this->assertSame($branch->id, $entry->tenant_id);
+        $this->assertDatabaseHas('financial_entries', ['id' => $entry->id, 'tenant_id' => $branch->id]);
+    }
+
     public function test_disabled_enforcement_preserves_existing_billing_visibility(): void
     {
         $solarNet = $this->tenant('solarnet', primary: true);
