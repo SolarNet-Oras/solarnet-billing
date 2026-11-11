@@ -109,6 +109,49 @@ class SaasTenantApplicationTest extends TestCase
         $this->assertDatabaseCount('users', 1);
     }
 
+    public function test_platform_admin_can_delete_an_unapproved_application_with_exact_confirmation(): void
+    {
+        $application = $this->application($this->plan());
+        $admin = $this->platformAdmin();
+        $url = 'https://admin.solarnetportal.com/api/v1/saas/platform/applications/'.$application->id;
+
+        $this->withToken($this->platformToken($admin))->deleteJson($url, [
+            'confirmation' => 'DELETE ISP APPLICATION WRONG',
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('saas_tenant_applications', ['id' => $application->id]);
+
+        $this->withToken($this->platformToken($admin))->deleteJson($url, [
+            'confirmation' => 'DELETE ISP APPLICATION '.strtoupper($application->id),
+        ])->assertOk()->assertJsonPath('data.approved_tenant_preserved', false);
+        $this->assertDatabaseMissing('saas_tenant_applications', ['id' => $application->id]);
+    }
+
+    public function test_deleting_an_approved_application_preserves_its_tenant_and_owner(): void
+    {
+        $plan = $this->plan();
+        $admin = $this->platformAdmin();
+        $tenant = Tenant::create([
+            'slug' => 'approved-isp', 'name' => 'Approved ISP', 'status' => 'active',
+            'is_primary' => false, 'subscription_exempt' => false,
+        ]);
+        $owner = User::factory()->create(['email' => 'approved@example.test']);
+        $application = $this->application($plan, [
+            'tenant_slug' => $tenant->slug,
+            'owner_email' => $owner->email,
+            'status' => 'approved',
+            'approved_tenant_id' => $tenant->id,
+        ]);
+
+        $this->withToken($this->platformToken($admin))->deleteJson(
+            'https://admin.solarnetportal.com/api/v1/saas/platform/applications/'.$application->id,
+            ['confirmation' => 'DELETE ISP APPLICATION '.strtoupper($application->id)],
+        )->assertOk()->assertJsonPath('data.approved_tenant_preserved', true);
+
+        $this->assertDatabaseMissing('saas_tenant_applications', ['id' => $application->id]);
+        $this->assertDatabaseHas('tenants', ['id' => $tenant->id, 'slug' => 'approved-isp']);
+        $this->assertDatabaseHas('users', ['id' => $owner->id, 'email' => 'approved@example.test']);
+    }
+
     private function plan(): SaasSubscriptionPlan
     {
         return SaasSubscriptionPlan::create([

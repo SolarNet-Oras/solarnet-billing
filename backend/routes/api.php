@@ -96,6 +96,7 @@ Route::prefix('v1')->group(function () {
         Route::patch('/plans/{plan}', [SaasPlatformController::class, 'updatePlan'])->middleware('throttle:10,1');
         Route::post('/applications/{application}/approve', [SaasPlatformController::class, 'approveApplication'])->middleware('throttle:5,1');
         Route::post('/applications/{application}/reject', [SaasPlatformController::class, 'rejectApplication'])->middleware('throttle:5,1');
+        Route::delete('/applications/{application}', [SaasPlatformController::class, 'deleteApplication'])->middleware('throttle:5,1');
         Route::post('/cashout-requests/{cashout}/mark-sent', [SaasPlatformController::class, 'markCashoutSent'])->middleware('throttle:10,1');
     });
     // Public routes

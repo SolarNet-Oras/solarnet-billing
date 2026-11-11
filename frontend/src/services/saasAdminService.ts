@@ -19,6 +19,7 @@ export default{
   async updatePlan(id:string,payload:Record<string,string|number|boolean>){return (await client.patch(`/plans/${id}`,payload)).data;},
   async approveApplication(id:string,confirmation:string){return (await client.post(`/applications/${id}/approve`,{confirmation})).data;},
   async rejectApplication(id:string,reason:string,confirmation:string){return (await client.post(`/applications/${id}/reject`,{reason,confirmation})).data;},
+  async deleteApplication(id:string,confirmation:string){return (await client.delete(`/applications/${id}`,{data:{confirmation}})).data;},
   async markCashoutSent(id:string,transfer_reference:string,notes:string,confirmation:string){return (await client.post(`/cashout-requests/${id}/mark-sent`,{transfer_reference,notes,confirmation})).data;},
   logout(){sessionStorage.removeItem('saas_platform_token');},
 };

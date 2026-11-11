@@ -16,6 +16,7 @@ use App\Services\SaasTenantOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -203,6 +204,40 @@ class SaasPlatformController extends Controller
         ]);
 
         return response()->json(['message' => 'Application rejected. No tenant, trial, or financial record was created.']);
+    }
+
+    public function deleteApplication(Request $request, SaasTenantApplication $application): JsonResponse
+    {
+        $data = $request->validate(['confirmation' => ['required', 'string', 'max:200']]);
+        $confirmation = 'DELETE ISP APPLICATION '.Str::upper($application->id);
+        abort_unless(hash_equals($confirmation, $data['confirmation']), 422, 'The application deletion phrase is incorrect.');
+
+        $result = DB::transaction(function () use ($request, $application): array {
+            $locked = SaasTenantApplication::query()->whereKey($application->id)->lockForUpdate()->firstOrFail();
+            $audit = [
+                'application_id' => $locked->id,
+                'company_name' => $locked->company_name,
+                'tenant_slug' => $locked->tenant_slug,
+                'owner_email' => $locked->owner_email,
+                'status' => $locked->status,
+                'approved_tenant_id' => $locked->approved_tenant_id,
+                'deleted_by' => $request->user('api')?->id,
+            ];
+            $approvedTenantPreserved = filled($locked->approved_tenant_id);
+            $locked->delete();
+            Log::notice('SaaS ISP application record deleted by platform administrator', $audit + [
+                'approved_tenant_preserved' => $approvedTenantPreserved,
+            ]);
+
+            return ['approved_tenant_preserved' => $approvedTenantPreserved];
+        }, 3);
+
+        return response()->json([
+            'message' => $result['approved_tenant_preserved']
+                ? 'Application record deleted. Its approved tenant, owner, subscription, and financial records were preserved.'
+                : 'Application record deleted. No tenant or financial record was changed.',
+            'data' => $result,
+        ]);
     }
 
     public function updateTenantStatus(Request $request, Tenant $tenant): JsonResponse
