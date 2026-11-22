@@ -277,6 +277,21 @@ const UnregisteredLeasesPage: React.FC = () => {
     } finally { setRegisteringId(null); }
   };
 
+  const handleReleaseCurrentCustomerMac = async (lease: UnregisteredLease): Promise<void> => {
+    const customer = lease.known_customer_identity?.customer;
+    if (!customer) return;
+    const confirmation = window.prompt(`Release MAC ${lease.mac_address} from ${customer.full_name} (${customer.account_number})? This clears the MAC/IP from the customer profile and synchronizes the exact MikroTik lease. Type the exact MAC:\n${lease.mac_address}`);
+    if (confirmation === null) return;
+    setRegisteringId(lease.id); setError(''); setNotice('');
+    try {
+      const response = await api.post<{ message?: string }>(`/customers/${customer.id}/release-mac`, { confirmation_mac: confirmation.trim() });
+      setNotice(response.data.message || 'MAC released from the current customer.');
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to release the MAC from the current customer.');
+    } finally { setRegisteringId(null); }
+  };
+
   const openRegistrationModal = (lease: UnregisteredLease): void => {
     setModalMode('register');
     setModalLease(lease);
@@ -440,6 +455,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
               onReassign={openReassignmentModal}
               onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
+              onReleaseCurrentCustomerMac={(lease) => void handleReleaseCurrentCustomerMac(lease)}
               registeringId={registeringId}
             />
             <DynamicLeasesTable
@@ -451,6 +467,7 @@ const UnregisteredLeasesPage: React.FC = () => {
               onManualRegister={handleManualAdd}
               onClientMigration={() => navigate('/super-admin/client-migrations')}
               onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
+              onReleaseCurrentCustomerMac={(lease) => void handleReleaseCurrentCustomerMac(lease)}
               registeringId={registeringId}
             />
           </div>
@@ -462,6 +479,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             onPushKnownCustomer={(lease, customerId, confirmation) => void handleQuickRegister(lease, { existing_customer_id: customerId, ...confirmation })}
             onReassign={openReassignmentModal}
             onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
+            onReleaseCurrentCustomerMac={(lease) => void handleReleaseCurrentCustomerMac(lease)}
             registeringId={registeringId}
           />
         ) : (
@@ -474,6 +492,7 @@ const UnregisteredLeasesPage: React.FC = () => {
             onManualRegister={handleManualAdd}
             onClientMigration={() => navigate('/super-admin/client-migrations')}
             onDeleteInactive={(lease) => void handleDeleteInactive(lease)}
+            onReleaseCurrentCustomerMac={(lease) => void handleReleaseCurrentCustomerMac(lease)}
             registeringId={registeringId}
           />
         )}
@@ -505,8 +524,9 @@ const StaticLeasesTable: React.FC<{
   onPushKnownCustomer: (lease: UnregisteredLease, customerId: string, confirmation?: { confirm_current_client_reassignment?: boolean }) => void;
   onReassign: (lease: UnregisteredLease) => void;
   onDeleteInactive: (lease: UnregisteredLease) => void;
+  onReleaseCurrentCustomerMac: (lease: UnregisteredLease) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, onDeleteInactive, registeringId }) => {
+}> = ({ leases, routerName, onRegister, onPushKnownCustomer, onReassign, onDeleteInactive, onReleaseCurrentCustomerMac, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -588,6 +608,9 @@ const StaticLeasesTable: React.FC<{
                     </div>
                   ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => onReleaseCurrentCustomerMac(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                        {registeringId === lease.id ? 'Releasing…' : 'Release MAC from current client'}
+                      </button>
                       {lease.known_customer_identity.customer?.can_push_to_router && (
                         <button
                           type="button"
@@ -673,8 +696,9 @@ const DynamicLeasesTable: React.FC<{
   onManualRegister: (lease: UnregisteredLease) => void;
   onClientMigration: () => void;
   onDeleteInactive: (lease: UnregisteredLease) => void;
+  onReleaseCurrentCustomerMac: (lease: UnregisteredLease) => void;
   registeringId: string | null;
-}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onReassign, onManualRegister, onClientMigration, onDeleteInactive, registeringId }) => {
+}> = ({ leases, routerName, onQuickRegister, onPushKnownCustomer, onReassign, onManualRegister, onClientMigration, onDeleteInactive, onReleaseCurrentCustomerMac, registeringId }) => {
   if (leases.length === 0) {
     return (
       <EmptyState
@@ -746,6 +770,9 @@ const DynamicLeasesTable: React.FC<{
                     </div>
                   ) : lease.known_customer_identity?.status === 'known_customer' ? (
                     <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => onReleaseCurrentCustomerMac(lease)} disabled={registeringId === lease.id} className="rounded-md border border-rose-500 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-200 dark:hover:bg-rose-950/30">
+                        {registeringId === lease.id ? 'Releasing…' : 'Release MAC from current client'}
+                      </button>
                       {lease.known_customer_identity.customer?.can_push_to_router && (
                         <button
                           type="button"
