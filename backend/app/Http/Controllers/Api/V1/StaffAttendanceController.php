@@ -595,16 +595,18 @@ class StaffAttendanceController extends Controller
         );
     }
 
-    public function reviewOvertime(Request $request, StaffAttendanceRecord $attendance): JsonResponse
+    public function reviewOvertime(Request $request, string $attendanceId): JsonResponse
     {
+        $attendance = $this->resolveAttendanceRecord($attendanceId);
         $data = $request->validate([
             'decision' => ['required', Rule::in(['approved', 'rejected'])],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
         abort_unless($attendance->overtime_status === 'pending' && $attendance->overtime_minutes > 0, 422, 'Only pending overtime can be reviewed.');
         abort_if(
-            StaffPayrollDisbursement::query()
+            StaffPayrollDisbursement::query()->withoutGlobalScope('tenant')
                 ->where('user_id', $attendance->user_id)
+                ->when(app(CurrentTenant::class)->id(), fn ($query, $tenantId) => $query->where('tenant_id', $tenantId))
                 ->whereDate('cutoff_start', '<=', $attendance->work_date)
                 ->whereDate('cutoff_end', '>=', $attendance->work_date)
                 ->exists(),
@@ -625,6 +627,17 @@ class StaffAttendanceController extends Controller
             'message' => $approved ? 'Overtime approved for payroll.' : 'Overtime rejected and excluded from payroll.',
             'data' => $attendance->fresh('overtimeReviewer:id,name'),
         ]);
+    }
+
+    private function resolveAttendanceRecord(string $attendanceId): StaffAttendanceRecord
+    {
+        $query = StaffAttendanceRecord::query()->withoutGlobalScope('tenant');
+        $tenantId = app(CurrentTenant::class)->id();
+        if ($tenantId) {
+            $query->where('tenant_id', $tenantId);
+        }
+
+        return $query->whereKey($attendanceId)->firstOrFail();
     }
 
     public function updateCompensation(Request $request, User $user): JsonResponse
