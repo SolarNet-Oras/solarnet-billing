@@ -159,8 +159,8 @@ Route::prefix('v1')->group(function () {
         });
         Route::middleware('role:super_admin|tenant_admin')->group(function () {
             Route::get('staff-attendance', [StaffAttendanceController::class, 'index']);
-            Route::get('staff-attendance/payroll/{payroll}', [StaffAttendanceController::class, 'payrollPayslip']);
-            Route::post('staff-attendance/payroll/{payroll}/release', [StaffAttendanceController::class, 'releasePayroll'])->middleware('throttle:10,1');
+            Route::get('staff-attendance/payroll/{payrollId}', [StaffAttendanceController::class, 'payrollPayslip']);
+            Route::post('staff-attendance/payroll/{payrollId}/release', [StaffAttendanceController::class, 'releasePayroll'])->middleware('throttle:10,1');
             Route::put('staff-attendance/{user}/compensation', [StaffAttendanceController::class, 'updateCompensation']);
             Route::put('staff-attendance/{user}/pin', [StaffAttendanceController::class, 'updateAttendancePin'])->middleware('throttle:10,1');
             Route::get('staff-attendance/records/{attendance}/photo/{type}', [StaffAttendanceController::class, 'photo'])->whereIn('type', ['clock-in','clock-out'])->middleware('throttle:60,1');

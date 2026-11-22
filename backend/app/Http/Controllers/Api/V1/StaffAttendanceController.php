@@ -282,13 +282,15 @@ class StaffAttendanceController extends Controller
         ];
     }
 
-    public function payrollPayslip(StaffPayrollDisbursement $payroll): JsonResponse
+    public function payrollPayslip(string $payrollId): JsonResponse
     {
+        $payroll = $this->resolvePayroll($payrollId);
         return response()->json(['data' => $payroll->load(['user:id,name,email', 'releaser:id,name', 'financialEntry'])]);
     }
 
-    public function releasePayroll(Request $request, StaffPayrollDisbursement $payroll, CashDenominationService $denominations): JsonResponse
+    public function releasePayroll(Request $request, string $payrollId, CashDenominationService $denominations): JsonResponse
     {
+        $payroll = $this->resolvePayroll($payrollId);
         $data = $request->validate([
             'payment_method' => ['required', Rule::in(['cash', 'gcash', 'bank_bpi', 'bank_landbank'])],
             'reference' => ['required', 'string', 'max:100'],
@@ -307,7 +309,14 @@ class StaffAttendanceController extends Controller
         }
 
         $payroll = DB::transaction(function () use ($request, $payroll, $data): StaffPayrollDisbursement {
-            $locked = StaffPayrollDisbursement::with('user:id,name,email')->lockForUpdate()->findOrFail($payroll->id);
+            $lockedQuery = StaffPayrollDisbursement::with('user:id,name,email')
+                ->withoutGlobalScope('tenant')
+                ->lockForUpdate();
+            $tenantId = app(CurrentTenant::class)->id();
+            if ($tenantId) {
+                $lockedQuery->where('tenant_id', $tenantId);
+            }
+            $locked = $lockedQuery->findOrFail($payroll->id);
             abort_if($locked->status === 'released' || $locked->financial_entry_id, 409, 'This salary has already been released.');
             abort_unless($locked->status === 'scheduled', 422, 'Only a scheduled payroll can be released.');
             abort_if(now('Asia/Manila')->startOfDay()->lt($locked->pay_date->copy()->startOfDay()), 422, 'Salary cannot be released before its scheduled payday.');
@@ -368,6 +377,17 @@ class StaffAttendanceController extends Controller
         });
 
         return response()->json(['message' => 'Salary released and recorded in Daily Operations as an expense.', 'data' => $payroll]);
+    }
+
+    private function resolvePayroll(string $payrollId): StaffPayrollDisbursement
+    {
+        $query = StaffPayrollDisbursement::query()->withoutGlobalScope('tenant');
+        $tenantId = app(CurrentTenant::class)->id();
+        if ($tenantId) {
+            $query->where('tenant_id', $tenantId);
+        }
+
+        return $query->whereKey($payrollId)->firstOrFail();
     }
 
     public function clockIn(Request $request): JsonResponse
