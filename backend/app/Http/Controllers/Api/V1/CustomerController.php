@@ -768,14 +768,19 @@ class CustomerController extends Controller
         $mac = $this->normalizeMacForBinding((string) $customer->mac_address);
         $validated = $request->validate([
             'confirmation_mac' => ['required', 'string', 'max:32'],
+            'force_local' => ['sometimes', 'boolean'],
         ]);
+        $forceLocal = (bool) ($validated['force_local'] ?? false);
+        if ($forceLocal && ! $request->user()?->hasRole('super_admin')) {
+            return response()->json(['status' => 'error', 'message' => 'Only the Super Administrator can force-detach a MAC locally.'], 403);
+        }
 
         if (! $mac || $this->normalizeMacForBinding($validated['confirmation_mac']) !== $mac) {
             return response()->json(['status' => 'error', 'message' => 'Type the customer’s exact current MAC address to confirm.'], 422);
         }
 
         try {
-            $result = DB::transaction(function () use ($customer, $mac, $request) {
+            $result = DB::transaction(function () use ($customer, $mac, $request, $forceLocal) {
                 $lockedCustomer = Customer::query()->lockForUpdate()->findOrFail($customer->id);
                 if ($this->normalizeMacForBinding((string) $lockedCustomer->mac_address) !== $mac) {
                     throw new \RuntimeException('The customer MAC changed. Refresh the page before trying again.');
@@ -786,12 +791,14 @@ class CustomerController extends Controller
                     ->filter(fn (DhcpLease $lease) => $this->normalizeMacForBinding((string) $lease->mac_address) === $mac)
                     ->values();
                 if ($leases->count() > 1) {
-                    throw new \RuntimeException('This MAC exists on more than one current router lease. Synchronize all routers and resolve the duplicate first.');
+                    if (! $forceLocal) {
+                        throw new \RuntimeException('This MAC exists on more than one current router lease. Synchronize all routers and resolve the duplicate first.');
+                    }
                 }
 
                 $lease = $leases->first();
                 $routerResult = null;
-                if ($lease) {
+                if ($lease && ! $forceLocal) {
                     if (! $lease->router) {
                         throw new \RuntimeException('The matching DHCP lease has no configured router. No assignment was removed.');
                     }
@@ -815,7 +822,13 @@ class CustomerController extends Controller
                     ]);
                 }
 
-                DhcpLease::query()->where('customer_id', $lockedCustomer->id)->update([
+                DhcpLease::query()->where(function ($query) use ($lockedCustomer, $mac) {
+                    $query->where('customer_id', $lockedCustomer->id)
+                        ->orWhere(function ($query) use ($mac) {
+                            $query->whereNotNull('mac_address')
+                                ->whereRaw("upper(replace(replace(mac_address, ':', ''), '-', '')) = ?", [str_replace(':', '', $mac)]);
+                        });
+                })->update([
                     'customer_id' => null,
                     'is_matched' => false,
                     'match_source' => null,
@@ -838,7 +851,7 @@ class CustomerController extends Controller
                     'actor_id' => $request->user()?->id,
                 ]);
 
-                return ['customer' => $lockedCustomer->fresh(['technician', 'servicePlan']), 'lease' => $lease, 'router_result' => $routerResult];
+                return ['customer' => $lockedCustomer->fresh(['technician', 'servicePlan']), 'lease' => $lease, 'router_result' => $routerResult, 'force_local' => $forceLocal];
             });
         } catch (\RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
@@ -846,9 +859,11 @@ class CustomerController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => $result['lease']
+            'message' => $result['force_local']
+                ? 'MAC detached locally from the customer profile and local DHCP records. RouterOS was not changed; resolve its duplicate lease before reassigning this MAC.'
+                : ($result['lease']
                 ? 'Wrong MAC removed. Its MikroTik comment and rate limit were cleared, and the lease is now visible under Unregistered Clients.'
-                : 'Wrong MAC removed from the customer. No current MikroTik lease existed for that MAC.',
+                : 'Wrong MAC removed from the customer. No current MikroTik lease existed for that MAC.'),
             'data' => $result['customer'],
             'released_lease_id' => $result['lease']?->id,
             'mikrotik' => $result['router_result'],

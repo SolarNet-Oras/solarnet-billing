@@ -288,7 +288,19 @@ const UnregisteredLeasesPage: React.FC = () => {
       setNotice(response.data.message || 'MAC released from the current customer.');
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Unable to release the MAC from the current customer.');
+      const message = err?.response?.data?.message || 'Unable to release the MAC from the current customer.';
+      if (err?.response?.status === 422 && window.confirm(`${message}\n\nForce detach locally from ${customer.full_name}? This clears the customer profile and local DHCP ownership, but does not change MikroTik. You must resolve the router lease before reusing this MAC.`)) {
+        try {
+          const forced = await api.post<{ message?: string }>(`/customers/${customer.id}/release-mac`, { confirmation_mac: confirmation.trim(), force_local: true });
+          setNotice(forced.data.message || 'MAC detached locally.');
+          await load();
+          return;
+        } catch (forceErr: any) {
+          setError(forceErr?.response?.data?.message || message);
+          return;
+        }
+      }
+      setError(message);
     } finally { setRegisteringId(null); }
   };
 
