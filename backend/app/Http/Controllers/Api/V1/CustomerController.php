@@ -738,6 +738,21 @@ class CustomerController extends Controller
         }
 
         $customer = Customer::findOrFail($id);
+        // A customer profile may only be archived after its registered MAC is
+        // released from the local lease and MikroTik. This prevents a deleted
+        // profile from leaving a device bound to an account that no longer
+        // exists. Duplicate/ambiguous RouterOS leases deliberately block the
+        // deletion so an administrator can resolve the physical device first.
+        if (filled($customer->mac_address)) {
+            $releaseResponse = $this->releaseMac(
+                $request->merge(['confirmation_mac' => $customer->mac_address]),
+                $id,
+            );
+            if ($releaseResponse->getStatusCode() >= 400) {
+                return $releaseResponse;
+            }
+            $customer = Customer::findOrFail($id);
+        }
         $customer->delete();
 
         return response()->json([
