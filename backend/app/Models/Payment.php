@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 class Payment extends Model
 {
@@ -69,6 +70,18 @@ class Payment extends Model
         'payment_confirmation_sms_last_attempt_at' => 'datetime',
         'payment_confirmation_sms_sent_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::deleting(function (self $payment): void {
+            if ($payment->payment_method === 'cash') {
+                throw new LogicException('Cash payment records cannot be deleted; record a refund or reversal instead.');
+            }
+        });
+        static::created(function (self $payment): void {
+            app(\App\Services\MoneyFlowLogService::class)->payment($payment);
+        });
+    }
 
     public function invoice(): BelongsTo
     {

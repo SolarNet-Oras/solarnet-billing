@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\InvoiceController;
 use App\Http\Controllers\Api\V1\IpIntelligenceController;
 use App\Http\Controllers\Api\V1\OnuRemoteAccessController;
 use App\Http\Controllers\Api\V1\FinancialEntryController;
+use App\Http\Controllers\Api\V1\MoneyFlowLogController;
 use App\Http\Controllers\Api\V1\FinancialMonitoringController;
 use App\Http\Controllers\Api\V1\FacebookAutomationController;
 use App\Http\Controllers\Api\V1\OperationsMapController;
@@ -499,6 +500,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('{id}', [RemittanceController::class, 'cancelWrongSubmission'])->middleware('role:super_admin');
         });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
+        Route::get('money-flow-logs', [MoneyFlowLogController::class, 'index'])->middleware('permission:view-payments');
         Route::post('financial-entries/cash-count', [FinancialEntryController::class, 'storeCashCount'])->middleware('permission:create-payments');
         Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::get('financial-entries/cash-advance-employees', [FinancialEntryController::class, 'cashAdvanceEmployees'])->middleware('permission:view-payments');
