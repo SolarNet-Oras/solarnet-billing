@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\FinancialMonitoringController;
 use App\Http\Controllers\Api\V1\FacebookAutomationController;
 use App\Http\Controllers\Api\V1\OperationsMapController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\PaymentTransferController;
 use App\Http\Controllers\Api\V1\PublicInvoicePaymentController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RemittanceController;
@@ -501,6 +502,7 @@ Route::prefix('v1')->group(function () {
         });
         Route::get('financial-entries', [FinancialEntryController::class, 'index'])->middleware('permission:view-payments');
         Route::get('money-flow-logs', [MoneyFlowLogController::class, 'index'])->middleware('permission:view-payments');
+        Route::post('payment-transfers', [PaymentTransferController::class, 'store'])->middleware('role:super_admin|admin|office_admin');
         Route::post('financial-entries/cash-count', [FinancialEntryController::class, 'storeCashCount'])->middleware('permission:create-payments');
         Route::get('transaction-definitions', [FinancialEntryController::class, 'definitions'])->middleware('permission:view-payments');
         Route::get('financial-entries/cash-advance-employees', [FinancialEntryController::class, 'cashAdvanceEmployees'])->middleware('permission:view-payments');
