@@ -445,6 +445,7 @@ Route::prefix('v1')->group(function () {
             Route::get('payments', [PaymentController::class, 'index']);
             Route::get('payments-statistics', [PaymentController::class, 'statistics']);
         Route::get('payments/{id}', [PaymentController::class, 'show']);
+        Route::post('payments/{id}/refund', [PaymentController::class, 'refund'])->middleware('role:super_admin');
         });
         Route::post('payments/advance', [PaymentController::class, 'recordAdvance'])->middleware('permission:create-payments');
         Route::post('payments/advance/qr-ph', [PaymentController::class, 'startAdvanceQrPh'])->middleware('permission:create-payments');

@@ -10,6 +10,7 @@ use App\Models\PaymongoCheckout;
 use App\Services\CashTenderCalculator;
 use App\Services\InvoiceService;
 use App\Services\OfficeCashLiquidationService;
+use App\Services\PaymentRefundService;
 use App\Services\PaymongoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,13 @@ use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
+    public function refund(Request $request, string $id, PaymentRefundService $refunds): JsonResponse
+    {
+        $data = $request->validate(['amount' => ['required','numeric','gt:0'], 'reason' => ['required','string','max:500']]);
+        $refund = $refunds->refund(Payment::findOrFail($id), (float) $data['amount'], $data['reason'], $request->user());
+        return response()->json(['message' => 'Refund recorded and invoice reconciled.', 'refund' => $refund], 201);
+    }
+
     public function startAdvanceQrPh(Request $request, InvoiceService $invoices, PaymongoService $paymongo): JsonResponse
     {
         $data = $request->validate([
