@@ -487,6 +487,15 @@ class CustomerController extends Controller
         }
 
         $validated = $validator->validated();
+        // The selected service plan is the authoritative recurring price. A
+        // zero monthly_fee can be left by installation onboarding, but must
+        // not make an assigned plan appear free or generate zero invoices.
+        if (array_key_exists('service_plan_id', $validated) && filled($validated['service_plan_id'])) {
+            $plan = ServicePlan::query()->whereKey($validated['service_plan_id'])->where('is_active', true)->first();
+            if ($plan) {
+                $validated['monthly_fee'] = $plan->price;
+            }
+        }
         if ($officeAdminOnly && array_key_exists('service_plan_id', $validated)) {
             if (blank($validated['service_plan_id'])) {
                 return response()->json([
