@@ -85,6 +85,10 @@ class InvoiceService
         string $generationSource = 'manual',
         ?Carbon $scheduledGenerationDate = null,
     ): Invoice {
+        // New installations may arrive with monthly_fee=0 while the assigned
+        // service plan carries the billable price. Always refresh the relation
+        // before deciding whether the cycle is billable.
+        $customer->loadMissing('servicePlan');
         if ($customer->hasCompanyOwnedPlan()) {
             throw new \LogicException('Company Owned plans are excluded from invoices and recurring billing.');
         }
