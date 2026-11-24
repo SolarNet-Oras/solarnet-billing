@@ -25,6 +25,7 @@ import { customerService } from '../services/customerService';
 import { formatPHP } from '../lib/currency';
 import { useAuth } from '../hooks/useAuth';
 import { useLiveDataRefresh } from '../hooks/useLiveDataRefresh';
+import api from '../services/api';
 
 const paymentMethodLabels: Record<Payment['payment_method'], string> = {
   cash: 'Cash',
@@ -123,6 +124,7 @@ const InvoicesPage: React.FC = () => {
   const roleNames = [user?.role, ...(user?.roles || []).map((role) => typeof role === 'string' ? role : role.name)].filter(Boolean);
   const canCancelInvoices = roleNames.includes('super_admin')
     && user?.email?.trim().toLowerCase() === 'solarnet.connection@gmail.com';
+  const canRefundPayments = roleNames.includes('super_admin');
 
   // Form states
   const [formData, setFormData] = useState({
@@ -831,6 +833,28 @@ const InvoicesPage: React.FC = () => {
                           title="Cancel invoice"
                         >
                           <Ban className="h-4 w-4" />
+                        </button>
+                      )}
+                      {canRefundPayments && (invoice.payment_history ?? []).some((payment) => Number(payment.refunded_amount ?? 0) < Number(payment.amount ?? 0)) && (
+                        <button
+                          onClick={async () => {
+                            const payment = (invoice.payment_history ?? []).find((item) => Number(item.refunded_amount ?? 0) < Number(item.amount ?? 0));
+                            if (!payment) return;
+                            const amount = Number(payment.amount) - Number(payment.refunded_amount ?? 0);
+                            const reason = window.prompt('Refund reason (required):');
+                            if (!reason?.trim()) return;
+                            if (!window.confirm(`Refund ${formatPHP(amount)} for ${payment.payment_number}?`)) return;
+                            try {
+                              await api.post(`/payments/${payment.id}/refund`, { amount, reason: reason.trim() });
+                              await fetchInvoices(undefined, true);
+                            } catch (error) {
+                              window.alert(error instanceof Error ? error.message : 'Refund failed.');
+                            }
+                          }}
+                          className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-200"
+                          title="Refund payment"
+                        >
+                          <PhilippinePeso className="h-4 w-4" />
                         </button>
                       )}
                     </div>
