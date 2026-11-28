@@ -18,7 +18,8 @@ const CustomersPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'address_asc' | 'address_desc'>('newest');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'address_asc' | 'address_desc' | 'due_asc' | 'due_desc'>('newest');
+  const [dueDayFilter, setDueDayFilter] = useState<'all' | 'today' | string>('all');
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState<boolean>(false);
   const [clientSetupOpen, setClientSetupOpen] = useState<boolean>(false);
@@ -58,6 +59,7 @@ const CustomersPage: React.FC = () => {
         : sortOrder === 'name_desc' ? ['name', 'desc']
           : sortOrder === 'address_asc' ? ['address', 'asc']
             : sortOrder === 'address_desc' ? ['address', 'desc']
+              : sortOrder === 'due_asc' || sortOrder === 'due_desc' ? ['billing_cycle_day', sortOrder === 'due_asc' ? 'asc' : 'desc']
               : sortOrder === 'oldest' ? ['created_at', 'asc'] : ['created_at', 'desc'];
       params.append('sort_by', sortBy);
       params.append('sort_direction', sortDirection);
@@ -87,19 +89,25 @@ const CustomersPage: React.FC = () => {
   }, [fetchCustomers]);
 
   const sortedCustomers = useMemo(() => {
-    const rows = [...customers];
+    const rows = customers.filter((customer) => {
+      if (dueDayFilter === 'all') return true;
+      const day = Number(customer.billing_cycle_day || 0);
+      if (dueDayFilter === 'today') return day === new Date().getDate();
+      return day === Number(dueDayFilter);
+    });
     const compareText = (left?: string | null, right?: string | null) => String(left || '').localeCompare(String(right || ''), 'en-PH', { sensitivity: 'base', numeric: true });
     rows.sort((left, right) => {
       if (sortOrder === 'name_asc') return compareText(left.full_name, right.full_name);
       if (sortOrder === 'name_desc') return compareText(right.full_name, left.full_name);
       if (sortOrder === 'address_asc') return compareText(left.address, right.address) || compareText(left.full_name, right.full_name);
       if (sortOrder === 'address_desc') return compareText(right.address, left.address) || compareText(left.full_name, right.full_name);
+      if (sortOrder === 'due_asc' || sortOrder === 'due_desc') return (sortOrder === 'due_asc' ? 1 : -1) * (Number(left.billing_cycle_day || 0) - Number(right.billing_cycle_day || 0));
       const leftTime = new Date(left.created_at).getTime() || 0;
       const rightTime = new Date(right.created_at).getTime() || 0;
       return sortOrder === 'oldest' ? leftTime - rightTime : rightTime - leftTime;
     });
     return rows;
-  }, [customers, sortOrder]);
+  }, [customers, sortOrder, dueDayFilter]);
 
   const handleConfirmDelete = async (): Promise<void> => {
     if (!deleteTarget) return;
@@ -482,6 +490,13 @@ const CustomersPage: React.FC = () => {
               <option value="name_desc">Name: Z to A</option>
               <option value="address_asc">Address: A to Z</option>
               <option value="address_desc">Address: Z to A</option>
+              <option value="due_asc">Due day: 1 to 31</option>
+              <option value="due_desc">Due day: 31 to 1</option>
+            </select>
+            <select value={dueDayFilter} onChange={(event) => setDueDayFilter(event.target.value)} className="px-4 py-2 border border-input rounded-md bg-background text-foreground" aria-label="Filter billing due day">
+              <option value="all">All due days</option>
+              <option value="today">Due today</option>
+              {Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={String(index + 1)}>Due day {index + 1}</option>)}
             </select>
           </div>
         </div>
@@ -548,6 +563,7 @@ const CustomersPage: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
                       Name
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">Due Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-foreground uppercase tracking-wider">
                       Contact
                     </th>
@@ -591,6 +607,7 @@ const CustomersPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                         {customer.full_name}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{monthlyDueDateLabel(customer.billing_cycle_day ?? null)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                         <div>{customer.contact_number}</div>
                         {customer.email && <div className="text-xs">{customer.email}</div>}
